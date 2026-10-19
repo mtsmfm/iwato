@@ -56,7 +56,7 @@ When an agent proposes a rule on a provider's host, approving it widens the prov
 
 ## Custom providers
 
-Add a custom one as YAML adds a provider type of your own as an OpenShell provider profile. Iwato lints it and runs its own checks before saving, and stores it as `profiles\ID.yaml` in the config folder (read when Iwato starts, so you can edit it with another editor). Ids starting with `iwato-` are reserved for Iwato's own.
+Add a custom one as YAML adds a provider type of your own as an OpenShell provider profile. Iwato lints it and runs its own checks before saving, and stores it as `profiles/ID.yaml` in the config folder (read when Iwato starts, so you can edit it with another editor). Ids starting with `iwato-` are reserved for Iwato's own.
 
 ## OAuth providers
 
@@ -68,7 +68,7 @@ Adding an Atlassian (MCP) provider asks for scopes (by default Jira and Confluen
 
 ### Claude account sign-in for Claude Code
 
-Iwato signs in with Claude Code's own public client id (not one Anthropic issued to Iwato), as `claude auth login` does. On the PC, Sign in with Claude comes back to Iwato by itself; on a phone, use the second button and paste the code Claude's page shows (`code#…`). The sandbox's `claude` reads `CLAUDE_CODE_OAUTH_TOKEN` and treats it as inference-only, as with a setup-token. Check with `claude -p 'hello'`.
+Iwato signs in with Claude Code's own public client id (not one Anthropic issued to Iwato), as `claude auth login` does. On the PC, Sign in with Claude comes back to Iwato by itself; on a phone, use **Sign in on a phone (paste a code)** and paste the code Claude's page shows (`code#…`). The sandbox's `claude` reads `CLAUDE_CODE_OAUTH_TOKEN` and treats it as inference-only, as with a setup-token. Check with `claude -p 'hello'`.
 
 `claude setup-token` is what Anthropic documents for non-interactive use, so the "Claude Code (setup token)" type is recommended. Anthropic's terms govern subscription (Free, Pro, Max) OAuth tokens: see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance). Here only Claude Code in the sandbox uses the token, but Iwato signs in with Claude Code's client id. If the gateway's first refresh fails, Iwato says so; use the setup-token type then.
 

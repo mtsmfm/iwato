@@ -60,7 +60,7 @@ linuxserver/webtop is not used. OpenShell runs the workload as the image's user 
   - Mesa d3d12 (`libgl1-mesa-dri mesa-va-drivers mesa-utils vainfo`)
   - Selkies' official .deb (`selkies-2.0.0-ubuntu24.04-<arch>.deb`: its own Python environment in `/opt/selkies`, `selkies` and `selkies-session` in `/usr/bin`; apt pulls the dependencies). An empty `SELKIES_DEB_SHA256` builds without verification and logs the hash (`WARNING: selkies .deb … SHA-256 is …`); pin it through the build argument
 - `iwato-desktop run` (`/usr/local/bin`) prepares the GPU and runs `selkies-session --session xfce --port=6080 --enable-basic-auth=false --enable-https=false`. `selkies-session` (`src/selkies/session.py` in Selkies' repository) starts Xvfb (`-displayfd` picks a free display, with a cookie), PulseAudio (`--daemonize=no` if none runs), the desktop through `dbus-run-session` (the xfce xsession) and Selkies, as children of the calling user's process. No s6, root or sudo
-- Port 6080 (http), listening on loopback only (no `--public`). No login and no TLS: Iwato's **Ports** tab exposes it (HTTPS ends there) and the tailnet's ACL decides who reaches it. `IWATO_DESKTOP_PORT` and `IWATO_DESKTOP_ARGS` change it
+- Port 6080 (http), listening on loopback only (no `--public`). No login and no TLS: Iwato's **Ports** tab exposes it, and the publishing setting decides who reaches it (This PC only: browsers on this PC; Tailscale: the devices of the Owner logins). `IWATO_DESKTOP_PORT` and `IWATO_DESKTOP_ARGS` change it
 - Start: `iwato-desktop` (= `iwato-desktop start`) in a terminal. It runs in the background (`setsid nohup`), logging to `~/.cache/iwato-desktop.log`. It does **not** start automatically. Without a GPU it renders on the CPU
 
 ### GPU environment
@@ -138,7 +138,7 @@ Not yet recorded as checked on real hardware:
 1. Build or pull the standard image. Errors starting with `desktop:` are the desktop layer (Mozilla's key, fetching or installing Selkies' .deb)
 2. Create a sandbox with **Use the GPU** (standard image). Look at any policy proposals
 3. In a terminal: `df -h /dev/shm` (1.0G), `ls -l /dev/dxg`, `echo $GALLIUM_DRIVER` (`d3d12`), `ls -l ~/.local/lib/wsl-nvidia` (after iwato-desktop)
-4. Run `iwato-desktop`, check `iwato-desktop status` and `~/.cache/iwato-desktop.log`. Publish 6080 in the **Ports** tab and open it in a browser. Check that `iwato-desktop stop` stops it
+4. Run `iwato-desktop`, check `iwato-desktop status` and `~/.cache/iwato-desktop.log`. Open the 6080 link in the **Ports** tab. Check that `iwato-desktop stop` stops it
 5. In the desktop's terminal: the renderer in `glxinfo -B`, Graphics in Firefox's `about:support`, NVENC or x264 in Selkies' stats, and whether `grep -h libcuda /proc/$(pgrep -f 'selkies' | head -1)/maps` points at `/usr/lib/wsl/drivers/…/libcuda.so.1.1`
 6. In a sandbox without a GPU: `iwato-desktop` comes up with a CPU desktop, and `df -h /dev/shm` is 1.0G
 7. Links: the panel's "Web Browser", a link in xfce4-terminal, `xdg-open https://example.com`. If they fail, see the browser section of `iwato-desktop-doctor`

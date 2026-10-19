@@ -184,7 +184,6 @@ Also check the exe's size (about 55 MB), memory per node, and that no Windows fi
 - auth `iwato` / `both` (tickets and per-host cookies), domain / lan providers
 - A UI for per-port overrides (they work in the configuration file)
 - Checking the policy for ways from the sandbox into the tailnet (refuse 100.64.0.0/10, fd7a:115c:a1e0::/48 and *.ts.net in `DecideProposal` / `EditPolicy`). OpenShell's default SSRF refusal blocks them, but an approval can open them
-- Choosing "this PC only / phones too" on the first screen (`docs/TODO.md`). Today the settings choose
 - Using local and Tailscale at the same time (only one today)
 - QR codes, showing process names
 - Re-encrypting to HTTPS servers (self-signed) inside the sandbox

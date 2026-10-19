@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- Windows 11 with WSL 3.0.1 or later, which provides WSLc (`wslc.exe`). Check with `wslc.exe --version`
+- Windows 11 with WSL 3.0.1 or later, which provides WSLc (`wslc.exe`). Update with `wsl --update` (`wsl --update --pre-release` if the stable release is older) and check with `wslc.exe --version`
 - An x64 or Arm64 PC. Iwato needs nothing else: no Docker Desktop, no account
 - Or (experimental) an Apple Silicon Mac or Linux with a Docker-compatible engine: see [macOS](#macos-experimental)
 
@@ -26,7 +26,7 @@ Iwato then:
 
 1. Creates `iwato.json` if there is none (with no sandboxes)
 2. Runs its startup checks (WSLc and the configuration). When WSLc cannot be used, the page says why and how to fix it, and Iwato goes on by itself once it can (**Check again** checks at once). The settings list all the checks
-3. Pulls the standard sandbox image and the gateway image from ghcr.io (a few minutes the first time; the output goes to `image-build.log`)
+3. Pulls the standard sandbox image from ghcr.io and builds the gateway image, which downloads from Docker Hub, Ubuntu's package archive and github.com. A release exe pulls both images from ghcr.io. This takes a few minutes the first time; the output goes to `image-build.log`
 4. Starts the OpenShell gateway in WSLc
 
 The console prints a URL such as `http://127.0.0.1:17600/#token=...`. Open it in your browser. It works once, within 10 minutes; do not share it. When port 17600 is taken Iwato uses the next free one (up to 17669); `-listen 127.0.0.1:PORT` fixes the port.
@@ -64,7 +64,7 @@ Stop Iwato with Ctrl+C. Stopping or updating Iwato does not stop the sandboxes: 
 
 ## macOS (experimental)
 
-On macOS Iwato runs the sandboxes on a Docker-compatible engine with OpenShell's own Docker compute driver ([ADR 0002](../adr/0002-macos-docker-compatible-runtime.md)). Windows keeps WSLc. Native Linux works the same way as macOS, with Docker Engine.
+On macOS Iwato runs the sandboxes on a Docker-compatible engine with OpenShell's own Docker compute driver ([ADR 0002](../adr/0002-macos-docker-compatible-runtime.md)). Windows keeps WSLc. Linux has no download: build Iwato from source ([building](../dev/development.md#building-on-linux)) and use Docker Engine; the rest is as on macOS.
 
 This path has not yet been tried on a real Mac: the Linux CI runs it on Docker (`TestDockerE2E` in `.github/workflows/e2e.yml`) and tests the macOS build on a Mac runner (`.github/workflows/macos.yml`). Please report what does not work.
 
@@ -72,7 +72,7 @@ This path has not yet been tried on a real Mac: the Linux CI runs it on Docker (
 
 - An Apple Silicon Mac (the build is `darwin-arm64`)
 - A Docker-compatible engine with Docker Engine 28.0 or later (OpenShell's requirement). Colima (free, MIT) is recommended; Docker Desktop and OrbStack work too, but may be paid for commercial use
-- `docker buildx` when Iwato builds an image itself (development builds build the gateway's image)
+- `docker buildx` (edge builds build the gateway image)
 
 ### Set up Colima
 
@@ -89,13 +89,15 @@ Docker Desktop: enable host networking (Settings → Resources → Network → E
 
 ### Run Iwato
 
-Until there is a release and a Homebrew tap, the binary is `iwato-darwin-arm64` of the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) (save it as `iwato`). It is not signed; if Gatekeeper blocks it:
+Download `iwato-darwin-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` in a folder of its own (the config folder, as on Windows). Run it from there:
 
 ```sh
 chmod +x iwato
 xattr -d com.apple.quarantine iwato
 ./iwato
 ```
+
+`chmod +x` makes the download executable. The binary is not signed, so `xattr` removes the quarantine that makes Gatekeeper block it.
 
 `./iwato` checks the engine first: whether `docker` is there and the engine runs, its version, the VM's architecture, CPUs and memory, and the Docker Desktop settings above. The results are in the settings' **Startup checks**; when the engine is not running, the page says how to start it and Iwato goes on once it runs. Then it is as on Windows (above): open the printed URL, create a sandbox, start it.
 

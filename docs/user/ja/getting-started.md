@@ -4,7 +4,7 @@
 
 ## 前提
 
-- Windows 11 と WSL 3.0.1 以上 (WSLc の `wslc.exe` が入ります)。`wslc.exe --version` で確認します
+- Windows 11 と WSL 3.0.1 以上 (WSLc の `wslc.exe` が入ります)。`wsl --update` で更新し (安定版が古いときは `wsl --update --pre-release`)、`wslc.exe --version` で確認します
 - x64 か Arm64 の PC。ほかには何も要りません (Docker Desktop もアカウントも不要)
 - または (試験的) Apple Silicon の Mac か Linux と Docker 互換のエンジン: [macOS](#macos-試験的) を参照
 
@@ -26,7 +26,7 @@ Iwato は次を行います。
 
 1. `iwato.json` がなければ作ります (サンドボックス 0 個)
 2. 起動時の確認 (WSLc・設定)。WSLc を使えないときは、画面に理由と直し方を出し、使えるようになると自動で続けます (「再確認」ですぐ確かめます)。確認の一覧は「設定」にあります
-3. 標準イメージとゲートウェイのイメージを ghcr.io から取得します (初回は数分。出力は `image-build.log`)
+3. 標準イメージを ghcr.io から取得し、ゲートウェイのイメージをビルドします。ビルドは Docker Hub、Ubuntu のパッケージのアーカイブ、github.com からダウンロードします。リリース版は両方を ghcr.io から取得します。初回は数分かかります。出力は `image-build.log` です
 4. OpenShell のゲートウェイを WSLc で起動します
 
 コンソールに `http://127.0.0.1:17600/#token=...` のような URL が出るので、ブラウザで開きます。10 分以内・1 回限りです。共有しないでください。17600 が使用中なら次の空いているポート (17669 まで) を使います。`-listen 127.0.0.1:PORT` で固定もできます。
@@ -64,7 +64,7 @@ Ctrl+C で終了します。Iwato を終了・更新してもサンドボック�
 
 ## macOS (試験的)
 
-macOS では、WSLc の代わりに Docker 互換のエンジンでサンドボックスを動かし、コンピュートドライバは OpenShell の Docker ドライバをそのまま使います ([ADR 0002](../../adr/0002-macos-docker-compatible-runtime.md))。Windows は WSLc のままです。Linux でも Docker Engine で同じように動きます。
+macOS では、WSLc の代わりに Docker 互換のエンジンでサンドボックスを動かし、コンピュートドライバは OpenShell の Docker ドライバをそのまま使います ([ADR 0002](../../adr/0002-macos-docker-compatible-runtime.md))。Windows は WSLc のままです。Linux 用のダウンロードはありません。ソースからビルドし ([Linux でのビルド](../../dev/development.md#building-on-linux)、英語)、Docker Engine で使います。あとは macOS と同じです。
 
 実機の Mac ではまだ試していません (CI の Linux の Docker で `TestDockerE2E` を、Mac のランナーで macOS 版のテストを流しています)。動かないところがあれば知らせてください。
 
@@ -72,7 +72,7 @@ macOS では、WSLc の代わりに Docker 互換のエンジンでサンドボ�
 
 - Apple Silicon の Mac (ビルドは `darwin-arm64`)
 - Docker Engine 28.0 以上の Docker 互換のエンジン (OpenShell の前提)。おすすめは Colima (無料、MIT)。Docker Desktop・OrbStack でも動きますが、商用では有料のことがあります
-- Iwato がイメージを自分でビルドするとき (開発版はゲートウェイのイメージをビルドします) は `docker buildx`
+- `docker buildx` (edge 版はゲートウェイのイメージをビルドします)
 
 ### Colima を用意する
 
@@ -89,13 +89,15 @@ Docker Desktop では、ホストネットワークを有効にし (Settings →
 
 ### Iwato を動かす
 
-リリースと Homebrew の tap ができるまでは、プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) の `iwato-darwin-arm64` を `iwato` として使います。署名していないので、Gatekeeper に止められたら:
+プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64` をダウンロードし、専用のフォルダーに `iwato` として置きます (Windows と同じく設定フォルダーになります)。そのフォルダーで実行します:
 
 ```sh
 chmod +x iwato
 xattr -d com.apple.quarantine iwato
 ./iwato
 ```
+
+`chmod +x` でダウンロードしたファイルを実行できるようにします。署名していないので、`xattr` で Gatekeeper が止める印 (quarantine) を外します。
 
 `./iwato` は最初にエンジンを確かめます: `docker` があってエンジンが動いているか、版、VM のアーキテクチャ・CPU・メモリ、上の Docker Desktop の設定。結果は「設定」の「起動時の確認」にあります。エンジンが動いていないときは画面に起動のしかたを出し、動き出すと続けます。あとは Windows と同じです (上記)。
 

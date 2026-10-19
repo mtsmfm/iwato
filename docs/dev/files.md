@@ -26,7 +26,7 @@ With the image convention (ADR 0005), the standard image carries Iwato's daemon,
 
 OpenShell's SFTP root (the fallback) is the sandbox's workdir (`crates/openshell-supervisor-process/src/ssh.rs` passes `workdir: None` for `RuntimeHelper::Sftp`, and `crates/openshell-sandbox/src/boundary_exec.rs` uses `spec.workdir.or(base_workdir)`). The driver takes the workdir from the image's `WORKDIR` (`/sandbox` when empty or `/`; `resolveWorkspace`). The standard image before the convention set `WORKDIR /home/dev`, so for sandboxes made from it the fallback shows the home volume too; images without `WORKDIR` get `/sandbox`.
 
-- Like the Docker driver, the WSLc driver refuses a mount on the working directory or a parent of it, except a writable volume on the working directory itself (Iwato's home). The volume's owner is set to the sandbox user at every start (`volumeowner.go`), so OpenShell's workdir check (the user can write it) passes
+- Like the Docker driver, the WSLc driver refuses a mount on the working directory or a parent of it, except a writable volume on the working directory itself, for older images whose `WORKDIR` is the home. The volume's owner is set to the sandbox user at every start (`volumeowner.go`), so OpenShell's workdir check (the user can write it) passes
 - The working directory is fixed at creation (driver state `workspace-root`) and does not change on restart. A sandbox created from an older image keeps `/sandbox` until it is recreated (menu **Recreate**, `recreate.go`). Own images without `WORKDIR` (or with `/`) also get `/sandbox` (the home is not shown); with `WORKDIR /home/dev` they show the home
 
 ## Image paste (`paste.go`)
@@ -41,7 +41,7 @@ Pasting or dropping an image into a terminal (on a phone, the **Image** key in t
 
 ## Authentication and entry (`files.go`)
 
-- URLs: `/dav/` lists the visible sandboxes (read-only); `/dav/<name>/…` is `…` in that sandbox's working directory; `/dav/<token>/<name>/…` is the secret URL for this PC
+- URLs: `/dav/` lists the visible sandboxes (read-only); `/dav/<name>/…` is `…` under that sandbox's files root (the home; the working directory for images without Iwato's daemon); `/dav/<token>/<name>/…` is the secret URL for this PC
 - `/dav/` branches off before the admin UI's Origin, cookie and CSRF checks (WebDAV clients send neither Origin nor cookies). It keeps the Host check against DNS rebinding (only `127.0.0.1:PORT`, `localhost:PORT` and the `-public-origin` host) and refuses requests from other pages (a different Origin, `Sec-Fetch-Site: cross-site`). Responses carry `Content-Security-Policy: … sandbox` so that a sandbox's HTML cannot act as an Iwato page
 - App passwords: Basic authentication. The user name is the ID (`iwato-xxxxxx`), the password 32 random bytes (lowercase base32, 52 characters). They work over the tailnet's HTTPS (tailscale serve) and on this PC's http://127.0.0.1
 - Secret URL: `http://127.0.0.1:PORT/dav/<token>/<name>/`. Windows' WebClient by default (`BasicAuthLevel=1`) sends no Basic credentials over plain http, so for Windows without tailscale serve the URL itself is the key (the registry is left alone). It is accepted only from 127.0.0.1 (loopback), with Host `127.0.0.1:PORT` or `localhost:PORT`, and without any proxy header (`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `Tailscale-User-Login`, `Tailscale-Headers-Info`). tailscale serve also connects from 127.0.0.1 but adds `X-Forwarded-For` and the like, which tells them apart

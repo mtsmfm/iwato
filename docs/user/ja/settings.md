@@ -20,15 +20,16 @@ Iwato は自分のものをすべて `iwato.json` のフォルダー (起動し�
 | `iwato.json` | 設定とサンドボックスごとの設定 |
 | `iwato.log`、`iwato.log.1` | ログ |
 | `image-build.log` | イメージの取得とビルド |
-| `presets\*.yaml` | 自分のプリセット ([通信のポリシーと承認](network-policy.md)) |
-| `profiles\*.yaml` | 自分のプロバイダーのプロファイル ([プロバイダー](providers.md)) |
-| `ingress-secret.bin`、`ingress\` | Tailscale のシークレット (DPAPI) とノードの状態 |
+| `presets/*.yaml` | 自分のプリセット ([通信のポリシーと承認](network-policy.md)) |
+| `profiles/*.yaml` | 自分のプロバイダーのプロファイル ([プロバイダー](providers.md)) |
+| `ingress-secret.bin`、`ingress/` | Tailscale のシークレット (Windows は DPAPI、macOS はキーチェーンの鍵で暗号化。Linux は権限 0600 のファイル) とノードの状態 |
 | 証明書、セッション、Web Push の鍵、アプリパスワード | Iwato が作った秘密 |
 
 `iwato.json` は Iwato 自身が書き、ほとんどは画面から設定します。まだ画面のない設定:
 
 - `"termTrace": true`: ターミナルの出力を記録する ([ターミナル](terminals.md))
 - `"wslc"`: `wslc.exe` が `PATH` にないときのフルパス
+- `"docker"`、`"dockerSocket"` (macOS・Linux): `docker` の CLI のパスと、エンジンの API のソケット ([macOS](getting-started.md#windows-との違い))
 - ポートごとの公開の設定 ([ポートの公開](publishing.md))
 
 `iwato.json` を手で直すときは、Iwato を止めてからにしてください。
@@ -45,8 +46,8 @@ Iwato は自分のものをすべて `iwato.json` のフォルダー (起動し�
 - 設定フォルダーの秘密: ゲートウェイとドライバの証明書、Tailscale のシークレットとノード (先にログアウトします)、Web Push の鍵と登録、すべての端末のログイン、ファイルのアプリパスワードと秘密の URL。macOS ではこれらの秘密を暗号化するキーチェーンの鍵も
 - 途中のプロバイダーへのログイン (Atlassian、Claude、xAI): 最初にやめます
 
-残すもの: `iwato.exe`、ログ、WSLc のセッション (VHDX) そのもの、サンドボックスに指定したほかのイメージ、OpenShell の実行用のイメージ。自分のプリセット・プロファイル (`presets\`、`profiles\`) と `iwato.json` の設定 (公開の設定など) も、既定では残します (ダイアログのチェックで一緒に消せます)。
+残すもの: `iwato.exe`、ログ、WSLc のセッション (VHDX) そのもの、サンドボックスに指定したほかのイメージ、OpenShell の実行用のイメージ。自分のプリセット・プロファイル (`presets/`、`profiles/`) と `iwato.json` の設定 (公開の設定など) も、既定では残します (ダイアログのチェックで一緒に消せます)。
 
-VHDX は小さくなりません。消したボリュームのブロックは、VHDX を圧縮するか消すまでそのファイルに残り、サンドボックスのデータを取り出せる可能性があります。残したくないときは、リセットの後で WSLc のセッションを消すか、VHDX を圧縮してください。
+VHDX は WSLc がサンドボックスを置く仮想ディスクです。リセットしても小さくならず、消したボリュームのデータを取り出せることがあります。確実に消すには、リセットの後で WSLc のセッションを消すか、VHDX を圧縮してください。
 
 終わると、すべての端末のログインが終わります。コンソールに表示される新しいログインの URL を開いてください。Iwato はゲートウェイとイメージを最初から用意し直します (数分かかります)。イメージやゲートウェイの準備中は実行できません。

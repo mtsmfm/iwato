@@ -19,7 +19,7 @@
 ## 前提
 
 - Windows 11 と WSL 3.0.1 以上 (`wslc.exe --version`)
-- または (試験的) Apple Silicon の Mac か Linux と Docker 互換のエンジン。おすすめは [Colima](https://github.com/abiosoft/colima) で、Docker Desktop・OrbStack でも動きます
+- または (試験的) Apple Silicon の Mac か Linux (ソースからビルド) と Docker 互換のエンジン。おすすめは [Colima](https://github.com/abiosoft/colima) で、Docker Desktop・OrbStack でも動きます
 
 ## インストールと最初の起動
 
@@ -31,11 +31,13 @@
 
 表示された `http://127.0.0.1:17600/#token=...` を開きます (10 分以内・1 回限り)。初回はイメージの取得とゲートウェイの起動に数分かかります。WSLc やエンジンを使えないときは、画面に理由と直し方が出ます。あとはサンドボックスを作成して起動し、ターミナルを開きます。
 
-macOS (試験的。実機ではまだ試していません):
+macOS (試験的。実機ではまだ試していません) では、[edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64` をダウンロードし、専用のフォルダーに `iwato` として置いて、そこで実行します:
 
 ```sh
 brew install colima docker docker-buildx
 colima start --cpu 4 --memory 8
+chmod +x iwato
+xattr -d com.apple.quarantine iwato
 ./iwato
 ```
 

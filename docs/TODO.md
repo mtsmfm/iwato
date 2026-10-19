@@ -37,7 +37,7 @@ Open work. Decisions live in `docs/adr/`; this file lists only the work. Remove 
 
 ## Distribution
 
-- [ ] Distribute the Windows exe unsigned through winget and/or scoop (no code-signing certificate); document the SmartScreen prompt for direct downloads
+- [ ] Distribute the Windows exe unsigned through winget and/or scoop (no code-signing certificate)
 
 ## On hold
 

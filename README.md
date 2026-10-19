@@ -19,7 +19,7 @@
 ## Requirements
 
 - Windows 11 with WSL 3.0.1 or later (`wslc.exe --version`)
-- Or (experimental) an Apple Silicon Mac, or Linux, with a Docker-compatible engine: [Colima](https://github.com/abiosoft/colima) is recommended, Docker Desktop and OrbStack work too
+- Or (experimental) an Apple Silicon Mac, or Linux (build from source), with a Docker-compatible engine: [Colima](https://github.com/abiosoft/colima) is recommended, Docker Desktop and OrbStack work too
 
 ## Install and first run
 
@@ -31,11 +31,13 @@ Download `iwato-windows-amd64.exe` (or `-arm64`) from [Releases](https://github.
 
 Open the printed `http://127.0.0.1:17600/#token=...` (once, within 10 minutes). The first start pulls the images and starts the gateway, which takes a few minutes; if WSLc or the engine cannot be used, the page says why and how to fix it. Then create a sandbox, start it and open its terminal.
 
-On macOS (experimental, not yet tried on a real Mac):
+On macOS (experimental, not yet tried on a real Mac), download `iwato-darwin-arm64` from [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), save it as `iwato` in a folder of its own, and run it there:
 
 ```sh
 brew install colima docker docker-buildx
 colima start --cpu 4 --memory 8
+chmod +x iwato
+xattr -d com.apple.quarantine iwato
 ./iwato
 ```
 

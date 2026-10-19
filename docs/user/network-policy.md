@@ -13,8 +13,8 @@ Iwato turns on OpenShell's Policy Advisor for every sandbox. When an agent needs
 The switch at the top of the tab, which stays in place while you scroll, chooses between the lists (**List**) and the policy as YAML (**YAML**); the browser remembers the choice. The lists show OpenShell's data only (Iwato stores none of it):
 
 - **Waiting for approval**: proposals waiting for you. **Approve** or **Reject**
-- **Allowed**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Provider rules are read-only. Rules on the hosts a provider's credentials reach are marked as that provider's ("Provider X's destination"). For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
-- **Rejected**
+- **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Provider rules are read-only. Rules on the hosts a provider's credentials reach are marked as that provider's ("Provider X's destination"). For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
+- **Rejected proposals**
 
 The tab also has: **Add a rule**, adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, **History** (provider rules are not in it), and **Presets**.
 
@@ -32,7 +32,7 @@ Saving is refused when:
 
 If a change made directly in OpenShell (its CLI) lands while saving, it may be replaced; the tab says so.
 
-A rule added or changed that reaches a host where a provider's credentials go (any provider type, attached or not) is asked first, naming the providers: allowed, the credential goes with that traffic too. For GitHub, the provider's scope can allow it more narrowly. Adding a rule or methods and paths by hand, including from a provider rule's blocked requests, is asked the same way. A rule bound to a provider's credential cannot change its programs.
+A rule added or changed that reaches a host where a provider's credentials go (any provider type, attached or not) asks for confirmation and names the providers. If you allow it, the provider's credential is also sent with that traffic. For GitHub, the provider's scope can allow it more narrowly. Adding a rule or methods and paths by hand, including from a provider rule's blocked requests, is asked the same way. A rule bound to a provider's credential cannot change its programs.
 
 Approved proposals stay approved, and presets stay in the list; taking a preset out later removes only the rules that are still as it made them.
 
@@ -41,7 +41,10 @@ Approved proposals stay approved, and presets stay in the list; taking a preset 
 The approve dialog shows the destination and the agent's reason first, then lets you narrow the proposal before approving:
 
 - **Read only** or **Allow writes**: read only allows `GET`, `HEAD` and `OPTIONS` on the paths listed (none listed: every path). Allow writes sets the method per path, for example `POST` on one path (`*` is one segment, `**` is everything below); the writes it allows are listed above the paths. The dialog starts with what the proposal needs
-- **Details**: the program (exactly that path, the same path with versions as `*` so an update keeps working (the default when the path has a version), names starting the same, everything under a folder, or any program; a rule also covers the processes the program starts), approving as proposed, and **Audit**: let every request through and record it, then later pick the recorded requests to allow and switch to enforcing (**Allow only the chosen ones and switch to enforce**). Use it when you do not know the paths yet
+- **Details**:
+  - The program: exactly that path; the same path with versions as `*`, so an update keeps working (the default when the path has a version); names starting the same; everything under a folder; or any program. A rule also covers the processes the program starts
+  - Approving as proposed
+  - **Audit**: let every request through and record it, then pick the recorded requests to allow and switch to enforcing (**Allow only the chosen ones and switch to enforce**). Use it when you do not know the paths yet
 
 An approval applies the whole rule, so the dialog shows all of it:
 
@@ -72,7 +75,7 @@ Presets never include hosts where a provider's credentials go (github.com, api.g
 
 ### Your own presets
 
-Add, edit and delete your own presets under Presets in the policy tab (New preset, Edit YAML, Delete). They are stored as `presets\*.yaml` in the config folder, and are read again whenever the list is shown, so you can also edit them with another editor; a file that cannot be read is listed with the reason. Your presets get the id `user:ID`, so they never shadow Iwato's.
+Add, edit and delete your own presets under Presets in the policy tab (New preset, Edit YAML, Delete). They are stored as `presets/*.yaml` in the config folder, and are read again whenever the list is shown, so you can also edit them with another editor; a file that cannot be read is listed with the reason. Your presets get the id `user:ID`, so they never shadow Iwato's.
 
 The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`:
 
