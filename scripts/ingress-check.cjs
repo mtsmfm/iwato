@@ -144,7 +144,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     // The tab: the node and the ports.
     await panel.locator('.port-link').first().waitFor({ timeout: 20000 });
     const links = await panel.locator('.port-link').evaluateAll((els) => els.map((a) => a.href));
-    check(links.includes('https://iwato-dev.tail0000.ts.net:5173/') && links.includes('https://iwato-dev.tail0000.ts.net:3000/'), 'ports link to the node (' + links.join(' ') + ')');
+    check(new Set(links).has('https://iwato-dev.tail0000.ts.net:5173/') && new Set(links).has('https://iwato-dev.tail0000.ts.net:3000/'), 'ports link to the node (' + links.join(' ') + ')');
     check(await panel.locator('.ingress-dns').innerText().then((t) => t.includes('iwato-dev.tail0000.ts.net')), 'the node\'s name shows');
     check(await panel.getByText('::1 だけで待っています').count() === 1, 'a ::1-only server is noted');
     check(await noSideScroll(panel), 'the tab does not scroll sideways');

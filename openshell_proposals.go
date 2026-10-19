@@ -665,7 +665,7 @@ func rejectedProposal(c v1.PolicyChunk) RejectedProposal {
 		r.ScopeProvider = m[1]
 	}
 	if m := rejectedHits.FindStringSubmatch(c.RejectionReason); m != nil {
-		if n, err := strconv.Atoi(m[1]); err == nil && c.HitCount >= int32(n) {
+		if n, err := strconv.ParseInt(m[1], 10, 32); err == nil && c.HitCount >= int32(n) {
 			r.HitsAfter = c.HitCount - int32(n)
 		}
 	}

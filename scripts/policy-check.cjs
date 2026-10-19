@@ -49,7 +49,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const current = panel.locator('.policy-current');
     await current.getByText('allow_api_example_com_443').waitFor();
     // A phone folds each rule to a line; open opens one (once).
-    const rule = (name) => current.locator('.policy-rule').filter({ has: page.locator('.policy-rule-name', { hasText: new RegExp('^' + name.replace(/[.*]/g, '\\$&') + '$') }) });
+    const rule = (name) => current.locator('.policy-rule').filter({ has: page.locator('.policy-rule-name', { hasText: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') }) });
     const open = async (name) => { if (phone && await rule(name).getAttribute('data-open') !== 'true') await rule(name).getByRole('button', { name: '規則「' + name + '」を開く' }).click(); };
     await page.screenshot({ path: path.join(dir, 'policy.png'), fullPage: true });
     await open('allow_api_example_com_443');
