@@ -1,0 +1,6 @@
+IWATO_SHELL=/etc/iwato/shell
+source "$IWATO_SHELL/envs"
+source "$IWATO_SHELL/shell"
+source "$IWATO_SHELL/aliases"
+source "$IWATO_SHELL/init"
+[[ $- == *i* ]] && bind -f "$IWATO_SHELL/inputrc"

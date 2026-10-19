@@ -1,0 +1,81 @@
+# Iwato's Hugging Face profile: the Hub (models, datasets, spaces) for
+# downloads. Iwato imports it into the gateway (platform scope) when it
+# prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-huggingface.yaml
+#
+# Client binaries:   python3 (the image's, mise's and uv's interpreters:
+#                    huggingface_hub, the `hf` / `huggingface-cli` scripts,
+#                    transformers, diffusers and hf_xet all run in the
+#                    interpreter), mise's node (huggingface.js,
+#                    transformers.js), curl and wget, and git with its HTTPS
+#                    helper (git-lfs runs under git, so it matches git as an
+#                    ancestor). OpenShell matches the interpreter, not the
+#                    script, so any Python or Node program may use the token:
+#                    a narrower list is not possible for these tools.
+# Credential scope:  HF_TOKEN, and HUGGING_FACE_HUB_TOKEN (the older name
+#                    huggingface_hub still reads: utils/_auth.py), sent as a
+#                    bearer authorization header (git: the Basic password) to
+#                    huggingface.co and hf.co only: the hosts huggingface_hub
+#                    forwards the token to (constants.py HF_URL_HOSTS).
+# Endpoint access:   reads: GET and HEAD, plus the POSTs that only read:
+#                    paths-info (snapshot_download, hf_hub_download), the
+#                    git-lfs batch API and git-upload-pack (clone, fetch).
+#                    Uploads, commits, repo creation and Inference Providers
+#                    (router.huggingface.co, not listed) take a policy
+#                    proposal (approving one widens the provider's scope:
+#                    ADR 0006, 0014); the token reaches only the hosts above.
+# Downloads:         /resolve/ answers with a redirect to a signed URL on
+#                    cdn-lfs*.huggingface.co, cas-bridge.xethub.hf.co or other
+#                    *.hf.co hosts (Xet storage: cas-server.xethub.hf.co with
+#                    the short-lived token the Hub returns). huggingface_hub
+#                    drops the authorization header there (file_download.py:
+#                    "Remove authorization header when downloading a LFS blob
+#                    from a CDN"), so they need no credential and are not
+#                    listed: every endpoint of a profile with credentials is
+#                    credentialed (OpenShell would resolve the placeholder
+#                    there, and refuses an uninspected rule for it). Approve
+#                    them as ordinary rules (read-only) when proposed.
+# Verified:          from huggingface_hub's source (main, via GitHub).
+#                    The redirect hosts above are from the source, not
+#                    observed.
+
+id: iwato-huggingface
+display_name: Hugging Face (Iwato)
+description: Hugging Face Hub downloads for Iwato's sandbox image
+category: data
+credentials:
+  - name: token
+    description: Hugging Face user access token
+    env_vars: [HF_TOKEN, HUGGING_FACE_HUB_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [token]
+endpoints:
+  - host: huggingface.co
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    rules:
+      - allow: { method: GET, path: "**" }
+      - allow: { method: HEAD, path: "**" }
+      - allow: { method: OPTIONS, path: "**" }
+      - allow: { method: POST, path: "/api/**/paths-info/**" }
+      - allow: { method: POST, path: "/**/info/lfs/objects/batch" }
+      - allow: { method: POST, path: "/**/git-upload-pack" }
+  - host: hf.co
+    port: 443
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl
+  - /usr/bin/wget
+  - /usr/bin/python3*
+  - /home/dev/.local/share/mise/installs/python/*/bin/python3*
+  - /home/dev/.local/share/uv/python/*/bin/python3*
+  - /home/dev/.local/share/mise/installs/node/*/bin/node
+  - /usr/bin/git
+  - /usr/lib/git-core/git-remote-http
+  - /usr/lib/git-core/git-remote-https

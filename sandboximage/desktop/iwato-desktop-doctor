@@ -1,0 +1,36 @@
+#!/bin/sh
+# iwato-desktop-doctor: what to look at when the desktop does not start
+# (Xvfb "Failed to compile keymap" and the like). Prints facts; changes nothing
+# except a short Xvfb test run on display :97 in a temp directory.
+echo "== id and directories"; id
+ls -ld /tmp /tmp/.X11-unix /var/lib/xkb 2>&1
+echo "== programs"
+command -v Xvfb xkbcomp selkies-session 2>&1
+xkbcomp -version 2>&1 | head -n 1
+echo "== seccomp / capabilities"
+grep -E '^(NoNewPrivs|Seccomp|CapEff)' /proc/self/status
+# Xvfb's xkbcomp child calls setgid(getgid()) and setuid(getuid()) and exits
+# 127 when either fails: under the sandbox's seccomp filter they do.
+python3 -c '
+import os
+for f, a in ((os.setgid, os.getgid()), (os.setuid, os.getuid())):
+    try: f(a); print(f.__name__ + "(own id): ok")
+    except OSError as e: print(f.__name__ + "(own id): " + str(e) + "  <- Xvfb cannot start xkbcomp without the shim")
+' 2>&1
+echo "== shim"
+ls -l /usr/local/lib/iwato/libiwato-noid.so 2>&1
+echo "LD_PRELOAD=${LD_PRELOAD:-}"
+echo "== Xvfb :97 for 5 seconds (with LD_PRELOAD as the shell has it)"
+d="$(mktemp -d)" && cd "$d" || exit 1
+if timeout 5 Xvfb :97 >"$d/xvfb.out" 2>&1; then :; else rc=$?; [ "$rc" = 124 ] && echo "Xvfb stayed up (OK)" || { echo "Xvfb exited with $rc:"; tail -n 20 "$d/xvfb.out"; }; fi
+rm -rf "$d" /tmp/.X97-lock /tmp/.X11-unix/X97 /tmp/server-97.xkm 2>/dev/null
+echo "== browser (what a link click uses)"
+echo "BROWSER=${BROWSER:-}  IWATO_DESKTOP_SESSION=${IWATO_DESKTOP_SESSION:-}"
+command -v firefox x-www-browser sensible-browser xdg-open exo-open xfce4-mime-helper 2>&1
+readlink -f /usr/bin/x-www-browser 2>&1
+grep -H WebBrowser ~/.config/xfce4/helpers.rc /etc/xdg/xfce4/helpers.rc 2>&1
+grep -H -E 'x-scheme-handler/https?=|text/html=' ~/.config/mimeapps.list /etc/xdg/mimeapps.list 2>&1
+xdg-mime query default x-scheme-handler/https 2>&1
+xfce4-mime-helper --query WebBrowser 2>&1
+timeout 20 firefox --version 2>&1 | head -n 2
+echo "== log"; tail -n 20 "${IWATO_DESKTOP_LOG:-${HOME:-/sandbox}/.cache/iwato-desktop.log}" 2>&1

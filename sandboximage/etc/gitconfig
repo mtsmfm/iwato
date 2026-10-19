@@ -1,0 +1,10 @@
+# SSH is unavailable; GitHub over HTTPS.
+[url "https://github.com/"]
+	insteadOf = git@github.com:
+	insteadOf = ssh://git@github.com/
+# A GitHub provider (Iwato's iwato-github profile) gives GITHUB_TOKEN and
+# GH_TOKEN as placeholders. git reads neither, so this helper answers with
+# the placeholder as the password (Basic auth); OpenShell's proxy replaces
+# it on the way to github.com. Without a token it answers nothing.
+[credential "https://github.com"]
+	helper = "!f() { test \"$1\" = get || exit 0; t=${GITHUB_TOKEN:-$GH_TOKEN}; test -n \"$t\" || exit 0; echo username=x-access-token; echo \"password=$t\"; }; f"

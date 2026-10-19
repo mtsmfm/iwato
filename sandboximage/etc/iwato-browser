@@ -1,0 +1,20 @@
+#!/bin/sh
+# BROWSER for programs in dev that open links themselves (CLI logins, TUIs
+# when a link is clicked, Python's webbrowser). There is no browser here: the
+# browser terminal showing this session opens the URL in a new tab when it
+# reads OSC 6464;open;URL (web/app.js), only for http(s) and only right after
+# the owner's own click or key there.
+status=1
+for url in "$@"; do
+  case "$url" in
+    *[[:cntrl:]]*) echo "iwato-browser: invalid URL" >&2; continue ;;
+    http://*|https://*) ;;
+    *) echo "iwato-browser: only http(s) URLs open: $url" >&2; continue ;;
+  esac
+  if printf '\033]6464;open;%s\007' "$url" 2>/dev/null > /dev/tty; then
+    status=0
+  else
+    echo "iwato-browser: no terminal to open $url; open it yourself" >&2
+  fi
+done
+exit $status

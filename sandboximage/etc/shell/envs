@@ -1,0 +1,30 @@
+export BAT_THEME=ansi
+
+# Color man pages with bat
+if command -v bat &> /dev/null; then
+  export MANROFFOPT="-c"
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi
+
+# Omarchy's prompt unless the user has their own starship config
+[[ -f ~/.config/starship.toml ]] || export STARSHIP_CONFIG=/etc/iwato/shell/starship.toml
+
+if [ -z "${LANG:-}" ]; then
+  export LANG=C.UTF-8
+fi
+
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$PATH:$HOME/.local/bin" ;;
+esac
+
+# Programs that open links themselves (CLI logins, a link clicked in a TUI)
+# ask the browser terminal to open them (no browser runs in the container).
+# Inside the desktop (iwato-desktop sets IWATO_DESKTOP_SESSION) there is the
+# desktop's Firefox instead, and iwato-browser would fail there: it writes to
+# the controlling terminal, which the desktop session does not have.
+if [ -n "${IWATO_DESKTOP_SESSION:-}" ]; then
+  export BROWSER=firefox
+else
+  export BROWSER=/usr/local/bin/iwato-browser
+fi

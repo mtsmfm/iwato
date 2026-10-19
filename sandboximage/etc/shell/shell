@@ -1,0 +1,43 @@
+# History control
+shopt -s histappend
+HISTCONTROL=ignoreboth
+HISTSIZE=32768
+HISTFILESIZE="${HISTSIZE}"
+# Save each command line before it runs. Terminal sessions end with the
+# container (stop or delete), never with a clean exit, so history written only at
+# exit was lost, and so was the line of a command still running then (an agent CLI, a
+# dev server) when it was written only at the next prompt; ~/.bash_history is in
+# the home volume and survives.
+# PS0 is expanded once per command line, in this shell, just before it runs: it
+# only marks the line (an arithmetic assignment; a command substitution there runs
+# in a subshell, whose history -a would not move this shell's append position, so
+# the prompt would write the line again). The DEBUG trap of the first command then
+# appends it. The prompt still appends, for lines that run no simple command in
+# this shell, like `( cmd )`, and for history -s.
+if [[ $- == *i* ]]; then
+  __iwato_history_append() {
+    __iwato_history_pending=
+    history -a
+    : "$1" # keep $_ for the command
+  }
+  # Set, even if empty: bash skips the arithmetic of an unset variable's substring.
+  __iwato_history_pending=
+  [[ ${PS0-} == *__iwato_history_pending* ]] ||
+    PS0='${__iwato_history_pending:$((__iwato_history_pending=1,0)):0}'"${PS0-}"
+  # The trap runs before every simple command, so it only tests the mark (and
+  # returns 0: with extdebug, a nonzero status would skip the command). It cannot
+  # chain an earlier DEBUG trap: a sourced file does not see one (bash hides it
+  # without set -T), and the rc files set none before this one.
+  # With set -T (extdebug sets it) the trap also runs in command substitutions,
+  # like another PS0 one after the mark: only this shell appends ($BASHPID is $$).
+  trap '[[ -z $__iwato_history_pending || $BASHPID != $$ ]] || __iwato_history_append "$_"' DEBUG
+fi
+PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+
+# Autocompletion
+if [[ ! -v BASH_COMPLETION_VERSINFO && -f /usr/share/bash-completion/bash_completion ]]; then
+  source /usr/share/bash-completion/bash_completion
+fi
+
+# Ensure command hashing is off for mise
+set +h

@@ -1,0 +1,77 @@
+# Iwato's Claude Code sign-in profile: Claude Code with the
+# owner's Claude account (Pro, Max), signed in by Iwato instead of
+# `claude setup-token` (iwato-claude.yaml, the recommended way).
+# Iwato.exe signs in with Claude Code's public OAuth client (authorization
+# code with PKCE: a loopback redirect on the PC, or Claude Code's own
+# "paste the code" page from a phone) and gives the gateway the refresh
+# token; the gateway refreshes the access token (oauth2_refresh_token) and
+# the sandbox gets a placeholder. Iwato imports it into the gateway
+# (platform scope) when it prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-claude-subscription.yaml
+#
+# Client binaries:   the same as iwato-claude.yaml.
+# Credential scope:  CLAUDE_CODE_OAUTH_TOKEN, sent as a bearer authorization
+#                    header to api.anthropic.com only.
+# Endpoint access:   as iwato-claude.yaml. Claude Code treats a token from
+#                    CLAUDE_CODE_OAUTH_TOKEN as inference-only (scopes from
+#                    CLAUDE_CODE_OAUTH_SCOPES, else user:inference), so it
+#                    sends it to api.anthropic.com (inference,
+#                    /api/oauth/*), as with a setup-token. A full login
+#                    would also use mcp-proxy.anthropic.com (claude.ai
+#                    connectors); it is not listed.
+# Sign-in:           client_id 9d1c250a-e61b-44d9-88ed-5944d1962f5e,
+#                    authorize https://claude.com/cai/oauth/authorize
+#                    (with code=true), token
+#                    https://platform.claude.com/v1/oauth/token (JSON body,
+#                    with state), redirect http://localhost:PORT/callback
+#                    or https://platform.claude.com/oauth/code/callback
+#                    (the page shows CODE#STATE to paste). Scopes: Claude
+#                    Code's refresh set (below); Iwato leaves out
+#                    org:create_api_key, which Claude Code's login also
+#                    asks for, so that a placeholder cannot mint an API key.
+# Refresh:           at the token endpoint, a public client: client_id,
+#                    refresh_token and scope, no secret. Claude Code
+#                    refreshes 5 minutes before expires_in and takes a new
+#                    refresh_token when one comes (rotation); the gateway
+#                    stores the new one. Claude Code sends JSON; the gateway
+#                    sends a form, which is not verified.
+# Verified:          from Claude Code 2.1.295's native binary (OAuth
+#                    configuration, authorize URL builder, code exchange,
+#                    refresh, CLAUDE_CODE_OAUTH_TOKEN handling). Not run
+#                    against Anthropic; the access token's lifetime is not
+#                    known (the profile caps it at 1 hour).
+
+id: iwato-claude-subscription
+display_name: Claude Code sign-in (Iwato)
+description: Claude Code with a Claude account sign-in the gateway refreshes
+category: agent
+credentials:
+  - name: access_token
+    description: Claude Code OAuth access token (Claude account sign-in)
+    env_vars: [CLAUDE_CODE_OAUTH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://platform.claude.com/v1/oauth/token
+      scopes: [user:profile, user:inference, user:sessions:claude_code, user:mcp_servers, user:file_upload, user:plugins]
+      refresh_before: "300s"
+      max_lifetime: "3600s"
+      material:
+        - name: client_id
+          description: OAuth client ID (Claude Code's public client)
+          required: true
+        - name: refresh_token
+          description: OAuth refresh token
+          required: true
+          secret: true
+endpoints:
+  - host: api.anthropic.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /home/dev/.local/share/claude/versions/*
+  - /home/dev/.local/share/mise/installs/claude/*/claude

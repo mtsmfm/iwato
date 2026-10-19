@@ -1,0 +1,91 @@
+# Iwato's Comfy Cloud profile: Comfy Cloud's API (run workflows, upload
+# inputs, read outputs) and Comfy's API for Partner Nodes. Iwato imports it
+# into the gateway (platform scope) when it prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-comfy-cloud.yaml
+#
+# Client binaries:   python3 (the image's, mise's and uv's interpreters: the
+#                    Python SDK, scripts, comfy-cli and a ComfyUI running in
+#                    the sandbox), mise's node (the TypeScript SDK), curl and
+#                    wget. Any Python or Node program may use the key:
+#                    OpenShell matches the interpreter, not the script. wget is
+#                    not in the standard image.
+# Credential scope:  COMFY_CLOUD_API_KEY (the Cloud API docs) and
+#                    COMFY_API_KEY (the Comfy SDKs' docs): the same key from
+#                    platform.comfy.org. It is sent
+#                    - as X-API-Key to cloud.comfy.org/api (v1), or as a
+#                      bearer authorization header (v2, /api/v2);
+#                    - as `?token=` on the WebSocket (wss://cloud.comfy.org/ws);
+#                    - again in the JSON body of POST /api/prompt, as
+#                      extra_data.api_key_comfy_org, for Partner Nodes. That
+#                      endpoint alone sets request_body_credential_rewrite
+#                      (OpenShell rewrites UTF-8 JSON, form and text bodies up
+#                      to 256 KiB and fails larger ones: image uploads must not
+#                      go through it);
+#                    - as X-API-KEY to api.comfy.org by a ComfyUI in the
+#                      sandbox that runs Partner Nodes (ComfyUI's
+#                      comfy_api_nodes/util/_helpers.py).
+# Endpoint access:   cloud.comfy.org/api/** read-write (POST runs workflows and
+#                    spends credits; that is what the key is for); DELETE takes
+#                    a policy proposal. The WebSocket: the upgrade only (the
+#                    client only listens). api.comfy.org read-write.
+# Downloads:         /api/view and /api/v2/assets/ID/content answer with a 302
+#                    to a signed storage URL (about 6 hours), which carries its
+#                    own authorization: Comfy's docs fetch it without the key.
+#                    The host is not documented; it is not listed (every
+#                    endpoint of a profile with credentials is credentialed,
+#                    and OpenShell refuses an uninspected rule for it). Approve
+#                    it as an ordinary read-only rule when proposed.
+# Verified:          from Comfy-Org/docs (development/cloud/overview.mdx,
+#                    api-reference.mdx, api-reference/v2/overview.mdx, via
+#                    GitHub). Not verified: OpenShell resolving a
+#                    placeholder in a WebSocket upgrade's query, and choosing
+#                    the /api/prompt endpoint (more specific) over /api/**.
+
+id: iwato-comfy-cloud
+display_name: Comfy Cloud (Iwato)
+description: Comfy Cloud API and Partner Nodes for Iwato's sandbox image
+category: inference
+credentials:
+  - name: api_key
+    description: Comfy API key (platform.comfy.org)
+    env_vars: [COMFY_CLOUD_API_KEY, COMFY_API_KEY]
+    required: true
+    auth_style: header
+    header_name: x-api-key
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: cloud.comfy.org
+    port: 443
+    path: /api/**
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  # Partner Nodes: the key again in extra_data.api_key_comfy_org.
+  - host: cloud.comfy.org
+    port: 443
+    path: /api/prompt
+    protocol: rest
+    enforcement: enforce
+    request_body_credential_rewrite: true
+    rules:
+      - allow: { method: POST, path: /api/prompt }
+  # Progress: wss://cloud.comfy.org/ws?clientId=...&token=KEY.
+  - host: cloud.comfy.org
+    port: 443
+    path: /ws
+    protocol: websocket
+    access: read-only
+    enforcement: enforce
+  - host: api.comfy.org
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl
+  - /usr/bin/wget
+  - /usr/bin/python3*
+  - /home/dev/.local/share/mise/installs/python/*/bin/python3*
+  - /home/dev/.local/share/uv/python/*/bin/python3*
+  - /home/dev/.local/share/mise/installs/node/*/bin/node

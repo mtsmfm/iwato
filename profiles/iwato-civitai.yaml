@@ -1,0 +1,69 @@
+# Iwato's Civitai profile: the site API (models, images, downloads) and the
+# orchestration (generation) API. Iwato imports it into the gateway
+# (platform scope) when it prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-civitai.yaml
+#
+# Client binaries:   curl and wget (Civitai's own download examples), python3
+#                    (the image's, mise's and uv's interpreters: civitai-py,
+#                    ComfyUI and its model managers, download scripts). Any
+#                    Python program may use the key: OpenShell matches the
+#                    interpreter, not the script. wget is not in the standard
+#                    image (it is listed for images that have it).
+# Credential scope:  CIVITAI_API_TOKEN (civitai-py) and CIVITAI_TOKEN (used by
+#                    ComfyUI tools and download scripts): the same key. It is
+#                    sent as a bearer authorization header, or as the
+#                    `?token=` query parameter (Civitai accepts both; OpenShell
+#                    resolves the placeholder in either place), to civitai.com
+#                    /api and orchestration.civitai.com only.
+# Endpoint access:   civitai.com/api/** read-only: /api/v1 (search, model
+#                    versions, the signed-in user's favorites) and
+#                    /api/download/models/ID. orchestration.civitai.com
+#                    read-only (workflow status); submitting a workflow is a
+#                    POST that spends Buzz, so it takes a policy proposal;
+#                    approving it widens the provider's scope (ADR 0006,
+#                    0014; the host is listed for that).
+# Downloads:         /api/download/models/ID redirects to a short-lived signed
+#                    URL on Civitai's storage (a delivery worker in front of
+#                    Cloudflare R2 / Backblaze B2; the host is configuration,
+#                    not in Civitai's source). The URL carries its own
+#                    authorization and no credential is sent there: it is not
+#                    listed (every endpoint of a profile with credentials is
+#                    credentialed, and OpenShell refuses an uninspected rule
+#                    for it). Approve it as an ordinary read-only rule when
+#                    proposed.
+# Verified:          the API key placement from Civitai's REST API reference
+#                    (the civitai/civitai wiki, now deprecated) and civitai-py.
+#                    Not checked against developer.civitai.com; the storage
+#                    redirect host is unverified.
+
+id: iwato-civitai
+display_name: Civitai (Iwato)
+description: Civitai API and model downloads for Iwato's sandbox image
+category: data
+credentials:
+  - name: api_key
+    description: Civitai API key
+    env_vars: [CIVITAI_API_TOKEN, CIVITAI_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: civitai.com
+    port: 443
+    path: /api/**
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+  - host: orchestration.civitai.com
+    port: 443
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl
+  - /usr/bin/wget
+  - /usr/bin/python3*
+  - /home/dev/.local/share/mise/installs/python/*/bin/python3*
+  - /home/dev/.local/share/uv/python/*/bin/python3*

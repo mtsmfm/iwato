@@ -1,0 +1,134 @@
+# Runs the driver's end-to-end check (internal/openshell/wslc/e2e.sh,
+# MODE=tls: the released OpenShell gateway, CLI, sandbox and supervisor with
+# the fake wslc, and Iwato's Go e2e tests) on every push (and by hand).
+# The script expects a disposable Linux dev container with passwordless
+# sudo; the runner is made to look like one first (see the steps).
+name: e2e
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The exe (and so the test binary) embeds web/vendor.
+      - run: python3 scripts/fetch-vendor.py
+      - name: Install ssh and socat
+        run: |
+          if ! command -v ssh >/dev/null || ! command -v socat >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y openssh-client socat
+          fi
+      # The fake wslc reads the image's /etc/passwd from this machine and
+      # the sandbox image's user is dev: the workload runs as dev, uid 1000
+      # (the checks expect 1000 and `id -un` = dev), in this /sandbox. The
+      # e2e itself runs as dev too, with passwordless sudo, as in the dev
+      # container (the tests read and write the files the sandbox user
+      # places), from a copy of the checkout in its home (the runner's
+      # home is closed to others). e2e.sh makes /home/dev, which stands for
+      # the sandbox's home volume (the fake mounts none).
+      - name: Add the sandbox user (dev, uid 1000) and /sandbox
+        run: |
+          if name=$(getent passwd 1000 | cut -d: -f1) && [ -n "$name" ]; then
+            [ "$name" = dev ] || sudo usermod -l dev "$name"
+            sudo usermod -d /var/lib/iwato-e2e -m dev
+          else
+            sudo useradd -u 1000 -U -m -d /var/lib/iwato-e2e -s /bin/bash dev
+          fi
+          echo 'dev ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/iwato-e2e >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/iwato-e2e
+          sudo install -d -o 1000 -g 1000 -m 0755 /sandbox
+          sudo cp -r "$GITHUB_WORKSPACE" /var/lib/iwato-e2e/iwato
+          sudo chown -R dev: /var/lib/iwato-e2e/iwato
+          getent passwd dev
+          # What a file made under /home/dev would inherit.
+          getfacl -p /home 2>/dev/null || true
+      # dev builds with the Go caches setup-go restored (the runner's), so
+      # the build does not start from nothing: dev owns them for the run,
+      # and every directory above them lets it through.
+      - name: Share the Go caches with dev
+        run: |
+          for d in "$(go env GOMODCACHE)" "$(go env GOCACHE)"; do
+            mkdir -p "$d"
+            sudo chown -R dev "$d"
+            while [ "$d" != / ]; do sudo chmod o+x "$d"; d=$(dirname "$d"); done
+          done
+      # Each sandbox's DNS relay binds 127.0.0.53:53, where systemd-resolved
+      # listens on Ubuntu: stop it and resolve through its upstream servers
+      # directly, so the downloads (Go modules, OpenShell's releases) work.
+      - name: Free port 53
+        run: |
+          upstream=$(grep '^nameserver' /run/systemd/resolve/resolv.conf || true)
+          [ -n "$upstream" ] || { echo "no upstream DNS server"; cat /run/systemd/resolve/resolv.conf; exit 1; }
+          sudo systemctl stop systemd-resolved
+          sudo rm -f /etc/resolv.conf
+          printf '%s\n' "$upstream" | sudo tee /etc/resolv.conf
+          held=$(sudo ss -Hlntup 'sport = :53')
+          [ -z "$held" ] || { echo "port 53 is still held: $held"; exit 1; }
+          getent hosts github.com proxy.golang.org
+      # As in the dev container (no AppArmor there): Ubuntu 24.04 keeps
+      # users other than root from creating user namespaces.
+      - name: Allow user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # The sandbox, capability-free, binds its DNS relay on 127.0.0.53:53:
+      # Docker containers (the dev container) let any user bind any port;
+      # the runner VM keeps ports below 1024 to root.
+      - name: Allow binding low ports
+        run: sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0
+      # OpenShell's network broker (in openshell-sandbox, which runs as the
+      # workload's user, capability-free and under no_new_privs) checks a
+      # workload's bind and connect by reading its memory (process_vm_readv,
+      # then /proc/PID/mem). Yama's ptrace_scope 1 (Ubuntu's default) lets
+      # it read only its descendants. On WSLc the sandbox is PID 1, so every
+      # workload process is one; with the fake wslc it is not, and a server
+      # started in its own session whose exec has ended (as from a terminal)
+      # is reparented out of its tree: its bind fails (EACCES). Scope 0
+      # keeps the same-user rule only, so TestOpenShellIngressE2E's detached
+      # server runs (it skips without this). File capabilities cannot help:
+      # the sandbox refuses to start with any capability, and no_new_privs
+      # ignores them. IWATO_E2E_REQUIRE_INSIDE=1 (below) turns that skip into
+      # a failure, so these checks cannot quietly stop running here.
+      - name: Let the sandbox read its user's processes (Yama)
+        run: sudo sysctl -w kernel.yama.ptrace_scope=0
+      - name: e2e.sh (MODE=tls)
+        shell: bash
+        run: |
+          sudo -u dev -H env PATH="$PATH" IWATO_E2E_REQUIRE_INSIDE=1 GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" KEEP=1 MODE=tls /var/lib/iwato-e2e/iwato/internal/openshell/wslc/e2e.sh 2>&1 | tee "$RUNNER_TEMP/e2e.out"
+      # KEEP=1 keeps the work directory after a failure (its path on the
+      # `logs:` line): its logs only, not the binaries or the keys.
+      - name: Collect the logs
+        if: failure()
+        run: |
+          dir=$(sed -n 's/^logs: //p' "$RUNNER_TEMP/e2e.out" 2>/dev/null | tail -1)
+          [ -n "$dir" ] || exit 0
+          mkdir -p "$RUNNER_TEMP/e2e-logs"
+          sudo sh -c 'cp "$1"/*.log "$2"/; cp -r "$1/fake" "$2"/' sh "$dir" "$RUNNER_TEMP/e2e-logs"
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/e2e-logs"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-logs-${{ github.sha }}
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+          retention-days: 7
+  # Iwato on a Docker engine, as on macOS (ADR 0002).
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: python3 scripts/fetch-vendor.py
+      - name: Allow user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - run: docker version && docker info --format '{{.OperatingSystem}} {{.Architecture}} {{.SecurityOptions}}'
+      - run: IWATO_E2E_DOCKER=1 go test -run '^TestDockerE2E$' -v -timeout 28m .

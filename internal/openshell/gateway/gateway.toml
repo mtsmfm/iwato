@@ -1,0 +1,27 @@
+[openshell]
+version = 2
+
+[openshell.gateway]
+name           = "iwato"
+bind_address   = "0.0.0.0:17670"
+log_level      = "info"
+compute_driver = "wslc"
+
+[openshell.gateway.gateway_jwt]
+signing_key_path = "/var/lib/openshell/tls/jwt/signing.pem"
+public_key_path  = "/var/lib/openshell/tls/jwt/public.pem"
+kid_path         = "/var/lib/openshell/tls/jwt/kid"
+gateway_id       = "iwato"
+
+# The key that encrypts the providers' credentials in the database lives in
+# the state volume with it: the default ($HOME/.local/state) is in the
+# container, which a new gateway image replaces.
+[openshell.gateway.credential_storage]
+key_encryption_key_path = "/var/lib/openshell/credentials/key-encryption-key.bin"
+
+[openshell.drivers.wslc]
+socket_path         = "/run/openshell/wslc.sock"
+allow_driver_config = true
+
+[openshell.drivers.wslc.resource_admission]
+enabled = false

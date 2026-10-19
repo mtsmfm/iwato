@@ -1,0 +1,339 @@
+#!/bin/sh
+# iwato-desktop: the sandbox's Selkies desktop (Xfce), as the sandbox user, on
+# http://127.0.0.1:$PORT. No root, no s6: selkies-session starts Xvfb,
+# PulseAudio, the desktop on its own D-Bus session, and Selkies.
+#
+#   iwato-desktop [start]   start it in the background (the default); already
+#                           running: say so, exit 0. Log: ~/.cache/iwato-desktop.log
+#   iwato-desktop stop      TERM the session, wait briefly, then KILL
+#   iwato-desktop status    running or not, pid, log; exit 0 / 1
+#   iwato-desktop run       in the foreground (what start runs detached)
+#
+# To see it, publish port 6080 in Iwato's 「ポート」 (Ports) tab. Nothing starts it
+# automatically. Stopping the sandbox kills the desktop abruptly, so `run`
+# first removes what a killed desktop leaves behind (stale X locks and
+# sockets, PulseAudio and D-Bus files, Firefox profile locks), only where the
+# owning process is gone. A second copy exits at once; TERM/INT stop the
+# session's processes.
+#
+# IWATO_DESKTOP_PORT (6080)   port Selkies listens on (loopback only)
+# IWATO_DESKTOP_ARGS          more selkies options, e.g. "--encoder=jpeg"
+# IWATO_NVIDIA_LIBS           where the NVIDIA libraries are linked
+# IWATO_DXG, IWATO_WSL_DRIVERS  the GPU device and driver store (for tests)
+# IWATO_DESKTOP_PIDFILE       default ~/.cache/iwato-desktop.pid
+# IWATO_DESKTOP_LOG           default ~/.cache/iwato-desktop.log
+# IWATO_STOP_WAIT             tenths of a second stop waits after TERM (100)
+# IWATO_START_WAIT            tenths of a second start waits for the pidfile (50)
+# IWATO_TMP, IWATO_PROC       /tmp and /proc (for tests)
+# IWATO_NOID_LIB              the LD_PRELOAD shim that lets Xvfb start xkbcomp
+#                             (default /usr/local/lib/iwato/libiwato-noid.so)
+set -eu
+PORT="${IWATO_DESKTOP_PORT:-6080}"
+NV_DIR="${IWATO_NVIDIA_LIBS:-${HOME:-/sandbox}/.local/lib/wsl-nvidia}"
+export IWATO_NVIDIA_LIBS="$NV_DIR"
+
+HOME_DIR="${HOME:-/sandbox}"
+TMP="${IWATO_TMP:-/tmp}"
+PROC="${IWATO_PROC:-/proc}"
+PIDFILE="${IWATO_DESKTOP_PIDFILE:-$HOME_DIR/.cache/iwato-desktop.pid}"
+LOGFILE="${IWATO_DESKTOP_LOG:-$HOME_DIR/.cache/iwato-desktop.log}"
+
+# alive PID PATTERN...: the process exists and its name (comm) matches one of
+# the patterns. A bare kill -0 is not enough: after the sandbox is stopped and
+# started its PIDs begin again, and a stale pid may now be some other process.
+alive() {
+  a_pid="$1"; shift
+  case "$a_pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -r "$PROC/$a_pid/comm" ] || return 1
+  a_comm="$(cat "$PROC/$a_pid/comm" 2>/dev/null)"
+  for a_pat in "$@"; do
+    case "$a_comm" in $a_pat) return 0 ;; esac
+  done
+  return 1
+}
+
+# desktop_running PID: PID is a live iwato-desktop (not this one).
+desktop_running() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" != "$$" ] || return 1
+  [ -r "$PROC/$1/cmdline" ] && tr '\0' ' ' <"$PROC/$1/cmdline" 2>/dev/null | grep -q 'iwato-desktop'
+}
+
+# descendants PID: PID's children, recursively (needs pgrep; without it only
+# the direct child is signalled).
+descendants() {
+  command -v pgrep >/dev/null 2>&1 || return 0
+  for k in $(pgrep -P "$1" 2>/dev/null); do
+    echo "$k"; descendants "$k"
+  done
+}
+
+# running_pid: print the pid in the pidfile when it is a live iwato-desktop
+# (not this process).
+running_pid() {
+  rp=
+  [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ] && read -r rp <"$PIDFILE" 2>/dev/null || true
+  desktop_running "$rp" && echo "$rp"
+}
+
+reach() { echo "iwato-desktop: to open it, publish port $PORT in Iwato's 「ポート」 (Ports) tab"; }
+
+cmd_start() {
+  if p="$(running_pid)"; then
+    echo "iwato-desktop: already running (pid $p), log $LOGFILE"; reach; return 0
+  fi
+  command -v selkies-session >/dev/null 2>&1 || { echo "iwato-desktop: selkies-session not found; this image has no desktop" >&2; return 1; }
+  mkdir -p "$(dirname "$PIDFILE")" "$(dirname "$LOGFILE")"
+  # One old generation of the log, so it does not grow without end.
+  if [ -f "$LOGFILE" ] && [ "$(wc -c <"$LOGFILE" 2>/dev/null || echo 0)" -gt 1048576 ]; then mv -f "$LOGFILE" "$LOGFILE.1" 2>/dev/null || true; fi
+  self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  # A session of its own and no terminal: closing the terminal that ran this
+  # does not stop the desktop.
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup /bin/sh "$self" run >>"$LOGFILE" 2>&1 </dev/null &
+  else
+    nohup /bin/sh "$self" run >>"$LOGFILE" 2>&1 </dev/null &
+  fi
+  # run writes the pidfile before anything else; wait for it.
+  i=0
+  while [ "$i" -lt "${IWATO_START_WAIT:-50}" ]; do
+    if p="$(running_pid)"; then
+      echo "iwato-desktop: started (pid $p), log $LOGFILE"; reach; return 0
+    fi
+    sleep 0.1; i=$((i + 1))
+  done
+  echo "iwato-desktop: started, but it did not show up in time; see $LOGFILE" >&2
+  return 1
+}
+
+cmd_stop() {
+  if ! p="$(running_pid)"; then
+    rm -f "$PIDFILE"
+    echo "iwato-desktop: not running"; return 0
+  fi
+  procs="$p $(descendants "$p")"
+  # run's own TERM handler stops the session and removes the pidfile.
+  kill -TERM "$p" 2>/dev/null || true
+  i=0
+  while [ "$i" -lt "${IWATO_STOP_WAIT:-100}" ]; do
+    desktop_running "$p" || break
+    sleep 0.1; i=$((i + 1))
+  done
+  if desktop_running "$p"; then
+    # shellcheck disable=SC2086
+    kill -KILL $procs 2>/dev/null || true
+    echo "iwato-desktop: did not stop in time; killed"
+  else
+    echo "iwato-desktop: stopped"
+  fi
+  rm -f "$PIDFILE"
+}
+
+cmd_status() {
+  if p="$(running_pid)"; then
+    echo "iwato-desktop: running (pid $p), log $LOGFILE"; reach; return 0
+  fi
+  echo "iwato-desktop: not running (log $LOGFILE)"
+  return 1
+}
+
+case "${1:-start}" in
+  start)  rc=0; cmd_start || rc=$?; exit "$rc" ;;
+  stop)   rc=0; cmd_stop || rc=$?; exit "$rc" ;;
+  status) rc=0; cmd_status || rc=$?; exit "$rc" ;;
+  run)    ;;
+  *)      echo "usage: iwato-desktop [start|stop|status|run]" >&2; exit 2 ;;
+esac
+
+command -v selkies-session >/dev/null 2>&1 || { echo "iwato-desktop: selkies-session not found; this is not the desktop image" >&2; exit 1; }
+
+# --- run: one instance, and what an abrupt stop left behind ---------------------
+
+mine() { [ -O "$1" ]; }
+
+if p="$(running_pid)"; then
+  echo "iwato-desktop: already running (pid $p); nothing to do"
+  exit 0
+fi
+mkdir -p "$(dirname "$PIDFILE")"
+echo $$ >"$PIDFILE"
+
+
+# X: /tmp/.X<n>-lock holds the server's pid and /tmp/.X11-unix/X<n> is its
+# socket. Both survive a stop (the container's /tmp is kept), and a lock whose
+# server is gone makes Xvfb skip that display (or, with a reused pid, think it
+# is taken). Remove lock and socket together when no live X server owns them.
+cleaned=0
+for lock in "$TMP"/.X*-lock; do
+  [ -f "$lock" ] || continue
+  n="${lock##*/.X}"; n="${n%-lock}"
+  case "$n" in ''|*[!0-9]*) continue ;; esac
+  mine "$lock" || continue
+  read -r xpid <"$lock" 2>/dev/null || xpid=
+  set -- $xpid; xpid="${1:-}"
+  if alive "$xpid" 'X*'; then continue; fi
+  rm -f "$lock" "$TMP/.X11-unix/X$n" && cleaned=$((cleaned + 1))
+done
+# A socket with no lock at all (the lock was lost) is stale too.
+for sock in "$TMP"/.X11-unix/X*; do
+  [ -S "$sock" ] || continue
+  n="${sock##*/X}"
+  case "$n" in ''|*[!0-9]*) continue ;; esac
+  [ -e "$TMP/.X$n-lock" ] && continue
+  mine "$sock" || continue
+  rm -f "$sock" && cleaned=$((cleaned + 1))
+done
+
+# PulseAudio and D-Bus: <dir>/pid names the daemon; without a live one the
+# pid file and the sockets next to it are stale. The directories are the usual
+# ones (names not verified against this image): $XDG_RUNTIME_DIR/pulse,
+# $HOME/.config/pulse/*-runtime, $TMP/pulse-*, and the per-user ~/.dbus/session-bus.
+for d in "${XDG_RUNTIME_DIR:-$TMP/xdg-none}/pulse" "$HOME_DIR"/.config/pulse/*-runtime "$TMP"/pulse-*; do
+  [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$d/pid" ] || continue
+  read -r ppid <"$d/pid" 2>/dev/null || ppid=
+  alive "$ppid" 'pulseaudio*' 'pipewire*' && continue
+  rm -f "$d/pid" "$d/native" "$d/dbus-socket" && cleaned=$((cleaned + 1))
+done
+for f in "$HOME_DIR"/.dbus/session-bus/*; do
+  [ -f "$f" ] && [ ! -L "$f" ] || continue
+  bpid="$(sed -n 's/^DBUS_SESSION_BUS_PID=//p' "$f" 2>/dev/null | head -n 1)"
+  alive "$bpid" 'dbus-daemon*' && continue
+  rm -f "$f" && cleaned=$((cleaned + 1))
+done
+
+# Selkies: it listens on a TCP port, which needs no cleanup, but may leave
+# socket files in $TMP (names not verified). No instance is alive here (the
+# pidfile check above), so owned leftovers are stale.
+for f in "$TMP"/selkies-* "$TMP"/.selkies-* "$TMP"/pixelflux-*; do
+  { [ -S "$f" ] || [ -f "$f" ]; } && [ ! -L "$f" ] && mine "$f" || continue
+  rm -f "$f" && cleaned=$((cleaned + 1))
+done
+
+# Firefox: <profile>/lock is a symlink "<ip>:+<pid>" and .parentlock a file;
+# a profile whose Firefox died keeps them, and Firefox then says the profile
+# is in use. Remove both when the pid is gone (or when the lock is missing and
+# no firefox runs at all).
+firefox_running() {
+  for c in "$PROC"/[0-9]*/comm; do
+    [ -r "$c" ] || continue
+    case "$(cat "$c" 2>/dev/null)" in firefox*|Web\ Content*|GeckoMain*) return 0 ;; esac
+  done
+  return 1
+}
+for prof in "$HOME_DIR"/.mozilla/firefox/*/ "$HOME_DIR"/.config/mozilla/firefox/*/ "$HOME_DIR"/snap/firefox/common/.mozilla/firefox/*/; do
+  [ -d "$prof" ] || continue
+  prof="${prof%/}"
+  if [ -L "$prof/lock" ]; then
+    target="$(readlink "$prof/lock" 2>/dev/null)"; fpid="${target##*+}"
+    alive "$fpid" 'firefox*' 'GeckoMain*' && continue
+    rm -f "$prof/lock" "$prof/.parentlock" && cleaned=$((cleaned + 1))
+  elif [ -e "$prof/.parentlock" ] && ! firefox_running; then
+    rm -f "$prof/.parentlock" && cleaned=$((cleaned + 1))
+  fi
+done
+echo "iwato-desktop: removed $cleaned stale file(s) left by an earlier session"
+
+if [ -e "${IWATO_DXG:-/dev/dxg}" ]; then
+  # /usr/lib/wsl/lib/libcuda.so.1 lacks the CUDA-EGL interop symbols
+  # (cuGraphicsEGLRegisterImage), so Selkies rejects NVENC and encodes with x264.
+  # The NVIDIA driver store has the full libcuda, but only as libcuda.so.1.1:
+  # link it under the sonames, as `docker --gpus all` does. The store's hash
+  # changes with driver updates, so look it up on every start (the last match
+  # in glob order wins when old stores are left behind).
+  mkdir -p "$NV_DIR"
+  rm -f "$NV_DIR/libcuda.so.1" "$NV_DIR/libcuda.so" "$NV_DIR/libnvidia-encode.so.1"
+  for nv in "${IWATO_WSL_DRIVERS:-/usr/lib/wsl/drivers}"/nv_dispi.inf_amd64_*; do
+    [ -e "$nv/libcuda.so.1.1" ] || continue
+    ln -sfn "$nv/libcuda.so.1.1" "$NV_DIR/libcuda.so.1"
+    ln -sfn "$nv/libcuda.so.1.1" "$NV_DIR/libcuda.so"
+    if [ -e "$nv/libnvidia-encode.so.1" ]; then
+      ln -sfn "$nv/libnvidia-encode.so.1" "$NV_DIR/libnvidia-encode.so.1"
+    fi
+  done
+  if [ -e "$NV_DIR/libcuda.so.1" ]; then
+    echo "iwato-desktop: NVIDIA libraries linked in $NV_DIR"
+  else
+    echo "iwato-desktop: no NVIDIA driver store found (AMD/Intel or no driver); Selkies encodes on the CPU"
+  fi
+  . /etc/iwato/desktop/gpu-env.sh
+else
+  echo "iwato-desktop: /dev/dxg not found (no GPU in this sandbox); the desktop is CPU-rendered and CPU-encoded"
+fi
+
+# Browsers crash on a 64 MB /dev/shm; the WSLc driver gives every sandbox 1 GB.
+shm_mb="$(df -Pm /dev/shm 2>/dev/null | awk 'NR==2 {print $2}')"
+case "$shm_mb" in
+  ''|*[!0-9]*) ;;
+  *) [ "$shm_mb" -ge 512 ] || echo "iwato-desktop: /dev/shm is ${shm_mb} MB; browsers may crash (the driver sets 1 GB; is this an older sandbox?)" >&2 ;;
+esac
+
+# Xvfb starts xkbcomp (to compile the keymap) in a child that first calls
+# setgid(getgid()) and setuid(getuid()) and exits 127 if either fails; the
+# sandbox's seccomp filter makes both fail with EPERM, so Xvfb dies with "XKB:
+# Failed to compile keymap". The shim answers 0 when the id does not change.
+# It is preloaded for the whole session (Xvfb is started by selkies-session);
+# any other id still goes to the real function.
+NOID="${IWATO_NOID_LIB:-/usr/local/lib/iwato/libiwato-noid.so}"
+if [ -r "$NOID" ]; then
+  LD_PRELOAD="$NOID${LD_PRELOAD:+ $LD_PRELOAD}"; export LD_PRELOAD
+else
+  echo "iwato-desktop: $NOID not found; Xvfb cannot start xkbcomp under the sandbox's seccomp filter (see docs/dev/gpu.md)" >&2
+fi
+
+# The browser. A terminal exports BROWSER=iwato-browser (it asks the web
+# terminal to open a tab through /dev/tty), and this script is usually started
+# from one. The desktop session has no controlling terminal, so sensible-browser
+# and xdg-open, which try $BROWSER first, would fail ("Failed to execute default
+# Web Browser"). Inside the session the browser is Firefox: BROWSER=firefox here,
+# and IWATO_DESKTOP_SESSION=1 makes /etc/iwato/shell/envs keep it for the shells
+# the session starts (xfce4-terminal). The image's helpers.rc, alternatives and
+# mimeapps.list name Firefox for everything that does not read $BROWSER.
+export BROWSER=firefox IWATO_DESKTOP_SESSION=1
+
+# Firefox's own sandbox (user namespaces, seccomp-bpf, chroot, and shared memory
+# through memfd_create or /dev/shm) cannot be set up inside the OpenShell
+# sandbox's Landlock and seccomp filters: its content, GMP, RDD, socket and
+# utility processes would fail to start, and the tabs with them. The OpenShell
+# sandbox is the isolation boundary here, so Firefox's is turned off with the
+# documented environment variables (the names are from Mozilla's sandbox code;
+# an unknown one is ignored).
+export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 \
+  MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
+
+# --- start the session, and stop its processes on TERM/INT --------------------
+
+child=
+stop_session() {
+  trap '' TERM INT
+  if [ -n "$child" ]; then
+    procs="$child $(descendants "$child")"
+    # shellcheck disable=SC2086
+    kill -TERM $procs 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 50 ]; do
+      left=0
+      for k in $procs; do kill -0 "$k" 2>/dev/null && left=1; done
+      [ "$left" = 0 ] && break
+      sleep 0.1; i=$((i + 1))
+    done
+    # shellcheck disable=SC2086
+    [ "$left" = 0 ] || kill -KILL $procs 2>/dev/null || true
+  fi
+  rm -f "$PIDFILE"
+  exit 143
+}
+trap stop_session TERM INT
+trap 'rm -f "$PIDFILE"' EXIT
+
+# Loopback only, no login, plain HTTP: Iwato's port publishing reaches it and
+# decides who may connect (plain HTTP on *.localhost in this PC's browsers;
+# over Tailscale, Iwato terminates HTTPS). IWATO_DESKTOP_ARGS is split on purpose.
+# Not exec'd: this shell stays to catch TERM and clean up the pidfile.
+# shellcheck disable=SC2086
+selkies-session --session xfce \
+  --port="$PORT" --enable-basic-auth=false --enable-https=false \
+  ${IWATO_DESKTOP_ARGS:-} &
+child=$!
+rc=0
+wait "$child" || rc=$?
+exit "$rc"

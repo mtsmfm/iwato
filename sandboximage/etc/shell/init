@@ -1,0 +1,19 @@
+if command -v mise &> /dev/null; then
+  eval "$(mise activate bash)"
+fi
+
+if [[ $- == *i* ]] && [[ ${TERM:-} != "dumb" ]] && command -v starship &> /dev/null; then
+  eval "$(starship init bash --print-full-init)"
+fi
+
+if command -v zoxide &> /dev/null; then
+  eval "$(zoxide init bash)"
+fi
+
+# Only the key bindings (Ctrl-R, Ctrl-T, Alt-C).
+for f in /usr/share/fzf/key-bindings.bash /usr/share/doc/fzf/examples/key-bindings.bash; do
+  if [[ -f $f ]]; then
+    source "$f"
+    break
+  fi
+done

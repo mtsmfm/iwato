@@ -1,0 +1,65 @@
+# Iwato's GitHub provider profile. Iwato imports it into the gateway
+# (platform scope) when it prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-github.yaml
+#
+# Adapted from OpenShell v0.1.4's providers/github.yaml (Apache-2.0): the
+# paths of Iwato's sandbox image (sandboximage/), and uploads.github.com,
+# so that a proposal that allows uploading release assets gets the token
+# too.
+#
+# Client binaries:   gh, git (git runs git-remote-https for HTTPS remotes).
+# Reference layout:  Ubuntu's git and gh packages under /usr.
+# Credential scope:  GITHUB_TOKEN and GH_TOKEN, sent as a bearer
+#                    authorization header to the endpoints below only.
+# Endpoint access:   the API read-only; github.com clone and fetch only.
+#                    Writes and push (git-receive-pack) take a policy
+#                    proposal; approving one widens the provider's scope
+#                    (ADR 0006, 0014).
+
+id: iwato-github
+display_name: GitHub (Iwato)
+description: GitHub API and Git over HTTPS for Iwato's sandbox image
+category: source_control
+credentials:
+  - name: token
+    description: GitHub token
+    env_vars: [GITHUB_TOKEN, GH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+endpoints:
+  # REST and GraphQL read-only: writes take a policy proposal, which widens
+  # the provider's scope when approved.
+  - host: api.github.com
+    port: 443
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+  - host: api.github.com
+    port: 443
+    path: /graphql
+    protocol: graphql
+    access: read-only
+    enforcement: enforce
+  # git over HTTPS: clone and fetch (git-upload-pack); push
+  # (git-receive-pack) takes a policy proposal, which widens the provider's
+  # scope when approved.
+  - host: github.com
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    rules:
+      - allow: { method: GET, path: "**" }
+      - allow: { method: HEAD, path: "**" }
+      - allow: { method: OPTIONS, path: "**" }
+      - allow: { method: POST, path: "/**/git-upload-pack" }
+  - host: uploads.github.com
+    port: 443
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+binaries:
+  - /usr/bin/gh
+  - /usr/bin/git
+  - /usr/lib/git-core/git-remote-http
+  - /usr/lib/git-core/git-remote-https

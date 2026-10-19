@@ -1,0 +1,31 @@
+--- a/crates/openshell-sandbox/src/boundary_server.rs
++++ b/crates/openshell-sandbox/src/boundary_server.rs
+@@ -1901,6 +1901,11 @@
+             };
+             if let Some(process) = process {
+                 process.boundary_runtime.deactivate();
++                // A pending Wait blocks a blocking-pool thread on the exit
++                // condvar, which only the runtime's reaper task notifies.
++                // Dropping the runtime cancels that task and then waits for
++                // the blocking pool, so settle the exit here first.
++                process.abandon_exit("sandbox boundary terminated");
+             }
+         }
+ 
+@@ -2961,6 +2966,16 @@
+             result.map_err(|error| format!("signal process supervisor group: {error}"))
+         }
+ 
++        /// Record `reason` as the exit unless one is known, and wake waiters.
++        fn abandon_exit(&self, reason: &str) {
++            let (state, changed) = &*self.exit;
++            let mut exit = lock(state);
++            if exit.is_none() {
++                *exit = Some(Err(reason.to_string()));
++            }
++            changed.notify_all();
++        }
++
+         fn has_exited(&self) -> bool {
+             let (state, _) = &*self.exit;
+             lock(state).is_some()

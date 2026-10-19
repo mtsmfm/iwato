@@ -1,0 +1,7 @@
+# If not running interactively, don't do anything else
+[[ $- != *i* ]] && return
+
+# Sandbox defaults (Omarchy's bash setup; see /etc/iwato/shell/README.md)
+source /etc/iwato/shell/rc
+
+# Add your own exports, aliases, and functions here.

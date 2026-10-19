@@ -1,0 +1,104 @@
+# The sandbox image (sandboximage/, with Iwato's daemon cmd/iwato-entrypoint
+# of the same commit) for amd64 and arm64. A push to main publishes it on
+# ghcr.io as `edge` (and `sha-<commit>`), which the exes that are not
+# releases pull (scripts/build-exe.sh); a pull request that touches it only
+# builds it, so the Dockerfile is checked before it reaches main.
+# Releases publish their own, tagged with the version (release.yml).
+# Each architecture builds natively on its own runner (no QEMU) with a
+# BuildKit cache per architecture, pushes by digest, and the merge job puts
+# the two under the tags.
+name: image
+on:
+  push:
+    branches: [main]
+    paths: ["sandboximage/**", "cmd/iwato-entrypoint/**", "internal/termd/**", "internal/rootsftp/**", "go.mod", "go.sum", "scripts/build-entrypoint.sh", ".github/workflows/image.yml"]
+  pull_request:
+    paths: ["sandboximage/**", "cmd/iwato-entrypoint/**", "internal/termd/**", "internal/rootsftp/**", "go.mod", "go.sum", "scripts/build-entrypoint.sh", ".github/workflows/image.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/iwato-sandbox
+  # A pull request (and a run by hand on another branch) builds without
+  # publishing.
+  PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+jobs:
+  sandbox:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The image carries Iwato's daemon of this commit, for this architecture.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: scripts/build-entrypoint.sh
+        env:
+          ARCHES: ${{ matrix.arch }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: sandboximage
+          platforms: linux/${{ matrix.arch }}
+          outputs: ${{ env.PUBLISH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=cacheonly' }}
+          cache-from: type=gha,scope=iwato-sandbox-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=iwato-sandbox-${{ matrix.arch }}
+      - if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-iwato-sandbox-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+  merge:
+    needs: sandbox
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-iwato-sandbox-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - working-directory: ${{ runner.temp }}/digests
+        run: |
+          set --
+          for d in *; do set -- "$@" "$IMAGE@sha256:$d"; done
+          [ $# -eq 2 ] || { echo "expected 2 digests, got: $*" >&2; exit 1; }
+          docker buildx imagetools create -t "$IMAGE:edge" -t "$IMAGE:sha-${GITHUB_SHA::7}" "$@"
+          docker buildx imagetools inspect "$IMAGE:sha-${GITHUB_SHA::7}"

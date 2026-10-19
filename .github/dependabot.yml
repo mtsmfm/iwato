@@ -1,0 +1,12 @@
+# Proposes updates of the base images' digests (FROM ubuntu:24.04@sha256:...,
+# pinned: docs/dev/development.md#bumping-pinned-versions), not other Ubuntu
+# releases.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories: ["/sandboximage", "/internal/openshell/gateway"]
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: ubuntu
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

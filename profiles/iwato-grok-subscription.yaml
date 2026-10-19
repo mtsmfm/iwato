@@ -1,0 +1,87 @@
+# Iwato's Grok Build subscription profile: xAI's coding agent CLI (`grok`)
+# with the owner's xAI account (SuperGrok, X Premium; personal accounts).
+# Iwato.exe signs in at auth.x.ai (device code, Grok Build's public client)
+# and gives the gateway the refresh token; the gateway refreshes the access
+# token (oauth2_refresh_token) and the sandbox gets a placeholder. Iwato
+# imports it into the gateway (platform scope) when it prepares OpenShell.
+# Lint it with:
+#   openshell provider profile lint -f profiles/iwato-grok-subscription.yaml
+#
+# Client binaries:   Grok Build's native executable (one Rust binary, no
+#                    node). OpenShell matches the real executable
+#                    (/proc/PID/exe) or an ancestor's; `*` stays within one
+#                    path component. The image installs no agent: the owner
+#                    installs grok with xAI's installer (x.ai/cli/install.sh
+#                    puts ~/.grok/downloads/grok-linux-ARCH, linked from
+#                    ~/.grok/bin/grok; `grok update` and the auto-updater
+#                    put ~/.grok/downloads/grok-VERSION-linux-ARCH) or with
+#                    npm (@xai-official/grok: postinstall links bin/grok to
+#                    bin/grok-native and copies ~/.grok/bin/grok-VERSION)
+#                    or with mise (`mise use -g grok`, the registry's http
+#                    backend: ~/.local/share/mise/installs/grok/VERSION/grok).
+# Credential scope:  XAI_OAUTH_TOKEN, sent as a bearer authorization header
+#                    (grok adds X-XAI-Token-Auth: xai-grok-cli itself).
+#                    grok reads it through GROK_AUTH_PROVIDER_COMMAND, which
+#                    Iwato writes to ~/.config/iwato/env (term_env.go) for
+#                    the image's shell init to read (grokAuthCommand): a command
+#                    that prints {"access_token": $XAI_OAUTH_TOKEN, "issuer":
+#                    "https://auth.x.ai"}.
+# Endpoint access:   a session's traffic goes to cli-chat-proxy.grok.com/v1
+#                    (inference, /user, models, settings, telemetry); the
+#                    image and voice tools use api.x.ai/v1 with the same
+#                    token. Read-write (inference is POST).
+# Refresh:           at auth.x.ai's token endpoint (the device flow's
+#                    {issuer}/oauth2/token), a public client: client_id and
+#                    refresh_token, no secret, no scope. xAI may rotate the
+#                    refresh token; the gateway stores the new one.
+# Not listed:        grok's own login (~/.grok/auth.json) cannot be a
+#                    placeholder. x.ai/cli (the installer and the updater)
+#                    needs no token: the network preset grok-mise allows it.
+# Verified:          from xai-org/grok-build's source (crates/codegen/
+#                    xai-grok-login: config.rs, device_code.rs,
+#                    oidc/protocol.rs, external_auth.rs; the install paths:
+#                    xai-grok-update, xai-grok-pager/scripts/install.sh). Not run
+#                    against xAI.
+
+id: iwato-grok-subscription
+display_name: Grok Build subscription (Iwato)
+description: Grok Build with an xAI account sign-in the gateway refreshes
+category: agent
+credentials:
+  - name: access_token
+    description: xAI OAuth access token (auth.x.ai)
+    env_vars: [XAI_OAUTH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://auth.x.ai/oauth2/token
+      refresh_before: "300s"
+      max_lifetime: "3600s"
+      material:
+        - name: client_id
+          description: OAuth client ID (Grok Build's public client)
+          required: true
+        - name: refresh_token
+          description: OAuth refresh token
+          required: true
+          secret: true
+endpoints:
+  - host: cli-chat-proxy.grok.com
+    port: 443
+    path: /v1/**
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: api.x.ai
+    port: 443
+    path: /v1/**
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /home/dev/.grok/downloads/grok-*
+  - /home/dev/.grok/bin/grok-*
+  - /home/dev/.local/share/mise/installs/node/*/lib/node_modules/@xai-official/grok/bin/grok-native
+  - /home/dev/.local/share/mise/installs/grok/*/grok

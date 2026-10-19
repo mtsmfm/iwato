@@ -1,0 +1,172 @@
+# A tag vX.Y.Z (the version in config.go) publishes Iwato: the gateway and
+# sandbox images for amd64 and arm64 on ghcr.io, and the Windows exes, which
+# pull those images, by the digests pushed here, instead of building them
+# (scripts/build-exe.sh --images --image-digests).
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      openshell: ${{ steps.v.outputs.openshell }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: v
+        run: |
+          version=$(sed -n 's/^const version = "\(.*\)"$/\1/p' config.go)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME is not v$version (config.go)" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "openshell=$(sed -n 's/^\s*OpenShellVersion\s*= "\(.*\)"$/\1/p' internal/openshell/wslc/driver.go)" >> "$GITHUB_OUTPUT"
+  # Each image and architecture builds natively on its own runner (no QEMU)
+  # with a BuildKit cache per image and architecture (shared with image.yml
+  # for the sandbox image) and pushes by digest; images-merge puts the two
+  # architectures under the version tag.
+  images:
+    needs: version
+    strategy:
+      matrix:
+        name: [iwato-gateway, iwato-sandbox]
+        arch: [amd64, arm64]
+        include:
+          - name: iwato-gateway
+            context: internal/openshell/gateway
+            target: gateway
+          - name: iwato-sandbox
+            context: sandboximage
+            target: ""
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The sandbox image carries Iwato's daemon of this commit.
+      - if: matrix.name == 'iwato-sandbox'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - if: matrix.name == 'iwato-sandbox'
+        run: scripts/build-entrypoint.sh
+        env:
+          ARCHES: ${{ matrix.arch }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          build-args: OPENSHELL_TAG=v${{ needs.version.outputs.openshell }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
+      - env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.name }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+  images-merge:
+    needs: [version, images]
+    strategy:
+      matrix:
+        name: [iwato-gateway, iwato-sandbox]
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.name }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          NAME: ${{ matrix.name }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set --
+          for d in *; do set -- "$@" "$IMAGE@sha256:$d"; done
+          [ $# -eq 2 ] || { echo "expected 2 digests, got: $*" >&2; exit 1; }
+          docker buildx imagetools create -t "$IMAGE:$VERSION" "$@"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          # The index's digest, which the exes pin (version@digest).
+          digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "$digest" | grep -Eqx 'sha256:[0-9a-f]{64}' || { echo "no digest for $IMAGE:$VERSION: $digest" >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/index"
+          echo "$NAME=$digest" > "$RUNNER_TEMP/index/$NAME"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: index-digest-${{ matrix.name }}
+          path: ${{ runner.temp }}/index/*
+          if-no-files-found: error
+          retention-days: 1
+  exes:
+    needs: images-merge
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      # The cache build.yml saves on main (see there).
+      - id: go-env
+        run: |
+          echo "cache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-env.outputs.cache }}
+            ${{ steps.go-env.outputs.modcache }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-${{ runner.os }}-${{ runner.arch }}-
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/index
+          pattern: index-digest-*
+          merge-multiple: true
+      - run: python3 scripts/fetch-vendor.py
+      - run: go test ./...
+      - run: go test -tags uitest .
+      # The exes pull the images they are released with by digest.
+      - run: |
+          digests=$(cat "$RUNNER_TEMP/index/iwato-gateway" "$RUNNER_TEMP/index/iwato-sandbox" | paste -sd, -)
+          scripts/build-exe.sh --images ghcr.io/${{ github.repository_owner }} --image-digests "$digests"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; done
+          gh release create "$GITHUB_REF_NAME" --title "Iwato $GITHUB_REF_NAME" --generate-notes iwato-windows-amd64.exe iwato-windows-arm64.exe

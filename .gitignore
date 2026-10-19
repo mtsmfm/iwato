@@ -1,0 +1,11 @@
+/dist/
+iwato.json
+sessions.json
+*.exe
+*.test
+
+# Restored by scripts/fetch-vendor.py
+/web/vendor/fonts/
+# Built by scripts/build-exe.sh into the exe
+/internal/termbin/bin/iwato-entrypoint
+/sandboximage/_entrypoint/
