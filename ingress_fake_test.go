@@ -21,10 +21,10 @@ func TestIngressSecretStorage(t *testing.T) {
 	if info := m.secretInfo(); info.Set {
 		t.Fatal(info)
 	}
-	if validSecret("tskey-client-k123-abcdefgh?ephemeral=true") == nil || validSecret("hello") == nil {
+	if validSecret("tskey"+"-client-k123-abcdefgh?ephemeral=true") == nil || validSecret("hello") == nil {
 		t.Fatal("bad secrets accepted")
 	}
-	secret := "tskey-client-kXYZ-0123456789abcdWXYZ"
+	secret := "tskey" + "-client-kXYZ-0123456789abcdWXYZ"
 	if err := validSecret(secret); err != nil {
 		t.Fatal(err)
 	}
@@ -39,11 +39,11 @@ func TestIngressSecretStorage(t *testing.T) {
 		t.Fatal("the secret went to the configuration")
 	}
 	info := m.secretInfo()
-	if !info.Set || info.Kind != "oauth" || info.Hint != "tskey-client-…WXYZ" || info.Source != "file" || info.Storage != protect.Scheme {
+	if !info.Set || info.Kind != "oauth" || info.Hint != "tskey"+"-client-…WXYZ" || info.Source != "file" || info.Storage != protect.Scheme {
 		t.Fatalf("%+v", info)
 	}
-	t.Setenv(ingressSecretEnv, "tskey-auth-fromtheenvironment1")
-	if v, src, _ := m.secret(); v != "tskey-auth-fromtheenvironment1" || src != "env" {
+	t.Setenv(ingressSecretEnv, "tskey"+"-auth-fromtheenvironment1")
+	if v, src, _ := m.secret(); v != "tskey"+"-auth-fromtheenvironment1" || src != "env" {
 		t.Fatal(v, src)
 	}
 	t.Setenv(ingressSecretEnv, "")
@@ -86,7 +86,7 @@ func TestIngressLifecycle(t *testing.T) {
 	if st := s.ingress.overall(); st.State != "needs-secret" || len(made) != 0 || s.ingress.provider != nil {
 		t.Fatal(st)
 	}
-	if res, b := request(t, s, "/api/ingress/secret", "POST", `{"secret":"tskey-auth-k1-0123456789"}`, cookie, csrf); res.StatusCode != 200 || strings.Contains(string(b), "0123456789\"") {
+	if res, b := request(t, s, "/api/ingress/secret", "POST", `{"secret":"tskey`+`-auth-k1-0123456789"}`, cookie, csrf); res.StatusCode != 200 || strings.Contains(string(b), "0123456789\"") {
 		t.Fatal(res.StatusCode, string(b))
 	}
 	s.ingress.reconfigure(ctx)

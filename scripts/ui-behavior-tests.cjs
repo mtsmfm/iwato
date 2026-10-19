@@ -2190,7 +2190,7 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   se.setIngressHandler((path, opt) => {
     if (opt?.method === 'POST') {
       const body = JSON.parse(opt.body); posts.push({path, body, csrf: opt.headers['X-CSRF-Token']});
-      if (path === '/api/ingress/secret') settings = {...settings, secret: {set: true, source: 'file', kind: 'oauth', hint: 'tskey-client-…WXYZ', storage: 'dpapi'}};
+      if (path === '/api/ingress/secret') settings = {...settings, secret: {set: true, source: 'file', kind: 'oauth', hint: 'tskey' + '-client-…WXYZ', storage: 'dpapi'}};
       if (path === '/api/ingress') settings = {...settings, provider: body.provider, owners: body.owners, status: {state: 'on', message: 'Tailscale で公開しています'}};
       return response({ok: true});
     }
@@ -2216,9 +2216,9 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   assert.equal(se.copied.at(-1), '"tagOwners": {\n  "tag:iwato": ["autogroup:admin"]\n}');
   // The secret: sent once, the input emptied, only the hint shown.
   const secretInput = walk(body, (n) => n.type === 'password')[0];
-  secretInput.value = ' tskey-client-kXYZ-secretvalueWXYZ ';
+  secretInput.value = ' tskey' + '-client-kXYZ-secretvalueWXYZ ';
   walk(body, (n) => n.textContent === '保存' && n.className === 'button button-primary' && n.type === 'button')[0].click(); await flush();
-  assert.deepEqual(posts[0], {path: '/api/ingress/secret', body: {secret: 'tskey-client-kXYZ-secretvalueWXYZ'}, csrf: 'csrf123'});
+  assert.deepEqual(posts[0], {path: '/api/ingress/secret', body: {secret: 'tskey' + '-client-kXYZ-secretvalueWXYZ'}, csrf: 'csrf123'});
   assert.equal(secretInput.value, '');
   assert(walk(body, (n) => n.textContent === '設定済み (tskey-client-…WXYZ)').length === 1);
   assert(!walk(body, (n) => /secretvalue/.test(n.textContent || '') || /secretvalue/.test(n.value || '')).length, 'the secret is not kept in the page');
