@@ -23,9 +23,9 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "openshell=$(sed -n 's/^\s*OpenShellVersion\s*= "\(.*\)"$/\1/p' internal/openshell/wslc/driver.go)" >> "$GITHUB_OUTPUT"
   # Each image and architecture builds natively on its own runner (no QEMU)
-  # with a BuildKit cache per image and architecture (shared with image.yml
-  # for the sandbox image) and pushes by digest; images-merge puts the two
-  # architectures under the version tag.
+  # with a BuildKit cache per image and architecture (shared with image.yml)
+  # and pushes by digest; images-merge puts the two architectures under the
+  # version tag.
   images:
     needs: version
     strategy:

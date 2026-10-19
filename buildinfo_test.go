@@ -9,7 +9,7 @@ func TestImageRef(t *testing.T) {
 		t.Fatal(got)
 	}
 	imageRegistry = "ghcr.io/mtsmfm"
-	if got := imageRef("iwato-gateway"); got != "ghcr.io/mtsmfm/iwato-gateway:"+version || !pullsReleaseImages() || imageMoves() {
+	if got := imageRef("iwato-gateway"); got != "ghcr.io/mtsmfm/iwato-gateway:"+version || !pullsGatewayImage() || imageMoves() {
 		t.Fatal(got)
 	}
 	defer func(d string) { imageDigests = d }(imageDigests)
@@ -18,7 +18,11 @@ func TestImageRef(t *testing.T) {
 		t.Fatal(got)
 	}
 	imageTag = "edge"
-	if got := imageRef("iwato-sandbox"); got != "ghcr.io/mtsmfm/iwato-sandbox:edge" || pullsReleaseImages() || !imageMoves() {
+	if got := imageRef("iwato-gateway"); got != "ghcr.io/mtsmfm/iwato-gateway:edge@sha256:aa" || !pullsGatewayImage() || imageMoves() {
+		t.Fatal(got)
+	}
+	imageDigests = ""
+	if got := imageRef("iwato-sandbox"); got != "ghcr.io/mtsmfm/iwato-sandbox:edge" || pullsGatewayImage() || !imageMoves() {
 		t.Fatal(got)
 	}
 }

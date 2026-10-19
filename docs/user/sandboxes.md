@@ -61,8 +61,8 @@ No language runtimes (Node, Python, Go, Ruby, Java, …) and no agent CLIs are i
 
 ### Where the image comes from
 
-- A release exe pulls the image tagged with its own version
-- A development exe (built from main) pulls the `edge` tag, which every merge to main publishes, but only when it has no copy. A newer `edge` is pulled only when you ask: **Update the standard image** in the settings, or the recreate dialog's **Pull the latest image first**. New and recreated sandboxes then use it; an old image is removed once no sandbox uses it, and when a pull fails the local image stays in use
+- A release exe pulls the image tagged with its own version, and an exe of the pre-release edge the image of its own commit; a new exe brings its image
+- An exe you build yourself from main pulls the `edge` tag, which every merge to main publishes, but only when it has no copy. A newer `edge` is pulled only when you ask: **Update the standard image** in the settings, or the recreate dialog's **Pull the latest image first**. New and recreated sandboxes then use it; an old image is removed once no sandbox uses it, and when a pull fails the local image stays in use
 - The settings show when the local image was created and pulled
 
 ## Your own images and the sandbox convention

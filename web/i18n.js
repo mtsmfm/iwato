@@ -2658,7 +2658,7 @@
     'settings.image.title': 'Standard image',
     'settings.image.built': 'Built here.',
     'settings.image.edge': 'The latest main (edge). After an update, sandboxes created or recreated from then on use it.',
-    'settings.image.release': 'The image of this release (no updates).',
+    'settings.image.release': 'The image of this build (no updates).',
     'settings.image.created': 'Created: {time}',
     'settings.image.builtAt': 'Built: {time}',
     'settings.image.pulledAt': 'Pulled: {time}',

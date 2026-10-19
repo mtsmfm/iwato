@@ -16,34 +16,30 @@ var buildRelease string
 
 func debugBuild() bool { return buildRelease == "" }
 
-// imageRegistry and imageTag are set by scripts/build-exe.sh. With
-// --images REGISTRY (the release workflow) imageTag is empty: the exe
-// pulls both of its images, tagged with its version, from REGISTRY. By
-// default (other exes) imageTag is "edge": the exe pulls the sandbox image
-// main last published (.github/workflows/image.yml) when it has none,
-// pulls it again only on request (UpdateImage), and builds the gateway
-// image itself. With --local-images, and in go run and tests,
+// imageRegistry, imageTag and imageDigests are set by scripts/build-exe.sh.
+// With --images REGISTRY (releases, and the edge exes with --image-tag
+// edge) the exe pulls both of its images from REGISTRY, tagged with
+// imageTag or else its version, and with imageDigests
+// ("name=sha256:...,name=sha256:...") as tag@digest, so that it uses only
+// the images it was built with even if the tag moves. By default (other
+// exes) imageTag is "edge" without digests: the exe pulls the sandbox
+// image main last published (.github/workflows/image.yml) when it has
+// none, pulls it again only on request (UpdateImage), and builds the
+// gateway image itself. With --local-images, and in go run and tests,
 // imageRegistry is empty and both images are built from the embedded
 // sources.
-var imageRegistry, imageTag string
-
-// imageDigests pins the images a release exe pulls by its version: set by
-// scripts/build-exe.sh --image-digests (the release workflow, from the
-// digests it pushed) as "name=sha256:...,name=sha256:...". Then imageRef is
-// name:version@digest, so the exe uses only the image it was released with
-// even if the tag is moved. The moving edge tag of development exes is not
-// pinned (it is meant to move), and images built locally have no digest.
-var imageDigests string
+var imageRegistry, imageTag, imageDigests string
 
 // imageRef names one of Iwato's images.
 func imageRef(name string) string {
 	if imageRegistry == "" {
 		return name + ":" + version
 	}
-	if imageTag != "" {
-		return imageRegistry + "/" + name + ":" + imageTag
+	tag := imageTag
+	if tag == "" {
+		tag = version
 	}
-	ref := imageRegistry + "/" + name + ":" + version
+	ref := imageRegistry + "/" + name + ":" + tag
 	for _, p := range strings.Split(imageDigests, ",") {
 		if n, d, ok := strings.Cut(p, "="); ok && n == name {
 			return ref + "@" + d
@@ -52,13 +48,15 @@ func imageRef(name string) string {
 	return ref
 }
 
-// pullsReleaseImages reports whether the exe pulls its images by its
-// version (a release exe); then the gateway image is pulled too.
-func pullsReleaseImages() bool { return imageRegistry != "" && imageTag == "" }
+// pullsGatewayImage reports whether the exe pulls the gateway image too
+// (a release or pinned edge exe) instead of building it.
+func pullsGatewayImage() bool {
+	return imageRegistry != "" && (imageTag == "" || imageDigests != "")
+}
 
-// imageMoves reports whether the pulled sandbox image's tag moves (edge),
-// so that a pulled one may be outdated.
-func imageMoves() bool { return imageRegistry != "" && imageTag != "" }
+// imageMoves reports whether the pulled sandbox image's tag moves (edge
+// without a digest), so that a pulled one may be outdated.
+func imageMoves() bool { return imageRegistry != "" && imageTag != "" && imageDigests == "" }
 
 // BuildInfo identifies the running server on the page.
 type BuildInfo struct {

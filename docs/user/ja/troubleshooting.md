@@ -8,7 +8,7 @@
 
 - **WSLc を実行できない** (画面に出て、使えるようになるまで待ちます): Windows 11 に WSL 3.0.1 以上を入れ (`wsl --update`。安定版が古いときは `wsl --update --pre-release`)、`wslc.exe --version` が動くことを確かめます。`wslc.exe` が `PATH` にないときは、Iwato を止めて `iwato.json` の `"wslc"` にフルパスを書き、起動し直します
 - **ポートが使用中**: Iwato は 17600 から 17669 までを試します。`-listen 127.0.0.1:PORT` で指定できます
-- **イメージやゲートウェイの準備に失敗した**: コンソールとログに理由が出ます。イメージの取得とビルドは `image-build.log` です。ghcr.io (edge 版では github.com、Docker Hub、Ubuntu のパッケージのアーカイブも) への通信を確かめ、Iwato を起動し直します
+- **イメージやゲートウェイの準備に失敗した**: コンソールとログに理由が出ます。イメージの取得とビルドは `image-build.log` です。ghcr.io (自分でビルドした exe では github.com、Docker Hub、Ubuntu のパッケージのアーカイブも) への通信を確かめ、Iwato を起動し直します
 
 ## ログイン
 
