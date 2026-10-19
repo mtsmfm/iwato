@@ -37,6 +37,16 @@ There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbse
 
 Release: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which publishes the images (amd64 and arm64) and the exes.
 
+### Building on Linux
+
+There is no Linux download. After the [setup](#setup), build a binary that pulls the sandbox image as an edge exe does:
+
+```sh
+go build -ldflags '-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge' -o iwato .
+```
+
+A plain `go build .` cannot build the sandbox image (it carries no `iwato-entrypoint`).
+
 ## Bumping pinned versions
 
 Everything the images and the gateway download is pinned; `scripts/check-pins.sh` (also the `pins` job of `build.yml`) checks the pins against their sources. Needs `curl` and `jq`, and `gh` for Selkies; inside an Iwato sandbox, GET rules for `ghcr.io` (`/token`, `/v2/nvidia/openshell/*/manifests/*`), `auth.docker.io` (`/token`), `registry-1.docker.io` (`/v2/library/ubuntu/manifests/*`), `github.com` (`/NVIDIA/OpenShell/releases/download/**`) and `release-assets.githubusercontent.com` (OpenShell's release assets).

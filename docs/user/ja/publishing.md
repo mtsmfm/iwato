@@ -44,8 +44,8 @@ Tailscale を使うと、サンドボックスごとに tailnet のノードが�
 - 開けるのは「通すログイン名」に入れた人の、tag の付いていない端末だけです。tag 付きのノード (他のサンドボックスやサーバー) と、他の tailnet から共有された端末は通しません
 - 平文の `http://` でも開けます (tailnet の中はすでに暗号化されています)。リンクは `https://` です
 - 停止中のサンドボックスのノードは残り、ポートは 503 です。サンドボックスを削除するとノードはログアウトします
-- シークレットは `iwato.json` には入れず、同じフォルダーの `ingress-secret.bin` に Windows の DPAPI で暗号化して保存します (macOS ではキーチェーンが持つ鍵で暗号化、Linux では暗号化せず権限 0600)。環境変数 `IWATO_TS_AUTHKEY` があればそちらを使います。ノードの状態は設定フォルダーの `ingress\tailscale\<サンドボックス>\` です
-- OAuth クライアントの代わりに、再利用できる auth key (`tskey-auth-…`) も使えます
+- シークレットは `iwato.json` には入れず、同じフォルダーの `ingress-secret.bin` に Windows の DPAPI で暗号化して保存します (macOS ではキーチェーンが持つ鍵で暗号化、Linux では暗号化せず権限 0600)。環境変数 `IWATO_TS_AUTHKEY` があればそちらを使います。ノードの状態は設定フォルダーの `ingress/tailscale/<サンドボックス>/` です
+- OAuth クライアントの代わりに auth key (`tskey-auth-…`) も使えます。Reusable・Pre-approved・tag 付きで、Ephemeral はオフにします。期限 (最長 90 日) が切れると、新しいサンドボックスのノードを作れません
 
 ### ポートごとの設定
 
@@ -61,7 +61,7 @@ Tailscale を使うと、サンドボックスごとに tailnet のノードが�
 
 ## スマホから Iwato を使う
 
-Iwato の画面は `127.0.0.1` だけで待ち受けます。スマホから使うには、Windows で `tailscale serve` を前に置き、Iwato に HTTPS のアドレスを教えます:
+Iwato の画面は `127.0.0.1` だけで待ち受けます。スマホから使うには、PC で `tailscale serve` を前に置き、Iwato に HTTPS のアドレスを教えます:
 
 ```powershell
 tailscale serve --bg http://127.0.0.1:17600

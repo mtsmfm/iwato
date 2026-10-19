@@ -44,8 +44,8 @@ Behaviour:
 - Only the untagged devices of the people in **Owner logins** can connect. Tagged nodes (other sandboxes, servers) and devices shared from other tailnets are refused
 - Plain `http://` works too (traffic inside the tailnet is already encrypted); the links use `https://`
 - A stopped sandbox's node stays and its ports show 503. Deleting the sandbox logs its node out
-- The secret is not kept in `iwato.json`: it is stored next to it in `ingress-secret.bin`, encrypted with Windows DPAPI (on macOS with a key the Keychain keeps; on Linux unencrypted, mode 0600). The environment variable `IWATO_TS_AUTHKEY`, when set, is used instead. Node states are under `ingress\tailscale\<sandbox>\` in the config folder
-- A reusable auth key (`tskey-auth-…`) also works in place of an OAuth client
+- The secret is not kept in `iwato.json`: it is stored next to it in `ingress-secret.bin`, encrypted with Windows DPAPI (on macOS with a key the Keychain keeps; on Linux unencrypted, mode 0600). The environment variable `IWATO_TS_AUTHKEY`, when set, is used instead. Node states are under `ingress/tailscale/<sandbox>/` in the config folder
+- An auth key (`tskey-auth-…`) also works in place of an OAuth client: reusable, pre-approved, with the tag, not ephemeral. Once it expires (90 days at most), no node can be made for new sandboxes
 
 ### Per-port settings
 
@@ -61,7 +61,7 @@ There is no screen for them yet; set them in `iwato.json` per sandbox:
 
 ## Use Iwato from your phone
 
-Iwato's own page listens on `127.0.0.1` only. To use it from a phone, put `tailscale serve` in front of it on Windows and tell Iwato the HTTPS address:
+Iwato's own page listens on `127.0.0.1` only. To use it from a phone, put `tailscale serve` in front of it on the PC and tell Iwato the HTTPS address:
 
 ```powershell
 tailscale serve --bg http://127.0.0.1:17600

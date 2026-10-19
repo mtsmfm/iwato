@@ -12,7 +12,7 @@ Iwato itself keeps each terminal's screen and scrollback, so you can close the b
 - In a sandbox whose image has no daemon, extra terminals end when Iwato exits
 - When the image's daemon is older than Iwato, what it supports keeps working and the rest falls back (the files and the editor show the working directory); recreating the sandbox brings the new daemon
 
-On a phone, the on-screen keyboard does not change the terminal's rows (so lines are not duplicated in the history). The key row adds Esc, Tab, ⇧Tab, Ctrl, the arrow keys and **Image**.
+On a phone, the on-screen keyboard does not change the terminal's rows (so lines are not duplicated in the history). The key row adds Esc, Tab, ⇧Tab, Ctrl, the arrow keys, ^C, ^B, **Paste**, **Image**, `|`, `/`, `~` and `-`.
 
 ## Links and text
 

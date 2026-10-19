@@ -56,7 +56,7 @@ Atlassian (MCP) のプロバイダーは、MCP のツールで選びます: **�
 
 ## カスタムのプロバイダー
 
-「カスタムを YAML で追加」で、OpenShell のプロバイダーのプロファイルとして自分の種類を追加できます。Iwato は保存の前に lint と自分の検査をし、設定フォルダーの `profiles\ID.yaml` に保存します (Iwato の起動時に読むので、ほかのエディタでも直せます)。`iwato-` で始まる ID は Iwato のもののために予約されています。
+「カスタムを YAML で追加」で、OpenShell のプロバイダーのプロファイルとして自分の種類を追加できます。Iwato は保存の前に lint と自分の検査をし、設定フォルダーの `profiles/ID.yaml` に保存します (Iwato の起動時に読むので、ほかのエディタでも直せます)。`iwato-` で始まる ID は Iwato のもののために予約されています。
 
 ## OAuth のプロバイダー
 
@@ -68,7 +68,7 @@ Atlassian、Claude のアカウントでのログイン、xAI のサブスクリ
 
 ### Claude Code の Claude のアカウントでのログイン
 
-Iwato が `claude auth login` と同じく、Claude Code 自身の公開クライアント ID でログインします (Anthropic が Iwato に発行したものではありません)。PC では「Claude でログイン」で許可すると自動で Iwato に戻ります。スマホでは 2 つ目のボタンで許可し、Claude のページに出たコード (`コード#…`) を貼り付けます。サンドボックスの `claude` は `CLAUDE_CODE_OAUTH_TOKEN` を読み、setup-token と同じく推論だけのトークンとして扱います。確かめるには `claude -p 'hello'`。
+Iwato が `claude auth login` と同じく、Claude Code 自身の公開クライアント ID でログインします (Anthropic が Iwato に発行したものではありません)。PC では「Claude でログイン」で許可すると自動で Iwato に戻ります。スマホでは「スマホなどでログイン (コードを貼る)」で許可し、Claude のページに出たコード (`コード#…`) を貼り付けます。サンドボックスの `claude` は `CLAUDE_CODE_OAUTH_TOKEN` を読み、setup-token と同じく推論だけのトークンとして扱います。確かめるには `claude -p 'hello'`。
 
 対話なしで使う方法として Anthropic が案内しているのは `claude setup-token` なので、「Claude Code (セットアップトークン)」の種類を勧めます。サブスクリプション (Free、Pro、Max) の OAuth トークンの扱いは Anthropic の規約が定めています: [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)。トークンを使うのはサンドボックスの Claude Code だけですが、ログインは Iwato が Claude Code のクライアント ID で行います。ゲートウェイの最初の更新が失敗すると Iwato がそう表示するので、その場合は setup-token の種類を使ってください。
 

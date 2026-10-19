@@ -6,9 +6,9 @@ Start with the settings' Startup checks (WSLc or the engine, and the configurati
 
 ## Iwato does not start
 
-- **WSLc cannot run** (the page shows it and waits): install WSL 3.0.1 or later on Windows 11 and check that `wslc.exe --version` works. If `wslc.exe` is not on `PATH`, put its full path in `iwato.json` as `"wslc"`
+- **WSLc cannot run** (the page shows it and waits): install WSL 3.0.1 or later on Windows 11 (`wsl --update`, or `wsl --update --pre-release` if the stable release is older) and check that `wslc.exe --version` works. If `wslc.exe` is not on `PATH`, stop Iwato, set its full path as `"wslc"` in `iwato.json`, and start Iwato again
 - **The port is taken**: Iwato tries 17600 to 17669. Pick one with `-listen 127.0.0.1:PORT`
-- **Preparing the images or the gateway failed**: the console and the log say why; image pulls and builds are in `image-build.log`. Check the network to ghcr.io and start Iwato again
+- **Preparing the images or the gateway failed**: the console and the log say why; image pulls and builds are in `image-build.log`. Check the network to ghcr.io (edge builds also need github.com, Docker Hub and Ubuntu's package archive) and start Iwato again
 
 ## Signing in
 
