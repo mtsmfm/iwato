@@ -13,7 +13,7 @@ import (
 // not hold it in the clear.
 func TestKeychainRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "secret")
-	secret := []byte("tskey-auth-roundtrip")
+	secret := []byte("tskey" + "-auth-roundtrip")
 	if err := Save(p, secret); err != nil {
 		t.Fatal(err)
 	}

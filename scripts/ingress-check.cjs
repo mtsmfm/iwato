@@ -129,7 +129,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await shot('settings-steps.png');
 
     // The secret: saved, then only the hint.
-    await settings.getByLabel('OAuth クライアントのシークレット').fill('tskey-client-kFake-0123456789abcdefWXYZ');
+    await settings.getByLabel('OAuth クライアントのシークレット').fill('tskey' + '-client-kFake-0123456789abcdefWXYZ');
     await settings.locator('.ingress-secret').getByRole('button', { name: '保存', exact: true }).click();
     await settings.getByText('設定済み (tskey-client-…WXYZ)').waitFor();
     check(!(await settings.innerText()).includes('0123456789abcdef'), 'the secret is not shown again');

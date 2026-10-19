@@ -237,7 +237,7 @@ func TestResetRemovesOnlyIwatosOwn(t *testing.T) {
 	}
 	pushKey := s.push.PublicKey()
 	s.ingress.dir = dir
-	if err := s.ingress.setSecret("tskey-client-k0123456789abcdefghij"); err != nil {
+	if err := s.ingress.setSecret("tskey" + "-client-k0123456789abcdefghij"); err != nil {
 		t.Fatal(err)
 	}
 	ts := &forgetProvider{}

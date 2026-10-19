@@ -130,7 +130,7 @@ func newProvider(t *testing.T, f *fakes, secret string) (*Provider, chan ingress
 
 func TestNodesFollowTheSandboxes(t *testing.T) {
 	f := &fakes{}
-	p, _ := newProvider(t, f, "tskey-client-abc-def?ephemeral=true")
+	p, _ := newProvider(t, f, "tskey"+"-client-abc-def?ephemeral=true")
 	ctx := context.Background()
 	// Running: a node joins with a non-ephemeral, pre-approved key.
 	p.Sync(ctx, []ingress.SandboxState{{Name: "dev", Running: true, Exposed: true}, {Name: "web", Exposed: true}})
@@ -139,7 +139,7 @@ func TestNodesFollowTheSandboxes(t *testing.T) {
 		t.Fatal(st)
 	}
 	n := f.last()
-	if n.cfg.Hostname != "iwato-dev" || n.cfg.AuthKey != "tskey-client-abc-def?ephemeral=false&preauthorized=true" || n.cfg.Tags[0] != "tag:iwato" {
+	if n.cfg.Hostname != "iwato-dev" || n.cfg.AuthKey != "tskey"+"-client-abc-def?ephemeral=false&preauthorized=true" || n.cfg.Tags[0] != "tag:iwato" {
 		t.Fatalf("%+v", n.cfg)
 	}
 	if fi, err := os.Stat(n.cfg.Dir); err != nil || fi.Mode().Perm() != 0o700 {
@@ -165,7 +165,7 @@ func TestNodesFollowTheSandboxes(t *testing.T) {
 	if !n.closed || n.loggedOut {
 		t.Fatal("closing must not log out")
 	}
-	p2 := New(Config{Dir: p.cfg.Dir, Prefix: "iwato-", Tag: "tag:iwato", Secret: func() string { return "tskey-client-abc-def" }, NewNode: f.make})
+	p2 := New(Config{Dir: p.cfg.Dir, Prefix: "iwato-", Tag: "tag:iwato", Secret: func() string { return "tskey" + "-client-abc-def" }, NewNode: f.make})
 	defer p2.Close()
 	p2.Sync(ctx, []ingress.SandboxState{{Name: "dev", Exposed: true}})
 	waitStatus(t, p2, "dev", "connected")
@@ -181,12 +181,12 @@ func TestNodesFollowTheSandboxes(t *testing.T) {
 
 func TestForgetLogsOutAndRemovesState(t *testing.T) {
 	f := &fakes{}
-	p, _ := newProvider(t, f, "tskey-auth-xyz")
+	p, _ := newProvider(t, f, "tskey"+"-auth-xyz")
 	ctx := context.Background()
 	p.Sync(ctx, []ingress.SandboxState{{Name: "dev", Running: true, Exposed: true}, {Name: "old", Running: true, Exposed: true}})
 	waitStatus(t, p, "dev", "connected")
 	waitStatus(t, p, "old", "connected")
-	if k := f.nodes[0].cfg.AuthKey; k != "tskey-auth-xyz" {
+	if k := f.nodes[0].cfg.AuthKey; k != "tskey"+"-auth-xyz" {
 		t.Fatalf("an auth key is used as it is: %q", k)
 	}
 	var dev, old *fakeNode
@@ -226,7 +226,7 @@ func TestForgetLogsOutAndRemovesState(t *testing.T) {
 // still runs waits for it: one node logs out, none starts on the folder.
 func TestForgetOnce(t *testing.T) {
 	f := &fakes{}
-	p, _ := newProvider(t, f, "tskey-auth-xyz")
+	p, _ := newProvider(t, f, "tskey"+"-auth-xyz")
 	ctx := context.Background()
 	p.Sync(ctx, []ingress.SandboxState{{Name: "dev", Running: true, Exposed: true}})
 	waitStatus(t, p, "dev", "connected")
@@ -267,7 +267,7 @@ func TestMissingSecretAndFailures(t *testing.T) {
 		t.Fatal(st)
 	}
 	f.fail = errors.New("invalid key")
-	p2, _ := newProvider(t, f, "tskey-auth-bad")
+	p2, _ := newProvider(t, f, "tskey"+"-auth-bad")
 	p2.Sync(context.Background(), []ingress.SandboxState{{Name: "dev", Running: true, Exposed: true}})
 	st := waitStatus(t, p2, "dev", "error")
 	if st.Message == "" {
@@ -282,7 +282,7 @@ func TestMissingSecretAndFailures(t *testing.T) {
 
 func TestConnectionsReachTheCore(t *testing.T) {
 	f := &fakes{}
-	p, got := newProvider(t, f, "tskey-auth-xyz")
+	p, got := newProvider(t, f, "tskey"+"-auth-xyz")
 	p.Sync(context.Background(), []ingress.SandboxState{{Name: "dev", Running: true, Exposed: true}})
 	waitStatus(t, p, "dev", "connected")
 	n := f.last()

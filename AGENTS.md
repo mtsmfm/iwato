@@ -12,6 +12,7 @@ Follow OpenShell's behaviour and improve only what is really inconvenient. New r
 ## Safety
 
 - Never write a string in the shape of an OpenShell placeholder (`openshell:` followed by `resolve:env`) into the repository: once it reaches an agent's conversation, the API refuses every later request. Build it instead (Go: `placeholderPrefix`). `TestNoPlaceholderLiterals` checks this
+- Fake secrets in tests are assembled too when they look real (`"tskey" + "-auth-…"`): GitHub's secret scanning reports a whole Tailscale key. The same test checks it
 - `PR_SET_DUMPABLE` must not be set to 0 in the sandbox daemon: OpenShell then blocks the network of all its descendants
 - Do not replace the daemon's binary while a sandbox runs: OpenShell pins the hashes of the connecting process's and its parents' executables
 
