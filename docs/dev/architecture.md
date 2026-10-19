@@ -2,7 +2,7 @@
 
 How Iwato is put together, by area and by file. Decisions and their reasons are in the ADRs ([`docs/adr/`](../adr/)); how to build, test and check things is in [development.md](development.md).
 
-Principle: Iwato follows OpenShell's behaviour and improves only what is really inconvenient. New resource names, labels and image names use `iwato`, never `wst` or `workspace-terminal`.
+Principle: Iwato follows OpenShell's behaviour and improves only what is really inconvenient. New resource names, labels and image names start with `iwato`.
 
 ## Server and sandboxes
 

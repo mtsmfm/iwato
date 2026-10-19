@@ -7,7 +7,7 @@ Instructions for coding agents working on this repository.
 - Design decisions: [docs/adr/](docs/adr/README.md) (accepted ADRs are not rewritten; a new ADR supersedes one). Open work: [docs/TODO.md](docs/TODO.md)
 - User docs: [docs/user/](docs/user/README.md), in English with a Japanese version in `docs/user/ja/` (keep both in step). Developer docs (ADRs, `docs/dev/`, this file) are in English
 
-Follow OpenShell's behaviour and improve only what is really inconvenient. New resource names, labels and image names use `iwato`, never `wst` or `workspace-terminal`.
+Follow OpenShell's behaviour and improve only what is really inconvenient. New resource names, labels and image names start with `iwato`.
 
 ## Safety
 
