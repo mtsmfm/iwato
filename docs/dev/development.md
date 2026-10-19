@@ -29,17 +29,17 @@ There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbse
 
 `scripts/build-exe.sh` builds `dist/windows-{amd64,arm64}/iwato.exe` and `dist/darwin-arm64/iwato`. `web/` is embedded in the exe, so UI-only changes need a build too.
 
-- CI (`.github/workflows/build.yml`) builds these on every push; on `main` it also replaces the assets of the pre-release `edge` (the tag `edge` follows `main`)
-- Default (a development exe): the exe pulls the standard image `ghcr.io/mtsmfm/iwato-sandbox:edge` when it has none (`.github/workflows/image.yml` publishes it on every push to main and only builds it in PRs that touch `sandboximage/`), pulls a newer one only on request, and builds the gateway image itself
+- CI (`.github/workflows/build.yml`) builds these on every push; on `main` it also replaces the assets of the pre-release `edge` (the tag `edge` follows `main`). Those exes are built with `--images ghcr.io/mtsmfm --image-tag edge --image-digests ...`: they pull both images of their own commit by digest, which `.github/workflows/image.yml` publishes on pushes to main (tagged `edge`, `sha-<commit>` and `src-<hash>` of `scripts/image-sources.sh`, which the edge job waits for); PRs that touch the images only build them
+- Default (a development exe): the exe pulls the standard image `ghcr.io/mtsmfm/iwato-sandbox:edge` when it has none, pulls a newer one only on request, and builds the gateway image itself, which needs `docker buildx` (as does `--local-images`)
 - `--local-images`: builds both images from the sources embedded in the exe (to try a change to `sandboximage/` before it reaches main)
-- `--images REGISTRY`: pulls both images tagged with the exe's version (the release); with `--image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...` (what `release.yml` passes, the digests it pushed) as `version@digest`, so a moved tag is not used. The `edge` tag of development exes is pulled by the tag alone: it is meant to move
+- `--images REGISTRY`: pulls both images tagged with the exe's version (the release) or `--image-tag TAG`; with `--image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...` as `tag@digest`, so a moved tag is not used and there is no update. Without digests, the `edge` tag is pulled by the tag alone: it is meant to move
 - `--debug`: keeps the debug option (the page's `?font=fallback`). Use it only while debugging. No build of this script has the fake backend (`-tags uitest`)
 
 Release: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which publishes the images (amd64 and arm64) and the exes.
 
 ### Building on Linux
 
-There is no Linux download. After the [setup](#setup), build a binary that pulls the sandbox image as an edge exe does:
+There is no Linux download. After the [setup](#setup), build a binary that pulls the sandbox image's `edge` tag and builds the gateway image, as a default build does:
 
 ```sh
 go build -ldflags '-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge' -o iwato .

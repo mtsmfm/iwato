@@ -26,7 +26,7 @@ Iwato then:
 
 1. Creates `iwato.json` if there is none (with no sandboxes)
 2. Runs its startup checks (WSLc and the configuration). When WSLc cannot be used, the page says why and how to fix it, and Iwato goes on by itself once it can (**Check again** checks at once). The settings list all the checks
-3. Pulls the standard sandbox image from ghcr.io and builds the gateway image, which downloads from Docker Hub, Ubuntu's package archive and github.com. A release exe pulls both images from ghcr.io. This takes a few minutes the first time; the output goes to `image-build.log`
+3. Pulls the sandbox and gateway images from ghcr.io (nothing is built). This takes a few minutes the first time; the output goes to `image-build.log`
 4. Starts the OpenShell gateway in WSLc
 
 The console prints a URL such as `http://127.0.0.1:17600/#token=...`. Open it in your browser. It works once, within 10 minutes; do not share it. When port 17600 is taken Iwato uses the next free one (up to 17669); `-listen 127.0.0.1:PORT` fixes the port.
@@ -72,16 +72,15 @@ This path has not yet been tried on a real Mac: the Linux CI runs it on Docker (
 
 - An Apple Silicon Mac (the build is `darwin-arm64`)
 - A Docker-compatible engine with Docker Engine 28.0 or later (OpenShell's requirement). Colima (free, MIT) is recommended; Docker Desktop and OrbStack work too, but may be paid for commercial use
-- `docker buildx` (edge builds build the gateway image)
 
 ### Set up Colima
 
 ```sh
-brew install colima docker docker-buildx
+brew install colima docker
 colima start --cpu 4 --memory 8
 ```
 
-`colima start` makes the `colima` Docker context current, which Iwato uses (Iwato runs the `docker` CLI, so `DOCKER_HOST`, `DOCKER_CONTEXT` and `docker context use` choose the engine). For buildx, follow what `brew` prints (add `cliPluginsExtraDirs` to `~/.docker/config.json`).
+`colima start` makes the `colima` Docker context current, which Iwato uses (Iwato runs the `docker` CLI, so `DOCKER_HOST`, `DOCKER_CONTEXT` and `docker context use` choose the engine).
 
 Sandboxes run in Colima's Linux VM. The CPUs and memory given to the VM stay with it while sandboxes are stopped; to change them, `colima stop`, then `colima start --cpu N --memory GiB`.
 

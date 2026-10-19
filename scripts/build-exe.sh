@@ -9,27 +9,36 @@
 # have none (a newer one only on request), and build the gateway image themselves.
 # --local-images makes them build both from the embedded sources instead (to
 # try a change to sandboximage/ before it reaches main). --images REGISTRY
-# makes them pull both, tagged with the version, from REGISTRY (the release
-# workflow); with --image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...
-# (what the release workflow pushed) they pull them as version@digest.
+# makes them pull both from REGISTRY, tagged with the version or
+# --image-tag TAG; with --image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...
+# they pull them as tag@digest (release.yml, and build.yml's edge exes).
 set -eu
 release="-X main.buildRelease=1"
 images="-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge"
-registry="" digests=""
+registry="" tag="" digests=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --debug) release="" ;;
     --images) [ $# -ge 2 ] || { echo "--images needs a registry" >&2; exit 2; }; registry=$2; images="-X main.imageRegistry=$2"; shift ;;
+    --image-tag) [ $# -ge 2 ] || { echo "--image-tag needs a tag" >&2; exit 2; }; tag=$2; shift ;;
     --image-digests) [ $# -ge 2 ] || { echo "--image-digests needs a list" >&2; exit 2; }; digests=$2; shift ;;
     --local-images) images="" ;;
-    *) echo "usage: $0 [--debug] [--images REGISTRY [--image-digests NAME=sha256:HEX,...] | --local-images]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--debug] [--images REGISTRY [--image-tag TAG] [--image-digests NAME=sha256:HEX,...] | --local-images]" >&2; exit 2 ;;
   esac
   shift
 done
+if [ -n "$tag" ]; then
+  [ -n "$registry" ] || { echo "--image-tag needs --images" >&2; exit 2; }
+  echo "$tag" | grep -Eqx '[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}' || { echo "bad image tag: $tag" >&2; exit 2; }
+  images="$images -X main.imageTag=$tag"
+fi
 if [ -n "$digests" ]; then
   [ -n "$registry" ] || { echo "--image-digests needs --images" >&2; exit 2; }
   for d in $(echo "$digests" | tr ',' ' '); do
     echo "$d" | grep -Eqx 'iwato-(gateway|sandbox)=sha256:[0-9a-f]{64}' || { echo "bad image digest: $d" >&2; exit 2; }
+  done
+  for n in iwato-gateway iwato-sandbox; do
+    echo ",$digests" | grep -q ",$n=" || { echo "--image-digests has no $n" >&2; exit 2; }
   done
   images="$images -X main.imageDigests=$digests"
 fi

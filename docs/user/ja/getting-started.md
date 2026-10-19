@@ -26,7 +26,7 @@ Iwato は次を行います。
 
 1. `iwato.json` がなければ作ります (サンドボックス 0 個)
 2. 起動時の確認 (WSLc・設定)。WSLc を使えないときは、画面に理由と直し方を出し、使えるようになると自動で続けます (「再確認」ですぐ確かめます)。確認の一覧は「設定」にあります
-3. 標準イメージを ghcr.io から取得し、ゲートウェイのイメージをビルドします。ビルドは Docker Hub、Ubuntu のパッケージのアーカイブ、github.com からダウンロードします。リリース版は両方を ghcr.io から取得します。初回は数分かかります。出力は `image-build.log` です
+3. サンドボックスとゲートウェイのイメージを ghcr.io から取得します (ビルドはしません)。初回は数分かかります。出力は `image-build.log` です
 4. OpenShell のゲートウェイを WSLc で起動します
 
 コンソールに `http://127.0.0.1:17600/#token=...` のような URL が出るので、ブラウザで開きます。10 分以内・1 回限りです。共有しないでください。17600 が使用中なら次の空いているポート (17669 まで) を使います。`-listen 127.0.0.1:PORT` で固定もできます。
@@ -72,16 +72,15 @@ macOS では、WSLc の代わりに Docker 互換のエンジンでサンドボ�
 
 - Apple Silicon の Mac (ビルドは `darwin-arm64`)
 - Docker Engine 28.0 以上の Docker 互換のエンジン (OpenShell の前提)。おすすめは Colima (無料、MIT)。Docker Desktop・OrbStack でも動きますが、商用では有料のことがあります
-- `docker buildx` (edge 版はゲートウェイのイメージをビルドします)
 
 ### Colima を用意する
 
 ```sh
-brew install colima docker docker-buildx
+brew install colima docker
 colima start --cpu 4 --memory 8
 ```
 
-`colima start` で Docker の context が `colima` になり、Iwato はそれを使います (Iwato は `docker` コマンドを実行するので、`DOCKER_HOST`・`DOCKER_CONTEXT`・`docker context use` でエンジンを選べます)。buildx は `brew` が表示する手順 (`~/.docker/config.json` に `cliPluginsExtraDirs`) に従います。
+`colima start` で Docker の context が `colima` になり、Iwato はそれを使います (Iwato は `docker` コマンドを実行するので、`DOCKER_HOST`・`DOCKER_CONTEXT`・`docker context use` でエンジンを選べます)。
 
 サンドボックスは Colima の Linux の VM で動きます。VM に割り当てた CPU とメモリは、サンドボックスを止めても戻りません。変えるときは `colima stop` してから `colima start --cpu N --memory GiB`。
 
