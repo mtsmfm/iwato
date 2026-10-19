@@ -75,10 +75,11 @@ func (s *Server) profileDir() string {
 // lowercase letters, digits and hyphens).
 func (s *Server) customProfileFile(id string) string {
 	dir := s.profileDir()
-	if dir == "" || !validProfileID(id) {
+	file := id + ".yaml"
+	if dir == "" || !validProfileID(id) || !filepath.IsLocal(file) {
 		return ""
 	}
-	return filepath.Join(dir, id+".yaml")
+	return filepath.Join(dir, file)
 }
 
 // loadProfiles registers the scoped providers' profiles and the custom

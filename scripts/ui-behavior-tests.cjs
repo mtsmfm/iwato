@@ -171,7 +171,7 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   assert.equal(env.requests[0].path, '/api/session'); assert.equal(env.requests[0].method, 'POST'); assert.equal(JSON.parse(env.requests[0].body).token, 'a'.repeat(64));
   assert.equal(env.context.window.IwatoLaunch, undefined); assert.equal(env.els['fake-banner'].hidden, false); assert.equal(env.sockets.length, 0); assert.equal(env.requests.filter(r => r.path.endsWith('/start')).length, 0);
   assert.equal(mutations(env).length, 0); assert.equal(env.policy().children[1].children[0].children.length, 0, 'no proposals to decide');
-  assert.match(env.els['server-build'].textContent, /^v0\.3\.0 · 98cb328-dirty\n2026-10-0[34] \d\d:\d4 ビルド$/); assert.equal(env.els['menu-build'].textContent, env.els['server-build'].textContent.replace('\n', ' · '));
+  assert.match(env.els['server-build'].textContent, /^v0\.3\.0 · 98cb328-dirty\n2026-10-0[34] \d\d:\d4 ビルド$/); assert.equal(env.els['menu-build'].textContent, env.els['server-build'].textContent.replaceAll('\n', ' · '));
   ok('fragment stripped; bootstrap consumed; no automatic start, attach or approval');
   assert.equal(env.card().children[0].children[0].children[1].children[0].textContent, 'api'); assert(env.card().children[1].textContent.includes('<script>'));
   ok('sandbox metadata remains literal text without HTML writes');
@@ -721,7 +721,7 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   const hidden = await environment({fake: false}); assert.equal(hidden.intervals[0].ms, 10000); const visibleRequests = hidden.requests.length; hidden.document.hidden = true; await hidden.tickPoll(); policyRefresh(hidden).click(); await flush(); assert.equal(hidden.requests.length, visibleRequests); hidden.document.hidden = false; hidden.document.listeners.visibilitychange(); await flush(); assert(proposalReads(hidden).length > 1); assert.equal(mutations(hidden).length, 0);
   ok('10-second polling and manual status reads pause while hidden; visibility recovery remains read-only');
   const errors = await environment({fake: false}); errors.setProposalHandler(() => response({error: '<script>bad status</script>'}, 503)); await errors.tickPoll(); const errorNode = errors.policy().children[0].children[2];
-  assert.match(errorNode.textContent, /<script>/); const writes = errorNode.textWrites; await errors.tickPoll(); await errors.tickPoll(); assert.equal(errorNode.textWrites, writes); assert.equal(mutations(errors).length, 0);
+  assert(errorNode.textContent.includes('<script>')); const writes = errorNode.textWrites; await errors.tickPoll(); await errors.tickPoll(); assert.equal(errorNode.textWrites, writes); assert.equal(mutations(errors).length, 0);
   ok('repeated status failures remain literal text and are not re-announced');
   const authLost = await environment({fake: false}); authLost.setProposalHandler(() => response({error: 'expired session'}, 401)); policyRefresh(authLost).click(); await flush(); assert.equal(policyRefresh(authLost).disabled, true); assert.equal(authLost.els['server-state'].dataset.state, 'error');
   ok('session invalidation disables owner actions');

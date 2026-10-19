@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -1054,6 +1055,9 @@ func (d *driver) sandboxBinary(ctx context.Context) ([]byte, error) {
 // files (the identity's, 0600) into the created workload; the channel
 // entries land in the channel volume.
 func (d *driver) stageWorkload(ctx context.Context, cid string, id identity, binary []byte, f boundaryFiles, defaultWS bool) error {
+	if id.UID > math.MaxInt32 || id.GID > math.MaxInt32 {
+		return fmt.Errorf("uid %d or gid %d out of range", id.UID, id.GID)
+	}
 	u, g := int(id.UID), int(id.GID)
 	entries := []tarEntry{
 		{name: ".openshell", dir: true, mode: 0o755},

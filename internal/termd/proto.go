@@ -209,7 +209,7 @@ func WriteMessage(w io.Writer, kind byte, payload []byte) error {
 
 // Message encodes one message.
 func Message(kind byte, payload []byte) []byte {
-	b := make([]byte, 5, 5+len(payload))
+	b := make([]byte, 5, 5+min(len(payload), MaxMessage))
 	b[0] = kind
 	binary.BigEndian.PutUint32(b[1:], uint32(len(payload)))
 	return append(b, payload...)
