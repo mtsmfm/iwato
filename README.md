@@ -4,6 +4,9 @@
 
 <img src="web/icon.svg" width="96" alt="">
 
+> [!WARNING]
+> Iwato is under active development. Expect breaking changes (settings, sandboxes, images and the API may change without a migration path) until the first stable release.
+
 **Iwato** (岩戸) runs AI coding agents (Claude Code, Codex, Grok Build, …) in [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes on your Windows PC, from a single exe, and lets you use them from a browser, including your phone.
 
 - **Sandboxes on WSLc**: Iwato runs OpenShell's gateway in WSLc, with its own WSLc compute driver. Nothing else to install: no Docker Desktop, no account

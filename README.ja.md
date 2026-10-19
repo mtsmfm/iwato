@@ -4,6 +4,9 @@
 
 <img src="web/icon.svg" width="96" alt="">
 
+> [!WARNING]
+> Iwato は開発中です。最初の安定版までは、破壊的な変更が入る見込みです (設定・サンドボックス・イメージ・API が、移行手段なしに変わることがあります)。
+
 **Iwato** (岩戸) は、Windows の単一 exe から AI コーディングエージェント (Claude Code、Codex、Grok Build など) の作業場所を [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) のサンドボックスとして作り、ブラウザ (スマホ含む) から使うためのツールです。
 
 - **WSLc 上のサンドボックス**: Iwato が OpenShell のゲートウェイを WSLc で動かし、WSLc 用のコンピュートドライバも Iwato 自身が持ちます。ほかに入れるものはありません (Docker Desktop もアカウントも不要)
