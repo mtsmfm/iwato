@@ -1,7 +1,8 @@
 'use strict';
 // The volume panel in a real browser against `serve -fake`: the volumes by
 // sandbox, removing a leftover one after the warning, and the note in the
-// create form. Saves screenshots next to the binary. Usage (AGENTS.md):
+// create form. Saves screenshots in a temporary directory (printed at the
+// end). Usage (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/volumes-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');

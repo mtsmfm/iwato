@@ -1,4 +1,5 @@
-/* Capture once, remove the secret from the URL before loading the application. */
+/* Captures the launch token from the URL's hash and removes it from the URL
+   before the application loads. */
 (() => {
   'use strict';
   let token = null;

@@ -461,7 +461,8 @@ func (p *Pool) Open(name string) bool {
 	return p.conns[name] != nil
 }
 
-// janitor closes transports unused for Idle; it ends when none is left.
+// janitor closes transports unused for Idle and those that stalled (Stall);
+// it ends when none is left.
 func (p *Pool) janitor() {
 	every := min(p.Idle, p.Stall) / 4
 	if every < 10*time.Millisecond {

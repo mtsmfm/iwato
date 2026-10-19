@@ -22,9 +22,9 @@ import (
 const Scheme = "keychain"
 
 // The Keychain item that holds the key (a generic password, hex), made on
-// first use. The security tool made it, so the tool reads it back without
-// a prompt (any program of this user can run it: about DPAPI's
-// CurrentUser protection, against other users and a copied disk).
+// first use. The security tool made it, so it reads it back without a
+// prompt. Any program of this user can run the tool: like DPAPI's
+// CurrentUser, this protects against other users and a copied disk.
 const (
 	service = "iwato"
 	account = "secret-file-key"

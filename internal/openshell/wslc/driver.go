@@ -1,3 +1,5 @@
+// Package wslc is OpenShell's compute driver for WSLc, a port of the
+// Docker driver (docs/adr/0007).
 package wslc
 
 import (
@@ -1075,12 +1077,10 @@ func (d *driver) stageWorkload(ctx context.Context, cid string, id identity, bin
 
 // legacyTermEntries place Iwato's daemon at termd.LegacyPath, root's and
 // read-only, for a sandbox whose main process (mainProcess, its
-// main-process.json) runs it from there: one made before the image carried
-// the daemon, which the driver gave it on creation and gives it again on
-// each start until the sandbox is recreated. Only into a workload that does
-// not run: OpenShell pins the hash of each executable it sees in a
-// sandbox's connections (the daemon is the parent of every terminal's
-// programs), so a binary replaced under a running daemon would cut their
+// main-process.json) runs it from there. The driver places it on each
+// start until the sandbox is recreated. Only into a workload that does not
+// run: OpenShell pins the hash of each executable in a sandbox's
+// connections, so a daemon replaced while it runs would cut its terminals'
 // network.
 func (d *driver) legacyTermEntries(mainProcess []byte) []tarEntry {
 	var spec struct {
@@ -1490,7 +1490,7 @@ func (d *driver) failClosed(ctx context.Context, id, workload, reason string, er
 }
 
 // adoptGeneration records the running start's generation when none is
-// known (a sandbox from before), else verifies it.
+// known, else verifies it.
 func (d *driver) adoptGeneration(id, generation string) error {
 	if generation == "" {
 		return nil

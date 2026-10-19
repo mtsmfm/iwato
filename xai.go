@@ -18,7 +18,7 @@ import (
 )
 
 // Grok Build with the owner's xAI account (iwato-grok-subscription):
-// Iwato.exe signs in at auth.x.ai by the device authorization grant
+// Iwato signs in at auth.x.ai by the device authorization grant
 // (RFC 8628) with Grok Build's own public client and scopes, as
 // `grok login --device-auth` does, so the same steps work from the PC and
 // from a phone: the page shows the code and xAI's page, and Iwato polls.
@@ -45,7 +45,8 @@ type deviceCode struct {
 	ExpiresIn, Interval                    int64
 }
 
-// errAuthorizationPending and errSlowDown: the owner has not approved yet.
+// errAuthorizationPending and errSlowDown: the owner has not approved yet
+// (slow_down also lengthens the interval).
 var (
 	errAuthorizationPending = errors.New("authorization_pending")
 	errSlowDown             = errors.New("slow_down")

@@ -41,7 +41,8 @@ type imageSource interface {
 	UpdateImage(context.Context) (bool, error)
 }
 
-// engineImages is the standard image of WSLc, with images.json in dir.
+// engineImages is the standard image of the engine, with images.json in
+// dir.
 type engineImages struct {
 	e   *Engine
 	dir string

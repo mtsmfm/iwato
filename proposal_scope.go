@@ -19,26 +19,26 @@ import (
 // endpoints is the provider's business (docs/adr/0006): the approve dialog
 // offers to widen the provider's scope instead of adding a policy rule.
 // For a provider with its own profile Iwato turns the proposal into scope
-// fields (GitHub: a git push or REST writes under /repos/OWNER/REPO into a
-// repository to write to, GraphQL mutations by field name into named
-// mutations; Atlassian in mode tools: MCP tool calls by name into its
-// tools; the other profiles: a write on the profile's own endpoints
-// into mode full), saves the scope (changeScope) and then closes the
-// proposal. When it cannot (a provider without a scope, the
-// legacy shared iwato-github, the owner's YAML, a shape the scope cannot
-// say), the page says why and approving adds the policy rule,
-// with the warning that the provider's token rides along.
+// fields, saves the scope (changeScope) and closes the proposal:
+//   - GitHub: a git push or REST writes under /repos/OWNER/REPO become a
+//     repository to write to, GraphQL mutations named mutations;
+//   - Atlassian in mode tools: MCP tool calls become its tools;
+//   - other profiles: a write on the profile's own endpoints becomes mode
+//     full.
+//
+// When it cannot (a provider without a scope, the shared iwato-github, the
+// owner's YAML, a shape the scope cannot say), the page says why and
+// approving adds the policy rule, with the warning that the provider's
+// token rides along.
 //
 // Closing the proposal: OpenShell's approval always merges the chunk's
-// rule into the sandbox policy (ApproveDraftChunk; an edit only changes the
-// rule), which is what the scope replaces. So Iwato rejects the chunk, with
-// a reason that tells the agent (it reads it from policy.local's
-// /v1/proposals/ID/wait) that the request is allowed through the
-// provider's scope and to retry it rather than propose again. The agent
-// waits on /wait until then; Iwato rejects only after the running sandbox
-// applied the new profile (the receipt of ObserveProvider, as 反映待ち on
-// the provider tab), so the retry goes through. A sandbox that does not
-// run gets the decision at once.
+// rule into the sandbox policy (ApproveDraftChunk). So Iwato rejects the
+// chunk, with a reason that tells the agent (through policy.local's
+// /v1/proposals/ID/wait) to retry the request rather than propose again.
+// Iwato rejects only after the running sandbox applied the new profile
+// (the receipt of ObserveProvider, as 反映待ち on the provider tab), so the
+// retry goes through. A sandbox that does not run gets the decision at
+// once.
 
 // ScopeWidening is what approving a proposal does to the provider whose
 // credentialed endpoints it reaches.

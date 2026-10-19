@@ -51,9 +51,8 @@ func (d *Fake) DialFiles(_ context.Context, w Sandbox) (dav.Transport, error) {
 	return m.Transport(), nil
 }
 
-// FilesRoot is the home, as with the standard image's daemon; the
-// "experiment" sandbox stands for one whose image has no daemon (OpenShell's
-// SFTP, at the workspace), for the note that recreating gives the home.
+// FilesRoot is the home; the "experiment" sandbox stands for one without
+// the daemon's SFTP server (the workspace; recreating gives the home).
 func (d *Fake) FilesRoot(_ context.Context, w Sandbox) (FilesRoot, error) {
 	if w.Name == "experiment" {
 		return FilesRoot{Path: "/sandbox"}, nil

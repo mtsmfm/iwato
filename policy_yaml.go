@@ -101,7 +101,7 @@ func (d PolicyYAMLDiff) empty() bool {
 	return len(d.Added)+len(d.Removed)+len(d.Changed) == 0
 }
 
-// names are the rules added and changed.
+// touched names the rules added and changed.
 func (d PolicyYAMLDiff) touched() []string {
 	var out []string
 	for _, r := range append(slices.Clone(d.Added), d.Changed...) {

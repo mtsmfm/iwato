@@ -9,13 +9,13 @@ import (
 
 // A named volume starts as an empty directory owned by root, and the
 // capability-free launch hands only the workspace to the sandbox user. A
-// volume mounted at a path the image does not have (a persisted /sandbox/work
-// or ~/.claude) would therefore stay read-only for the sandbox user. The
-// Docker driver leaves this to Docker's copy-up from the image, which cannot
-// help for such a path; Kubernetes sets fsGroup. Here the root of each
-// writable volume that root still owns is handed to the sandbox user after the
-// workload starts and before the supervisor starts the main process (the
-// workload runs nothing of the user's until then).
+// volume mounted at a path the image does not have would therefore stay
+// read-only for the sandbox user. The Docker driver leaves this to Docker's
+// copy-up from the image, which cannot help for such a path; Kubernetes
+// sets fsGroup. Here the root of each writable volume that root still owns
+// is handed to the sandbox user after the workload starts and before the
+// supervisor starts the main process (the workload runs nothing of the
+// user's until then).
 
 // writableVolumeTargets returns the normalized targets of the volume mounts
 // that are not read-only.
@@ -48,8 +48,8 @@ func ownVolumesCommand(uid, gid string, targets []string) []string {
 }
 
 // ownVolumes runs after the workload started. A failure (an image without
-// stat or chown, a state from before this existed) is logged, not fatal: the
-// sandbox still works, only the persisted path may not be writable.
+// stat or chown, no saved identity) is logged, not fatal: the sandbox still
+// works, only the persisted path may not be writable.
 func (d *driver) ownVolumes(ctx context.Context, sandboxID, cid string) {
 	st, err := d.readState(sandboxID, "identity")
 	if err != nil {
@@ -70,8 +70,8 @@ func (d *driver) ownVolumes(ctx context.Context, sandboxID, cid string) {
 	}
 }
 
-// volumeTargets reads the writable volume targets saved at creation. Absent
-// for a sandbox created before they were saved.
+// volumeTargets reads the writable volume targets saved at creation (nil
+// when none were saved).
 func (d *driver) volumeTargets(sandboxID string) []string {
 	st, err := d.readState(sandboxID, "volume-targets")
 	if err != nil {

@@ -185,9 +185,9 @@ for sock in "$TMP"/.X11-unix/X*; do
 done
 
 # PulseAudio and D-Bus: <dir>/pid names the daemon; without a live one the
-# pid file and the sockets next to it are stale. The directories are the usual
-# ones (names not verified against this image): $XDG_RUNTIME_DIR/pulse,
-# $HOME/.config/pulse/*-runtime, $TMP/pulse-*, and the per-user ~/.dbus/session-bus.
+# pid file and the sockets next to it are stale. The usual directories:
+# $XDG_RUNTIME_DIR/pulse, $HOME/.config/pulse/*-runtime, $TMP/pulse-* and
+# ~/.dbus/session-bus.
 for d in "${XDG_RUNTIME_DIR:-$TMP/xdg-none}/pulse" "$HOME_DIR"/.config/pulse/*-runtime "$TMP"/pulse-*; do
   [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$d/pid" ] || continue
   read -r ppid <"$d/pid" 2>/dev/null || ppid=
@@ -202,7 +202,7 @@ for f in "$HOME_DIR"/.dbus/session-bus/*; do
 done
 
 # Selkies: it listens on a TCP port, which needs no cleanup, but may leave
-# socket files in $TMP (names not verified). No instance is alive here (the
+# socket files in $TMP. No instance is alive here (the
 # pidfile check above), so owned leftovers are stale.
 for f in "$TMP"/selkies-* "$TMP"/.selkies-* "$TMP"/pixelflux-*; do
   { [ -S "$f" ] || [ -f "$f" ]; } && [ ! -L "$f" ] && mine "$f" || continue

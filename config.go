@@ -20,7 +20,8 @@ import (
 const version = "0.1.0"
 const configVersion = 1
 
-// ownerKey is the label that marks a WSLc resource as this configuration's.
+// ownerKey is the label that marks an engine resource as this
+// configuration's.
 const ownerKey = "iwato.owner"
 
 var safeID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -29,8 +30,8 @@ var ownerID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 type Config struct {
 	Version  int    `json:"version"`
 	Instance string `json:"instance"`
-	// Namespace names the WSLc resources (iwato-<namespace>-…), so that
-	// several configurations can share one WSLc session.
+	// Namespace names the engine's resources (iwato-<namespace>-…), so
+	// that several configurations can share one engine (a WSLc session).
 	Namespace string `json:"namespace"`
 	// WSLC is the wslc executable (Windows). Without it the engine is a
 	// Docker-compatible one through the CLI Docker names (default "docker").
@@ -47,8 +48,8 @@ type Config struct {
 	// screen later (internal/hostterm/trace.go, traceScript). The files
 	// hold whatever the terminals showed.
 	TermTrace bool `json:"termTrace,omitempty"`
-	// ProviderScopes are the access scopes of the providers of scoped
-	// profiles (iwato-github), by provider name (providers_scope.go).
+	// ProviderScopes are the access scopes of the providers with their own
+	// profile, by provider name (providers_scope.go).
 	ProviderScopes map[string]ProviderScope `json:"providerScopes,omitempty"`
 	Sandboxes      []Sandbox                `json:"sandboxes"`
 }
@@ -57,16 +58,16 @@ type Config struct {
 type Sandbox struct {
 	// Name is the OpenShell sandbox name.
 	Name string `json:"name"`
-	// Image is any image reference WSLc can use, as `openshell sandbox
-	// create --from`; empty means Iwato's sandbox image.
+	// Image is any image reference the engine can use, as `openshell
+	// sandbox create --from`; empty means Iwato's sandbox image.
 	Image string `json:"image,omitempty"`
-	// LegacyPersist are the paths outside the home that a sandbox made
-	// before the image convention (docs/adr/0005) kept on volumes of their
-	// own. Only the home persists now: new sandboxes have none, and the
-	// owner's recreate clears them (the new sandbox does not mount those
-	// volumes, which stay in the volumes screen). Until then the sandbox
-	// mounts them (also when Start makes a failed one again), the volumes
-	// show as used by it, and a delete with its volumes removes them too.
+	// LegacyPersist are paths outside the home that a sandbox keeps on
+	// volumes of their own. Under the image convention (docs/adr/0005)
+	// only the home persists: a new sandbox has none, and the owner's
+	// recreate clears them (the new sandbox does not mount those volumes,
+	// which stay in the volumes screen). Until then the sandbox mounts them
+	// (also when Start makes a failed one again), the volumes show as used
+	// by it, and a delete with its volumes removes them too.
 	LegacyPersist []string `json:"persist,omitempty"`
 	// Presets are the network presets (presets.go) the sandbox has: those
 	// it was created with (their rules are in its first policy) and those
@@ -286,10 +287,10 @@ func (c Config) Sandbox(name string) (Sandbox, bool) {
 	return Sandbox{}, false
 }
 
-// prefix starts the names of this configuration's WSLc resources.
+// prefix starts the names of this configuration's engine resources.
 func (c Config) prefix() string { return "iwato-" + c.Namespace }
 
-// resourceName names one of a sandbox's WSLc resources.
+// resourceName names one of a sandbox's engine resources.
 func (c Config) resourceName(w Sandbox, kind string) string {
 	return c.prefix() + "-" + w.Name + "-" + kind
 }

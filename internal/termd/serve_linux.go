@@ -66,11 +66,10 @@ func Serve(key string, standby bool) error {
 	if !ValidKey(key) {
 		return errors.New("invalid key")
 	}
-	// Not PR_SET_DUMPABLE 0: OpenShell identifies a connection's process
-	// and its ancestors through /proc, and denies every connection of the
-	// terminals' programs when it cannot read the daemon's (and the
-	// daemon's own bind). Its seccomp filter refuses ptrace and
-	// process_vm_readv to the sandbox's processes anyway.
+	// Not PR_SET_DUMPABLE 0: OpenShell reads a connection's process and its
+	// ancestors through /proc and denies the connection when it cannot read
+	// the daemon's. Its seccomp filter refuses ptrace and process_vm_readv
+	// to the sandbox's processes anyway.
 	dir, err := ensureDir()
 	if err != nil {
 		return err
@@ -604,9 +603,8 @@ func setSize(ptm *os.File, cols, rows int) error {
 // Conn is a connection to a daemon.
 type Conn = *net.UnixConn
 
-// Dial connects to the daemon with key.
-// It reaches only a daemon of this user, in this user's private directory:
-// the open request carries the environment, and the input follows.
+// Dial connects to the daemon with key. It reaches only a daemon in this
+// user's private directory: the open request carries the environment.
 func Dial(key string) (*net.UnixConn, error) {
 	if err := checkDir(Dir()); err != nil {
 		return nil, err

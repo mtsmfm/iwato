@@ -11,9 +11,9 @@
 // when the tab first shows): highlighting by the file's name, search,
 // bracket matching, an undo history per open file. Without it (the bundle
 // does not load, or no DOM in the unit tests) a textarea does the same
-// minus those. An image (known by its name, or a file the server says is not text) opens
-// as a read-only preview: an img of the raw route, which serves only images
-// told by their content, under a sandboxing CSP.
+// minus those. An image (known by its name, or a file the server says is
+// not text) opens as a read-only preview: an img of the raw route, which
+// serves only images told by their content, under a sandboxing CSP.
 (() => {
   'use strict';
   // The UI's strings (web/i18n.js), looked up when used.

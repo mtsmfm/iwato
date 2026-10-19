@@ -3,7 +3,8 @@
 // `serve -fake`: through the page's polling, after a text selection, and
 // after the menu, a panel or a dialog closes; and a reconnect never takes
 // it from a field being typed in. Records every focus change (focusout with
-// relatedTarget and the stack) and prints them when a check fails. Usage (AGENTS.md):
+// relatedTarget and the stack) and prints them when a check fails. Usage
+// (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/focus-check.cjs
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');

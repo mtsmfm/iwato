@@ -1,13 +1,10 @@
 // Package termbin carries the iwato-entrypoint binary (cmd/iwato-entrypoint)
-// built for Linux on this exe's architecture (the WSL VM's):
-// scripts/build-exe.sh builds it and puts it in bin/ for the exe's build
-// (through go build -overlay, per architecture). The sandbox image carries
-// its own (built from the same commit); this one is for what is not that
-// image: the WSLc driver places it, as iwato-term, in the sandboxes made
-// before the image carried it, and a local build of the image
-// (--local-images) puts it in. Without it (go test, a plain go build)
-// Binary is nil: those sandboxes use the terminals without the daemon (the
-// main process and execs).
+// built for Linux on this exe's architecture. scripts/build-exe.sh puts it
+// in bin/ for the exe's build (go build -overlay). The sandbox image
+// carries its own; this one is what the WSLc driver places, as iwato-term,
+// in sandboxes that run it from the legacy path, and what a local build of
+// the image (--local-images) puts in. Without it (go test, a plain go
+// build) Binary is nil.
 package termbin
 
 import (

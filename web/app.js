@@ -28,7 +28,7 @@
   };
   // Debug options (/debug.js turns them on in debug builds only).
   const debugParams = new URLSearchParams(window.IwatoDebug === true ? location.search : '');
-  // /?font=fallback keeps the previous fonts (to compare rendering cost).
+  // /?font=fallback keeps the fallback fonts (to compare rendering cost).
   if (debugParams.get('font') !== 'fallback' && typeof document.fonts?.load === 'function') {
     terminalFont.loading = Promise.all(['12px', 'bold 12px'].map((font) => document.fonts.load(font + ' "Moralerspace Neon HW"')))
       .then((faces) => { terminalFont.ready = faces.every((list) => list.length > 0); }, () => { /* not served: the fallback stays */ });
@@ -242,7 +242,7 @@
       if (d.port) line.append(element('span', 'approve-port', d.port));
       return line;
     }));
-    // Without endpoints (an older server), OpenShell's summary instead.
+    // Without endpoints, OpenShell's summary instead.
     if (!head.children.length && item.summary) head.append(element('p', 'approve-intent', item.summary));
     if (item.intent) head.append(element('p', 'approve-intent', t('policy.quote', { text: item.intent })));
     for (const [text, detail] of warnings) {
@@ -549,7 +549,7 @@
   });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && pendingConfirm) answerConfirm(false); });
   function showNotice(title, message) {
-    // A script's title: no longer the default's key.
+    // A script's title replaces the default's key.
     $('notice-title').removeAttribute('data-i18n');
     $('notice-title').textContent = title;
     $('notice-text').textContent = message;
@@ -1059,7 +1059,7 @@
     }
     select.replaceChildren(...options);
     if (providerView.profiles.some((p) => p.id === current)) select.value = current;
-    // At first GitHub (a value to paste, not an OAuth sign-in).
+    // Preselect GitHub (a value to paste, not an OAuth sign-in).
     else if (providerView.profiles.length) select.value = (providerView.profiles.find((p) => p.id === 'iwato-github') || providerView.profiles.find((p) => !p.oauth) || providerView.profiles[0]).id;
     const profile = providerView.profiles.find((p) => p.id === select.value);
     $('provider-note').textContent = profile ? profile.note : '';
@@ -1963,7 +1963,7 @@
   }
 
   // Creating a sandbox under a name that left data behind picks up its
-  // home; what an older version kept outside the home stays unused: say so.
+  // home; its other volumes stay unused: say so.
   function createHint() {
     const name = String($('create-name').value || '').trim();
     const left = volumeView.list.filter((v) => name && v.sandbox === name && !v.usedBy);
@@ -2460,7 +2460,7 @@
         decidedAt: Number(p.decidedAt) || 0, hitsAfter: Number.isInteger(p.hitsAfter) ? p.hitsAfter : -1, seenAfter: p.seenAfter === true,
         auto: ['superseded', 'covered'].includes(p.auto) ? p.auto : '', ruleExists: p.ruleExists === true, placeholder: p.placeholder === true,
         // The approve choices OpenShell would refuse (an endpoint already in
-        // the policy, a provider's say, has other settings), with why.
+        // the policy, a provider's rule, has other settings), with why.
         blocked: Object.fromEntries(['read', 'rules', 'all', 'audit'].filter((k) => p.blocked && p.blocked[k] && typeof p.blocked[k].reason === 'string').map((k) => {
           const vs = list(p.blocked[k].ambiguities, 20).filter((a) => a && typeof a.rule === 'string').map(validAmbiguity);
           return [k, { reason: window.IwatoRefusals.blocked(k, vs, text(p.blocked[k].reason, 1500)) }];
@@ -2920,7 +2920,8 @@
 
     // An audited endpoint lets everything through and only logs it: the
     // requests it logged, to enforce it with the chosen ones. They are
-    // read from the gateway's log (its last 2000 lines), never kept.
+    // read from the sandbox's log through the gateway (its last 2000
+    // lines), never kept.
     observedNode(rule, e, off) {
       const box = element('div', 'policy-observed');
       const where = e.host + ':' + e.ports.join(',');
@@ -2949,9 +2950,10 @@
 
     // Requests the endpoint denied (and still would), and programs its rule
     // refused: OpenShell makes no proposal for a denied method or path
-    // (the agent is to propose, and may not). Read from the gateway's log
-    // (its last 2000 lines), never kept. A provider's rule cannot change:
-    // a rule by hand for the same host takes them instead.
+    // (the agent is to propose, and may not). Read from the sandbox's log
+    // through the gateway (its last 2000 lines), never kept. A provider's
+    // rule cannot change: a rule by hand for the same host takes them
+    // instead.
     deniedNode(rule, e, off) {
       const box = element('div', 'policy-denied');
       const where = e.host + ':' + e.ports.join(',');
@@ -3823,7 +3825,7 @@
   }
 
   // Removing a sandbox requires typing its name. Data volumes are kept unless
-  // the owner explicitly opts in; the configuration entry always remains.
+  // the owner explicitly opts in; the sandbox leaves the configuration.
   class DeletePanel {
     constructor(card) {
       this.card = card;

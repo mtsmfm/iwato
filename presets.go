@@ -127,8 +127,7 @@ func newPresetFileError(file string, err error) presetFileError {
 }
 
 // PresetRef is a preset a sandbox has, with its parameters. In JSON it is
-// the ID alone when there are none (as configurations before parameters
-// have it).
+// the ID alone when there are none.
 type PresetRef struct {
 	ID     string            `json:"id"`
 	Params map[string]string `json:"params,omitempty"`

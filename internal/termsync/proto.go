@@ -15,7 +15,7 @@
 //	'd' input: bytes for the program (keys, mouse and paste already encoded)
 //	'r' resize: uvarint cols, rows
 //	'a' ack: uvarint frame number, once the client has applied it
-//	'g' history: uvarint before, count: up to count lines before id before
+//	'g' history: uvarint before, count: up to count lines older than id before
 //
 // Server to client:
 //

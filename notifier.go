@@ -243,20 +243,15 @@ func (n *notifier) collect(ctx context.Context, w Sandbox) []PushMessage {
 }
 
 // A terminal is active once its screen has changed (output that left the
-// screen as it was, a blinking cursor or a resize does not count); an
-// active terminal whose screen has not changed for idleAfter has stopped,
-// which is pushed once: an agent at work keeps its screen changing (Claude
-// Code redraws a spinner and the elapsed time), so it finished its task or
-// waits for the owner. The screens are compared at each poll.
+// screen as it was, a blinking cursor or a resize does not count). An
+// active terminal whose screen has not changed for idleAfter has stopped:
+// an agent at work keeps its screen changing, so it finished or waits for
+// the owner. That is pushed once. The screens are compared at each poll.
 //
-// What changes while a page is in use (presence.go) is no news for a push:
-// the owner sees it, and viewing a terminal redraws it (a resize, a focus
-// report, an agent repainting its screen). Such a change still marks the
-// terminal once it stops (the page's mark is what tells the owner, who is
-// using the page, that an agent in another terminal finished), but nothing
-// is pushed for it; and when the owner leaves (no page is in use any more),
-// the screen of that moment is the new baseline: a terminal is active, and
-// pushed about once it stops, only if it changes after that.
+// While a page is in use (presence.go), changes are no news for a push:
+// the owner sees them, and viewing a terminal redraws it. Such a change
+// still marks the terminal once it stops, but nothing is pushed for it.
+// When the owner leaves, the screen of that moment is the new baseline.
 const (
 	idleAfter = time.Minute
 	// idleLines bounds the last screen lines a push about it shows.
@@ -275,9 +270,9 @@ type termWatch struct {
 	attached   time.Time // the screen's attachment (termScreen.attached)
 }
 
-// observe takes the terminal's screen at now, with present telling whether
-// a page is in use and uses the count of presence reports of use, and
-// reports whether it has just stopped.
+// observe takes the terminal's screen at now and reports whether it has
+// just stopped. present tells whether a page is in use, uses is
+// presence.used().
 func (t *termWatch) observe(now time.Time, scr termScreen, present bool, uses uint64) bool {
 	sum := screenSum(scr)
 	// A page used since the last poll and closed again (a look at a push

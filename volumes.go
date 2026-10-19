@@ -16,9 +16,9 @@ const (
 	pathKey    = "iwato.path"
 )
 
-// Volume is a persisted path's volume. Path is empty when unknown (made
-// before the labels, and no configured path matches its name). UsedBy is
-// the configured sandbox that mounts it.
+// Volume is a persisted path's volume. Path is empty when unknown (no
+// labels, and no configured path matches its name). UsedBy is the
+// configured sandbox that mounts it.
 type Volume struct {
 	Name      string `json:"name"`
 	Sandbox   string `json:"sandbox"`

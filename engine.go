@@ -192,7 +192,7 @@ func (e *Engine) volume(ctx context.Context, name string, labels map[string]stri
 		return fmt.Errorf("volume %s: %w", name, err)
 	}
 	if e.docker {
-		// One made before it had them (or by hand) is refused by the driver.
+		// One without them (made by hand, say) is refused by the driver.
 		l := obj(d["Labels"])
 		for k, v := range attachLabels {
 			if val(l[k]) != v {
@@ -225,8 +225,8 @@ func (e *Engine) removeVolume(ctx context.Context, name string) error {
 	return err
 }
 
-// volumes lists this configuration's volumes. The labels name the
-// sandbox and path (volumes made before they existed have none).
+// volumes lists this configuration's volumes. The labels, when present,
+// name the sandbox and path.
 func (e *Engine) volumes(ctx context.Context) ([]Volume, error) {
 	out, err := e.run(ctx, "volume", "list", "--quiet", "--filter", "label="+ownerKey+"="+e.config.Instance)
 	if err != nil {

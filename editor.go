@@ -207,9 +207,9 @@ func saveEditorFile(c *sftp.Client, p string, data []byte, base string, force bo
 	return editorVersion(data), nil
 }
 
-// fileListRuntime lists the files under dir (relative to the workspace)
-// in the sandbox, as the sandbox user, with ripgrep: errNoRipgrep when the
-// image has none.
+// fileListRuntime lists the files under dir (relative to the files' root:
+// the home, or the workspace) in the sandbox, as the sandbox user, with
+// ripgrep: errNoRipgrep when the image has none.
 type fileListRuntime interface {
 	ListFiles(ctx context.Context, w Sandbox, dir string) (files []string, truncated bool, err error)
 }
@@ -382,9 +382,9 @@ func readEditorDir(c *sftp.Client, dir string, limit int) (*editorDir, error) {
 	return out, nil
 }
 
-// editorImageTypes are the images the preview serves (what browsers show
-// in an img). Anything else is refused: the route must not hand the
-// browser HTML, script or a type it might render as a page.
+// editorImageTypes and ICO, AVIF and SVG (editorImageType) are the images
+// the preview serves. Anything else is refused: the route must not hand
+// the browser HTML, script or a type it might render as a page.
 var editorImageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/bmp": true}
 
 // editorImageType tells an image's type from its content ("" when it is

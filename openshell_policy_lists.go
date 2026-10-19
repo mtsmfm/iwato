@@ -21,12 +21,11 @@ import (
 // the rule goes with its last program) and puts the chunk back to pending.
 
 // ChunkLink is an approved proposal a rule came from. ID is its request ID.
-// Binary is the program that asked; Binaries the ones approved (the
-// approve dialog may have widened it to a glob: Widened). Undoing it takes
-// out Binary and the approved ones no other approved proposal of the rule
-// holds; RemovesRule says the rule goes with them, and Drops are the
-// endpoints that then go too without having come from this proposal
-// (added by hand, or by an edit).
+// Binary is the program that asked; Binaries the ones approved (Widened:
+// the approve dialog widened it to a glob). Undoing it takes out Binary
+// and the approved ones no other approved proposal of the rule holds.
+// RemovesRule says the rule goes with them. Drops are the endpoints that
+// then go too without having come from this proposal.
 type ChunkLink struct {
 	ID          string   `json:"id"`
 	Binary      string   `json:"binary"`

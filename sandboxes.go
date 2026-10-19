@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// The sandbox list is editable while serve runs (create / delete from the
-// UI). Every other configuration field stays fixed for the process lifetime.
+// The sandbox list, the ingress settings and the providers' scopes are
+// editable while serve runs; the other fields are fixed.
 
 func (s *Server) sandboxList() []Sandbox {
 	s.mu.Lock()
@@ -126,8 +126,8 @@ var errSandboxExists = errors.New("同じ名前のサンドボックスがあり
 
 // handleCreateSandbox adds a sandbox: its image, presets and providers.
 // Only its home persists (the image convention): a request naming paths to
-// persist, as an older page sent them, is refused unless empty. Nothing is
-// started; 起動 creates it in OpenShell.
+// persist is refused unless empty. Nothing is started; 起動 creates it in
+// OpenShell.
 func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	if !s.require(w, r, true) {
 		return

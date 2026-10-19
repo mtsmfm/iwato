@@ -848,7 +848,9 @@
     'providers.group.models': 'モデル配布',
     'providers.group.cloud': '生成・GPU クラウド',
     'providers.group.custom': 'カスタム',
-    // Iwato's provider profiles in other languages: the server sends the Japanese (providers_profiles.go), so these keys have no ja entry (IwatoI18n.localized).
+    // Iwato's provider profiles in other languages: the server sends the
+    // Japanese (providers_profiles.go), so these keys have no ja entry
+    // (IwatoI18n.localized).
     // The files tab (files.js).
     'files.ago.unused': '未使用',
     'files.ago.now': 'たった今',
@@ -1175,7 +1177,8 @@
     'checks.hint.host_networking': 'Settings → Resources → Network の「Enable host networking」を有効にします。Iwato からは確かめられません',
     'checks.hint.buildx_install': '`brew install docker-buildx` のあと、表示される手順で ~/.docker/config.json の cliPluginsExtraDirs を設定します',
     'error.engine_unavailable': '{engine} を使えません。画面上部の案内を見てください',
-    // Iwato's presets in other languages (presets/*.yaml has the Japanese; IwatoI18n.localized).
+    // Iwato's presets in other languages (presets/*.yaml has the Japanese;
+    // IwatoI18n.localized).
     // Server errors by code.
     'error.volume_unattachable': 'ボリューム {volume} に OpenShell が付けるためのラベル {label} がありません。「ボリューム」で削除する (データは消えます) か、データを新しいボリュームに移してください。',
     'error.session_missing': 'セッションがありません。Iwato が表示した URL を開き直してください。',
@@ -1446,7 +1449,8 @@
     'error.oauth_first_refresh_xai': '接続しましたが、ゲートウェイの最初の更新が失敗しました ({state})。今のアクセストークンは期限まで使えますが、その後は使えなくなります。xAI が Grok Build の更新の形 (client_id と refresh_token だけ) を受け付けていないかもしれません。',
     'error.oauth_reconnected': '再接続しました。',
     'error.oauth_reconnected_restart': '再接続しました。付けているサンドボックスで動いているプロセスは古い値のままなので、再起動してください。',
-    // OpenShell's refusals (web/refusals.js), the preparation's steps, the reset's warnings, Tailscale's nodes.
+    // OpenShell's refusals (web/refusals.js), the preparation's steps, the
+    // reset's warnings, Tailscale's nodes.
     'ambiguity.sentenceSep': '。',
     'ambiguity.field.enforcement': '検査のモード',
     'ambiguity.field.protocol': '検査の種類 (protocol)',
@@ -2997,7 +3001,8 @@
     'error.oauth_first_refresh_xai': 'Connected, but the gateway\'s first refresh failed ({state}). The current access token works until it expires, but not after that. xAI may not take Grok Build\'s form of refresh (client_id and refresh_token only).',
     'error.oauth_reconnected': 'Reconnected.',
     'error.oauth_reconnected_restart': 'Reconnected. Processes running in the sandboxes it is attached to still have the old value: restart them.',
-    // OpenShell's refusals (web/refusals.js), the preparation's steps, the reset's warnings, Tailscale's nodes.
+    // OpenShell's refusals (web/refusals.js), the preparation's steps, the
+    // reset's warnings, Tailscale's nodes.
     'ambiguity.sentenceSep': '. ',
     'ambiguity.field.enforcement': 'Mode',
     'ambiguity.field.protocol': 'Inspection (protocol)',

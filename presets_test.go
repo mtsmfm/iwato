@@ -95,7 +95,7 @@ func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The hosts a provider's credential reaches are the provider's (ADR
-	// 0006): only claude-mise keeps mise's GitHub rules from before.
+	// 0006): only claude-mise keeps mise's GitHub rules.
 	for _, p := range builtinPresets() {
 		if want := p.ID == "claude-mise"; (len(p.ProviderHosts) > 0) != want {
 			t.Errorf("%s reaches a provider's hosts: %v", p.ID, p.ProviderHosts)

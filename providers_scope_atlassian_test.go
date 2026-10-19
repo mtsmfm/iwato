@@ -11,9 +11,8 @@ import (
 )
 
 // Atlassian's scope: new providers get mode tools, which inspects the MCP
-// endpoint and calls only the read tools and the named ones; providers
-// still at read-only (made before mode tools) render the shipped profile
-// unchanged and show as every tool.
+// endpoint and calls only the read tools and the named ones; providers at
+// read-only render the shipped profile unchanged and show as every tool.
 func TestAtlassianToolScope(t *testing.T) {
 	base, _ := builtinProfile(atlassianProfileID)
 	if got := defaultScopeMode(atlassianProfileID); got != scopeTools {

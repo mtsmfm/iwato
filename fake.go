@@ -439,7 +439,7 @@ func (d *Fake) seedVolumes(c Config) {
 	d.addVolume(Volume{Name: persistVolume(c, newSandbox("scratch"), "/sandbox/tmp-work"), CreatedAt: at(90)})
 }
 
-// Volumes lists the fake volumes as WSLc reports them (labels only).
+// Volumes lists the fake volumes as the engine reports them (labels only).
 func (d *Fake) Volumes(context.Context) ([]Volume, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

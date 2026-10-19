@@ -1123,8 +1123,7 @@
         swipe += y - lastY;
         lastY = y;
         // One report per row of finger travel: an app scrolls a few rows
-        // for each, so the content keeps up with the finger (a fixed 24px
-        // was fewer reports than rows on a phone, whose rows are small).
+        // for each, so the content keeps up with the finger.
         const step = Math.max(8, this.cellH);
         while (Math.abs(swipe) >= step) {
           this.sendInput(this.mouseReport(swipe > 0 ? 64 : 65, cell.col, cell.row, false, null));

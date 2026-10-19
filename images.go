@@ -319,7 +319,8 @@ func (e *Engine) build(ctx context.Context, contextDir, tag, logPath string) err
 	return e.stream(ctx, logPath, "build "+tag, "image", "build", "--tag", tag, "--file", filepath.Join(contextDir, "Dockerfile"), contextDir)
 }
 
-// stream runs a wslc command whose output goes to logPath and Iwato's log.
+// stream runs an engine command whose output goes to logPath and Iwato's
+// log.
 func (e *Engine) stream(ctx context.Context, logPath, title string, args ...string) error {
 	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -334,9 +335,9 @@ func (e *Engine) stream(ctx context.Context, logPath, title string, args ...stri
 	return c.Run()
 }
 
-// Images replaced by a rebuild lose their tag but stay while a sandbox
-// still uses them (until the sandbox is deleted). Their IDs are kept in
-// stale-images.json and removed once nothing uses them.
+// Images replaced by a rebuild or a pull lose their tag but stay while a
+// sandbox still uses them (until the sandbox is deleted). Their IDs are
+// kept in stale-images.json and removed once nothing uses them.
 const staleImagesFile = "stale-images.json"
 
 var imageIDPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -379,9 +380,9 @@ func addStaleImage(dir, id string) error {
 }
 
 // CleanupImages removes replaced images that no container uses any more.
-// Without --force WSLc refuses an image any container, running or stopped,
-// was created from; those stay listed for the next pass. An image that got
-// a tag again is no longer Iwato's to remove.
+// Without --force the engine refuses an image any container, running or
+// stopped, was created from; those stay listed for the next pass. An image
+// that got a tag again is not Iwato's to remove.
 func (e *Engine) CleanupImages(ctx context.Context, dir string) error {
 	e.cleanupMu.Lock()
 	defer e.cleanupMu.Unlock()

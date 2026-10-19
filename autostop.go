@@ -15,11 +15,10 @@ import (
 // terminal opened during the grace keeps it running. Everything else in
 // the sandbox (background servers, the desktop) stops with it.
 //
-// OpenShell asks the sandbox's daemon (iwato-entrypoint's list, which every
-// daemon version answers), so it works with the daemons of older images
-// too. Without a daemon the main terminal is the sandbox's main process,
-// whose end already stops the sandbox; the runtime says it cannot tell and
-// nothing happens.
+// The runtime asks the sandbox's daemon (iwato-entrypoint's list, which
+// every daemon version answers). Without a daemon the main terminal is the
+// sandbox's main process, whose end already stops the sandbox; the runtime
+// says it cannot tell and nothing happens.
 
 // autoStopGrace is how long the sandbox waits after its last terminal ended.
 const autoStopGrace = time.Minute

@@ -1,10 +1,11 @@
 //go:build linux
 
-// iwato-entrypoint is Iwato's daemon in a sandbox: it keeps the sandbox's
-// terminals (internal/termd) and serves its home over SFTP
+// Command iwato-entrypoint is Iwato's daemon in a sandbox: it keeps the
+// sandbox's terminals (internal/termd) and serves its home over SFTP
 // (internal/rootsftp). The sandbox image carries it at
-// /usr/local/lib/iwato/iwato-entrypoint (termd.Path; sandboxes made before
-// that run it as iwato-term, which the WSLc driver places), and Iwato runs:
+// /usr/local/lib/iwato/iwato-entrypoint (termd.Path; the WSLc driver
+// places it at termd.LegacyPath for sandboxes that run it there), and
+// Iwato runs:
 //
 //	iwato-entrypoint serve -key KEY [-detached]
 //	iwato-entrypoint attach [-spawn] -key KEY [-cols N -rows N] NAME [-- CMD ARG...]

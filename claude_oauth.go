@@ -19,7 +19,7 @@ import (
 
 // Claude Code with the owner's Claude account, signed in by Iwato
 // (iwato-claude-subscription; `claude setup-token` with
-// iwato-claude stays the recommended way). Iwato.exe signs in with Claude
+// iwato-claude stays the recommended way). Iwato signs in with Claude
 // Code's public client as `claude auth login` does: the authorization code
 // with PKCE S256 and state, and both of Claude Code's redirects.
 //

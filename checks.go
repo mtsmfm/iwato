@@ -126,8 +126,8 @@ func (c *checkState) engineErr() error {
 	return errCodeEn("engine_unavailable", map[string]any{"engine": name}, name+" を使えません。画面上部の案内を見てください", name+" is not usable (see the startup checks)", nil)
 }
 
-// waitEngine runs the checks again every while the engine is unusable,
-// until ctx ends.
+// waitEngine runs the checks again at intervals of every while the engine
+// is unusable, until ctx ends.
 func (c *checkState) waitEngine(ctx context.Context, every time.Duration) {
 	if c == nil {
 		return

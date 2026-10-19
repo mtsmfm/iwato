@@ -1,10 +1,11 @@
 'use strict';
 // The editor and the terminal side by side in a real browser against
 // `serve -fake`: the toggle only on wide cards (none on phones), both panes
-// shown with both tabs current, the policy and ports tabs taking their place and the
-// split coming back, the terminal's columns following the divider with few
-// resize messages, each pane keeping the keyboard and its shortcuts, the
-// choice remembered, and the tabs again when the window gets narrow.
+// shown with both tabs current, the policy and ports tabs taking their
+// place and the split coming back, the terminal's columns following the
+// divider with few resize messages, each pane keeping the keyboard and its
+// shortcuts, the choice remembered, and the tabs again when the window
+// gets narrow.
 // Usage (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/split-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
