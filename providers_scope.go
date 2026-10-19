@@ -83,8 +83,9 @@ func defaultScopeMode(base string) string {
 	return scopeModes(base)[0]
 }
 
-// validScopeMode: one of the base's modes, or Atlassian's read-only of
-// providers made before mode tools (the shipped profile, every tool).
+// validScopeMode: one of the base's modes, or Atlassian's read-only, which
+// the page does not offer but a configuration may hold (the shipped
+// profile, every tool).
 func validScopeMode(base, mode string) bool {
 	return slices.Contains(scopeModes(base), mode) || base == atlassianProfileID && mode == scopeReadOnly
 }
@@ -578,7 +579,7 @@ func scopeView(base string, sc ProviderScope, ok bool) *ScopeView {
 		v.Mode = defaultScopeMode(base)
 	}
 	if base == atlassianProfileID && v.Mode == scopeReadOnly {
-		// Made before mode tools: the shipped profile allows every tool.
+		// The shipped profile, which allows every tool.
 		v.Mode = scopeFull
 	}
 	return v
@@ -628,8 +629,9 @@ type providerObserver interface {
 }
 
 // createScopedProvider creates a provider of a scoped profile with its
-// own profile, read-only at first, under name or, when name is empty, the
-// first free name of the profile (as createProviderNamed).
+// own profile, in the base's default mode (defaultScopeMode), under name
+// or, when name is empty, the first free name of the profile (as
+// createProviderNamed).
 func (s *Server) createScopedProvider(ctx context.Context, rt providerRuntime, store profileStore, name string, prof providerProfile, creds map[string]string) (string, error) {
 	var taken []string
 	list, _, err := rt.ListProviders(ctx)
@@ -768,10 +770,11 @@ func failScope(w http.ResponseWriter, status int, err error) {
 }
 
 // changeScope sets provider name's scope to what edit makes of the current
-// one (read-only when the configuration has none): Iwato checks the new
-// profile against the sandboxes it is attached to, the gateway imports it
-// and the running ones apply it on their next sync (反映待ち, whose
-// sandboxes it returns). An error comes with its HTTP status.
+// one (the base's default mode when the configuration has none): Iwato
+// checks the new profile against the sandboxes it is attached to, the
+// gateway imports it and the running ones apply it on their next sync
+// (反映待ち, whose sandboxes it returns). An error comes with its HTTP
+// status.
 func (s *Server) changeScope(ctx context.Context, rt providerRuntime, store profileStore, name string, edit func(old ProviderScope, base string) (ProviderScope, error)) (ProviderScope, []string, int, error) {
 	s.providerMu.Lock()
 	defer s.providerMu.Unlock()

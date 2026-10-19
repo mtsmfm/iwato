@@ -173,7 +173,7 @@ func (c *familyConn) current() (net.Conn, bool) {
 	return c.cur, c.established
 }
 
-// failover moves to the next address after failed refused before any
+// failover moves to the next address when failed was refused before any
 // answer. It returns the error to report when it cannot.
 func (c *familyConn) failover(failed net.Conn, err error) error {
 	err = c.b.classify(err)

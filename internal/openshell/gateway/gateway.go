@@ -334,9 +334,9 @@ func copyClientBundle(ctx context.Context, run wslc.Runner, o Options, g Gateway
 }
 
 // waitReady waits until the gateway completes a mutual TLS handshake. It
-// logs the container's output written while it waits (not what a running
-// gateway logged before: that buried the login URL on the console), and
-// gives up early, with the output's tail, once the container has stopped.
+// logs the container's output written while it waits (earlier output
+// would bury the login URL on the console), and gives up early, with the
+// output's tail, once the container has stopped.
 //
 // The output is watched beside the attempts, from its tail only: a reused
 // gateway's log grows for as long as the container lives (one full read

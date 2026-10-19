@@ -18,7 +18,7 @@ import (
 )
 
 // TestPasteImage goes through the endpoint to the fake's SFTP server: the
-// image is written under the workspace's pasteDir and its absolute path
+// image is written under the home's pasteDir and its absolute path
 // answered; wrong types, sizes, a missing CSRF token and a stopped sandbox
 // are refused; old images are pruned.
 func TestPasteImage(t *testing.T) {

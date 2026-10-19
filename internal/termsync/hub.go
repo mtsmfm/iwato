@@ -642,7 +642,7 @@ func (c *client) needStyle(defs *[]byte, id uint16) {
 	*defs = append(*defs, uvarints(uint64(id), uint64(s.FG), uint64(s.BG), uint64(s.UL), uint64(s.Flags), uint64(s.Underline), uint64(s.Link))...)
 }
 
-// page returns up to count history lines before id before.
+// page returns up to count history lines older than the id before.
 func (c *client) page(before, count uint64) []byte {
 	h := c.h
 	h.mu.Lock()

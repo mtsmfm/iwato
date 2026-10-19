@@ -115,8 +115,8 @@
         this.closeButton = button('button-subtle', t('common.close'), () => this.onClose?.());
         this.state = element('p', 'files-state');
         this.state.setAttribute('role', 'status');
-        // Where the files are: the home, or (a sandbox whose daemon has no
-        // SFTP server) the workspace, which recreating changes to the home.
+        // Where the files are: the home, or the workspace without the
+        // daemon's SFTP server (recreating gives the home).
         this.rootNote = element('p', 'panel-meta files-root-note');
         this.rootNote.hidden = true;
         this.filesRoot = null;

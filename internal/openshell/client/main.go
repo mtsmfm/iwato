@@ -132,8 +132,9 @@ var repaintDelay = 200 * time.Millisecond
 // on reattach: a session that attaches starts from a blank screen, and a
 // program that only redraws what changed (Claude Code) would leave the rest
 // of it blank. The kernel signals SIGWINCH only when the size changes, so
-// the terminal shrinks by a row and comes back. Before the session uses m,
-// so no other resize comes in between; iwato's screen keeps cols×rows.
+// the terminal shrinks by a row and comes back. It runs before the session
+// uses m, so no other resize comes in between; Iwato's screen keeps
+// cols×rows.
 func (m *MainProcess) repaint(cols, rows int) {
 	if rows < 2 || m.session.WindowChange(rows-1, cols) != nil {
 		return

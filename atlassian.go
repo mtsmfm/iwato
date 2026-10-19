@@ -18,8 +18,8 @@ import (
 )
 
 // Iwato's OAuth client for Atlassian's remote MCP (atlassianResource).
-// Iwato.exe runs on the owner's Windows, so the browser that authorizes
-// it reaches its loopback redirect (http://127.0.0.1:PORT/callback); a
+// Iwato runs on the owner's PC, so the browser that authorizes it
+// reaches its loopback redirect (http://127.0.0.1:PORT/callback); a
 // phone pastes the failed redirect's URL instead (atlassian_flow.go).
 //
 //   - discovery: the resource's protected-resource metadata (RFC 9728),

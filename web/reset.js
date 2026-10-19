@@ -4,7 +4,7 @@
 (() => {
   'use strict';
 
-  // The UI's strings (web/i18n.js), looked up when used: this file loads first.
+  // The UI's strings (web/i18n.js), looked up when used.
   const t = (key, params) => window.IwatoI18n.t(key, params);
 
   const word = 'reset';

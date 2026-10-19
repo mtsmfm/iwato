@@ -765,9 +765,9 @@ func (s *Server) providerOutdated(sb Sandbox, names []string) []string {
 // that conflict with the provider (POST .../providers/fix), so that it can
 // be attached: the provider adds its own inspected rule for its programs.
 // Programs of the removed endpoints lose them; the page says which. An
-// endpoint the provider's rule would make ambiguous is removed too, or
-// with enforce, when it only audits where the provider enforces, switched
-// to enforce with the requests it allows now.
+// endpoint the provider's rule would make ambiguous is removed too. With
+// enforce, one that only audits where the provider enforces is switched
+// to enforce instead, with the requests it allows now.
 func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Context, sb Sandbox, list []ProviderInfo, provider string, enforce bool) {
 	i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == provider })
 	if i < 0 {

@@ -109,12 +109,13 @@ func cloneRule(r v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 // OpenShell's merge_policy does (openshell-policy merge.rs: add_rule,
 // merge_rules, merge_endpoint, remove_endpoint) as far as the endpoints'
 // metadata go: an AddRule into an existing rule (or, unless its endpoints
-// came from the advisor, into the first rule by name with the same host,
-// path and a shared port) keeps the existing endpoint's protocol,
-// enforcement and tls, and joins the rest. OpenShell folds into that other
-// rule only when no program would gain an endpoint it did not declare
-// (ensure_authorization_inheritance_is_declared), else it keeps the rule
-// under its own name; Iwato folds only rules for the same programs.
+// came from the advisor, into the first rule by name, not a provider's,
+// with the same host, path and a shared port) keeps the existing
+// endpoint's protocol, enforcement and tls, and joins the rest. OpenShell
+// folds into that other rule only when no program would gain an endpoint
+// it did not declare (ensure_authorization_inheritance_is_declared), else
+// it keeps the rule under its own name; Iwato folds only rules for the
+// same programs.
 func simulateMerge(base map[string]v1.NetworkPolicyRule, ops []v1.PolicyMergeOperation) (map[string]v1.NetworkPolicyRule, error) {
 	rules := map[string]v1.NetworkPolicyRule{}
 	for k, r := range base {
@@ -546,7 +547,7 @@ func valueLabel(f, v string) string {
 	return "別の値"
 }
 
-// owner names a rule for the owner: a provider's with the provider.
+// ruleOwner names a rule for the owner: a provider's with the provider.
 func ruleOwner(rule string, p *RuleProvider) string {
 	if p != nil {
 		label := p.Name

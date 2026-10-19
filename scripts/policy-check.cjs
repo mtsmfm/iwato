@@ -3,7 +3,9 @@
 // (waiting, the effective policy with provider rules and rules from
 // proposals, rejected), undoing a proposal, putting an approved proposal's
 // rule back, the rules piece by piece, adding a rule through the dialog,
-// taking a method and path out, the history and the policy as YAML. Saves screenshots next to the binary. Usage (AGENTS.md):
+// taking a method and path out, the history and the policy as YAML. Saves
+// screenshots in a temporary directory (printed at the end). Usage
+// (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/policy-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -63,7 +65,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await open('allow_github_example_com_443');
     await current.locator('.policy-observed').first().screenshot({ path: path.join(dir, 'observed.png') });
 
-    // The three lists, all OpenShell's (the fake is today's example).
+    // The three lists, all OpenShell's.
     const pending = panel.locator('.policy-pending');
     const rejectedList = panel.locator('.policy-rejected');
     const pendingText = await pending.innerText();
@@ -302,7 +304,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.click('#confirm-cancel');
 
     // Approving: the change shows 反映待ち until the sandbox loads it (the
-    // fake takes 3 seconds, as the settings poll does), then 反映済み.
+    // fake takes 3 seconds, in place of the sandbox's settings poll, about
+    // every 10 seconds), then 反映済み.
     await gitItem.getByRole('button', { name: '承認', exact: true }).click();
     await page.locator('#confirm-panel').waitFor();
     await page.click('#confirm-ok');

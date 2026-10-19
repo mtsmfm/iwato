@@ -22,10 +22,10 @@ import (
 // (MODE=tls), that the terminals a sandbox's daemon (iwato-entrypoint)
 // keeps outlive Iwato: a new Iwato finds them, shows what they showed,
 // lists, kills them, and stopping the sandbox ends the daemon. A sandbox
-// without the daemon keeps its terminals as before (its main process and
-// execs) and its files on OpenShell's SFTP (the workspace); one made before
-// the image carried the daemon runs it from the legacy path, where the
-// driver places it on each start.
+// without the daemon keeps its terminals in its main process and execs and
+// its files on OpenShell's SFTP (the workspace); one whose image lacks the
+// daemon runs it from the legacy path, where the driver places it on each
+// start.
 func TestOpenShellTerminalsSurviveRestartE2E(t *testing.T) {
 	addr := os.Getenv("OPENSHELL_E2E_ADDR")
 	if addr == "" {

@@ -16,8 +16,8 @@ import (
 // below and the write tools the owner names (ProviderScope.Tools). OpenShell
 // matches the tool name (params.name), not the arguments, so a named tool
 // works on every site and project the grant reaches. Mode full is access
-// full on the endpoint (every tool), as before scopes had tools; providers
-// whose scope is still read-only (made before mode tools) render the
+// full on the endpoint (every tool). Providers whose scope is read-only
+// (not a mode of Atlassian, but a configuration may hold it) render the
 // shipped profile, which is access full too, and the page shows them as
 // full.
 

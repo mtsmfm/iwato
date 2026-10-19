@@ -139,7 +139,7 @@ func TestStartWhileStoppingIsRefused(t *testing.T) {
 	s.endOp("dev", op, nil)
 }
 
-// policyRuntime's revisions: each change makes the next one; active is
+// revisionRuntime's revisions: each change makes the next one; active is
 // what the sandbox has loaded.
 type revisionRuntime struct {
 	reviewRuntime

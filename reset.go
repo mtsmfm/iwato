@@ -43,12 +43,13 @@ import (
 //   - the OAuth flows in progress: canceled first, so none creates a
 //     provider in the fresh gateway.
 //
-// It keeps iwato.exe, the logs, the WSLc session itself (its VHDX, which
-// keeps the blocks of the deleted volumes until it is compacted), images
-// the owner named for a sandbox, OpenShell's own runtime images, and by
-// default the owner's files (presets/, profiles/) and iwato.json's other
-// settings; ownerFiles deletes those too (the settings go back to their
-// defaults, apart from what names this instance and its WSLc).
+// It keeps Iwato's executable, the logs, the engine itself (WSLc's session
+// and its VHDX, which keeps the blocks of the deleted volumes until it is
+// compacted), images the owner named for a sandbox, OpenShell's own
+// runtime images, and by default the owner's files (presets/, profiles/)
+// and iwato.json's other settings; ownerFiles deletes those too (the
+// settings go back to their defaults, apart from what names this instance
+// and its engine).
 //
 // Every login ends: the console prints a new login URL. Then Iwato prepares
 // the images and the gateway again, as on its first start.
@@ -481,7 +482,7 @@ func (o *OpenShell) Reset(ctx context.Context, sandboxes []Sandbox, step func(co
 		warnTo("sandbox", map[string]any{"name": sb.Name}, "could not delete sandbox "+sb.Name, o.Delete(ctx, sb, true))
 	}
 	step("gateway", nil, "deleting the gateway")
-	// Until the preparation again, operations wait for it (clients).
+	// Operations wait for the clients until the preparation runs again.
 	o.mu.Lock()
 	conn, stop := o.conn, o.stopDriver
 	o.ready, o.err = make(chan struct{}), nil

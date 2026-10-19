@@ -88,8 +88,7 @@ func (c *IngressConfig) owners() []string {
 	return c.Tailscale.Owners
 }
 
-// Ingress providers. A configuration without one (also those written
-// before local existed, with Tailscale turned off) gets local.
+// Ingress providers. A configuration without one gets local.
 const (
 	providerLocal     = "local"
 	providerTailscale = "tailscale"

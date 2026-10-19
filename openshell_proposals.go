@@ -592,11 +592,11 @@ func unixOrZero(t time.Time) int64 {
 // methods and paths the denials sampled, and say so in their rationale
 // ("... with L7 inspection. Allowed paths: GET /x."); without samples they
 // propose an endpoint without inspection. A REST one with a lone GET / and
-// no samples got it elsewhere: the gateway gives a proposal for a host and
-// port the policy already has the existing endpoint's whole contract
-// (grpc/policy.rs canonicalize_advisor_add_rule), and an endpoint Iwato
-// audits allows GET / only to be valid (ProposalScope.apply). Read-only on
-// exactly / would deny every real request. An agent's proposal that asks
+// no samples got it elsewhere. The gateway gives a proposal for a known
+// host and port the existing endpoint's whole contract (grpc/policy.rs
+// canonicalize_advisor_add_rule). An endpoint Iwato audits allows GET /
+// only to be valid (ProposalScope.apply). Read-only on exactly / would
+// deny every real request. An agent's proposal that asks
 // for / keeps it.
 func placeholderRoot(c v1.PolicyChunk) bool {
 	if !mechanisticRationale.MatchString(c.Rationale) || strings.Contains(c.Rationale, "with L7 inspection") {

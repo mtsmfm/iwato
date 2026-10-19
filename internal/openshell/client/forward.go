@@ -41,12 +41,10 @@ var (
 const usesPerToken = 3
 
 // Forwarder opens TCP connections to a sandbox's loopback through the
-// gateway's ForwardTcp relay, as `openshell forward service` did up to
-// v0.1.2: each connection presents an SSH session token (the Go SDK's
-// TCP().Forward sends none, which v0.1.2's gateway refuses; v0.1.4's admits
-// TCP targets without one, NVIDIA/OpenShell#3734, and still validates and
-// counts a token that is sent). Tokens are shared by up to three
-// connections and revoked once unused for Idle.
+// gateway's ForwardTcp relay. Each connection presents an SSH session
+// token, which the gateway validates and counts (the Go SDK's
+// TCP().Forward sends none). Tokens are shared by up to three connections
+// and revoked once unused for Idle.
 type Forwarder struct {
 	Conn      grpc.ClientConnInterface
 	Workspace string

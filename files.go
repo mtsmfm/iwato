@@ -24,9 +24,9 @@ import (
 	"iwato/internal/dav"
 )
 
-// Files (ファイル): a sandbox's home /home/dev (the daemon's SFTP server, in
-// an image of the convention, docs/adr/0005; else OpenShell's SFTP, rooted
-// at the workspace, the image's WORKDIR or /sandbox) as a network drive.
+// Files (ファイル): a sandbox's home /home/dev as a network drive, through
+// the daemon's SFTP server (docs/adr/0005); without it, the workspace
+// through OpenShell's SFTP.
 // Iwato serves WebDAV at /dav/ and turns it into SFTP on the sandbox
 // (internal/dav).
 //
@@ -46,8 +46,8 @@ type filesRuntime interface {
 }
 
 // FilesRoot is where a sandbox's files (the SFTP root) are in the sandbox:
-// Path, absolute; Home when that is the home (otherwise the workspace of a
-// sandbox whose daemon has no SFTP server: recreating it gives the home).
+// Path, absolute; Home when that is the home (otherwise the workspace, in
+// a sandbox without the daemon's SFTP server; recreating gives the home).
 type FilesRoot struct {
 	Path string `json:"path"`
 	Home bool   `json:"home"`

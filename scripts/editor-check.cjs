@@ -5,9 +5,10 @@
 // saving (Ctrl+S or 「保存」), a save refused because the file changed
 // meanwhile (overwrite, reload), the folder's tree (beside the text, a
 // drawer on phones), a binary file refused, images previewed (PNG, SVG,
-// WebP; HTML named .png refused), Ctrl+P left to the
-// terminal, and a stopped sandbox. The text is CodeMirror: Go and
-// JavaScript highlighted, Ctrl+F's search, no CSP violations. Saves screenshots. Usage (AGENTS.md):
+// WebP; HTML named .png refused), Ctrl+P left to the terminal, and a
+// stopped sandbox. The text is CodeMirror: Go and JavaScript highlighted,
+// Ctrl+F's search, no CSP violations. Saves screenshots. Usage
+// (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/editor-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');

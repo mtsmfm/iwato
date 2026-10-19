@@ -1,8 +1,8 @@
 // Package tailscale exposes each sandbox as a node of the owner's tailnet
 // (tsnet in Iwato's process): https://<prefix><sandbox>.<tailnet>.ts.net:PORT/
-// reaches the sandbox's 127.0.0.1:PORT, for the ports the core admits (a
-// live process listens there), with the node's certificate; other ports
-// are reset. Callers are identified with WhoIs.
+// reaches the sandbox's loopback (127.0.0.1:PORT, else ::1), for the ports
+// the core admits (a live process listens there), with the node's
+// certificate; other ports are reset. Callers are identified with WhoIs.
 package tailscale
 
 import (

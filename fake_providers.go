@@ -20,7 +20,8 @@ type fakeProviders struct {
 	attached map[string][]string
 	// refresh is the gateway's refresh state (by provider).
 	refresh map[string]RefreshInfo
-	// receipts are the attach/detach changes running sandboxes apply.
+	// receipts are the attach/detach and scope changes running sandboxes
+	// apply.
 	receipts map[string]fakeReceipt
 }
 
@@ -276,8 +277,8 @@ func (d *Fake) ProviderProfile(_ context.Context, id string) (*pb.ProviderProfil
 }
 
 // fakeProviderScopes are the fake configuration's scopes: github-work
-// writes to one repository, openrouter is read-only (the others are of the
-// shared built-in profiles, from before the scopes).
+// writes to one repository, openrouter is read-only (the others have no
+// scope: they use the shared built-in profiles).
 func fakeProviderScopes() map[string]ProviderScope {
 	return map[string]ProviderScope{
 		"github-work": {Base: githubProfileID, Mode: scopeRepos, Repos: []string{"mtsmfm/iwato"}},

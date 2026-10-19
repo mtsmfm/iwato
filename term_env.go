@@ -37,10 +37,10 @@ var termEnvContent = "# Written by Iwato when the sandbox starts; edits here are
 	"# Set your own values in ~/.bashrc (read later).\n" +
 	termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand)
 
-// termEnvIf is a line that exports name=value when the variable when is
+// termEnvIf is a line that exports name=value when the variable cond is
 // set and name is not.
-func termEnvIf(when, name, value string) string {
-	return `if [ -n "${` + when + `-}" ] && [ -z "${` + name + `-}" ]; then export ` + name + "=" + shellQuote(value) + "; fi\n"
+func termEnvIf(cond, name, value string) string {
+	return `if [ -n "${` + cond + `-}" ] && [ -z "${` + name + `-}" ]; then export ` + name + "=" + shellQuote(value) + "; fi\n"
 }
 
 // shellQuote quotes s for a POSIX shell.

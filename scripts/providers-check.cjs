@@ -3,12 +3,12 @@
 // without values, add, change, delete; Atlassian's OAuth connection and
 // 再接続 through the fake's authorization page, pasting the redirect on a
 // phone), the create form's picker, a refused attach that names the
-// uninspected rule and its fix, a
-// sandbox's attach/detach with the restart choice, and 再起動待ち on the
-// card and its terminals, after a reload too. Saves screenshots next to
-// the binary. Also creating a provider without a name (Iwato names it),
-// and the profiles as YAML (Iwato's files and a gateway profile).
-// Usage (AGENTS.md):
+// uninspected rule and its fix, a sandbox's attach/detach with the restart
+// choice, and 再起動待ち on the card and its terminals, after a reload too.
+// Also creating a provider without a name (Iwato names it), and the
+// profiles as YAML (Iwato's files and a gateway profile). Saves
+// screenshots in a temporary directory (printed at the end). Usage
+// (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/providers-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');

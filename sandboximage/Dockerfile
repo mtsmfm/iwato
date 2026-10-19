@@ -10,8 +10,9 @@
 # in their home). No language runtime (node, go, ruby, java): users install
 # them with mise; python3 stays as part of the OS. Nothing in it is specific
 # to an agent: no agent CLI and no agent settings. Users install their agent
-# with mise (e.g. mise use -g claude); it lands in the home, which persists. The environment's instructions are /AGENTS.md, so
-# OpenShell keeps them instead of installing its own. It links to
+# with mise (e.g. mise use -g claude); it lands in the home, which
+# persists. The environment's instructions are /AGENTS.md, so OpenShell
+# keeps them instead of installing its own. It links to
 # /etc/iwato/AGENTS.md: the sandbox policy lets the workload read /etc, not
 # files directly in /.
 # The image follows Iwato's convention (docs/adr/0005-sandbox-image-
@@ -24,21 +25,19 @@
 # OpenShell runs the workload as the image's user (dev) with every capability
 # dropped and no sudo, so OS packages belong here. Iwato sets HOME=/home/dev
 # and keeps it on a volume: only what is under it outlives the sandbox.
-# Terminals start in ~/work. Release exes
-# pull this image from ghcr.io tagged with their version
-# (.github/workflows/release.yml), other exes the `edge` tag main publishes
-# (.github/workflows/image.yml); `scripts/build-exe.sh --local-images` builds
-# it from the sources embedded in the exe.
+# Terminals start in ~/work. Release exes pull this image from ghcr.io
+# tagged with their version (.github/workflows/release.yml), other exes the
+# `edge` tag main publishes (.github/workflows/image.yml);
+# `scripts/build-exe.sh --local-images` builds it from the sources embedded
+# in the exe.
 #
 # Layer order is for cache reuse: the heavy desktop layers (about a gigabyte
 # of packages, Firefox, Selkies) come right after the base packages and
 # depend on no file of this directory, so editing the development packages,
 # the shell setup, the tools script or the desktop scripts below does not
-# rebuild them. The desktop runs
-# entirely as dev: OpenShell starts the workload as the image's user with
-# every capability dropped and no sudo, so nothing needs root at run time (no
-# s6 /init, no writes to /etc, no ldconfig). Root is used only here, to
-# install. A failure in the desktop steps fails the whole build, with a
+# rebuild them. The desktop runs entirely as dev, so nothing needs root at
+# run time (no s6 /init, no writes to /etc, no ldconfig). Root is used only
+# here, to install. A failure in the desktop steps fails the whole build, with a
 # message saying which step: do not make them optional.
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 ARG DEBIAN_FRONTEND=noninteractive
@@ -135,11 +134,9 @@ RUN arch="$(dpkg --print-architecture)"; \
 #    ImageMagick is here;
 #  - database clients, archivers and CLIs (procps for ps and top, which the
 #    base image lacks);
-#  - the system libraries of Playwright's Chromium and Firefox, as
-#    `npx playwright install-deps chromium firefox` lists them for Ubuntu
-#    24.04 (from Playwright's nativeDeps, not yet checked against
-#    `playwright install-deps`; xvfb and the CJK and emoji fonts are already
-#    in the desktop layer);
+#  - the system libraries of Playwright's Chromium and Firefox, from
+#    Playwright's nativeDeps for Ubuntu 24.04 (xvfb and the CJK and emoji
+#    fonts are in the desktop layer);
 #  - locales: en_US.UTF-8 and ja_JP.UTF-8 are generated (C.UTF-8 is built in).
 # The toolchain also builds the desktop's setuid shim below.
 RUN apt-get update && apt-get install -y --no-install-recommends \

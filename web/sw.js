@@ -15,8 +15,9 @@ self.addEventListener('push', (event) => {
     ? (data.badge ? self.navigator.setAppBadge(data.badge) : self.navigator.clearAppBadge()).catch(() => {}) : null;
   event.waitUntil(Promise.all([shown, badge]));
 });
-// A click opens the sandbox (and its tab) the notification is about. A service worker registered on the PC's loopback origin opens the
-// server's current port (it changes per launch); others open their own origin.
+// A click opens the sandbox (and its tab) the notification is about. A
+// service worker registered on the PC's loopback origin opens the server's
+// current port (it changes per launch); others open their own origin.
 const loopback = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{1,5}$/;
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

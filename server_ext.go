@@ -26,8 +26,8 @@ type deleteRuntime interface {
 	Delete(context.Context, Sandbox, bool) error
 }
 
-// gpuRuntime tells whether a new sandbox can ask for a GPU (without it,
-// it can).
+// gpuRuntime tells whether a new sandbox can ask for a GPU (a runtime
+// without it allows one).
 type gpuRuntime interface {
 	GPUAvailable(context.Context) bool
 }
@@ -714,8 +714,9 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request, parts []stri
 	jsonResponse(w, 200, map[string]bool{"ok": true})
 }
 
-// handleDelete removes a sandbox's containers and networks (and volumes
-// with purge). The body must repeat the sandbox name as confirmation.
+// handleDelete deletes the sandbox in OpenShell (its volumes too with purge)
+// and removes it from the configuration. The body must repeat the sandbox
+// name as confirmation.
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, parts []string) {
 	if r.Method != http.MethodPost {
 		fail(w, 405, "method not allowed")

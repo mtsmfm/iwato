@@ -1,6 +1,7 @@
-// fakewslc stands in for wslc.exe in e2e.sh: "containers" are records, cp
-// extracts into the real root file system (with sudo), and start runs the
-// real openshell-sandbox / openshell-supervisor binaries as local processes.
+// Command fakewslc stands in for wslc.exe in e2e.sh: "containers" are
+// records, cp extracts into the real root file system (with sudo), and
+// start runs the real openshell-sandbox / openshell-supervisor binaries as
+// local processes.
 // There is no network isolation and no mount, and a container's first
 // process is not PID 1. Only for a disposable container (CI): it writes
 // under / and runs processes as root.

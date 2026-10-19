@@ -2,7 +2,8 @@
 // The terminal (web/term.js) in a real browser against `serve -fake`: typing
 // reaches the session, frames draw the screen, older history comes in pages
 // as it scrolls into view, and the cell grid holds wide characters. Saves
-// screenshots next to the binary. Usage (AGENTS.md):
+// screenshots in a temporary directory (printed at the end). Usage
+// (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/term-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');

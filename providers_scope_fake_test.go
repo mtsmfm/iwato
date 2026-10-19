@@ -46,7 +46,7 @@ func TestProviderScopeRefusal(t *testing.T) {
 
 // The scope API: a new GitHub provider gets its own profile, the simple
 // scope and the owner's YAML change it (checked first), reset goes back,
-// an older shared one is refused; custom profiles are files in the config
+// a shared one is refused; custom profiles are files in the config
 // folder, loaded again when Iwato starts, not deleted while in use.
 func TestProviderScopeAPI(t *testing.T) {
 	s, _, do, _ := providerServerCookie(t)

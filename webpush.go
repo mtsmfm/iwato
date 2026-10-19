@@ -27,8 +27,8 @@ import (
 )
 
 // Web Push without third-party code: RFC 8291 (aes128gcm message encryption)
-// and RFC 8292 (VAPID). Push services are the only outbound destinations and
-// are restricted to the well-known browser vendors' hosts.
+// and RFC 8292 (VAPID). Pushes go only to the well-known browser vendors'
+// push services.
 
 var pushHosts = []string{"fcm.googleapis.com", "android.googleapis.com", ".push.apple.com", "updates.push.services.mozilla.com", ".notify.windows.com"}
 

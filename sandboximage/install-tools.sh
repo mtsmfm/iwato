@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs mise and starship, verified by SHA-256. Change versions and
 # checksums together. mise lives in a directory dev owns, so `mise
-# self-update` works without sudo (until the sandbox is created again from the image).
+# self-update` works without sudo (until the sandbox is created again).
 set -eu
 MISE_VERSION=2026.9.14
 STARSHIP_VERSION=1.26.0

@@ -786,9 +786,8 @@ var termEnv = map[string]string{"COLORTERM": "truecolor"}
 // sandboxEnv is the sandbox's environment: termEnv, HOME (otherwise the
 // workspace) and IWATO_PERSIST, what persists: the home alone for a new
 // sandbox (only what is under it does), and an older one's paths outside
-// it until the owner recreates it. It stays for agents and scripts that
-// read it (the sandbox's /AGENTS.md named it when paths outside the home
-// could persist).
+// it until the owner recreates it. Agents and scripts read it (the
+// sandbox's /AGENTS.md names it).
 func sandboxEnv(w Sandbox) map[string]string {
 	env := maps.Clone(termEnv)
 	env["HOME"] = homeDir
@@ -823,12 +822,11 @@ var shellCommand = []string{"/bin/sh", "-c", exportHome + enterWork + `exec "${S
 // maxTerminals bounds a sandbox's terminals, the main one included.
 const maxTerminals = 8
 
-// Attach joins (or starts) one of the sandbox's terminals. iwato keeps
-// each terminal's screen (internal/hostterm). Its process is the daemon's
-// (the sandbox's terminal daemon), which outlives iwato; in a sandbox
-// without it, the main terminal is the sandbox's main process, which
-// outlives iwato too, and the others are shells on terminals of their own,
-// which end when iwato does. A size of 0×0 keeps a daemon's terminal's.
+// Attach joins (or starts) one of the sandbox's terminals. Iwato keeps
+// each terminal's screen (internal/hostterm). Its process is the daemon's,
+// which outlives Iwato; in a sandbox without it, the main terminal is the
+// sandbox's main process, which outlives Iwato too, and the others are
+// shells that end when Iwato does. A size of 0×0 keeps a daemon's terminal's.
 func (o *OpenShell) Attach(ctx context.Context, w Sandbox, t TermRef, cols, rows int) (Terminal, error) {
 	if !validTermName(t.Name) {
 		return nil, errors.New("invalid terminal name")
@@ -1041,10 +1039,8 @@ func (o *OpenShell) hasDaemon(ctx context.Context, image string) bool {
 }
 
 // daemon looks once per run of the sandbox for its daemon (and starts it
-// in a sandbox whose main process it is not). Without one (an image
-// without it, or a sandbox that runs since before the WSLc driver placed
-// it) the terminals are what they were before it, and files go through
-// OpenShell's SFTP.
+// in a sandbox whose main process it is not). Without one the terminals
+// are the main process and execs, and files go through OpenShell's SFTP.
 func (o *OpenShell) daemon(ctx context.Context, w Sandbox) (daemonState, error) {
 	o.termMu.Lock()
 	d, known := o.daemons[w.Name]
@@ -1174,7 +1170,7 @@ func (w procWriter) Close() error {
 }
 
 // Terminals lists the sandbox's terminals, main first: the daemon's (main
-// alone when none runs: attaching starts it), or else the ones iwato holds
+// alone when none runs: attaching starts it), or else the ones Iwato holds
 // (main always). outdated are all when the daemon is older than this
 // Iwato's.
 func (o *OpenShell) Terminals(ctx context.Context, w Sandbox) (names, outdated []string, multi bool, e error) {
@@ -1343,8 +1339,7 @@ func (o *OpenShell) KillTerminal(ctx context.Context, w Sandbox, name string) er
 	return client.KillHeld(ctx, conn, openshellWorkspace, w.Name, d.bin, w.Name, name)
 }
 
-// dropTerminals forgets a stopped or deleted sandbox's terminals (its
-// daemon's end with the sandbox).
+// dropTerminals forgets a stopped or deleted sandbox's terminals.
 func (o *OpenShell) dropTerminals(w Sandbox) {
 	o.termMu.Lock()
 	sessions := o.terms[w.Name]

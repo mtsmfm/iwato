@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Restores web/vendor's generated files (the terminal font) from the pinned
-sources in web/vendor/manifest.json, checking each archive and file against
-the recorded hashes. The repository keeps only the manifest and the license."""
+"""Downloads web/vendor's fonts (the terminal font) from the pinned sources
+in web/vendor/manifest.json, checking each archive and file against the
+recorded hashes. The repository keeps the manifest, the licenses and the
+built codemirror.js, not the fonts."""
 import hashlib, io, json, os, sys, urllib.request, zipfile
 
 root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "vendor")

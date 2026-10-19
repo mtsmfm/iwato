@@ -1,9 +1,7 @@
 # GPU settings for shells and the desktop (sourced; POSIX sh and bash).
 # The image's ENV does not reach exec'd terminals, so the Dockerfile links
 # this file into /etc/profile.d and /etc/bash.bashrc. Nothing is set without
-# /dev/dxg (the WSL GPU): Mesa's d3d12 driver cannot create a screen then, and
-# whether it falls back to llvmpipe when GALLIUM_DRIVER names it is not
-# something this image has been shown to do.
+# /dev/dxg (the WSL GPU): Mesa's d3d12 driver cannot create a screen then.
 if [ -e "${IWATO_DXG:-/dev/dxg}" ]; then
   export GALLIUM_DRIVER=d3d12 LIBVA_DRIVER_NAME=d3d12
   # iwato-desktop links the NVIDIA driver store's full libcuda here.

@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// run builds nothing: it runs this package's main through `go run`-free
-// re-execution of the test binary.
+// run runs this package's main by re-executing the test binary.
 func run(t *testing.T, state string, args ...string) (string, string, int) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], append([]string{"-test.run=TestMain"}, args...)...)

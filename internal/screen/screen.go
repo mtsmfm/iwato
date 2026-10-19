@@ -81,7 +81,8 @@ type EventKind byte
 const (
 	// EventClipboard writes Text to the clipboard (OSC 52).
 	EventClipboard EventKind = iota + 1
-	// EventOpen opens the link Text (OSC 6464 "open;", from programs in dev).
+	// EventOpen opens the link Text (OSC 6464 "open;", sent by programs in
+	// the sandbox: iwato-browser).
 	EventOpen
 )
 
