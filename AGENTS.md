@@ -16,6 +16,11 @@ Follow OpenShell's behaviour and improve only what is really inconvenient. New r
 - `PR_SET_DUMPABLE` must not be set to 0 in the sandbox daemon: OpenShell then blocks the network of all its descendants
 - Do not replace the daemon's binary while a sandbox runs: OpenShell pins the hashes of the connecting process's and its parents' executables
 
+## Comments and docs
+
+- Write a code comment only when it is really needed: a reason, a constraint or a trap the code cannot show. Do not restate what the code says, and do not narrate history ("now", "used to", "before X")
+- Keep comments and docs few, short and concise. When editing, prefer deleting or shortening to adding
+
 ## Setup
 
 1. `mise install` (Go and Node, versions in `mise.toml`)
