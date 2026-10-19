@@ -23,7 +23,7 @@
 
 ## Install and first run
 
-Download `iwato-windows-amd64.exe` (or `-arm64`) from [Releases](https://github.com/mtsmfm/iwato/releases), save it as `iwato.exe` in a folder of its own, and run it there:
+Download `iwato-windows-amd64.exe` (or `-arm64`) from [Releases](https://github.com/mtsmfm/iwato/releases) (until the first release, from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), rebuilt from `main` on every change), save it as `iwato.exe` in a folder of its own, and run it there:
 
 ```powershell
 .\iwato.exe
