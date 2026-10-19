@@ -23,7 +23,7 @@
 
 ## インストールと最初の起動
 
-[Releases](https://github.com/mtsmfm/iwato/releases) から `iwato-windows-amd64.exe` (または `-arm64`) をダウンロードし、専用のフォルダーに `iwato.exe` として置いて、そこで実行します:
+[Releases](https://github.com/mtsmfm/iwato/releases) から `iwato-windows-amd64.exe` (または `-arm64`) をダウンロードし (最初のリリースまでは、`main` の変更のたびに作り直されるプレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から)、専用のフォルダーに `iwato.exe` として置いて、そこで実行します:
 
 ```powershell
 .\iwato.exe

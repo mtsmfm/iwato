@@ -10,7 +10,7 @@
 
 ## Install
 
-Download `iwato-windows-amd64.exe` (or `iwato-windows-arm64.exe`) from [Releases](https://github.com/mtsmfm/iwato/releases) and save it as `iwato.exe` in a folder of its own. To build it yourself instead, see [development](../dev/development.md).
+Download `iwato-windows-amd64.exe` (or `iwato-windows-arm64.exe`) from [Releases](https://github.com/mtsmfm/iwato/releases) (until the first release, from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), rebuilt from `main` on every change) and save it as `iwato.exe` in a folder of its own. To build it yourself instead, see [development](../dev/development.md).
 
 The exe is not signed, so Windows SmartScreen may warn when you run a downloaded copy for the first time ("More info" → "Run anyway").
 
@@ -89,7 +89,7 @@ Docker Desktop: enable host networking (Settings → Resources → Network → E
 
 ### Run Iwato
 
-Until there is a release and a Homebrew tap, the binary is the `darwin-arm64/iwato` of the `build` workflow's artifact. It is not signed; if Gatekeeper blocks it:
+Until there is a release and a Homebrew tap, the binary is `iwato-darwin-arm64` of the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) (save it as `iwato`). It is not signed; if Gatekeeper blocks it:
 
 ```sh
 chmod +x iwato

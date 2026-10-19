@@ -10,7 +10,7 @@
 
 ## インストール
 
-[Releases](https://github.com/mtsmfm/iwato/releases) から `iwato-windows-amd64.exe` (または `iwato-windows-arm64.exe`) をダウンロードし、専用のフォルダーに `iwato.exe` として置きます。自分でビルドするときは [開発](../../dev/development.md) (英語) を参照してください。
+[Releases](https://github.com/mtsmfm/iwato/releases) から `iwato-windows-amd64.exe` (または `iwato-windows-arm64.exe`) をダウンロードし (最初のリリースまでは、`main` の変更のたびに作り直されるプレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から)、専用のフォルダーに `iwato.exe` として置きます。自分でビルドするときは [開発](../../dev/development.md) (英語) を参照してください。
 
 exe は署名されていないので、ダウンロードしたものを初めて実行するときに Windows の SmartScreen が警告することがあります (「詳細情報」→「実行」)。
 
@@ -89,7 +89,7 @@ Docker Desktop では、ホストネットワークを有効にし (Settings →
 
 ### Iwato を動かす
 
-リリースと Homebrew の tap ができるまでは、`build` ワークフローの artifact の `darwin-arm64/iwato` を使います。署名していないので、Gatekeeper に止められたら:
+リリースと Homebrew の tap ができるまでは、プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) の `iwato-darwin-arm64` を `iwato` として使います。署名していないので、Gatekeeper に止められたら:
 
 ```sh
 chmod +x iwato

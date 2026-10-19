@@ -29,6 +29,7 @@ There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbse
 
 `scripts/build-exe.sh` builds `dist/windows-{amd64,arm64}/iwato.exe` and `dist/darwin-arm64/iwato`. `web/` is embedded in the exe, so UI-only changes need a build too.
 
+- CI (`.github/workflows/build.yml`) builds these on every push; on `main` it also replaces the assets of the pre-release `edge` (the tag `edge` follows `main`)
 - Default (a development exe): the exe pulls the standard image `ghcr.io/mtsmfm/iwato-sandbox:edge` when it has none (`.github/workflows/image.yml` publishes it on every push to main and only builds it in PRs that touch `sandboximage/`), pulls a newer one only on request, and builds the gateway image itself
 - `--local-images`: builds both images from the sources embedded in the exe (to try a change to `sandboximage/` before it reaches main)
 - `--images REGISTRY`: pulls both images tagged with the exe's version (the release); with `--image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...` (what `release.yml` passes, the digests it pushed) as `version@digest`, so a moved tag is not used. The `edge` tag of development exes is pulled by the tag alone: it is meant to move

@@ -1,5 +1,6 @@
 # Builds the Windows exes and the macOS binary on every push (and by hand)
-# and keeps them as a workflow artifact. Unlike the release workflow the exes pull the
+# and keeps them as a workflow artifact; on main they also replace the
+# pre-release `edge` (the edge job). Unlike the release workflow the exes pull the
 # sandbox image's `edge` tag (image.yml) and build the gateway image, as
 # during development (scripts/build-exe.sh without --images).
 name: build
@@ -86,3 +87,40 @@ jobs:
             dist/darwin-arm64/iwato
           if-no-files-found: error
           retention-days: 30
+  # Every push to main replaces the exes and the macOS binary of the
+  # pre-release `edge` (the tag follows main). They are development builds:
+  # they pull the sandbox image's `edge` tag and build the gateway image.
+  edge:
+    if: github.ref == 'refs/heads/main'
+    needs: [codemirror, pins, exes]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: edge-release
+      cancel-in-progress: true
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: iwato-windows-${{ github.sha }}
+          path: dist
+      - name: Publish the edge pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -e
+          for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; done
+          cp dist/darwin-arm64/iwato iwato-darwin-arm64
+          if gh api "repos/$GH_REPO/git/refs/tags/edge" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/edge" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref=refs/tags/edge -f sha="$GITHUB_SHA" >/dev/null
+          fi
+          notes="Unstable build of main at $GITHUB_SHA ($(date -u +%Y-%m-%dT%H:%MZ)). Replaced on every push to main; expect breaking changes."
+          if gh release view edge >/dev/null 2>&1; then
+            gh release edit edge --prerelease --title "Edge (main)" --notes "$notes"
+          else
+            gh release create edge --prerelease --title "Edge (main)" --notes "$notes"
+          fi
+          gh release upload edge iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 --clobber
