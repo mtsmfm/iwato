@@ -1,9 +1,9 @@
-# Builds the Windows exes and the macOS binary on every push (and by hand)
-# and keeps them as a workflow artifact; on main they also replace the
-# pre-release `edge` (the edge jobs). The artifact's exes pull the sandbox
-# image's `edge` tag (image.yml) and build the gateway image, as during
-# development (scripts/build-exe.sh without --images); the edge exes pull
-# both images, pinned by digest.
+# Builds the Windows exes and the macOS and Linux binaries on every push
+# (and by hand) and keeps them as a workflow artifact; on main they also
+# replace the pre-release `edge` (the edge jobs). The artifact's exes pull
+# the sandbox image's `edge` tag (image.yml) and build the gateway image,
+# as during development (scripts/build-exe.sh without --images); the edge
+# exes pull both images, pinned by digest.
 name: build
 on:
   push:
@@ -86,6 +86,7 @@ jobs:
           path: |
             dist/windows-*/iwato.exe
             dist/darwin-arm64/iwato
+            dist/linux-*/iwato
           if-no-files-found: error
           retention-days: 30
   # The edge exes pull both images of their own sources by digest
@@ -151,10 +152,11 @@ jobs:
           path: |
             dist/windows-*/iwato.exe
             dist/darwin-arm64/iwato
+            dist/linux-*/iwato
           if-no-files-found: error
           retention-days: 1
-  # Every push to main replaces the exes and the macOS binary of the
-  # pre-release `edge` (the tag follows main).
+  # Every push to main replaces the exes and the macOS and Linux binaries
+  # of the pre-release `edge` (the tag follows main).
   edge:
     needs: edge-exes
     runs-on: ubuntu-24.04
@@ -176,6 +178,7 @@ jobs:
           set -e
           for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; done
           cp dist/darwin-arm64/iwato iwato-darwin-arm64
+          for a in amd64 arm64; do cp dist/linux-$a/iwato iwato-linux-$a; done
           if gh api "repos/$GH_REPO/git/refs/tags/edge" >/dev/null 2>&1; then
             gh api -X PATCH "repos/$GH_REPO/git/refs/tags/edge" -f sha="$GITHUB_SHA" -F force=true >/dev/null
           else
@@ -187,4 +190,4 @@ jobs:
           else
             gh release create edge --prerelease --title "Edge (main)" --notes "$notes"
           fi
-          gh release upload edge iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 --clobber
+          gh release upload edge iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64 --clobber

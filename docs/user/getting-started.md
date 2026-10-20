@@ -6,7 +6,7 @@
 
 - Windows 11 with WSL 3.0.1 or later, which provides WSLc (`wslc.exe`). Update with `wsl --update` (`wsl --update --pre-release` if the stable release is older) and check with `wslc.exe --version`
 - An x64 or Arm64 PC. Iwato needs nothing else: no Docker Desktop, no account
-- Or (experimental) an Apple Silicon Mac or Linux with a Docker-compatible engine: see [macOS](#macos-experimental)
+- Or (experimental) an Apple Silicon Mac, or x64 or Arm64 Linux, with a Docker-compatible engine: see [macOS and Linux](#macos-and-linux-experimental)
 
 ## Install
 
@@ -62,50 +62,57 @@ iwato help
 
 Stop Iwato with Ctrl+C. Stopping or updating Iwato does not stop the sandboxes: with the standard image their terminals keep running too, and Iwato reattaches to them when it starts again ([terminals](terminals.md)).
 
-## macOS (experimental)
+## macOS and Linux (experimental)
 
-On macOS Iwato runs the sandboxes on a Docker-compatible engine with OpenShell's own Docker compute driver ([ADR 0002](../adr/0002-macos-docker-compatible-runtime.md)). Windows keeps WSLc. Linux has no download: build Iwato from source ([building](../dev/development.md#building-on-linux)) and use Docker Engine; the rest is as on macOS.
+On macOS and Linux Iwato runs the sandboxes on a Docker-compatible engine with OpenShell's own Docker compute driver ([ADR 0002](../adr/0002-macos-docker-compatible-runtime.md)). Windows keeps WSLc.
 
 This path has not yet been tried on a real Mac: the Linux CI runs it on Docker (`TestDockerE2E` in `.github/workflows/e2e.yml`) and tests the macOS build on a Mac runner (`.github/workflows/macos.yml`). Please report what does not work.
 
 ### Requirements
 
-- An Apple Silicon Mac (the build is `darwin-arm64`)
-- A Docker-compatible engine with Docker Engine 28.0 or later (OpenShell's requirement). Colima (free, MIT) is recommended; Docker Desktop and OrbStack work too, but may be paid for commercial use
+- macOS: an Apple Silicon Mac (the build is `darwin-arm64`)
+- Linux: an x64 or Arm64 machine (`linux-amd64`, `linux-arm64`)
+- A Docker-compatible engine with Docker Engine 28.0 or later (OpenShell's requirement). On macOS Colima (free, MIT) is recommended; Docker Desktop and OrbStack work too, but may be paid for commercial use. On Linux, [Docker Engine](https://docs.docker.com/engine/install/), rootful or rootless
 
-### Set up Colima
+Iwato runs the `docker` CLI, so `DOCKER_HOST`, `DOCKER_CONTEXT` and `docker context use` choose the engine.
+
+### Set up Colima (macOS)
 
 ```sh
 brew install colima docker
 colima start --cpu 4 --memory 8
 ```
 
-`colima start` makes the `colima` Docker context current, which Iwato uses (Iwato runs the `docker` CLI, so `DOCKER_HOST`, `DOCKER_CONTEXT` and `docker context use` choose the engine).
+`colima start` makes the `colima` Docker context current, which Iwato uses.
 
 Sandboxes run in Colima's Linux VM. The CPUs and memory given to the VM stay with it while sandboxes are stopped; to change them, `colima stop`, then `colima start --cpu N --memory GiB`.
 
 Docker Desktop: enable host networking (Settings → Resources → Network → Enable host networking; OpenShell's supervisor uses it) and keep Enhanced Container Isolation off.
 
+### Set up Docker Engine (Linux)
+
+Install it, start it (`sudo systemctl enable --now docker`) and let your user run `docker` without sudo (`sudo usermod -aG docker $USER`, then log in again), or use rootless Docker.
+
 ### Run Iwato
 
-Download `iwato-darwin-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` in a folder of its own (the config folder, as on Windows). Run it from there:
+Download `iwato-darwin-arm64`, `iwato-linux-amd64` or `iwato-linux-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` in a folder of its own (the config folder, as on Windows). Run it from there:
 
 ```sh
 chmod +x iwato
-xattr -d com.apple.quarantine iwato
+xattr -d com.apple.quarantine iwato   # macOS only
 ./iwato
 ```
 
-`chmod +x` makes the download executable. The binary is not signed, so `xattr` removes the quarantine that makes Gatekeeper block it.
+`chmod +x` makes the download executable. The binary is not signed, so on macOS `xattr` removes the quarantine that makes Gatekeeper block it.
 
-`./iwato` checks the engine first: whether `docker` is there and the engine runs, its version, the VM's architecture, CPUs and memory, and the Docker Desktop settings above. The results are in the settings' **Startup checks**; when the engine is not running, the page says how to start it and Iwato goes on once it runs. Then it is as on Windows (above): open the printed URL, create a sandbox, start it.
+`./iwato` checks the engine first: whether `docker` is there and the engine runs, its version, the engine's architecture, CPUs and memory, and the Docker Desktop settings above. The results are in the settings' **Startup checks**; when the engine is not running, the page says how to start it and Iwato goes on once it runs. Then it is as on Windows (above): open the printed URL, create a sandbox, start it. Iwato does not open the browser itself.
 
 ### Differences from Windows
 
 - Only images that follow the sandbox convention ([ADR 0005](../adr/0005-sandbox-image-convention.md), such as the standard image) can keep their home: OpenShell's Docker driver refuses a volume on the working directory or its parents, so an image whose `WORKDIR` is the home does not start
-- No GPU: there is no way to pass the Mac's GPU to a container
-- Secrets (the ingress secret) are encrypted with a key that the login Keychain keeps (item `iwato` / `secret-file-key`). On Linux they are plain files (mode 0600)
-- `iwato.json` has no `wslc`. `docker` sets the CLI's path (default `docker` on `PATH`); `dockerSocket` sets where the engine's API socket is inside the engine (default `/var/run/docker.sock`, which Colima, Docker Desktop and OrbStack use in their VM; with rootless Docker on Linux, the CLI's `unix://` endpoint)
+- No GPU on macOS: there is no way to pass the Mac's GPU to a container
+- Secrets (the ingress secret) are encrypted on macOS with a key that the login Keychain keeps (item `iwato` / `secret-file-key`). On Linux they are plain files (mode 0600) in the config folder
+- `iwato.json` has no `wslc`. `docker` sets the CLI's path (default `docker` on `PATH`); `dockerSocket` sets where the engine's API socket is inside the engine (default `/var/run/docker.sock`, which rootful Docker Engine uses, as do Colima, Docker Desktop and OrbStack in their VM; with rootless Docker on Linux, the CLI's `unix://` endpoint)
 
 ## Next
 

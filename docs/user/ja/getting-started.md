@@ -6,7 +6,7 @@
 
 - Windows 11 と WSL 3.0.1 以上 (WSLc の `wslc.exe` が入ります)。`wsl --update` で更新し (安定版が古いときは `wsl --update --pre-release`)、`wslc.exe --version` で確認します
 - x64 か Arm64 の PC。ほかには何も要りません (Docker Desktop もアカウントも不要)
-- または (試験的) Apple Silicon の Mac か Linux と Docker 互換のエンジン: [macOS](#macos-試験的) を参照
+- または (試験的) Apple Silicon の Mac か x64・Arm64 の Linux と Docker 互換のエンジン: [macOS と Linux](#macos-と-linux-試験的) を参照
 
 ## インストール
 
@@ -62,50 +62,57 @@ iwato help
 
 Ctrl+C で終了します。Iwato を終了・更新してもサンドボックスは止まりません。標準イメージならターミナルも動き続け、次に起動したときにつなぎ直します ([ターミナル](terminals.md))。
 
-## macOS (試験的)
+## macOS と Linux (試験的)
 
-macOS では、WSLc の代わりに Docker 互換のエンジンでサンドボックスを動かし、コンピュートドライバは OpenShell の Docker ドライバをそのまま使います ([ADR 0002](../../adr/0002-macos-docker-compatible-runtime.md))。Windows は WSLc のままです。Linux 用のダウンロードはありません。ソースからビルドし ([Linux でのビルド](../../dev/development.md#building-on-linux)、英語)、Docker Engine で使います。あとは macOS と同じです。
+macOS と Linux では、WSLc の代わりに Docker 互換のエンジンでサンドボックスを動かし、コンピュートドライバは OpenShell の Docker ドライバをそのまま使います ([ADR 0002](../../adr/0002-macos-docker-compatible-runtime.md))。Windows は WSLc のままです。
 
 実機の Mac ではまだ試していません (CI の Linux の Docker で `TestDockerE2E` を、Mac のランナーで macOS 版のテストを流しています)。動かないところがあれば知らせてください。
 
 ### 前提
 
-- Apple Silicon の Mac (ビルドは `darwin-arm64`)
-- Docker Engine 28.0 以上の Docker 互換のエンジン (OpenShell の前提)。おすすめは Colima (無料、MIT)。Docker Desktop・OrbStack でも動きますが、商用では有料のことがあります
+- macOS: Apple Silicon の Mac (ビルドは `darwin-arm64`)
+- Linux: x64 か Arm64 のマシン (`linux-amd64`、`linux-arm64`)
+- Docker Engine 28.0 以上の Docker 互換のエンジン (OpenShell の前提)。macOS のおすすめは Colima (無料、MIT)。Docker Desktop・OrbStack でも動きますが、商用では有料のことがあります。Linux は [Docker Engine](https://docs.docker.com/engine/install/) (rootful でも rootless でも)
 
-### Colima を用意する
+Iwato は `docker` コマンドを実行するので、`DOCKER_HOST`・`DOCKER_CONTEXT`・`docker context use` でエンジンを選べます。
+
+### Colima を用意する (macOS)
 
 ```sh
 brew install colima docker
 colima start --cpu 4 --memory 8
 ```
 
-`colima start` で Docker の context が `colima` になり、Iwato はそれを使います (Iwato は `docker` コマンドを実行するので、`DOCKER_HOST`・`DOCKER_CONTEXT`・`docker context use` でエンジンを選べます)。
+`colima start` で Docker の context が `colima` になり、Iwato はそれを使います。
 
 サンドボックスは Colima の Linux の VM で動きます。VM に割り当てた CPU とメモリは、サンドボックスを止めても戻りません。変えるときは `colima stop` してから `colima start --cpu N --memory GiB`。
 
 Docker Desktop では、ホストネットワークを有効にし (Settings → Resources → Network → Enable host networking。OpenShell の supervisor が使います)、Enhanced Container Isolation は無効のままにします。
 
+### Docker Engine を用意する (Linux)
+
+入れて起動し (`sudo systemctl enable --now docker`)、sudo なしで `docker` を使えるようにします (`sudo usermod -aG docker $USER` のあとログインし直す)。rootless Docker でもかまいません。
+
 ### Iwato を動かす
 
-プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64` をダウンロードし、専用のフォルダーに `iwato` として置きます (Windows と同じく設定フォルダーになります)。そのフォルダーで実行します:
+プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64`・`iwato-linux-amd64`・`iwato-linux-arm64` のどれかをダウンロードし、専用のフォルダーに `iwato` として置きます (Windows と同じく設定フォルダーになります)。そのフォルダーで実行します:
 
 ```sh
 chmod +x iwato
-xattr -d com.apple.quarantine iwato
+xattr -d com.apple.quarantine iwato   # macOS のみ
 ./iwato
 ```
 
-`chmod +x` でダウンロードしたファイルを実行できるようにします。署名していないので、`xattr` で Gatekeeper が止める印 (quarantine) を外します。
+`chmod +x` でダウンロードしたファイルを実行できるようにします。署名していないので、macOS では `xattr` で Gatekeeper が止める印 (quarantine) を外します。
 
-`./iwato` は最初にエンジンを確かめます: `docker` があってエンジンが動いているか、版、VM のアーキテクチャ・CPU・メモリ、上の Docker Desktop の設定。結果は「設定」の「起動時の確認」にあります。エンジンが動いていないときは画面に起動のしかたを出し、動き出すと続けます。あとは Windows と同じです (上記)。
+`./iwato` は最初にエンジンを確かめます: `docker` があってエンジンが動いているか、版、エンジンのアーキテクチャ・CPU・メモリ、上の Docker Desktop の設定。結果は「設定」の「起動時の確認」にあります。エンジンが動いていないときは画面に起動のしかたを出し、動き出すと続けます。あとは Windows と同じです (上記)。ブラウザは自動では開きません。
 
 ### Windows との違い
 
 - ホームを残せるのは、サンドボックスの決まり ([ADR 0005](../../adr/0005-sandbox-image-convention.md)。標準イメージなど) に沿ったイメージだけです。OpenShell の Docker ドライバは作業ディレクトリやその親にボリュームを置けないので、`WORKDIR` がホームのイメージは起動できません
-- GPU は使えません (Mac の GPU をコンテナに渡す方法がありません)
-- 秘密 (公開のシークレット) は、ログインキーチェーンが持つ鍵 (項目 `iwato` / `secret-file-key`) で暗号化して保存します。Linux では暗号化しないファイル (権限 0600) です
-- `iwato.json` に `wslc` はありません。`docker` で CLI のパス (既定は `PATH` の `docker`)、`dockerSocket` でエンジンの中の API のソケットの場所 (既定は `/var/run/docker.sock`。Colima・Docker Desktop・OrbStack の VM の中はこれ。Linux の rootless Docker では CLI の `unix://` の接続先) を指定できます
+- macOS では GPU は使えません (Mac の GPU をコンテナに渡す方法がありません)
+- 秘密 (公開のシークレット) は、macOS ではログインキーチェーンが持つ鍵 (項目 `iwato` / `secret-file-key`) で暗号化して保存します。Linux では設定フォルダーの暗号化しないファイル (権限 0600) です
+- `iwato.json` に `wslc` はありません。`docker` で CLI のパス (既定は `PATH` の `docker`)、`dockerSocket` でエンジンの中の API のソケットの場所 (既定は `/var/run/docker.sock`。rootful の Docker Engine と、Colima・Docker Desktop・OrbStack の VM の中はこれ。Linux の rootless Docker では CLI の `unix://` の接続先) を指定できます
 
 ## 次に
 

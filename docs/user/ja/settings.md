@@ -29,7 +29,7 @@ Iwato は自分のものをすべて `iwato.json` のフォルダー (起動し�
 
 - `"termTrace": true`: ターミナルの出力を記録する ([ターミナル](terminals.md))
 - `"wslc"`: `wslc.exe` が `PATH` にないときのフルパス
-- `"docker"`、`"dockerSocket"` (macOS・Linux): `docker` の CLI のパスと、エンジンの API のソケット ([macOS](getting-started.md#windows-との違い))
+- `"docker"`、`"dockerSocket"` (macOS・Linux): `docker` の CLI のパスと、エンジンの API のソケット ([macOS と Linux](getting-started.md#windows-との違い))
 - ポートごとの公開の設定 ([ポートの公開](publishing.md))
 
 `iwato.json` を手で直すときは、Iwato を止めてからにしてください。

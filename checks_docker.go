@@ -38,13 +38,13 @@ func diagnoseDocker(ctx context.Context, e *Engine) []check {
 	_ = json.Unmarshal(raw, &v) // the client's part comes even when the engine is down
 	switch {
 	case v.Client == nil && err != nil:
-		add("fail", "docker", "docker_missing", "docker_install", map[string]any{"error": cliLine(err)})
+		add("fail", "docker", "docker_missing", osHint("docker_install"), map[string]any{"error": cliLine(err)})
 		return out
 	case v.Server == nil && err != nil:
-		add("fail", "docker", "docker_down_error", "docker_start", map[string]any{"error": cliLine(err)})
+		add("fail", "docker", "docker_down_error", osHint("docker_start"), map[string]any{"error": cliLine(err)})
 		return out
 	case v.Server == nil:
-		add("fail", "docker", "docker_down", "docker_start", nil)
+		add("fail", "docker", "docker_down", osHint("docker_start"), nil)
 		return out
 	}
 	params := map[string]any{"version": v.Server.Version, "api": v.Server.APIVersion}
@@ -94,6 +94,14 @@ func diagnoseDocker(ctx context.Context, e *Engine) []check {
 		}
 	}
 	return out
+}
+
+// osHint is the Linux variant of a hint written for macOS (Colima).
+func osHint(key string) string {
+	if runtime.GOOS == "linux" {
+		return key + "_linux"
+	}
+	return key
 }
 
 func atoiOr(s string, def int) int {
