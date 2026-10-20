@@ -25,6 +25,7 @@ Web assets:
 
 - Moralerspace 2.0.0 (Neon HW Regular/Bold, terminal font), SIL Open Font License 1.1. License in `web/vendor/LICENSE-moralerspace.txt`
 - CodeMirror 6 and Lezer (the editor tab, `web/vendor/codemirror.js`; with crelt, style-mod, w3c-keyname and @marijn/find-cluster-break), MIT. Versions in `web/vendor/manifest.json`, notices in `web/vendor/LICENSE-codemirror.txt`
+- marked (the editor's Markdown preview, `web/vendor/markdown.js`), MIT. Version in `web/vendor/manifest.json`, notice in `web/vendor/LICENSE-codemirror.txt`
 
 The font release archive SHA-256 and the SHA-256 of each vendored file are recorded in `web/vendor/manifest.json`.
 

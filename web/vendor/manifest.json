@@ -3,7 +3,8 @@
   "assets": {
     "fonts/moralerspace-neon-hw-2.0.0-regular.ttf": "c172cc549b62e68c08c3ada5ba5df929b166fc3c572f51830e761a1f7236afa8",
     "fonts/moralerspace-neon-hw-2.0.0-bold.ttf": "010af6b6be2908f0ae571c27a2cf80d985644a3404cc580c0dd4ce978e108586",
-    "codemirror.js": "ddf5ccd0a8ebea36bb3e85e55d7a37a6a87da2f69b20fef7e834cecbbd441450"
+    "codemirror.js": "ddf5ccd0a8ebea36bb3e85e55d7a37a6a87da2f69b20fef7e834cecbbd441450",
+    "markdown.js": "d5d52bb7ee52f9c712555c47e19b83c5933d2b91cad1abe027be27c8e9ba4680"
   },
   "fonts": [
     {
@@ -58,6 +59,17 @@
         "crelt": "1.0.7",
         "style-mod": "4.1.4",
         "w3c-keyname": "2.2.8"
+      }
+    },
+    {
+      "name": "marked",
+      "file": "markdown.js",
+      "build": "scripts/build-codemirror.sh",
+      "lock": "scripts/codemirror/package-lock.json",
+      "license": "MIT",
+      "notices": "LICENSE-codemirror.txt",
+      "packages": {
+        "marked": "18.1.0"
       }
     }
   ]

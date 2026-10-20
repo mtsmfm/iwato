@@ -13,7 +13,9 @@
 // does not load, or no DOM in the unit tests) a textarea does the same
 // minus those. An image (known by its name, or a file the server says is
 // not text) opens as a read-only preview: an img of the raw route, which
-// serves only images told by their content, under a sandboxing CSP.
+// serves only images told by their content, under a sandboxing CSP. A
+// Markdown file can show a preview (web/vendor/markdown.js, loaded when
+// first shown) instead of the text or beside it.
 (() => {
   'use strict';
   // The UI's strings (web/i18n.js), looked up when used.
@@ -139,6 +141,13 @@
   // imageName: a name the preview opens without asking for text first (the
   // server decides by the content: editor.go editorImageType).
   const imageName = (p) => /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i.test(p);
+  const viewKey = 'iwato-editor-view';
+  const savedView = () => {
+    try { const v = localStorage.getItem(viewKey); return v === 'preview' || v === 'both' ? v : 'text'; } catch (_) { return 'text'; }
+  };
+  // The preview's images: at most this many per file, each this big.
+  const maxPreviewImages = 30;
+  const maxPreviewImage = 5 << 20;
   const sizeText = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
   // The tree's expanded folders per sandbox: in the page, and in the
   // browser's storage when it has one.
@@ -192,21 +201,91 @@
   // elsewhere.
   const tabText = (path) => /(\.go|Makefile|\.mk)$/.test(path || '') ? '\t' : '  ';
 
-  // The CodeMirror bundle (web/vendor/codemirror.js), loaded once by the
-  // first panel shown: the module, or null when it cannot be loaded.
-  let codeMirror = null;
-  function loadCodeMirror() {
-    if (codeMirror) return codeMirror;
-    if (typeof window !== 'undefined' && window.IwatoCodeMirror) return (codeMirror = Promise.resolve(window.IwatoCodeMirror));
-    if (typeof document === 'undefined' || !document.createElement || !document.head) return (codeMirror = Promise.resolve(null));
-    codeMirror = new Promise((resolve) => {
+  // The vendored bundles, each loaded once when first needed: the module
+  // (window[name]), or null when it cannot be loaded.
+  const bundles = {};
+  function loadBundle(src, name) {
+    if (bundles[src]) return bundles[src];
+    if (typeof window !== 'undefined' && window[name]) return (bundles[src] = Promise.resolve(window[name]));
+    if (typeof document === 'undefined' || !document.createElement || !document.head) return (bundles[src] = Promise.resolve(null));
+    bundles[src] = new Promise((resolve) => {
       const script = document.createElement('script');
-      script.src = '/vendor/codemirror.js';
-      script.addEventListener('load', () => resolve(window.IwatoCodeMirror || null));
+      script.src = src;
+      script.addEventListener('load', () => resolve(window[name] || null));
       script.addEventListener('error', () => resolve(null));
       document.head.append(script);
     });
-    return codeMirror;
+    return bundles[src];
+  }
+  const loadCodeMirror = () => loadBundle('/vendor/codemirror.js', 'IwatoCodeMirror');
+  const loadMarkdown = () => loadBundle('/vendor/markdown.js', 'IwatoMarkdown');
+
+  const escapeHTML = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  // relativeTo resolves a relative link of the file at from to a path
+  // under the workspace; '' for anything else (a scheme, an absolute path,
+  // above the workspace).
+  function relativeTo(from, href) {
+    href = String(href || '');
+    if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href[0] === '/' || href[0] === '#' || href[0] === '?') return '';
+    let rel = href.replace(/[?#].*$/, '');
+    try { rel = decodeURIComponent(rel); } catch (_) { return ''; }
+    const parts = String(from).split('/');
+    parts.pop();
+    for (const part of rel.split('/')) {
+      if (part === '' || part === '.') continue;
+      if (part !== '..') parts.push(part);
+      else if (!parts.length) return '';
+      else parts.pop();
+    }
+    return parts.join('/');
+  }
+
+  // markdownHTML renders GitHub-flavoured Markdown for the preview's
+  // iframe. Raw HTML shows as text, only http(s) links are links, and an
+  // image is image(href)'s data: URL or its alt text.
+  let marked = null;
+  let imageOf = null;
+  function markdownHTML(MD, text, image) {
+    if (!marked) {
+      marked = new MD.Marked({ gfm: true });
+      marked.use({
+        renderer: {
+          html: ({ text, block }) => block ? '<pre class="raw">' + escapeHTML(text) + '</pre>' : escapeHTML(text),
+          link({ href, title, tokens }) {
+            const inner = this.parser.parseInline(tokens);
+            if (!/^https?:\/\//i.test(href)) return '<span class="link">' + inner + '</span>';
+            return '<a href="' + escapeHTML(href) + '"' + (title ? ' title="' + escapeHTML(title) + '"' : '') + ' target="_blank" rel="noopener noreferrer">' + inner + '</a>';
+          },
+          image({ href, title, text }) {
+            const src = imageOf?.(href) || '';
+            if (!src) return '<span class="alt">' + escapeHTML(text || href) + '</span>';
+            return '<img src="' + escapeHTML(src) + '" alt="' + escapeHTML(text) + '"' + (title ? ' title="' + escapeHTML(title) + '"' : '') + '>';
+          }
+        }
+      });
+    }
+    imageOf = image;
+    try { return marked.parse(String(text)); } finally { imageOf = null; }
+  }
+
+  // previewPage is the iframe's document: no script (the iframe's sandbox
+  // too), images only as data:, the page's colours.
+  function previewPage(body) {
+    const names = ['--terminal', '--panel', '--text', '--muted', '--border', '--code-link', '--code-heading'];
+    const root = typeof getComputedStyle === 'function' && typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+    const vars = names.map((n) => n + ':' + ((root?.getPropertyValue(n) || '').trim().replace(/[^#\w(),.% -]/g, '') || 'initial')).join(';');
+    return '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'">' +
+      '<style>:root{color-scheme:dark;' + vars + '}' +
+      'html{background:var(--terminal);color:var(--text)}body{margin:0;padding:12px 16px;font:14px/1.65 Inter,"Noto Sans JP",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow-wrap:anywhere}' +
+      'body>:first-child{margin-top:0}a{color:var(--code-link)}h1,h2,h3,h4,h5,h6{color:var(--code-heading);line-height:1.3;margin:1.3em 0 .5em}h1,h2{padding-bottom:.25em;border-bottom:1px solid var(--border)}' +
+      'code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.88em}code{background:var(--panel);padding:.1em .35em;border-radius:4px}' +
+      'pre{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:10px 12px;overflow:auto;overflow-wrap:normal}pre code{background:none;padding:0;font-size:1em}pre.raw{color:var(--muted)}' +
+      'table{border-collapse:collapse;display:block;max-width:100%;overflow:auto}th,td{border:1px solid var(--border);padding:4px 10px}th{background:var(--panel)}' +
+      'blockquote{margin:0 0 1em;padding:0 1em;border-left:3px solid var(--border);color:var(--muted)}img{max-width:100%}hr{border:0;border-top:1px solid var(--border)}' +
+      'li:has(>input[type=checkbox]){list-style:none}li>input[type=checkbox]{margin:0 .4em 0 -1.3em;vertical-align:middle}.alt{color:var(--muted);border:1px dashed var(--border);border-radius:4px;padding:0 .3em}.link{text-decoration:underline dotted}' +
+      '</style></head><body>' + body + '</body></html>';
   }
 
   // The search panel's and the folding's words (CodeMirror's phrases).
@@ -551,6 +630,21 @@
         this.tabs = element('div', 'editor-tabs');
         this.tabs.setAttribute('role', 'tablist');
         this.tabs.setAttribute('aria-label', t('editor.tabs'));
+        // A Markdown file's view: the text, the preview, or both (not on a
+        // phone), remembered per browser.
+        this.viewSwitch = element('div', 'editor-view');
+        this.viewSwitch.setAttribute('role', 'group');
+        this.viewSwitch.setAttribute('aria-label', t('editor.view.label'));
+        this.viewButtons = ['text', 'preview', 'both'].map((view) => {
+          const b = button('editor-view-button', t('editor.view.' + view), () => this.setView(view));
+          b.dataset.mode = view;
+          return b;
+        });
+        this.viewButtons[2].title = t('editor.view.both.title');
+        this.viewSwitch.append(...this.viewButtons);
+        this.viewSwitch.hidden = true;
+        this.bar = element('div', 'editor-bar');
+        this.bar.append(this.tabs, this.viewSwitch);
 
         this.conflict = element('div', 'editor-conflict');
         this.conflict.setAttribute('role', 'alert');
@@ -562,6 +656,14 @@
           button('button-subtle', t('common.cancel'), () => { this.conflict.hidden = true; this.focusText(); }));
 
         this.text = new TextPane(element, () => this.edited());
+        // The preview: the sandbox's Markdown is untrusted, so it renders in
+        // an iframe without scripts or this origin (links open new tabs).
+        this.preview = element('iframe', 'editor-preview');
+        this.preview.setAttribute('sandbox', 'allow-popups allow-popups-to-escape-sandbox');
+        this.preview.setAttribute('referrerpolicy', 'no-referrer');
+        this.preview.setAttribute('title', t('editor.preview.label'));
+        this.preview.hidden = true;
+        this.previewImages = new Map(); // path -> data: URL, '' (none), null (loading)
         // The image preview: fit to the view, or 100 % (a click or the
         // button), read only.
         this.image = element('div', 'editor-image');
@@ -612,8 +714,9 @@
         this.quickInput.addEventListener('input', () => { this.active = 0; this.renderQuick(); });
         this.quickInput.addEventListener('keydown', (event) => this.quickKey(event));
 
-        const body = element('div', 'editor-body');
-        body.append(this.text.box, this.image, this.empty, this.quick);
+        const body = this.body = element('div', 'editor-body');
+        body.dataset.mode = 'text';
+        body.append(this.text.box, this.preview, this.image, this.empty, this.quick);
         this.tree = element('nav', 'editor-tree');
         this.tree.setAttribute('aria-label', t('editor.tree.label'));
         this.tree.id = 'editor-tree-' + Math.random().toString(36).slice(2);
@@ -631,7 +734,7 @@
         });
         this.main = element('div', 'editor-main');
         this.main.append(this.tree, body);
-        this.root.append(panelHeader({ key: 'tab.editor' }, this.openButton, this.saveButton, this.closeButton), folder, this.rootNote, this.tabs, this.conflict, this.main, this.status);
+        this.root.append(panelHeader({ key: 'tab.editor' }, this.openButton, this.saveButton, this.closeButton), folder, this.rootNote, this.bar, this.conflict, this.main, this.status);
 
         // Ctrl+P / Ctrl+S only while this panel shows and has the keyboard
         // (or nothing has it): never from the terminal or another card.
@@ -647,6 +750,9 @@
           else this.save();
         };
         if (typeof document !== 'undefined') document.addEventListener('keydown', this.onKey, true);
+        this.narrowQuery = typeof window !== 'undefined' ? window.matchMedia?.('(max-width: 720px)') : null;
+        this.onNarrow = () => this.layoutView();
+        this.narrowQuery?.addEventListener?.('change', this.onNarrow);
         this.render();
       }
 
@@ -660,7 +766,104 @@
 
       // focusTarget is what has the keyboard: the text, the image's
       // button, or the open button.
-      focusTarget() { return this.current ? (this.current.image ? this.imageFit : this.text) : this.openButton; }
+      focusTarget() {
+        if (!this.current) return this.openButton;
+        if (this.current.image) return this.imageFit;
+        return this.body.dataset.mode === 'preview' ? this.viewButtons[1] : this.text;
+      }
+
+      // layoutView shows the current file's text, preview or both.
+      layoutView() {
+        const doc = this.current;
+        const md = !!doc && !doc.image && languageOf(doc.path) === 'markdown';
+        const small = narrow();
+        let view = md ? savedView() : 'text';
+        if (view === 'both' && small) view = 'text';
+        this.viewSwitch.hidden = !md;
+        this.viewButtons[2].hidden = small;
+        for (const b of this.viewButtons) b.setAttribute('aria-pressed', String(b.dataset.mode === view));
+        const was = this.body.dataset.mode;
+        this.body.dataset.mode = view;
+        this.preview.hidden = view === 'text';
+        if (view === 'text') this.stopPreview();
+        else this.renderPreview();
+        if (was !== view) this.text.refresh();
+      }
+
+      setView(view) {
+        try { localStorage.setItem(viewKey, view); } catch (_) { /* storage unavailable */ }
+        this.layoutView();
+        if (view === 'text') this.focusText();
+      }
+
+      schedulePreview() {
+        this.stopPreview();
+        this.previewTimer = setTimeout(() => this.renderPreview(), 300);
+      }
+
+      stopPreview() {
+        if (this.previewTimer) clearTimeout(this.previewTimer);
+        this.previewTimer = null;
+      }
+
+      // renderPreview puts the current text into the iframe, unless it
+      // shows that already (a new srcdoc scrolls it back to the top).
+      async renderPreview() {
+        this.stopPreview();
+        const doc = this.current;
+        if (!doc || this.preview.hidden || this.root.hidden) return;
+        const MD = await loadMarkdown();
+        if (doc !== this.current || this.preview.hidden) return;
+        const value = this.text.value;
+        const shown = this.previewShown;
+        if (shown && shown.doc === doc && shown.value === value && shown.images === this.previewLoaded) return;
+        if (shown?.doc !== doc) this.previewImages = new Map();
+        this.previewShown = { doc, value, images: this.previewLoaded };
+        let body;
+        try {
+          body = MD ? markdownHTML(MD, value, (href) => this.previewImage(doc.path, href)) : '<p class="alt">' + escapeHTML(t('editor.preview.failed')) + '</p>';
+        } catch (error) {
+          body = '<p class="alt">' + escapeHTML(t('editor.preview.failed')) + '</p>';
+        }
+        this.preview.srcdoc = previewPage(body);
+      }
+
+      // previewImage gives a Markdown image's src for the preview: a data:
+      // URL, of a file next to it once read through the raw route (which
+      // the iframe, without this origin, cannot ask itself); '' meanwhile.
+      previewImage(from, href) {
+        if (/^data:image\/[a-z0-9.+-]+[;,]/i.test(href)) return href;
+        const path = relativeTo(from, href);
+        if (!path) return '';
+        const known = this.previewImages.get(path);
+        if (known !== undefined) return known || '';
+        if (this.previewImages.size >= maxPreviewImages) return '';
+        this.previewImages.set(path, null);
+        this.fetchPreviewImage(path, this.previewImages);
+        return '';
+      }
+
+      async fetchPreviewImage(path, images) {
+        let url = '';
+        try {
+          const res = await fetch('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/raw?path=' + encodeURIComponent(path), { credentials: 'same-origin' });
+          const blob = res.ok && /^image\//.test(res.headers.get('content-type') || '') ? await res.blob() : null;
+          if (blob && blob.size <= maxPreviewImage) {
+            url = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(blob);
+            });
+          }
+        } catch (_) { /* shown as its alt text */ }
+        if (images !== this.previewImages) return;
+        images.set(path, url.startsWith('data:image/') ? url : '');
+        if (url) {
+          this.previewLoaded = (this.previewLoaded || 0) + 1;
+          this.schedulePreview();
+        }
+      }
 
       hide() {
         this.stash();
@@ -1096,6 +1299,7 @@
 
       edited() {
         if (!this.current) return;
+        if (!this.preview.hidden) this.schedulePreview();
         const was = this.current.dirtyShown;
         if (this.dirty(this.current) !== was) this.renderTabs();
       }
@@ -1158,6 +1362,8 @@
           doc.start = doc.end = doc.scroll = 0;
           doc.state = doc.snapshot = null;
           this.conflict.hidden = true;
+          this.previewImages = new Map();
+          this.previewShown = null;
           if (doc === this.current) { this.current = null; this.switchTo(doc); }
           this.status.textContent = t('editor.reloaded', { path: doc.path });
         } catch (error) {
@@ -1167,6 +1373,7 @@
 
       render() {
         this.empty.hidden = !!this.current;
+        this.layoutView();
         this.saveButton.disabled = !this.current || !!this.current.image || !!this.saving;
         this.renderTabs();
         // Started again: read the folders that failed (stopped) again.
@@ -1205,7 +1412,7 @@
       }
 
       renderTabs() {
-        this.tabs.hidden = !this.docs.length;
+        this.bar.hidden = !this.docs.length;
         this.tabs.replaceChildren(...this.docs.map((doc) => {
           const dirty = this.dirty(doc);
           doc.dirtyShown = dirty;
@@ -1238,12 +1445,14 @@
 
       dispose() {
         this.disposed = true;
+        this.stopPreview();
+        this.narrowQuery?.removeEventListener?.('change', this.onNarrow);
         if (typeof document !== 'undefined') document.removeEventListener?.('keydown', this.onKey, true);
         this.root.remove();
       }
     };
   }
 
-  window.IwatoEditor = { fuzzy, rank, folderOf, lines, treeEntries, ancestors, imageName, languageOf, panel };
+  window.IwatoEditor = { fuzzy, rank, folderOf, lines, treeEntries, ancestors, imageName, languageOf, relativeTo, panel };
   window.IwatoCode = { mount };
 })();
