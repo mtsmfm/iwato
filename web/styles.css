@@ -256,6 +256,11 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .editor-image-box{flex:1;min-height:0;overflow:auto;display:flex;border:1px solid #2c3540;border-radius:6px;background-color:#1a1f26;background-image:conic-gradient(#232a33 25%,transparent 0 50%,#232a33 0 75%,transparent 0);background-size:16px 16px}
 .editor-image-img{margin:auto;flex:none;display:block}.editor-image[data-fit=fit] .editor-image-img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in}.editor-image[data-fit=actual] .editor-image-img{cursor:zoom-out}
 @media(pointer:coarse){.editor-image-head .button{min-height:36px;font-size:13px}}
+/* The editor's Markdown preview (web/editor.js): a sandboxed iframe instead of the text, or beside it. */
+.editor-bar{display:flex;align-items:center;gap:8px;flex:none;min-width:0}.editor-bar[hidden]{display:none}.editor-bar>.editor-tabs{flex:1;min-width:0}
+.editor-view{flex:none;display:inline-flex;border:1px solid #303640;border-radius:6px;overflow:hidden}.editor-view[hidden]{display:none}.editor-view .editor-view-button{min-height:0;border:0;border-radius:0;background:#181d24;color:#9aa7b7;font-size:12px;padding:4px 10px}.editor-view .editor-view-button+.editor-view-button{border-left:1px solid #303640}.editor-view .editor-view-button[aria-pressed=true]{background:#21382e;color:#d7f0e3}.editor-view .editor-view-button[hidden]{display:none}
+.editor-preview{flex:1;min-width:0;min-height:0;margin:0;border:1px solid #2c3540;border-radius:6px;background:var(--terminal)}.editor-preview[hidden]{display:none}.editor-body[data-mode=preview]>.editor-text-box{display:none}.editor-body[data-mode=both]{gap:8px}
+@media(pointer:coarse){.editor-view .editor-view-button{min-height:38px;font-size:13px}}
 /* Provider scopes (providers_scope.go): the simple editor and the YAML editor. */
 .provider-access-summary{color:#c0d2c9}
 .provider-access-form{margin:0 0 10px;padding:8px 10px;border:1px solid #24302b;border-radius:8px;background:#0f1513;gap:6px}

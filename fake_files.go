@@ -74,6 +74,12 @@ var fakeEditorFiles = map[string]string{
 	"work/iwato/.github/ci.yml":     "on: push\n",
 	"work/iwato/web/editor.js":      "'use strict';\n",
 	"work/iwato/docs/tree/a/b/c.md": "# 深い階層\n",
+	// For the Markdown preview: GFM, a relative image, and raw HTML that
+	// must not run.
+	"work/iwato/docs/preview.md": "# プレビュー\n\n| 名前 | 値 |\n|---|---|\n| a | 1 |\n| b | **2** |\n\n" +
+		"- [x] 済み\n- [ ] まだ\n\n~~取り消し~~ https://example.com/ と [リンク](https://example.com/docs)、[相対リンク](../README.md)\n\n" +
+		"```go\nfunc main() {}\n```\n\n![アイコン](../web/icon.png) ![外部の画像](https://example.com/x.png)\n\n" +
+		"<script>window.parent.__pwned = 1</script>\n\n<img src=x onerror=\"window.parent.__pwned = 2\">\n",
 }
 
 // fakePNG is a 48×32 gradient.

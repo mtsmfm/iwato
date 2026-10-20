@@ -2086,6 +2086,32 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   }
 
   {
+  // The editor's Markdown preview: the view switch shows for a .md file
+  // only, and the choice is remembered (no bundle here: the iframe gets a
+  // failure page, never the file's HTML).
+  const store = {};
+  const box = {window: {}, navigator: {languages: ['ja']}, localStorage: {getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }}};
+  vm.runInNewContext(i18nSource, box); vm.runInNewContext(editorSource, box); const E = box.window.IwatoEditor;
+  assert.equal(E.relativeTo('docs/a.md', '../web/i.png?x#y'), 'web/i.png'); assert.equal(E.relativeTo('a.md', '../x.png'), ''); assert.equal(E.relativeTo('a.md', 'https://x/y.png'), ''); assert.equal(E.relativeTo('a.md', '/etc/x.png'), ''); assert.equal(E.relativeTo('d/a.md', 'my%20pic.png'), 'd/my pic.png');
+  const api = async (url) => { const p = decodeURIComponent(url.match(/path=([^&]*)/)?.[1] || ''); return url.includes('/editor/dir') ? {entries: [], total: 0} : {path: p, content: '# t\n<script>x</script>\n', version: 'v'}; };
+  const element = (tag, className, text) => { const n = new Element(tag); if (className) n.className = className; if (text !== undefined) n.textContent = text; return n; };
+  const button = (cls, label, action) => { const n = element('button', 'button ' + cls, label); n.addEventListener('click', action); return n; };
+  const panelHeader = (title, ...controls) => { const h = element('div', 'panel-header'); h.append(element('h3', 'panel-title', title), ...controls); return h; };
+  const p = new (E.panel({element, button, panelHeader, api, askConfirm: async () => true}))({name: 'dev', status: 'running'}); p.show(); await flush();
+  await p.open('main.go'); assert.equal(p.viewSwitch.hidden, true, 'no view switch for a non-Markdown file'); assert.equal(p.preview.hidden, true);
+  await p.open('docs/README.md'); assert.equal(p.viewSwitch.hidden, false, 'a .md file has the view switch');
+  assert.equal(p.viewButtons.map((b) => b.textContent).join(' '), 'テキスト プレビュー 両方'); assert.equal(p.viewButtons[0].getAttribute('aria-pressed'), 'true'); assert.equal(p.preview.hidden, true);
+  assert.equal(p.preview.getAttribute('sandbox'), 'allow-popups allow-popups-to-escape-sandbox');
+  p.viewButtons[1].click(); await flush();
+  assert.equal(store['iwato-editor-view'], 'preview'); assert.equal(p.body.dataset.mode, 'preview'); assert.equal(p.preview.hidden, false);
+  assert(!p.preview.srcdoc.includes('<script>'), 'the file\'s raw HTML never reaches the iframe unescaped');
+  p.switchTo(p.docs[0]); assert.equal(p.viewSwitch.hidden, true); assert.equal(p.body.dataset.mode, 'text'); assert.equal(p.preview.hidden, true);
+  await p.open('notes.markdown'); assert.equal(p.body.dataset.mode, 'preview', 'the choice holds for the next Markdown file');
+  p.dispose();
+  ok('the editor offers a Markdown preview for .md files only and remembers the view');
+  }
+
+  {
   // Files: the addresses each OS takes (pure helpers).
   const box = {window: {}, URL, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box); vm.runInNewContext(filesSource, box); const F = box.window.IwatoFiles;
   assert.equal(F.davURL('https://box.tail0000.ts.net', 'dev'), 'https://box.tail0000.ts.net/dav/dev/');

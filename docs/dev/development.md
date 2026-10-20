@@ -52,7 +52,7 @@ Everything the images and the gateway download is pinned; `scripts/check-pins.sh
   3. `go test ./internal/openshell/...` (`TestDockerfilePinsOpenShell`, `TestImageTag`) and `scripts/check-pins.sh`
 - `ubuntu:24.04` (`FROM` in `sandboximage/Dockerfile` and the gateway's): pinned by the digest of the tag's index. Dependabot (`.github/dependabot.yml`) proposes the new digest weekly; by hand, `scripts/check-pins.sh` prints the current one
 - Selkies (`sandboximage/Dockerfile`): `SELKIES_VERSION` and the `case` entry per architecture, from the release's asset digests (`gh api repos/selkies-project/selkies/releases/tags/VERSION --jq '.assets[] | [.name, .digest] | @tsv'`). A version or architecture with no hash, or a mismatch, fails the build; `--build-arg SELKIES_DEB_SHA256=` overrides the hash for one build
-- CodeMirror (`web/vendor/codemirror.js`): change `scripts/codemirror/package.json`, update the lock file (`npm install --package-lock-only` there), run `scripts/build-codemirror.sh` and put the printed hash in `web/vendor/manifest.json`. The `codemirror` job of `build.yml` rebuilds it from the lock file (with its integrity hashes) and fails unless it is the committed file with the manifest's hash
+- CodeMirror and marked (`web/vendor/codemirror.js`, `markdown.js`): change `scripts/codemirror/package.json`, update the lock file (`npm install --package-lock-only` there), run `scripts/build-codemirror.sh` and put the printed hashes in `web/vendor/manifest.json`. The `codemirror` job of `build.yml` rebuilds them from the lock file (with its integrity hashes) and fails unless they are the committed files with the manifest's hashes
 - Iwato's own release images need nothing: `release.yml` passes the digests it pushed to the exes
 
 ## Tests

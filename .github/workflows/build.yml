@@ -11,9 +11,9 @@ on:
 permissions:
   contents: read
 jobs:
-  # web/vendor/codemirror.js is committed minified: rebuild it from the
-  # pinned packages (scripts/codemirror/package-lock.json, with integrity)
-  # and fail unless it is the committed file and the hash in
+  # web/vendor/codemirror.js and markdown.js are committed minified: rebuild
+  # them from the pinned packages (scripts/codemirror/package-lock.json, with
+  # integrity) and fail unless they are the committed files and the hashes in
   # web/vendor/manifest.json.
   codemirror:
     runs-on: ubuntu-24.04
@@ -26,9 +26,11 @@ jobs:
           node-version: ${{ steps.node.outputs.version }}
       - run: scripts/build-codemirror.sh
       - run: |
-          want=$(jq -r '.assets["codemirror.js"]' web/vendor/manifest.json)
-          got=$(sha256sum web/vendor/codemirror.js | cut -d' ' -f1)
-          [ "$got" = "$want" ] || { echo "web/vendor/codemirror.js built from the lock file is $got, web/vendor/manifest.json says $want" >&2; exit 1; }
+          for f in codemirror.js markdown.js; do
+            want=$(jq -r --arg f "$f" '.assets[$f]' web/vendor/manifest.json)
+            got=$(sha256sum "web/vendor/$f" | cut -d' ' -f1)
+            [ "$got" = "$want" ] || { echo "web/vendor/$f built from the lock file is $got, web/vendor/manifest.json says $want" >&2; exit 1; }
+          done
           git diff --exit-code -- web/vendor/
   # The pinned digests and SHA-256 match their sources (OpenShell's images
   # and release, Selkies' release); ubuntu:24.04's is only reported.

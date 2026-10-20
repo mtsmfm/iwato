@@ -7,7 +7,8 @@
 // drawer on phones), a binary file refused, images previewed (PNG, SVG,
 // WebP; HTML named .png refused), Ctrl+P left to the terminal, and a
 // stopped sandbox. The text is CodeMirror: Go and JavaScript highlighted,
-// Ctrl+F's search, no CSP violations. Saves screenshots. Usage
+// Ctrl+F's search, no CSP violations. A Markdown preview. Saves
+// screenshots. Usage
 // (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/editor-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
@@ -341,6 +342,70 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     await click(page, panelSel + ' .editor-tabs', 'work/iwato/web/app.js を閉じる');
     await click(page, panelSel + ' .editor-tabs', 'main.go');
     await page.waitForFunction((sel) => __editorText(sel) === 'package main // third\n', textSel);
+
+    // Markdown: a preview in a sandboxed iframe (instead of the text, or
+    // beside it on a PC), GFM rendered, the file's raw HTML inert, a
+    // relative image through the raw route, http(s) links in a new tab.
+    await openQuick('docspreview', 'work/iwato/docs/preview.md');
+    await page.waitForFunction((sel) => __editorText(sel).startsWith('# プレビュー'), textSel);
+    const viewSel = panelSel + ' .editor-view';
+    const previewSel = panelSel + ' iframe.editor-preview';
+    check(await page.evaluate((sel) => document.querySelector(sel).offsetParent !== null, viewSel), 'a Markdown file has the view switch');
+    await click(page, viewSel, 'プレビュー');
+    await page.waitForSelector(previewSel, { state: 'visible' });
+    const frame = await (await page.$(previewSel)).contentFrame();
+    await frame.waitForSelector('table');
+    const md = await frame.evaluate(() => ({
+      cells: [...document.querySelectorAll('td')].map((td) => td.textContent).join(','),
+      tasks: document.querySelectorAll('input[type=checkbox]').length,
+      del: !!document.querySelector('del'),
+      code: document.querySelector('pre code')?.textContent,
+      links: [...document.querySelectorAll('a')].map((a) => a.href + ' ' + a.target + ' ' + a.rel),
+      scripts: document.querySelectorAll('script').length,
+      wide: document.documentElement.scrollWidth <= innerWidth + 1
+    }));
+    check(md.cells === 'a,1,b,2' && md.tasks === 2 && md.del && md.code === 'func main() {}\n', 'the preview renders GFM: a table, task lists, strikethrough, code (' + JSON.stringify(md) + ')');
+    check(md.links.length === 2 && md.links.every((l) => /^https:\/\/example\.com\/\S* _blank noopener noreferrer$/.test(l)), 'only http(s) links are links, opening a new tab (' + md.links.join(' | ') + ')');
+    const sandbox = await page.evaluate((sel) => document.querySelector(sel).getAttribute('sandbox'), previewSel);
+    check(!/allow-scripts|allow-same-origin/.test(sandbox), 'the iframe has neither allow-scripts nor allow-same-origin (' + sandbox + ')');
+    await frame.waitForSelector('img[alt=アイコン]');
+    check(await frame.evaluate(() => document.querySelector('img[alt=アイコン]').naturalWidth === 48), 'a relative image shows through the raw route as data:');
+    const imgs = await frame.evaluate(() => [...document.querySelectorAll('img')].map((i) => i.getAttribute('src').slice(0, 15) + (i.getAttribute('onerror') ? ' onerror' : '')));
+    const alts = await frame.evaluate(() => [...document.querySelectorAll('.alt')].map((a) => a.textContent).join(','));
+    check(md.scripts === 0 && imgs.length === 1 && imgs.every((i) => i.startsWith('data:image/') && !i.includes('onerror')), 'the raw HTML is text, no img with onerror (' + imgs.join(', ') + ')');
+    check(alts === '外部の画像', 'an external image shows only its alt text (' + alts + ')');
+    await page.waitForTimeout(300);
+    check(await page.evaluate(() => window.__pwned === undefined), 'no script of the file ran');
+    check(await page.evaluate(([t]) => document.querySelector(t).offsetParent === null, [textSel]), 'the preview takes the text\'s place');
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1) && md.wide, 'the preview does not scroll sideways');
+    await context.route('https://example.com/**', (r) => r.fulfill({ contentType: 'text/plain', body: 'example' }));
+    const [popup] = await Promise.all([context.waitForEvent('page'), frame.click('a[href="https://example.com/docs"]')]);
+    await popup.waitForLoadState();
+    check(popup.url() === 'https://example.com/docs' && await popup.evaluate(() => window.opener === null), 'a link opens in a new tab without an opener (' + popup.url() + ')');
+    await popup.close();
+    await shot('editor-markdown.png');
+    if (phone) {
+      check(await page.evaluate((sel) => [...document.querySelectorAll(sel + ' button')].every((b) => b.textContent !== '両方' || b.offsetParent === null), viewSel), 'a phone has no side-by-side view');
+    } else {
+      await click(page, viewSel, '両方');
+      await page.waitForSelector(textSel, { state: 'visible' });
+      const both = await page.evaluate(([t, f]) => { const a = document.querySelector(t).getBoundingClientRect(); const b = document.querySelector(f).getBoundingClientRect(); return { textRight: a.right, previewLeft: b.left, width: b.width }; }, [textSel, previewSel]);
+      check(both.textRight <= both.previewLeft + 1 && both.width > 200, 'both: the preview beside the text (' + JSON.stringify(both) + ')');
+      await page.evaluate((sel) => __editorEnd(sel), textSel);
+      await page.keyboard.type('\n## 追加した見出し\n');
+      await frame.waitForFunction(() => [...document.querySelectorAll('h2')].some((h) => h.textContent === '追加した見出し'));
+      check(true, 'the preview follows the typing');
+      check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'both views do not scroll the page sideways');
+      await shot('editor-markdown-both.png');
+      for (let i = 0; i < '\n## 追加した見出し\n'.length; i++) await page.keyboard.press('Backspace');
+    }
+    await click(page, viewSel, 'テキスト');
+    await page.waitForSelector(previewSel, { state: 'hidden' });
+    check(await page.evaluate(() => localStorage.getItem('iwato-editor-view')) === 'text', 'the view is remembered');
+    await click(page, panelSel + ' .editor-tabs', 'work/iwato/docs/preview.md を閉じる');
+    await click(page, panelSel + ' .editor-tabs', 'main.go');
+    await page.waitForFunction((sel) => __editorText(sel) === 'package main // third\n', textSel);
+    check(await page.evaluate((sel) => document.querySelector(sel).offsetParent === null, viewSel), 'other files have no view switch');
 
     // Stopped: the tab and the text stay; saving says why it cannot.
     await page.evaluate((sel) => __editorFocus(sel), textSel);
