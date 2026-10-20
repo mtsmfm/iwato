@@ -33,6 +33,7 @@ There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbse
 - Default (a development exe): the exe pulls the standard image `ghcr.io/mtsmfm/iwato-sandbox:edge` when it has none, pulls a newer one only on request, and builds the gateway image itself, which needs `docker buildx` (as does `--local-images`)
 - `--local-images`: builds both images from the sources embedded in the exe (to try a change to `sandboximage/` before it reaches main)
 - `--images REGISTRY`: pulls both images tagged with the exe's version (the release) or `--image-tag TAG`; with `--image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...` as `tag@digest`, so a moved tag is not used and there is no update. Without digests, the `edge` tag is pulled by the tag alone: it is meant to move
+- `--channel edge|release --repo OWNER/REPO` (with `--image-digests`): a published exe, which offers updates from that repository's releases (`update.go`). CI also writes `dist/iwato-build.json` (`scripts/build-meta.sh`), the hashes and digests the update checks
 - `--debug`: keeps the debug option (the page's `?font=fallback`). Use it only while debugging. No build of this script has the fake backend (`-tags uitest`)
 
 Release: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which publishes the images (amd64 and arm64) and the exes.

@@ -164,11 +164,12 @@ jobs:
       # The exes pull the images they are released with by digest.
       - run: |
           digests=$(cat "$RUNNER_TEMP/index/iwato-gateway" "$RUNNER_TEMP/index/iwato-sandbox" | paste -sd, -)
-          scripts/build-exe.sh --images ghcr.io/${{ github.repository_owner }} --image-digests "$digests"
+          scripts/build-exe.sh --images ghcr.io/${{ github.repository_owner }} --image-digests "$digests" --channel release --repo "$GITHUB_REPOSITORY"
+          scripts/build-meta.sh release "$digests"
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; cp dist/linux-$a/iwato iwato-linux-$a; done
           cp dist/darwin-arm64/iwato iwato-darwin-arm64
-          gh release create "$GITHUB_REF_NAME" --title "Iwato $GITHUB_REF_NAME" --generate-notes iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64
+          gh release create "$GITHUB_REF_NAME" --title "Iwato $GITHUB_REF_NAME" --generate-notes iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64 dist/iwato-build.json

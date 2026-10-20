@@ -4,6 +4,7 @@
 
 Open **Settings** from the sidebar. They have:
 
+- **Iwato updates**: this build and, when there is one, the new build (published exes only: edge follows the edge pre-release, a release the latest release). See [updating](getting-started.md#updating-iwato)
 - **言語 / Language**: automatic (the browser's language: Japanese, otherwise English), 日本語 or English. Remembered per browser. Some messages are still Japanese only
 - **Startup checks**: WSLc or the Docker engine, its settings and the configuration, each OK, a warning or a problem, with how to fix it. Check again runs them again
 - **Standard image**: where it comes from and when it was created and pulled; with a development build, **Update the standard image**. See [sandboxes](sandboxes.md#where-the-image-comes-from)

@@ -145,7 +145,8 @@ jobs:
             digests="$digests${digests:+,}$name=$d"
           done
           echo "pinning $digests"
-          scripts/build-exe.sh --images "$REGISTRY" --image-tag edge --image-digests "$digests"
+          scripts/build-exe.sh --images "$REGISTRY" --image-tag edge --image-digests "$digests" --channel edge --repo "$GITHUB_REPOSITORY"
+          scripts/build-meta.sh edge "$digests"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: iwato-edge-${{ github.sha }}
@@ -153,10 +154,12 @@ jobs:
             dist/windows-*/iwato.exe
             dist/darwin-arm64/iwato
             dist/linux-*/iwato
+            dist/iwato-build.json
           if-no-files-found: error
           retention-days: 1
   # Every push to main replaces the exes and the macOS and Linux binaries
-  # of the pre-release `edge` (the tag follows main).
+  # of the pre-release `edge` (the tag follows main), and iwato-build.json,
+  # which the exes check for updates (update.go).
   edge:
     needs: edge-exes
     runs-on: ubuntu-24.04
@@ -191,3 +194,5 @@ jobs:
             gh release create edge --prerelease --title "Edge (main)" --notes "$notes"
           fi
           gh release upload edge iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64 --clobber
+          # Last: until it is replaced, the old metadata's hashes refuse the new binaries.
+          gh release upload edge dist/iwato-build.json --clobber

@@ -13,6 +13,7 @@ const editorSource = fs.readFileSync(root + 'editor.js', 'utf8');
 const i18nSource = fs.readFileSync(root + 'i18n.js', 'utf8');
 const resetSource = fs.readFileSync(root + 'reset.js', 'utf8');
 const sessionsSource = fs.readFileSync(root + 'sessions.js', 'utf8');
+const updateSource = fs.readFileSync(root + 'update.js', 'utf8');
 const refusalsSource = fs.readFileSync(root + 'refusals.js', 'utf8');
 class Element {
   constructor(tag = 'div') {
@@ -49,14 +50,14 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
     'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-binaries', 'policy-any', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
-    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk'];
+    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
   for (const id of ids) { const m = id.match(/^approve-(?:scope|access)-(\w+)$/); if (m) els[id].value = m[1]; }
   els['terminal-grid'].append(els['empty-state']); els.notice.hidden = true; els['fake-banner'].hidden = true;
-  for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets']) els[id].hidden = true;
+  for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button']) els[id].hidden = true;
   const shared = []; let shareFailure = null;
   const requests = [], sockets = [], terminals = [], timeouts = new Map(), intervals = [], confirmations = [];
-  let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null; const created = []; const copied = []; const swListeners = {};
+  let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null; const created = []; const copied = []; const swListeners = {};
   // The page asks in its own confirmation panel; answer it as the owner would.
   let confirmShown = false;
   Object.defineProperty(els['confirm-panel'], 'hidden', {get: () => !confirmShown, set: value => {
@@ -131,6 +132,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       if (path === '/api/presence') return response({ok: true});
       if (path === '/api/pair') return response({url: 'http://127.0.0.1:8765/#token=' + 'b'.repeat(64), qr: 'data:image/png;base64,iVBORw0KGgo='});
       if (path.includes('/terminals')) return termHandler ? termHandler(path, opt) : response({terminals: ['main'], multi: false});
+      if (path.startsWith('/api/update')) return updateHandler ? updateHandler(path, opt) : response({enabled: false, current: {version: '0.3.0'}});
       if (path === '/api/reset') return resetHandler ? resetHandler(path, opt) : response({running: false});
       if (path === '/api/images' || path === '/api/images/update') return imagesHandler ? imagesHandler(path, opt) : response({available: false});
       if (path === '/api/checks') return response({checks: [{level: 'ok', name: 'docker', detail: 'docker_version_context', params: {version: '28.3.0', api: '1.51', context: 'colima'}}, {level: 'warn', name: 'buildx', detail: 'buildx_missing', hint: 'buildx_install'}, {level: 'ok', name: 'config', detail: 'config', params: {path: '/x/iwato.json', count: 1}}]});
@@ -146,14 +148,14 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       throw Error('unexpected API ' + path);
     }
   });
-  vm.runInContext(bootstrap, context); assert.equal(location.hash, ''); vm.runInContext(linksSource, context); vm.runInContext(approveSource, context); vm.runInContext(refusalsSource, context); vm.runInContext(filesSource, context); vm.runInContext(editorSource, context); vm.runInContext(ingressSource, context); vm.runInContext(resetSource, context); vm.runInContext(sessionsSource, context); vm.runInContext(i18nSource, context); vm.runInContext(source, context); await flush();
+  vm.runInContext(bootstrap, context); assert.equal(location.hash, ''); vm.runInContext(linksSource, context); vm.runInContext(approveSource, context); vm.runInContext(refusalsSource, context); vm.runInContext(filesSource, context); vm.runInContext(editorSource, context); vm.runInContext(ingressSource, context); vm.runInContext(resetSource, context); vm.runInContext(sessionsSource, context); vm.runInContext(updateSource, context); vm.runInContext(i18nSource, context); vm.runInContext(source, context); await flush();
   const card = () => els['terminal-grid'].children.find(node => node.className.split(' ').includes('terminal-card'));
   return {
     shared, els, requests, sockets, stored, swListeners, terminals, timeouts, intervals, confirmations, sandbox, context, win, location, document, card, copied,
     // The card's actions in a fixed order, wherever they sit (the rare ones are in the ⋯ menu).
     buttons: () => { const found = {}; const walk = (n) => { if (n.dataset?.action) found[n.dataset.action] = n; n.children.forEach(walk); }; walk(card()); return ['start', 'stop', 'connect', 'disconnect', 'delete', 'update', 'reconnect', 'recreate'].map((k) => found[k]); },
     setShareFailure: value => { shareFailure = value; }, setFailStart: value => { failStart = value; }, setTermHandler: handler => { termHandler = handler; }, setConfirm: value => { confirmResult = value; }, setConfirmHandler: handler => { confirmHandler = handler; },
-    setSandboxHandler: handler => { sandboxHandler = handler; }, setPasteHandler: handler => { pasteHandler = handler; }, setVolumeHandler: handler => { volumeHandler = handler; }, setProviderHandler: handler => { providerHandler = handler; }, setFilesHandler: handler => { filesHandler = handler; }, setIngressHandler: handler => { ingressHandler = handler; }, setImagesHandler: handler => { imagesHandler = handler; }, setResetHandler: handler => { resetHandler = handler; },
+    setSandboxHandler: handler => { sandboxHandler = handler; }, setPasteHandler: handler => { pasteHandler = handler; }, setVolumeHandler: handler => { volumeHandler = handler; }, setProviderHandler: handler => { providerHandler = handler; }, setFilesHandler: handler => { filesHandler = handler; }, setIngressHandler: handler => { ingressHandler = handler; }, setImagesHandler: handler => { imagesHandler = handler; }, setResetHandler: handler => { resetHandler = handler; }, setUpdateHandler: handler => { updateHandler = handler; },
     setProposalHandler: handler => { proposalHandler = handler; }, setStartHandler: handler => { startHandler = handler; }, setStopHandler: handler => { stopHandler = handler; }, setUnauthorized: value => { unauthorized = value; },
     policy: () => card().children.find(node => node.className === 'info-panel policy-panel'),
     card: () => card(),
@@ -2484,6 +2486,44 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   walk(dialog, (n) => n.textContent === '閉じる')[0].click(); await flush();
   assert(dialog.hidden && !re.els['login-panel'].hidden && re.els['settings-panel'].hidden, 'closing ends the session on the page');
   ok('すべて消す: the typed word, what stays, the request with CSRF, the end of the login');
+  }
+  {
+  // Updating Iwato: the sidebar's button, the dialog naming the sandboxes a
+  // gateway change restarts, the request with CSRF, then the wait for the
+  // new server and a reload.
+  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
+  const up = await environment({status: 'running'});
+  const next = {version: '0.3.0', commit: 'abcdef1' + '0'.repeat(33)};
+  up.setSandboxHandler(() => response({fake: true, sandboxes: [{...up.sandbox}], server: {version: '0.3.0', commit: '98cb328'}, update: next}));
+  await up.tickPoll();
+  assert.equal(up.els['update-button'].hidden, false, 'the button shows when there is an update');
+  assert.equal(up.els['update-button'].title, 'v0.3.0 · abcdef1 に更新できます');
+  let current = {version: '0.3.0', commit: '98cb328'}, phase = '', down = false; const applied = [];
+  up.setUpdateHandler((path, opt) => {
+    if (path === '/api/update/apply') { applied.push({body: JSON.parse(opt.body), csrf: opt.headers['X-CSRF-Token']}); phase = 'downloading'; return response({enabled: true, current, latest: next, supported: true, phase}); }
+    if (down) throw new TypeError('Failed to fetch');
+    return response({enabled: true, current, latest: next, supported: true, gateway: true, restart: ['api', '<b>'], phase});
+  });
+  up.document.body = new Element();
+  up.els['update-button'].click(); await flush();
+  const dialog = walk(up.document.body, (n) => n.className.includes('update-dialog'))[0];
+  assert(dialog && !dialog.hidden, 'the dialog opens');
+  const all = walk(dialog, () => true).map((n) => n.textContent || '').join('\n');
+  assert(all.includes('v0.3.0 · 98cb328 → v0.3.0 · abcdef1') && /再起動します/.test(all) && /ファイルは残ります/.test(all), 'versions and the restart warning');
+  assert.deepEqual(walk(dialog, (n) => n.tagName === 'li').map((n) => n.textContent), ['api'], 'the running sandboxes, valid names only');
+  let reloaded = 0; up.location.reload = () => { reloaded++; };
+  const sleeps = () => [...up.timeouts.entries()].filter(([, timer]) => timer.ms === 1500);
+  const tick = async () => { const entry = sleeps()[0]; assert(entry, 'a poll is waiting'); up.timeouts.delete(entry[0]); entry[1].fn(); await flush(); };
+  walk(dialog, (n) => n.tagName === 'button' && n.textContent === '更新')[0].click(); await flush();
+  assert.deepEqual(applied, [{body: {commit: next.commit}, csrf: 'csrf123'}]);
+  const status = walk(dialog, (n) => n.attributes.role === 'status')[0];
+  assert.equal(status.textContent, 'ダウンロードしています…');
+  down = true; await tick();
+  assert.match(status.textContent, /^新しい Iwato を待っています… \(\d+ 秒\)$/, 'the server is away while it restarts');
+  assert.equal(reloaded, 0);
+  down = false; current = {version: '0.3.0', commit: 'abcdef1'}; await tick();
+  assert.equal(reloaded, 1, 'the new server answers: the page reloads');
+  ok('update: the button, the gateway dialog with the sandboxes that restart, CSRF, the wait and the reload');
   }
   console.log('\n' + tests + ' UI behavior tests passed. These are VM unit tests, not rendered-browser validation.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

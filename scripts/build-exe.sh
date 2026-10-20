@@ -12,10 +12,12 @@
 # makes them pull both from REGISTRY, tagged with the version or
 # --image-tag TAG; with --image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...
 # they pull them as tag@digest (release.yml, and build.yml's edge exes).
+# --channel edge|release --repo OWNER/REPO: the published exes, which offer
+# updates from that repository's releases (update.go).
 set -eu
 release="-X main.buildRelease=1"
 images="-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge"
-registry="" tag="" digests=""
+registry="" tag="" digests="" channel="" repo=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --debug) release="" ;;
@@ -23,7 +25,9 @@ while [ $# -gt 0 ]; do
     --image-tag) [ $# -ge 2 ] || { echo "--image-tag needs a tag" >&2; exit 2; }; tag=$2; shift ;;
     --image-digests) [ $# -ge 2 ] || { echo "--image-digests needs a list" >&2; exit 2; }; digests=$2; shift ;;
     --local-images) images="" ;;
-    *) echo "usage: $0 [--debug] [--images REGISTRY [--image-tag TAG] [--image-digests NAME=sha256:HEX,...] | --local-images]" >&2; exit 2 ;;
+    --channel) [ $# -ge 2 ] || { echo "--channel needs edge or release" >&2; exit 2; }; channel=$2; shift ;;
+    --repo) [ $# -ge 2 ] || { echo "--repo needs OWNER/REPO" >&2; exit 2; }; repo=$2; shift ;;
+    *) echo "usage: $0 [--debug] [--images REGISTRY [--image-tag TAG] [--image-digests NAME=sha256:HEX,...] [--channel edge|release --repo OWNER/REPO] | --local-images]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -41,6 +45,12 @@ if [ -n "$digests" ]; then
     echo ",$digests" | grep -q ",$n=" || { echo "--image-digests has no $n" >&2; exit 2; }
   done
   images="$images -X main.imageDigests=$digests"
+fi
+if [ -n "$channel$repo" ]; then
+  [ -n "$digests" ] || { echo "--channel needs --image-digests" >&2; exit 2; }
+  case "$channel" in edge|release) ;; *) echo "bad channel: $channel" >&2; exit 2 ;; esac
+  echo "$repo" | grep -Eqx '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' || { echo "bad repo: $repo" >&2; exit 2; }
+  images="$images -X main.buildChannel=$channel -X main.buildRepo=$repo"
 fi
 cd "$(dirname "$0")/.."
 # The page shows the commit and build time of the running server.

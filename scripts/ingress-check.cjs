@@ -8,7 +8,9 @@
 // image (「標準イメージを更新」) and the recreate dialog's
 // 「最新のイメージを取得してから作り直す」; the settings' language
 // (English without a reload, remembered by the browser, back to automatic);
-// the settings' startup checks; then the settings' 「すべて消す」
+// the settings' startup checks; Iwato's update (the settings, the sidebar's
+// 「更新」, the dialog naming the sandboxes that restart, the reload on the
+// new build); then the settings' 「すべて消す」
 // (everything goes, the login ends, the console's new URL logs in again);
 // last, `serve -fake -fake-engine-down`: the banner of the failed engine
 // check, and 「再確認」.
@@ -123,6 +125,19 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const logins = settings.locator('.session-settings');
     await logins.locator('.files-key').first().waitFor();
     check((await logins.locator('.files-key').first().innerText()).includes('この端末') && await logins.getByRole('button', { name: 'ログアウト' }).count() === 1, 'the logins list this browser with its sign-out');
+    // Iwato's update: the fake's next edge build changes the gateway.
+    const update = settings.locator('.update-settings');
+    await update.getByText(/^新しい版: v[\d.]+ · 2222222$/).waitFor();
+    check((await update.innerText()).includes('この版: v') && (await update.innerText()).includes('1111111'), 'the settings show this build and the new one');
+    check(await page.locator('#update-button').isVisible(), 'the sidebar shows 更新');
+    await update.getByRole('button', { name: '更新', exact: true }).click();
+    const updateDialog = page.locator('.update-dialog');
+    await updateDialog.waitFor();
+    check((await updateDialog.innerText()).includes('ファイルは残ります') && (await updateDialog.locator('li').allInnerTexts()).join(',') === 'dev', 'a gateway change names the running sandboxes that restart');
+    check(await noSideScroll(updateDialog.locator('.update-body')), 'the update dialog does not scroll sideways');
+    await shot('update-dialog.png');
+    await updateDialog.getByRole('button', { name: 'キャンセル' }).click();
+    check(await updateDialog.isHidden(), 'cancel closes the update dialog');
     check(await noSideScroll(settings.locator('.login-body')), 'the settings do not scroll sideways');
     await shot('settings.png');
     await settings.locator('details.ingress-steps').scrollIntoViewIfNeeded();
@@ -233,6 +248,18 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await settings.getByLabel('Display language').selectOption('auto');
     await settings.locator('.log-head strong', { hasText: '設定' }).waitFor();
     await page.click('#settings-close');
+
+    // The update from the sidebar: the progress, then the page reloads on the new build.
+    await page.click('#update-button');
+    await updateDialog.waitFor();
+    const reloaded = page.waitForEvent('load', { timeout: 30000 });
+    await updateDialog.getByRole('button', { name: '更新', exact: true }).click();
+    await updateDialog.getByText('ダウンロードしています…').waitFor();
+    await shot('update-progress.png');
+    await reloaded;
+    await page.locator('.terminal-card.selected').waitFor();
+    await page.waitForFunction(() => document.getElementById('server-build').textContent.includes('2222222'), null, { timeout: 10000 }).catch(() => {});
+    check(await page.locator('#update-button').isHidden() && (await page.locator('#server-build').textContent()).includes('2222222'), 'after the update the page shows the new build and no 更新');
 
     // Last: 「すべて消す」 at the bottom of the settings.
     await page.evaluate(() => document.getElementById('settings-button').click());

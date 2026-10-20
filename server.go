@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,6 +87,7 @@ type Server struct {
 	retryImages              func()
 	imageCleanup             func()
 	imageUpdates             *imageUpdates // 「標準イメージを更新」 (image_update.go)
+	update                   *selfUpdate   // updating Iwato itself (update.go); nil without a channel
 	logs                     logRing
 	presence                 presence  // pages open and in use (presence.go)
 	notifier                 *notifier // nil without Web Push (main.go)
@@ -178,6 +180,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/images/retry", s.handleImagesRetry)
 	mux.HandleFunc("/api/images", s.handleImages)
 	mux.HandleFunc("/api/images/update", s.handleImages)
+	mux.HandleFunc("/api/update", s.handleUpdate)
+	mux.HandleFunc("/api/update/", s.handleUpdate)
 	mux.HandleFunc("/api/log", s.handleLog)
 	mux.HandleFunc("/api/checks", s.handleChecks)
 	mux.HandleFunc("/api/volumes", s.handleVolumes)
@@ -373,6 +377,13 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	s.ingress.observe(list)
 	images, _ := s.imagesReady()
 	body := map[string]any{"fake": s.fake, "sandboxes": list, "images": images, "server": currentBuild()}
+	if s.update != nil {
+		b := s.update.currentBuild()
+		body["server"] = b
+		if m := s.update.available(); m != nil && assetName(runtime.GOOS, runtime.GOARCH) != "" {
+			body["update"] = UpdateBuild{Version: m.Version, Commit: m.Commit}
+		}
+	}
 	if down := s.checks.engine(); down != nil {
 		body["engine"] = down
 	} else {
@@ -826,6 +837,19 @@ func listenLocal(addr string) (net.Listener, error) {
 		return nil, fmt.Errorf("listen must be 127.0.0.1:PORT; remote management binding is deliberately unsupported")
 	}
 	return net.Listen("tcp4", addr)
+}
+
+// listenLocalWait retries addr for up to wait (a restarted exe takes the
+// port as the old process lets it go).
+func listenLocalWait(addr string, wait time.Duration) (net.Listener, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		ln, err := listenLocal(addr)
+		if err == nil || time.Now().After(deadline) {
+			return ln, err
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 // documentNavigation is a top-level GET of the page itself (not an API call,

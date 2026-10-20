@@ -240,7 +240,7 @@ func ensureContainer(ctx context.Context, run wslc.Runner, o Options, image stri
 	}
 	err := wslc.Inspect(ctx, run, "container", name, &c)
 	switch {
-	case err == nil && c.Config.Labels[labelImage] == image && c.Config.Labels[labelEngine] == o.engineLabel():
+	case err == nil && SameImage(c.Config.Labels[labelImage], image) && c.Config.Labels[labelEngine] == o.engineLabel():
 		if c.State.Running {
 			return nil
 		}
@@ -283,6 +283,30 @@ func ensureContainer(ctx context.Context, run wslc.Runner, o Options, image stri
 	}
 	_, err = run.Run(ctx, nil, "container", "start", name)
 	return err
+}
+
+// SameImage reports whether two image references name the same image: the
+// same reference, or the same digest under another tag (a release's
+// version tag), which needs no new container.
+func SameImage(a, b string) bool {
+	if a == b {
+		return true
+	}
+	_, da, okA := strings.Cut(a, "@sha256:")
+	_, db, okB := strings.Cut(b, "@sha256:")
+	return okA && okB && da != "" && da == db
+}
+
+// ContainerImage is the image the gateway container of prefix was made
+// with ("" when there is none or the engine cannot tell).
+func ContainerImage(ctx context.Context, run wslc.Runner, prefix string) string {
+	var c struct {
+		Config struct{ Labels map[string]string }
+	}
+	if err := wslc.Inspect(ctx, run, "container", Options{Prefix: prefix}.container(), &c); err != nil {
+		return ""
+	}
+	return c.Config.Labels[labelImage]
 }
 
 func driverTLSArchive(dir string) ([]byte, error) {

@@ -55,6 +55,8 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 			s.ingress.newProvider = newFakeIngressProvider
 			seedFakePresets()
 			s.imageUpdates = &imageUpdates{src: newFakeImages()}
+			s.update = newFakeUpdate()
+			go s.update.loop(s.ctx)
 		}}, nil
 	}
 }

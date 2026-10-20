@@ -25,6 +25,7 @@
   <script defer src="/ingress.js"></script>
   <script defer src="/reset.js"></script>
   <script defer src="/sessions.js"></script>
+  <script defer src="/update.js"></script>
   <script defer src="/term.js"></script>
   <script defer src="/app.js"></script>
 </head>
@@ -33,6 +34,7 @@
     <aside class="sidebar" id="sidebar" aria-label="サンドボックス一覧" data-i18n-aria-label="nav.label">
       <a class="brand" href="/" aria-label="Iwato ホーム" data-i18n-aria-label="nav.home"><img class="brand-mark" src="/favicon.svg" alt="" aria-hidden="true"><span>Iwato</span></a>
       <nav id="sandbox-nav" class="sandbox-nav" aria-label="ターミナルへ移動" data-i18n-aria-label="nav.sandboxes"><p class="nav-empty" data-i18n="nav.loading">読み込み中…</p></nav>
+      <button type="button" class="button update-badge" id="update-button" hidden data-i18n="update.badge">更新</button>
       <button type="button" class="button button-subtle menu-button" id="menu-button" aria-expanded="false" aria-controls="sidebar-actions" title="メニュー" data-i18n-title="nav.menu">≡</button>
       <div class="sidebar-actions" id="sidebar-actions"><button type="button" class="button button-primary" id="create-button" hidden data-i18n="nav.create">サンドボックスを作成</button><button type="button" class="button button-subtle" id="pair-button" hidden data-i18n="nav.pair">別端末でログイン</button><button type="button" class="button button-subtle" id="log-button" hidden data-i18n="nav.log">ログ</button><button type="button" class="button button-subtle" id="volume-button" hidden data-i18n="nav.volumes">ボリューム</button><button type="button" class="button button-subtle" id="provider-button" hidden data-i18n="nav.providers">プロバイダー</button><button type="button" class="button button-subtle" id="settings-button" hidden data-i18n="settings.title">設定</button><button type="button" class="button button-subtle" id="push-button" hidden data-i18n="nav.push">通知を有効化</button><button type="button" class="button button-subtle" id="refresh-button" hidden><span aria-hidden="true">↻</span> <span data-i18n="nav.reconnect">再接続</span></button><p class="menu-build" id="menu-build"></p></div>
       <div class="sidebar-bottom"><div class="server-state" id="server-state" role="status"><span class="small-dot" aria-hidden="true"></span><span id="server-label" data-i18n="server.checking">認証を確認中</span></div><div class="sidebar-note"><strong id="connection-count">0</strong> <span data-i18n="nav.connected">接続中</span></div><div class="server-build" id="server-build"></div></div>
