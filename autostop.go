@@ -10,9 +10,8 @@ import (
 // Stopping a sandbox once its terminals have ended (always on). The
 // runtime tells when one of a sandbox's terminals ends (the end of the
 // session Iwato holds for it: the process exited, it was killed, or the
-// attachment broke); after autoStopGrace the server asks the runtime
-// whether any terminal runs, and stops the sandbox when none does. A
-// terminal opened during the grace keeps it running. Everything else in
+// attachment broke); then the server asks the runtime whether any
+// terminal runs, and stops the sandbox when none does. Everything else in
 // the sandbox (background servers, the desktop) stops with it.
 //
 // The runtime asks the sandbox's daemon (iwato-entrypoint's list, which
@@ -21,7 +20,7 @@ import (
 // says it cannot tell and nothing happens.
 
 // autoStopGrace is how long the sandbox waits after its last terminal ended.
-const autoStopGrace = time.Minute
+const autoStopGrace time.Duration = 0
 
 // autoStopRuntime is the runtime side: OnTerminalEnd registers the
 // callback for a terminal's end; TerminalsIdle tells whether a running

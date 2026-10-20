@@ -20,7 +20,7 @@ The card's tabs are **Terminal**, **Policy**, **Editor** and **Ports**, with the
 
 ## Stopping when the terminals end
 
-A sandbox stops about a minute after its last terminal exits. Opening a terminal in that minute keeps it running; meanwhile the card shows when it stops. Stopping also ends processes outside the terminals (background dev servers, the desktop), so keep a terminal open while you need them. The home stays, and Start resumes it. In an image without Iwato's daemon, the sandbox stops as soon as its main terminal ends.
+A sandbox stops as soon as its last terminal exits. Stopping also ends processes outside the terminals (background dev servers, the desktop), so keep a terminal open while you need them. The home stays, and Start resumes it.
 
 ## Only the home persists
 
