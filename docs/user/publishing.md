@@ -2,7 +2,7 @@
 
 [日本語](ja/publishing.md)
 
-A server running in a sandbox (Vite, Rails, a Jupyter notebook, the desktop) opens from the card's Ports tab. It lists the ports a process in the sandbox listens on (on 0.0.0.0, 127.0.0.1, :: or ::1) with their links, updated every 5 seconds. No approval per port is needed, and agents cannot publish anything themselves.
+A server running in a sandbox (Vite, Rails, a Jupyter notebook, the desktop) opens from the card's Ports tab. It lists the ports a process in the sandbox listens on (on 0.0.0.0, 127.0.0.1, :: or ::1) with their links, updated every 5 seconds. No approval per port is needed, and agents cannot publish anything themselves. Agents find the URLs in the "Your URLs" section of `/AGENTS.md`, which Iwato keeps up to date (sandboxes made from an older image get it once recreated).
 
 Choose how ports are published in **Settings**: **This PC only** (the default), **Tailscale (phones too)**, or **Off**.
 

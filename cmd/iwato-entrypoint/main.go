@@ -14,7 +14,8 @@
 //	iwato-entrypoint sftp -root DIR
 //
 // serve is the daemon (a new sandbox's main process; -detached: one that
-// attach -spawn started, which leaves when another serves the key). attach,
+// attach -spawn started, which leaves when another serves the key); it
+// first writes the generated /AGENTS.md (agents.go). attach,
 // list and kill talk to it and write termd messages to stdout, errors
 // included: Iwato runs them through an exec that merges stderr into
 // stdout, so they never write to stderr. sftp serves DIR (the home) over
@@ -28,6 +29,7 @@ import (
 	"io"
 	"os"
 
+	"iwato/internal/agentsmd"
 	"iwato/internal/rootsftp"
 	"iwato/internal/termd"
 )
@@ -61,6 +63,9 @@ func main() {
 			os.Exit(1)
 		}
 	case "serve":
+		if err := writeAgents("/AGENTS.md", agentsmd.Static, agentsmd.Generated); err != nil {
+			fmt.Fprintln(os.Stderr, "iwato-entrypoint: /AGENTS.md:", err)
+		}
 		err := termd.Serve(*key, !*detached)
 		if errors.Is(err, termd.ErrRunning) {
 			return

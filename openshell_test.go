@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"iwato/internal/agentsmd"
 	"iwato/internal/termd"
 )
 
@@ -79,7 +80,7 @@ func TestSandboxImageIsAgentNeutral(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := imageFiles.ReadFile("sandboximage/Dockerfile")
-	if !strings.Contains(string(b), "ln -s /etc/iwato/AGENTS.md /AGENTS.md") {
+	if !strings.Contains(string(b), "ln -s "+agentsmd.Generated+" /AGENTS.md") {
 		t.Error("the image does not install /AGENTS.md")
 	}
 }
