@@ -367,6 +367,8 @@ type readFile struct {
 	file *sftp.File
 	br   *bufio.Reader
 	off  int64
+	// retried: a read after a premature end gave nothing.
+	retried bool
 }
 
 const readBuffer = 1 << 20
@@ -400,9 +402,30 @@ func (r *readFile) Read(b []byte) (int, error) {
 	if err := r.open(); err != nil {
 		return 0, err
 	}
-	n, err := r.br.Read(b)
-	r.off += int64(n)
-	return n, err
+	// pkg/sftp's concurrent reads take a server's short answer for the end
+	// of the file: read on while the file is longer, as long as reads give
+	// bytes (a file that shrank ends).
+	for {
+		n, err := r.br.Read(b)
+		r.off += int64(n)
+		if n > 0 {
+			r.retried = false
+		}
+		if err != io.EOF || r.off >= r.info.Size() {
+			return n, err
+		}
+		if _, err := r.file.Seek(r.off, io.SeekStart); err != nil {
+			return n, err
+		}
+		r.br.Reset(r.file)
+		if n > 0 {
+			return n, nil
+		}
+		if r.retried {
+			return 0, io.EOF
+		}
+		r.retried = true
+	}
 }
 
 // Seek moves without opening the file (http.ServeContent seeks to the end
