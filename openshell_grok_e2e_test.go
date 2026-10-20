@@ -208,7 +208,7 @@ func TestOpenShellGrokSubscriptionE2E(t *testing.T) {
 	if got := command(); got != "" {
 		t.Fatalf("a sandbox without the provider has the command: %q", got)
 	}
-	if out := shell(`cat "$HOME/` + termEnvPath + `"`); out != termEnvContent {
+	if out := shell(`cat "$HOME/` + termEnvPath + `"`); out != termEnvContent(false) {
 		t.Fatalf("the file after the start:\n%s", out)
 	}
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"grok-e2e"}`); code != 200 || !strings.Contains(body, `"restart":true`) {
@@ -238,7 +238,7 @@ func TestOpenShellGrokSubscriptionE2E(t *testing.T) {
 	if got := command(); got != "" {
 		t.Fatalf("after the detach and a restart, the terminals' command is %q", got)
 	}
-	if out := shell(`cat "$HOME/` + termEnvPath + `"`); out != termEnvContent {
+	if out := shell(`cat "$HOME/` + termEnvPath + `"`); out != termEnvContent(false) {
 		t.Fatalf("the file after the detach:\n%s", out)
 	}
 }

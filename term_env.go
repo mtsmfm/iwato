@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,25 +18,52 @@ import (
 // shell init reads (sandboximage/etc/env.sh, from /etc/profile.d and
 // /etc/bash.bashrc, before the owner's ~/.profile and ~/.bashrc).
 //
-// Its content does not depend on the providers attached: each line is
-// conditional on a provider's variable, which OpenShell's supervisor puts
-// in the environment of the main process and of every exec once the
-// provider is attached (and takes away once it is detached). So the file
-// only has to exist: the main terminal sees the providers of each start,
-// the extra terminals those of the supervisor's last sync. A value set
-// before (the sandbox's environment, the parent shell) is kept, and the
-// owner's rc files, read later, still win. Iwato writes the file on every
-// start (when it differs). The one gap is the first start of a new home
-// volume: the main shell may start before Iwato's first write.
+// Each line is conditional on a provider's variable, which OpenShell's
+// supervisor puts in the environment of the main process and of every exec
+// once the provider is attached (and takes away once it is detached): the
+// main terminal sees the providers of each start, the extra terminals
+// those of the supervisor's last sync. A line that depends on the kind of
+// provider, not only on its variable, is in the file only while such a
+// provider is attached: Iwato writes the file on every start and after
+// every attach or detach on a running sandbox (when it differs). A value
+// set before (the sandbox's environment, the parent shell) is kept, and the
+// owner's rc files, read later, still win. The one gap is the first start
+// of a new home volume: the main shell may start before Iwato's first write.
 
 // termEnvPath is the file, relative to the home.
 const termEnvPath = ".config/iwato/env"
 
 // termEnvContent is the file: grok's GROK_AUTH_PROVIDER_COMMAND when the
-// xAI subscription provider gives XAI_OAUTH_TOKEN.
-var termEnvContent = "# Written by Iwato when the sandbox starts; edits here are lost.\n" +
-	"# Set your own values in ~/.bashrc (read later).\n" +
-	termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand)
+// xAI subscription provider gives XAI_OAUTH_TOKEN, and with a Claude
+// sign-in provider (claudeSignIn) its scopes, as both Claude providers
+// give CLAUDE_CODE_OAUTH_TOKEN.
+func termEnvContent(claudeSignIn bool) string {
+	s := "# Written by Iwato; edits here are lost.\n" +
+		"# Set your own values in ~/.bashrc (read later).\n" +
+		termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand)
+	if claudeSignIn {
+		s += termEnvIf(claudeOAuthCredentialKey, "CLAUDE_CODE_OAUTH_SCOPES", claudeCodeScopes)
+	}
+	return s
+}
+
+// claudeCodeScopes tells Claude Code what the sign-in token may do: it
+// takes a token from CLAUDE_CODE_OAUTH_TOKEN as inference-only otherwise
+// and hides /usage (user:profile). user:mcp_servers is left out: claude.ai
+// connectors go through mcp-proxy.anthropic.com, which the profile does
+// not allow.
+var claudeCodeScopes = strings.Join(slices.DeleteFunc(strings.Fields(claudeScopes), func(s string) bool { return s == "user:mcp_servers" }), " ")
+
+// hasClaudeSignIn tells whether a provider of the Claude sign-in profile
+// is among the attached ones.
+func hasClaudeSignIn(list []ProviderInfo, attached []string) bool {
+	for _, p := range list {
+		if slices.Contains(attached, p.Name) && providerBase(p) == claudeSubscriptionProfileID {
+			return true
+		}
+	}
+	return false
+}
 
 // termEnvIf is a line that exports name=value when the variable cond is
 // set and name is not.
@@ -70,8 +98,9 @@ printf '%s' "$1" >"$t" || exit 1
 if [ -f "$f" ] && [ ! -L "$f" ] && cmp -s "$t" "$f" 2>/dev/null; then rm -f "$t"; else mv -f "$t" "$f"; fi
 `
 
-// writeTermEnv writes the file in a started sandbox. It only logs what
-// goes wrong: a sandbox without a shell or a home still starts.
+// writeTermEnv writes the file in a started sandbox for its providers. It
+// only logs what goes wrong: a sandbox without a shell or a home still
+// starts.
 func (o *OpenShell) writeTermEnv(ctx context.Context, name string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -83,7 +112,13 @@ func (o *OpenShell) writeTermEnv(ctx context.Context, name string) {
 	if conn == nil { // a test's fake sandbox API
 		return
 	}
-	p, err := client.Start(ctx, conn, openshellWorkspace, name, []string{"/bin/sh", "-c", termEnvScript, "iwato-term-env", termEnvContent}, client.Options{Env: termEnv})
+	// Without the list the file still gets the lines that need no kind.
+	list, attached, err := o.ListProviders(ctx)
+	if err != nil {
+		log.Printf("terminal env %s: %v", name, english(err))
+	}
+	content := termEnvContent(hasClaudeSignIn(list, attached[name]))
+	p, err := client.Start(ctx, conn, openshellWorkspace, name, []string{"/bin/sh", "-c", termEnvScript, "iwato-term-env", content}, client.Options{Env: termEnv})
 	if err != nil {
 		log.Printf("terminal env %s: %v", name, english(err))
 		return

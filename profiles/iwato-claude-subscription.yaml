@@ -12,13 +12,16 @@
 # Client binaries:   the same as iwato-claude.yaml.
 # Credential scope:  CLAUDE_CODE_OAUTH_TOKEN, sent as a bearer authorization
 #                    header to api.anthropic.com only.
-# Endpoint access:   as iwato-claude.yaml. Claude Code treats a token from
-#                    CLAUDE_CODE_OAUTH_TOKEN as inference-only (scopes from
-#                    CLAUDE_CODE_OAUTH_SCOPES, else user:inference), so it
-#                    sends it to api.anthropic.com (inference,
-#                    /api/oauth/*), as with a setup-token. A full login
-#                    would also use mcp-proxy.anthropic.com (claude.ai
-#                    connectors); it is not listed.
+# Endpoint access:   as iwato-claude.yaml. Claude Code takes the scopes of
+#                    a token from CLAUDE_CODE_OAUTH_TOKEN from
+#                    CLAUDE_CODE_OAUTH_SCOPES (else user:inference only),
+#                    which Iwato sets for the terminals (term_env.go) to
+#                    the refresh scopes without user:mcp_servers. It sends
+#                    the token to api.anthropic.com only (inference,
+#                    /api/oauth/*, e.g. /api/oauth/usage for /usage, which
+#                    needs user:profile) and never refreshes it (no refresh
+#                    token). claude.ai connectors would use
+#                    mcp-proxy.anthropic.com; it is not listed.
 # Sign-in:           client_id 9d1c250a-e61b-44d9-88ed-5944d1962f5e,
 #                    authorize https://claude.com/cai/oauth/authorize
 #                    (with code=true), token
