@@ -19,7 +19,7 @@
 ## Requirements
 
 - Windows 11 with WSL 3.0.1 or later (`wslc.exe --version`)
-- Or (experimental) an Apple Silicon Mac, or Linux (build from source), with a Docker-compatible engine: [Colima](https://github.com/abiosoft/colima) is recommended, Docker Desktop and OrbStack work too
+- Or (experimental) an Apple Silicon Mac with a Docker-compatible engine ([Colima](https://github.com/abiosoft/colima) is recommended, Docker Desktop and OrbStack work too), or x64 or Arm64 Linux with Docker Engine
 
 ## Install and first run
 
@@ -41,7 +41,9 @@ xattr -d com.apple.quarantine iwato
 ./iwato
 ```
 
-Details: [getting started](docs/user/getting-started.md) (macOS: [its section](docs/user/getting-started.md#macos-experimental)).
+On Linux (experimental), download `iwato-linux-amd64` (or `-arm64`) from [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) the same way, `chmod +x iwato` and run `./iwato` with Docker Engine running.
+
+Details: [getting started](docs/user/getting-started.md) (macOS and Linux: [their section](docs/user/getting-started.md#macos-and-linux-experimental)).
 
 ## Documentation
 

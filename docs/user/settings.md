@@ -29,7 +29,7 @@ Iwato writes `iwato.json` itself; most of it is set from the page. Settings that
 
 - `"termTrace": true`: record terminal output ([terminals](terminals.md#terminal-recordings))
 - `"wslc"`: the full path of `wslc.exe` when it is not on `PATH`
-- `"docker"`, `"dockerSocket"` (macOS, Linux): the `docker` CLI's path and the engine's API socket ([macOS](getting-started.md#differences-from-windows))
+- `"docker"`, `"dockerSocket"` (macOS, Linux): the `docker` CLI's path and the engine's API socket ([macOS and Linux](getting-started.md#differences-from-windows))
 - per-port publishing settings ([publishing](publishing.md#per-port-settings))
 
 Stop Iwato before editing `iwato.json` by hand.

@@ -75,7 +75,7 @@ func TestDiagnosisDocker(t *testing.T) {
 		return []byte("[]"), errors.New("not found")
 	}
 	checks := diagnose(context.Background(), e, t.TempDir()+"/iwato.json", 1)
-	if got := checksText(t, checks); engineDown(checks) == nil || !strings.Contains(got, "fail docker docker_down_error docker_start map[error:Cannot connect to the Docker daemon]") {
+	if got := checksText(t, checks); engineDown(checks) == nil || !strings.Contains(got, "fail docker docker_down_error "+osHint("docker_start")+" map[error:Cannot connect to the Docker daemon]") {
 		t.Fatal(got)
 	}
 	server = "27.5.1"

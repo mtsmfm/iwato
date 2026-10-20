@@ -27,7 +27,7 @@ There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbse
 
 ## Building the exe
 
-`scripts/build-exe.sh` builds `dist/windows-{amd64,arm64}/iwato.exe` and `dist/darwin-arm64/iwato`. `web/` is embedded in the exe, so UI-only changes need a build too.
+`scripts/build-exe.sh` builds `dist/windows-{amd64,arm64}/iwato.exe`, `dist/darwin-arm64/iwato` and `dist/linux-{amd64,arm64}/iwato`. `web/` is embedded in the exe, so UI-only changes need a build too.
 
 - CI (`.github/workflows/build.yml`) builds these on every push; on `main` it also replaces the assets of the pre-release `edge` (the tag `edge` follows `main`). Those exes are built with `--images ghcr.io/mtsmfm --image-tag edge --image-digests ...`: they pull both images of their own commit by digest, which `.github/workflows/image.yml` publishes on pushes to main (tagged `edge`, `sha-<commit>` and `src-<hash>` of `scripts/image-sources.sh NAME`, which the edge job waits for; an image whose `src-` tag exists is not rebuilt, only retagged); PRs that touch the images only build the ones whose sources changed
 - Default (a development exe): the exe pulls the standard image `ghcr.io/mtsmfm/iwato-sandbox:edge` when it has none, pulls a newer one only on request, and builds the gateway image itself, which needs `docker buildx` (as does `--local-images`)
@@ -39,13 +39,7 @@ Release: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which publ
 
 ### Building on Linux
 
-There is no Linux download. After the [setup](#setup), build a binary that pulls the sandbox image's `edge` tag and builds the gateway image, as a default build does:
-
-```sh
-go build -ldflags '-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge' -o iwato .
-```
-
-A plain `go build .` cannot build the sandbox image (it carries no `iwato-entrypoint`).
+Optional (the edge pre-release has Linux binaries): after the [setup](#setup), `go build -ldflags '-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge' -o iwato .` builds one like a default build (a plain `go build .` carries no `iwato-entrypoint`, so it cannot build the sandbox image).
 
 ## Bumping pinned versions
 
@@ -64,7 +58,7 @@ Everything the images and the gateway download is pinned; `scripts/check-pins.sh
 
 Run locally only what you touched and what is related; CI runs the rest.
 
-- CI on every push: `.github/workflows/build.yml` (`python3 scripts/fetch-vendor.py`, `go test ./...`, `go vet -tags uitest ./...` and `go test -tags uitest ./...` (the fake backend and the tests that use it), the darwin `go vet ./...`, `scripts/build-exe.sh`, which also builds `dist/darwin-arm64/iwato`; rebuilding `web/vendor/codemirror.js` and `scripts/check-pins.sh`, [above](#bumping-pinned-versions)) and `.github/workflows/e2e.yml` (`MODE=tls internal/openshell/wslc/e2e.sh`, on a runner set up like a disposable Linux dev container (see the steps in `e2e.yml`), with the work directory's logs kept as an artifact on failure; and `TestDockerE2E` on the runner's Docker). `.github/workflows/macos.yml` runs the tests on a Mac only when darwin-related files change. CI does not run `node scripts/ui-behavior-tests.cjs` or the browser checks
+- CI on every push: `.github/workflows/build.yml` (`python3 scripts/fetch-vendor.py`, `go test ./...`, `go vet -tags uitest ./...` and `go test -tags uitest ./...` (the fake backend and the tests that use it), the darwin `go vet ./...`, `scripts/build-exe.sh`, which also builds the macOS and Linux binaries; rebuilding `web/vendor/codemirror.js` and `scripts/check-pins.sh`, [above](#bumping-pinned-versions)) and `.github/workflows/e2e.yml` (`MODE=tls internal/openshell/wslc/e2e.sh`, on a runner set up like a disposable Linux dev container (see the steps in `e2e.yml`), with the work directory's logs kept as an artifact on failure; and `TestDockerE2E` on the runner's Docker). `.github/workflows/macos.yml` runs the tests on a Mac only when darwin-related files change. CI does not run `node scripts/ui-behavior-tests.cjs` or the browser checks
 - Go: the packages you touched and related ones (`go test ./<pkg>`, `-run`). The tests that use the fake backend are in `*_fake_test.go` and need `-tags uitest` (`go test -tags uitest .` runs all of the root package's)
 - UI: `node scripts/ui-behavior-tests.cjs`, and the browser checks for the screens you touched, at PC width and with `--phone`
 - e2e: `MODE=tls internal/openshell/wslc/e2e.sh` runs the WSLc driver with a fake `wslc` (`fakewslc`) against the official OpenShell gateway and sandbox. Run it only in a disposable Linux machine or container with passwordless sudo (it writes system paths such as `/sandbox`, `/home/dev` and `/etc/openshell`; the list is at the top of the script), and when you touch the driver, the exchanges with OpenShell or the images. It takes about 2 minutes (several with an empty Go build cache), and only one run fits on a machine at a time (ports, `/sandbox` and certificates are shared, so runs wait on a lock): give background runs a long timeout. It prints `TIME` lines per step and removes its work directory at the end (`KEEP=1` keeps it on failure). `ONLY=<name>` runs one test (for example `ONLY=ingress`)

@@ -1,7 +1,8 @@
 # A tag vX.Y.Z (the version in config.go) publishes Iwato: the gateway and
-# sandbox images for amd64 and arm64 on ghcr.io, and the Windows exes, which
-# pull those images, by the digests pushed here, instead of building them
-# (scripts/build-exe.sh --images --image-digests).
+# sandbox images for amd64 and arm64 on ghcr.io, and the Windows exes and
+# the macOS and Linux binaries, which pull those images, by the digests
+# pushed here, instead of building them (scripts/build-exe.sh --images
+# --image-digests).
 name: release
 on:
   push:
@@ -168,5 +169,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; done
-          gh release create "$GITHUB_REF_NAME" --title "Iwato $GITHUB_REF_NAME" --generate-notes iwato-windows-amd64.exe iwato-windows-arm64.exe
+          for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; cp dist/linux-$a/iwato iwato-linux-$a; done
+          cp dist/darwin-arm64/iwato iwato-darwin-arm64
+          gh release create "$GITHUB_REF_NAME" --title "Iwato $GITHUB_REF_NAME" --generate-notes iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64

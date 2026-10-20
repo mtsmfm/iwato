@@ -19,7 +19,7 @@
 ## 前提
 
 - Windows 11 と WSL 3.0.1 以上 (`wslc.exe --version`)
-- または (試験的) Apple Silicon の Mac か Linux (ソースからビルド) と Docker 互換のエンジン。おすすめは [Colima](https://github.com/abiosoft/colima) で、Docker Desktop・OrbStack でも動きます
+- または (試験的) Apple Silicon の Mac と Docker 互換のエンジン (おすすめは [Colima](https://github.com/abiosoft/colima)。Docker Desktop・OrbStack でも動きます)、または x64 か Arm64 の Linux と Docker Engine
 
 ## インストールと最初の起動
 
@@ -41,7 +41,9 @@ xattr -d com.apple.quarantine iwato
 ./iwato
 ```
 
-詳しくは [使い始める](docs/user/ja/getting-started.md) (macOS は [その節](docs/user/ja/getting-started.md#macos-試験的))。
+Linux (試験的) では、同じように [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-linux-amd64` (または `-arm64`) をダウンロードし、`chmod +x iwato` して、Docker Engine を動かした状態で `./iwato` を実行します。
+
+詳しくは [使い始める](docs/user/ja/getting-started.md) (macOS と Linux は [その節](docs/user/ja/getting-started.md#macos-と-linux-試験的))。
 
 ## ドキュメント
 

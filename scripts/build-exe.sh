@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds the Windows exes and the macOS binary into dist/
-# (windows-<arch>/iwato.exe, darwin-arm64/iwato).
+# Builds the Windows exes and the macOS and Linux binaries into dist/
+# (windows-<arch>/iwato.exe, darwin-arm64/iwato, linux-<arch>/iwato).
 # Release build by default; --debug keeps the debug option
 # (/?font=fallback) for investigating a problem. Neither has the fake
 # backend of the browser checks (serve -fake, build tag uitest).
@@ -48,15 +48,15 @@ commit=$(git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)
 [ -z "$(git status --porcelain 2>/dev/null)" ] || commit="$commit-dirty"
 built=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Each exe carries iwato-entrypoint (the sandboxes' daemon) for Linux on
-# its own architecture (internal/termbin). The two architectures build in
+# its own architecture (internal/termbin). The targets build in
 # parallel, so each exe sees its own iwato-entrypoint in place of
 # internal/termbin/bin/iwato-entrypoint through a go build -overlay, and the file
 # itself is never written. Each pipeline logs to its own file, printed when it
 # ends, so the output does not interleave.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"; rm -f internal/termbin/bin/iwato-entrypoint' EXIT
-# The macOS build (darwin-arm64, docs/user/getting-started.md#macos-experimental)
-# carries the arm64 one: the engine's VM runs Linux on the Mac's architecture.
+# The macOS build carries the arm64 one: the engine's VM runs Linux on the
+# Mac's architecture.
 build() {
   os=${1%-*} a=${1#*-}
   out=dist/$1/iwato
@@ -65,7 +65,7 @@ build() {
     printf '{"Replace":{"%s":"%s"}}\n' "$PWD/internal/termbin/bin/iwato-entrypoint" "$tmp/iwato-entrypoint-$1" >"$tmp/overlay-$1.json" &&
     CGO_ENABLED=0 GOOS=$os GOARCH=$a go build -overlay "$tmp/overlay-$1.json" -buildvcs=false -trimpath -ldflags="-s -w -X main.buildCommit=$commit -X main.buildTime=$built $release $images" -o "$out" .
 }
-targets="windows-amd64 windows-arm64 darwin-arm64"
+targets="windows-amd64 windows-arm64 darwin-arm64 linux-amd64 linux-arm64"
 for t in $targets; do
   build $t >"$tmp/log-$t" 2>&1 &
   eval "pid_${t%-*}_${t#*-}=\$!"
