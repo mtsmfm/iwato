@@ -7,8 +7,11 @@ package agentsmd
 import "bytes"
 
 const (
-	Static       = "/etc/iwato/AGENTS.md"
-	GeneratedRel = ".config/iwato/AGENTS.md"
+	Static = "/etc/iwato/AGENTS.md"
+	// Directly in the home: a directory on the way (a dotfiles link,
+	// another owner) could keep the writers out and leave /AGENTS.md
+	// dangling.
+	GeneratedRel = ".iwato-agents.md"
 	Generated    = "/home/dev/" + GeneratedRel
 	Marker       = "<!-- iwato: generated section -->"
 )

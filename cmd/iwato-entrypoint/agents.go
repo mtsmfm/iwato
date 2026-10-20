@@ -4,7 +4,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,8 +13,8 @@ import (
 )
 
 // writeAgents writes the generated /AGENTS.md (agentsmd) when /AGENTS.md
-// links to it, keeping the section Iwato wrote last. It never goes through
-// a link in the home.
+// links to it, keeping the section Iwato wrote last. A link in its place
+// is replaced, not followed.
 func writeAgents(link, staticPath, generated string) error {
 	if t, err := os.Readlink(link); err != nil || t != generated {
 		return nil
@@ -25,19 +24,12 @@ func writeAgents(link, staticPath, generated string) error {
 		return err
 	}
 	dir := filepath.Dir(generated)
-	for i, d := range []string{filepath.Dir(filepath.Dir(dir)), filepath.Dir(dir), dir} {
-		if i > 0 {
-			if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-				return err
-			}
-		}
-		fi, err := os.Lstat(d)
-		if err != nil {
-			return err
-		}
-		if st, ok := fi.Sys().(*syscall.Stat_t); !fi.IsDir() || !ok || int(st.Uid) != os.Getuid() {
-			return fmt.Errorf("%s is not a directory of the user's own", d)
-		}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); !fi.IsDir() || !ok || int(st.Uid) != os.Getuid() {
+		return fmt.Errorf("%s is not a directory of the user's own", dir)
 	}
 	var old []byte
 	if fi, err := os.Lstat(generated); err == nil && fi.Mode().IsRegular() {
@@ -47,7 +39,7 @@ func writeAgents(link, staticPath, generated string) error {
 	if old != nil && bytes.Equal(next, old) {
 		return nil
 	}
-	tmp := fmt.Sprintf("%s/.AGENTS.md.%d", dir, os.Getpid())
+	tmp := fmt.Sprintf("%s.%d", generated, os.Getpid())
 	_ = os.Remove(tmp)
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {

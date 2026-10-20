@@ -88,17 +88,19 @@ func (m *ingressManager) refreshURLs(states []ingress.SandboxState) {
 		if m.urls[name] == c || m.urlsBusy[name] {
 			continue
 		}
-		// Recorded before the write: a sandbox that cannot take it is
-		// not tried again until the section changes or it restarts.
 		m.urls[name] = c
 		m.urlsBusy[name] = true
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if err := m.writeURLs(ctx, name, c); err != nil {
+			err := m.writeURLs(ctx, name, c)
+			if err != nil {
 				log.Printf("agents section %s: %v", name, english(err))
 			}
 			m.mu.Lock()
+			if err != nil && m.urls[name] == c {
+				delete(m.urls, name) // tried again on the next sync
+			}
 			delete(m.urlsBusy, name)
 			m.mu.Unlock()
 		}()
@@ -106,8 +108,8 @@ func (m *ingressManager) refreshURLs(states []ingress.SandboxState) {
 }
 
 // urlsScript writes the generated /AGENTS.md (the image's text and the
-// section $1) as the sandbox user when it differs, without going through a
-// link, and only in an image whose /AGENTS.md links to it.
+// section $1) as the sandbox user when it differs, replacing a link in its
+// place, and only in an image whose /AGENTS.md links to it.
 const urlsScript = exportHome + `set -u
 umask 077
 h=${HOME:-}
@@ -115,17 +117,14 @@ case $h in /*) ;; *) exit 0 ;; esac
 f=$h/` + agentsmd.GeneratedRel + `
 [ "$(readlink /AGENTS.md 2>/dev/null)" = "$f" ] && [ -f ` + agentsmd.Static + ` ] || exit 0
 [ -d "$h" ] && [ ! -L "$h" ] && [ -O "$h" ] && [ -w "$h" ] || exit 0
-own() {
-  [ -L "$h/$1" ] && return 1
-  [ -e "$h/$1" ] || mkdir -m 700 "$h/$1" 2>/dev/null || return 1
-  [ -d "$h/$1" ] && [ ! -L "$h/$1" ] && [ -O "$h/$1" ] && [ -w "$h/$1" ]
-}
-own .config && own .config/iwato || { echo "~/.config/iwato is not a directory of the user's own" >&2; exit 1; }
-t=$h/.config/iwato/.AGENTS.md.$$
+t=$f.$$
 rm -f "$t"
 set -C
 { cat ` + agentsmd.Static + ` && printf '\n%s' "$1"; } >"$t" || { rm -f "$t"; exit 1; }
-if [ -f "$f" ] && [ ! -L "$f" ] && cmp -s "$t" "$f" 2>/dev/null; then rm -f "$t"; else mv -f "$t" "$f"; fi
+if [ -f "$f" ] && [ ! -L "$f" ] && cmp -s "$t" "$f" 2>/dev/null; then rm -f "$t"; exit 0; fi
+# mv would move into a directory a link there points to.
+[ -L "$f" ] && rm -f "$f"
+mv -f "$t" "$f"
 `
 
 func (o *OpenShell) WriteURLs(ctx context.Context, name, section string) error {

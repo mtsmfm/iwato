@@ -11,11 +11,11 @@ Agents in a sandbox sometimes need facts only Iwato knows. The first case is the
 
 - Iwato adds no new helper commands or binaries to the sandbox image for agents to run
 - What agents need to know goes into what they already read: the generated `/AGENTS.md`, and environment variables where a tool reads them (`~/.config/iwato/env`)
-- In the standard image `/AGENTS.md` links to `~/.config/iwato/AGENTS.md`. Iwato's daemon, `iwato-entrypoint`, writes it at start from the image's text (`/etc/iwato/AGENTS.md`), keeping the section Iwato wrote last; Iwato rewrites the file through an exec whenever that section changes. The first section is "Your URLs"
+- In the standard image `/AGENTS.md` links to `~/.iwato-agents.md`, directly in the home so that no directory on the way (a dotfiles link, another owner) keeps the writers out. Iwato's daemon, `iwato-entrypoint`, writes it at start from the image's text (`/etc/iwato/AGENTS.md`), keeping the section Iwato wrote last; Iwato rewrites the file through an exec whenever that section changes. The first section is "Your URLs"
 
 ## Consequences
 
 - An agent gives the owner a working URL without running anything. Agents read the file when a session starts, so a session that started before a change sees the old URLs; the section says so
 - A new capability for agents first asks whether `/AGENTS.md` or the environment can carry it
 - The helpers already in the image stay, as they are not looked up by agents: `iwato-browser` is `BROWSER` for programs that open links, and `iwato-desktop` and `iwato-desktop-doctor` are for starting and diagnosing the desktop
-- Images made before keep a plain `/AGENTS.md` and get no URLs; recreating the sandbox with a newer image gives them. A home the daemon cannot write leaves `/AGENTS.md` dangling
+- Images made before keep a plain `/AGENTS.md` and get no URLs; recreating the sandbox with a newer image gives them. While the file cannot be written (a home that is not the sandbox user's own directory, a failed write) `/AGENTS.md` dangles or keeps its last content; each start and Iwato's next sync try again

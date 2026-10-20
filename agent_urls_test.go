@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,10 @@ import (
 func TestAgentsURLSection(t *testing.T) {
 	writes := make(chan string, 10)
 	m := &ingressManager{urls: map[string]string{}, urlsBusy: map[string]bool{}}
+	var fail error
 	m.writeURLs = func(_ context.Context, sb, section string) error {
 		writes <- sb + "|" + section
-		return nil
+		return fail
 	}
 	dev := ingress.SandboxState{Name: "dev", Running: true, Exposed: true}
 	stopped := ingress.SandboxState{Name: "dev", Exposed: true}
@@ -59,7 +61,11 @@ func TestAgentsURLSection(t *testing.T) {
 	step(&recordingProvider{}, dev, "https://iwato-dev.tail0000.ts.net:8000/")
 	step(&recordingProvider{}, ingress.SandboxState{Name: "dev", Running: true}, "publishes no port")
 	step(nil, dev, "")
-	step(lp, ingress.SandboxState{Name: "dev", Running: true, Exposed: true}, "localhost")
+	fail = errors.New("no shell")
+	step(lp, dev, "localhost")
+	fail = nil
+	step(lp, dev, "localhost")
+	step(lp, dev, "")
 
 	section := urlsSection(lp, dev)
 	got := agentsmd.Compose([]byte("new\n"), []byte("old\n\n"+section))

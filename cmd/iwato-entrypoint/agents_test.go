@@ -37,14 +37,18 @@ func TestWriteAgents(t *testing.T) {
 	if b, _ := os.ReadFile(link); string(b) != "v2\n"+section {
 		t.Fatalf("%q", b)
 	}
-	os.RemoveAll(filepath.Join(home, ".config"))
-	os.Mkdir(filepath.Join(d, "other"), 0o700)
-	os.Symlink(filepath.Join(d, "other"), filepath.Join(home, ".config"))
-	if err := writeAgents(link, static, gen); err == nil {
-		t.Fatal("went through a link")
+	other := filepath.Join(d, "other")
+	os.WriteFile(other, []byte("theirs"), 0o600)
+	os.Remove(gen)
+	os.Symlink(other, gen)
+	if err := writeAgents(link, static, gen); err != nil {
+		t.Fatal(err)
 	}
-	if exists(filepath.Join(d, "other", "iwato")) {
-		t.Fatal("made a directory through a link")
+	if b, _ := os.ReadFile(other); string(b) != "theirs" {
+		t.Fatal("wrote through a link")
+	}
+	if fi, _ := os.Lstat(gen); !fi.Mode().IsRegular() {
+		t.Fatal("the link stayed")
 	}
 }
 

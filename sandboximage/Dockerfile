@@ -183,7 +183,7 @@ RUN install -d -m 755 /usr/local/lib/iwato \
     && rm -f /tmp/iwato-noid.c \
     && command -v Xvfb >/dev/null && command -v xkbcomp >/dev/null \
     && command -v selkies-session >/dev/null && command -v xfce4-session >/dev/null
-RUN ln -s /home/dev/.config/iwato/AGENTS.md /AGENTS.md \
+RUN ln -s /home/dev/.iwato-agents.md /AGENTS.md \
     && ln -s /etc/iwato/gitconfig /etc/gitconfig && ln -s /etc/iwato/tmux.conf /etc/tmux.conf \
     && install -m 755 /etc/iwato/iwato-browser /usr/local/bin/iwato-browser \
     && chmod 755 /usr/local/bin/iwato-desktop /usr/local/bin/iwato-desktop-doctor && chmod -R a+rX /etc/iwato /etc/openshell \
