@@ -44,10 +44,10 @@ func (s SFTP) OpenSFTP() (io.Reader, io.WriteCloser, error) {
 	return r, sessionWriter{w, sess}, nil
 }
 
-// ClientOptions: OpenShell takes packets up to 256 KiB; 64 KiB ones leave
-// room for the headers.
+// ClientOptions: 32 KiB, the size every SFTP server answers in full; pkg/sftp's
+// concurrent reads take a shorter answer than asked for as the end of the file.
 func (s SFTP) ClientOptions() []sftp.ClientOption {
-	return []sftp.ClientOption{sftp.MaxPacketUnchecked(64 << 10), sftp.UseConcurrentWrites(true)}
+	return []sftp.ClientOption{sftp.MaxPacket(32 << 10), sftp.UseConcurrentWrites(true)}
 }
 
 type sessionWriter struct {
