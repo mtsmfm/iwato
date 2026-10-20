@@ -74,6 +74,11 @@ type ingressManager struct {
 	ownerCache  []string
 	ownerAt     time.Time
 	listeners   map[string]*listenRead // by sandbox
+	// urls is the /AGENTS.md section last written per running sandbox
+	// (agent_urls.go); writeURLs is nil when the runtime cannot.
+	urls      map[string]string
+	urlsBusy  map[string]bool
+	writeURLs func(ctx context.Context, sandbox, content string) error
 }
 
 // listenRead is a sandbox's last read of its listening ports (done once
@@ -93,6 +98,10 @@ const listenTTL = 3 * time.Second
 func newIngressManager(s *Server, dir string) *ingressManager {
 	m := &ingressManager{s: s, dir: dir, running: map[string]bool{}, listeners: map[string]*listenRead{}, kickCh: make(chan struct{}, 1), later: func(f func()) { go f() }}
 	m.rt, _ = s.rt.(ingressRuntime)
+	m.urls, m.urlsBusy = map[string]string{}, map[string]bool{}
+	if w, ok := s.rt.(urlsWriter); ok {
+		m.writeURLs = w.WriteURLs
+	}
 	m.backend = &ingress.Backend{
 		Dial: func(ctx context.Context, sandbox, host string, port uint16) (net.Conn, error) {
 			if m.rt == nil {
@@ -429,6 +438,7 @@ func (m *ingressManager) reconfigure(ctx context.Context) {
 		_ = old.Close()
 	}
 	if key == "" {
+		m.sync(ctx, true)
 		return
 	}
 	var p ingress.Provider
@@ -441,6 +451,7 @@ func (m *ingressManager) reconfigure(ctx context.Context) {
 		m.mu.Lock()
 		m.syncErr = err.Error()
 		m.mu.Unlock()
+		m.sync(ctx, true)
 		return
 	}
 	m.mu.Lock()
@@ -467,12 +478,12 @@ func (m *ingressManager) states(ctx context.Context) []ingress.SandboxState {
 }
 
 // sync gives the provider the sandboxes' states (only when they changed,
-// unless force).
+// unless force). Without a provider it still runs for /AGENTS.md.
 func (m *ingressManager) sync(ctx context.Context, force bool) {
 	m.mu.Lock()
 	p := m.provider
 	m.mu.Unlock()
-	if p == nil {
+	if p == nil && m.writeURLs == nil {
 		return
 	}
 	m.apply(ctx, m.states(ctx), force)
@@ -506,17 +517,17 @@ func (m *ingressManager) apply(ctx context.Context, states []ingress.SandboxStat
 			m.rt.ForgetPorts(name)
 		}
 	}
-	if p == nil || (same && !force) {
-		return
+	if p != nil && (!same || force) {
+		err := p.Sync(ctx, states)
+		m.mu.Lock()
+		m.syncErr = ""
+		if err != nil {
+			m.syncErr = err.Error()
+			log.Printf("ingress sync: %v", english(err))
+		}
+		m.mu.Unlock()
 	}
-	err := p.Sync(ctx, states)
-	m.mu.Lock()
-	m.syncErr = ""
-	if err != nil {
-		m.syncErr = err.Error()
-		log.Printf("ingress sync: %v", english(err))
-	}
-	m.mu.Unlock()
+	m.refreshURLs(states)
 }
 
 // observe takes the states the sandbox list just read (no extra calls).

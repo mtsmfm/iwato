@@ -12,9 +12,10 @@
 # to an agent: no agent CLI and no agent settings. Users install their agent
 # with mise (e.g. mise use -g claude); it lands in the home, which
 # persists. The environment's instructions are /AGENTS.md, so OpenShell
-# keeps them instead of installing its own. It links to
-# /etc/iwato/AGENTS.md: the sandbox policy lets the workload read /etc, not
-# files directly in /.
+# keeps them instead of installing its own. It links to a file in the home
+# (the sandbox policy lets the workload read the home and /etc, not files
+# directly in /): iwato-entrypoint writes it at start from
+# /etc/iwato/AGENTS.md, and Iwato adds the sandbox's URLs (ADR 0016).
 # The image follows Iwato's convention (docs/adr/0005-sandbox-image-
 # convention.md): it carries Iwato's daemon (/usr/local/lib/iwato/
 # iwato-entrypoint, the sandbox's main process: terminals, and SFTP rooted
@@ -182,7 +183,7 @@ RUN install -d -m 755 /usr/local/lib/iwato \
     && rm -f /tmp/iwato-noid.c \
     && command -v Xvfb >/dev/null && command -v xkbcomp >/dev/null \
     && command -v selkies-session >/dev/null && command -v xfce4-session >/dev/null
-RUN ln -s /etc/iwato/AGENTS.md /AGENTS.md \
+RUN ln -s /home/dev/.config/iwato/AGENTS.md /AGENTS.md \
     && ln -s /etc/iwato/gitconfig /etc/gitconfig && ln -s /etc/iwato/tmux.conf /etc/tmux.conf \
     && install -m 755 /etc/iwato/iwato-browser /usr/local/bin/iwato-browser \
     && chmod 755 /usr/local/bin/iwato-desktop /usr/local/bin/iwato-desktop-doctor && chmod -R a+rX /etc/iwato /etc/openshell \
