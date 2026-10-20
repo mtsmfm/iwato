@@ -200,6 +200,9 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     await page.keyboard.press('Enter');
     await page.waitForSelector(panelSel + ' .editor-tab[data-dirty=true]');
     check(true, 'an edit marks the file unsaved');
+    await page.keyboard.type(' ' + 'x'.repeat(400));
+    check(await page.evaluate((sel) => { const s = document.querySelector(sel + ' .cm-scroller'); return s.scrollWidth <= s.clientWidth + 1; }, textSel), 'a long line wraps instead of scrolling sideways');
+    for (let i = 0; i < 401; i++) await page.keyboard.press('Backspace');
     await shot('editor-edited.png');
 
     // Save: Ctrl+S on a PC, the button on a phone.

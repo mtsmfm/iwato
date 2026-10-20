@@ -305,14 +305,15 @@
   }
 
   // codeExtensions are what every CodeMirror text has: the basic setup
-  // (line numbers, search, folding, history), the words, the highlighting
-  // of language (a key of the bundle's languages) and the theme.
+  // (line numbers, search, folding, history), wrapped lines, the words, the
+  // highlighting of language (a key of the bundle's languages) and the theme.
   function codeExtensions(CM, { language = '', label = '', className = '' } = {}) {
     return [
       CM.basicSetup,
       CM.EditorState.phrases.of(phrases()),
       CM.EditorView.editorAttributes.of({ class: className }),
       CM.EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', 'aria-label': label }),
+      CM.EditorView.lineWrapping,
       CM.language(language),
       codeTheme(CM)
     ];
