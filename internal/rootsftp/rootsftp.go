@@ -35,7 +35,7 @@ func Serve(dir string, r io.Reader, w io.WriteCloser) error {
 	}
 	defer root.Close()
 	h := &handler{root: root}
-	s := sftp.NewRequestServer(pipe{r, w}, sftp.Handlers{FileGet: h, FilePut: h, FileCmd: h, FileList: h})
+	s := sftp.NewRequestServer(pipe{r, w}, sftp.Handlers{FileGet: h, FilePut: h, FileCmd: h, FileList: h}, sftp.WithRSMaxTxPacket(64<<10))
 	defer s.Close()
 	if err := s.Serve(); err != nil && !errors.Is(err, io.EOF) {
 		return err
