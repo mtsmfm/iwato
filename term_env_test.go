@@ -24,7 +24,7 @@ func TestTermEnvFile(t *testing.T) {
 		return string(out), err
 	}
 	home := t.TempDir()
-	if out, err := run(home, script, nil, termEnvContent); err != nil || out != "" {
+	if out, err := run(home, script, nil, termEnvContent(false)); err != nil || out != "" {
 		t.Fatal(out, err)
 	}
 	f := filepath.Join(home, termEnvPath)
@@ -45,15 +45,31 @@ func TestTermEnvFile(t *testing.T) {
 			t.Errorf("%v: %q %v", c.env, out, err)
 		}
 	}
+	// Claude's scopes only in a sign-in sandbox's file, and only with the token.
+	if out, err := run(home, script, nil, termEnvContent(true)); err != nil || out != "" {
+		t.Fatal(out, err)
+	}
+	scopes := string(envSh) + `printf %s "${CLAUDE_CODE_OAUTH_SCOPES-}"`
+	for env, want := range map[string]string{"": "", "CLAUDE_CODE_OAUTH_TOKEN=tok": claudeCodeScopes} {
+		if out, err := run(home, scopes, []string{env}); err != nil || out != want {
+			t.Errorf("%s: %q %v", env, out, err)
+		}
+	}
+	if strings.Contains(termEnvContent(false), "CLAUDE_CODE_OAUTH_SCOPES") || !strings.Contains(claudeCodeScopes, "user:profile") || strings.Contains(claudeCodeScopes, "user:mcp_servers") {
+		t.Error(claudeCodeScopes)
+	}
+	if out, err := run(home, script, nil, termEnvContent(false)); err != nil || out != "" {
+		t.Fatal(out, err)
+	}
 	// The same content is not written again.
 	before, _ := os.Stat(f)
-	if out, err := run(home, script, nil, termEnvContent); err != nil || out != "" {
+	if out, err := run(home, script, nil, termEnvContent(false)); err != nil || out != "" {
 		t.Fatal(out, err)
 	}
 	if after, _ := os.Stat(f); !os.SameFile(before, after) {
 		t.Error("rewrote the same content")
 	}
-	if _, err := run(home, script, nil, termEnvContent+"# more\n"); err != nil {
+	if _, err := run(home, script, nil, termEnvContent(false)+"# more\n"); err != nil {
 		t.Fatal(err)
 	}
 	if after, _ := os.Stat(f); os.SameFile(before, after) {
@@ -63,7 +79,7 @@ func TestTermEnvFile(t *testing.T) {
 	other, linked := t.TempDir(), t.TempDir()
 	os.MkdirAll(filepath.Join(linked, ".config"), 0o700)
 	os.Symlink(other, filepath.Join(linked, ".config", "iwato"))
-	if _, err := run(linked, script, nil, termEnvContent); err == nil {
+	if _, err := run(linked, script, nil, termEnvContent(false)); err == nil {
 		t.Fatal("wrote through a link")
 	}
 	if entries, _ := os.ReadDir(other); len(entries) != 0 {
@@ -76,5 +92,26 @@ func TestTermEnvFile(t *testing.T) {
 	os.Symlink(target, filepath.Join(linked, termEnvPath))
 	if out, _ := run(linked, string(envSh)+`printf %s "${A-}"`, nil); out != "" {
 		t.Fatal("read a linked file")
+	}
+}
+
+func TestHasClaudeSignIn(t *testing.T) {
+	list := []ProviderInfo{
+		{Name: "token", Profile: scopedProfileID("iwato-claude", "token")},
+		{Name: "login", Profile: scopedProfileID(claudeSubscriptionProfileID, "login")},
+		{Name: "old", Profile: claudeSubscriptionProfileID},
+	}
+	for _, c := range []struct {
+		attached []string
+		want     bool
+	}{
+		{nil, false},
+		{[]string{"token"}, false},
+		{[]string{"login"}, true},
+		{[]string{"old"}, true},
+	} {
+		if got := hasClaudeSignIn(list, c.attached); got != c.want {
+			t.Errorf("%v: %v", c.attached, got)
+		}
 	}
 }

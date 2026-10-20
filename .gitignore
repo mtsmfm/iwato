@@ -1,4 +1,5 @@
 /dist/
+/iwato
 iwato.json
 sessions.json
 *.exe

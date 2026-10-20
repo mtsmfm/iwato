@@ -312,6 +312,7 @@ func (o *OpenShell) changeProvider(ctx context.Context, sandbox, provider string
 	if sb.Status.Phase != v1.SandboxReady {
 		return true, "", nil
 	}
+	o.writeTermEnv(ctx, sandbox)
 	return true, receipt.GetReceiptId(), nil
 }
 
