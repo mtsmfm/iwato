@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"time"
@@ -15,7 +16,13 @@ func init() {
 	if v := os.Getenv("IWATO_UPDATE_BASE_URL"); v != "" {
 		updateBaseOverride = v
 	}
+	if failStartBuild != "" {
+		failStart = errors.New("this build fails to start (failStartBuild)")
+	}
 }
+
+// failStartBuild (-ldflags -X) makes serve fail before listening.
+var failStartBuild string
 
 // newFakeUpdate is the fake's update: an edge build whose next commit
 // changes the gateway. Applying it takes a few seconds and then reports

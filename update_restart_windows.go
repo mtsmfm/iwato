@@ -18,8 +18,15 @@ func relaunch(exe, addr string) error {
 	if err == nil {
 		return nil
 	}
-	if rerr := restoreExe(exe); rerr != nil {
-		return fmt.Errorf("starting the updated %s: %v; restoring the old one: %v", exe, err, rerr)
+	var rerr error
+	for range 10 {
+		if rerr = restoreExe(exe); rerr == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if rerr != nil {
+		return fmt.Errorf("starting the updated %s: %v; restoring the old one: %v (it is kept as %s.old)", exe, err, rerr, exe)
 	}
 	noticef("the updated Iwato did not start (%v): starting the old one", err)
 	return startListening(exe, addr)
@@ -46,6 +53,11 @@ func startListening(exe, addr string) error {
 			return nil
 		}
 	}
+	// Kill does not wait, and the exe cannot be replaced while it is mapped.
 	_ = c.Process.Kill()
+	<-exited
 	return errors.New("it did not listen within a minute")
 }
+
+// rollBack is relaunch's job on Windows: the old process waits for this one.
+func rollBack(_ string, cause error) error { return cause }

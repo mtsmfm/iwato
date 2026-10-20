@@ -31,7 +31,20 @@ func main() {
 	}
 }
 
-func run(args []string) error {
+func run(args []string) (err error) {
+	// Started by an update (update_restart_*.go): the old process's port.
+	restartAddr := os.Getenv(restartListenEnv)
+	restored := os.Getenv(restartRestoredEnv) != ""
+	_ = os.Unsetenv(restartListenEnv)
+	_ = os.Unsetenv(restartRestoredEnv)
+	served := false
+	if restartAddr != "" && !restored {
+		defer func() {
+			if err != nil && !served {
+				err = rollBack(restartAddr, err)
+			}
+		}()
+	}
 	// `iwato` alone creates the configuration if needed and serves.
 	if len(args) == 0 {
 		args = []string{"serve"}
@@ -103,19 +116,27 @@ func run(args []string) error {
 		return errors.New("session-hours must be 1-720")
 	}
 	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose}
-	// Started by an update (update_restart_*.go): the old process's port.
-	if addr := os.Getenv(restartListenEnv); addr != "" {
-		_ = os.Unsetenv(restartListenEnv)
-		*listen, opts.listenWait = addr, 30*time.Second
+	if restartAddr != "" {
+		*listen, opts.listenWait = restartAddr, 30*time.Second
 	}
+	opts.serving = func() { served = true }
 	if fake == nil {
-		go removeOldExe()
+		opts.serving = func() {
+			served = true
+			go removeOldExe()
+		}
 		opts.pushFile = filepath.Join(filepath.Dir(*configFile), "webpush.json")
 		opts.configPath = *configFile
 		opts.logFile = filepath.Join(filepath.Dir(*configFile), logFileName)
 	}
+	if failStart != nil {
+		return failStart
+	}
 	return serve(ctx, c, rt, eng, fake, *listen, opts)
 }
+
+// failStart is set in uitest builds only (fake_update.go).
+var failStart error
 
 type serveOptions struct {
 	publicOrigin, pushFile, configPath string
@@ -126,6 +147,8 @@ type serveOptions struct {
 	sessionTTL time.Duration
 	// listenWait: retry the listen address this long (a restart).
 	listenWait time.Duration
+	// serving is called once the listener is up, just before serving.
+	serving func()
 }
 
 func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun, addr string, opts serveOptions) error {
@@ -299,6 +322,9 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		defer cancel()
 		_ = h.Shutdown(shutdown)
 	}()
+	if opts.serving != nil {
+		opts.serving()
+	}
 	// The local ingress's hosts (<port>.<sandbox>.localhost) leave the
 	// listener before the admin UI's Host check (internal/ingress/local).
 	e = h.Serve(local.Split(ln, s.ingress.take, h.ReadHeaderTimeout, h.MaxHeaderBytes))

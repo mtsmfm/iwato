@@ -45,6 +45,9 @@ const (
 	// restartListenEnv carries the listener's address to the restarted
 	// exe, which waits for the port instead of picking another.
 	restartListenEnv = "IWATO_RESTART_LISTEN"
+	// restartRestoredEnv marks the old exe put back after a failed
+	// restart, which must not roll back again.
+	restartRestoredEnv = "IWATO_RESTART_RESTORED"
 )
 
 // buildMeta is iwato-build.json.
@@ -432,10 +435,7 @@ func (u *selfUpdate) download(ctx context.Context, m buildMeta) (string, error) 
 	exe := u.exe
 	if exe == "" {
 		var err error
-		if exe, err = os.Executable(); err == nil {
-			exe, err = filepath.EvalSymlinks(exe)
-		}
-		if err != nil {
+		if exe, err = selfExe(); err != nil {
 			return "", errCode("update_swap", map[string]any{"detail": err.Error()}, "入れ替えられませんでした: "+err.Error())
 		}
 	}
@@ -534,6 +534,14 @@ func swapExe(exe, next string) error {
 
 func restoreExe(exe string) error { return os.Rename(exe+".old", exe) }
 
+var selfExe = func() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
+}
+
 func restartEnv(addr string) []string {
 	env := []string{restartListenEnv + "=" + addr}
 	for _, kv := range os.Environ() {
@@ -565,14 +573,12 @@ func copyFile(from, to string) error {
 	return out.Close()
 }
 
-// removeOldExe deletes the exe an update replaced. On Windows the old
-// process may still run it for a moment.
+// removeOldExe deletes the exe an update replaced, once serving: until
+// then a failed start puts it back. On Windows the old process may still
+// run it for a moment.
 func removeOldExe() {
-	exe, err := os.Executable()
+	exe, err := selfExe()
 	if err != nil {
-		return
-	}
-	if exe, err = filepath.EvalSymlinks(exe); err != nil {
 		return
 	}
 	for range 30 {
