@@ -3,7 +3,8 @@
 // without values, add, change, delete; Atlassian's OAuth connection and
 // 再接続 through the fake's authorization page, pasting the redirect on a
 // phone), the create form's picker, a refused attach that names the
-// uninspected rule and its fix, a sandbox's attach/detach with the restart
+// uninspected rule (or one beyond the provider's scope) and its fix, a
+// sandbox's attach/detach with the restart
 // choice, and 再起動待ち on the card and its terminals, after a reload too.
 // Also creating a provider without a name (Iwato names it), and the
 // profiles as YAML (Iwato's files and a gateway profile). Saves
@@ -487,6 +488,37 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await policy.locator('.policy-rule[data-rule=allow_api_github_com_443]', { hasText: 'api.github.com:443 · 検査 (遮断)' }).waitFor();
     check(true, 'the rule now enforces, keeping its reads');
     await shot('attach-ambiguity-done.png');
+
+    // A rule approved before for RunPod's GraphQL (POST /graphql, REST)
+    // would carry the key beyond the provider's read-only scope: the
+    // attach names the rule and why, and offers to remove it or attach anyway.
+    const sandboxName = (await card.locator('.card-title').innerText()).trim();
+    const added = await page.evaluate(async (name) => {
+      const { csrf } = await (await fetch('/api/session')).json();
+      // A provider's host: confirmed (the token of the first answer).
+      const add = (confirm) => fetch('/api/sandboxes/' + name + '/policy/add', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ rule: 'allow_api_runpod_io_443', binaries: ['/usr/bin/python3'], host: 'api.runpod.io', ports: [443], rules: [{ method: 'POST', path: '/graphql' }], confirm }) });
+      const r = await add((await (await add('')).json()).confirm);
+      return r.status + ' ' + (await r.text());
+    }, sandboxName);
+    check(added.startsWith('200'), 'a REST rule for POST api.runpod.io/graphql is added (' + added + ')');
+    await openPanel();
+    const runpod = side.locator('.provider-row', { hasText: /^runpod/ });
+    await runpod.getByRole('button', { name: '付ける' }).click();
+    await conflict.waitFor({ timeout: 5000 }).catch(() => {});
+    const beyondText = await conflict.isVisible() ? await conflict.innerText() : '';
+    check(beyondText.includes('規則 allow_api_runpod_io_443: api.runpod.io:443') && beyondText.includes('runpod'), 'a rule reaching beyond RunPod\'s scope is named with why: ' + beyondText);
+    check(await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).isVisible() && await conflict.getByRole('button', { name: 'このまま付ける' }).isVisible(), 'it offers to remove the rule or to attach anyway');
+    check(await side.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the list does not scroll the panel sideways');
+    await conflict.scrollIntoViewIfNeeded();
+    await shot('attach-beyond.png');
+    await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).click();
+    await side.locator('.panel-meta', { hasText: 'runpod を付けました' }).waitFor();
+    check(await runpod.getByRole('button', { name: '外す' }).isVisible(), 'with the rule removed, RunPod is attached');
+    await side.getByRole('button', { name: '閉じる' }).click();
+    await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    await policy.locator('.policy-rule[data-rule=allow_api_runpod_io_443]').waitFor({ state: 'detached' });
+    check(true, 'the rule is gone from the policy');
     console.log('screenshots in ' + dir);
   } finally {
     await browser.close();

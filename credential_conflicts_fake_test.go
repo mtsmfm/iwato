@@ -61,6 +61,52 @@ func TestProviderAttachRefusesUninspectedRule(t *testing.T) {
 	}
 }
 
+// A REST rule for RunPod's GraphQL (POST /graphql) carries the key beyond
+// the provider's read-only scope: the attach asks, naming the endpoint;
+// the fix with the attach's token removes it, and the attach goes through.
+func TestProviderAttachFixRemovesRulesBeyondScope(t *testing.T) {
+	s, d, do := providerServer(t)
+	if code, body := do("POST", "/api/sandboxes/dev/start", `{}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	add := func(confirm string) (int, string) {
+		return do("POST", "/api/sandboxes/dev/policy/add", `{"rule":"gql","binaries":["/usr/bin/python3"],"host":"api.runpod.io","ports":[443],"rules":[{"method":"POST","path":"/graphql"}],"confirm":"`+confirm+`"}`)
+	}
+	_, body := add("")
+	var hosts struct{ Confirm string }
+	if json.Unmarshal([]byte(body), &hosts) != nil {
+		t.Fatal(body)
+	}
+	if code, body := add(hosts.Confirm); code != 200 {
+		t.Fatal(code, body)
+	}
+	code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"runpod"}`)
+	var ask struct {
+		Code, Confirm string
+		Beyond        []BeyondScope
+	}
+	if code != 409 || json.Unmarshal([]byte(body), &ask) != nil || ask.Code != "provider_attach_beyond_scope" || ask.Confirm == "" ||
+		len(ask.Beyond) != 1 || ask.Beyond[0].Rule != "gql" || ask.Beyond[0].Host != "api.runpod.io" || !slices.Equal(ask.Beyond[0].Ports, []uint32{443}) {
+		t.Fatal(code, body)
+	}
+	sb, _ := s.lookupSandbox("dev")
+	if code, body := do("POST", "/api/sandboxes/dev/providers/fix", `{"provider":"runpod","mode":"remove","confirm":"stale"}`); code != 409 || !strings.Contains(body, `"code":"provider_fix_changed"`) {
+		t.Fatal("another token:", code, body)
+	}
+	if rules, _ := d.PolicyRules(context.Background(), sb); len(rules["gql"].Endpoints) != 1 {
+		t.Fatal("removed with another token")
+	}
+	if code, body := do("POST", "/api/sandboxes/dev/providers/fix", `{"provider":"runpod","mode":"remove","confirm":"`+ask.Confirm+`"}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	if rules, _ := d.PolicyRules(context.Background(), sb); len(rules["gql"].Endpoints) != 0 {
+		t.Fatal("the endpoint is still there")
+	}
+	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"runpod"}`); code != 200 {
+		t.Fatal(code, body)
+	}
+}
+
 // The fake's proposal (gh to uploads.github.com, L4) while a GitHub provider
 // is attached: approving it as proposed, or with only its program changed
 // (the approve dialog's Binaries keep the endpoints), is refused; narrowed

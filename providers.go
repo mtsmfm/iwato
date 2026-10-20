@@ -581,8 +581,9 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 		// Mode (fix only): "remove" the conflicting endpoints, or
 		// "enforce" the audited ones (keeping their rules).
 		Mode string `json:"mode"`
-		// Confirm (attach only): the token of the owner's confirmation
-		// that rules let the credential go beyond the provider's scope.
+		// Confirm: the token of the owner's confirmation that rules let
+		// the credential go beyond the provider's scope (attach), or that
+		// those endpoints are removed (fix).
 		Confirm string `json:"confirm"`
 	}
 	if decode(w, r, &body) != nil || !providerNamePattern.MatchString(body.Provider) || (body.Mode != "" && body.Mode != "remove" && body.Mode != "enforce") {
@@ -606,7 +607,7 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 	}
 	current := attached[sb.Name]
 	if parts[2] == "fix" {
-		s.fixCredentialConflicts(w, ctx, sb, list, body.Provider, body.Mode == "enforce")
+		s.fixCredentialConflicts(w, ctx, sb, list, body.Provider, body.Mode == "enforce", body.Confirm)
 		return
 	}
 	attach := parts[2] == "attach"
@@ -654,11 +655,11 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 		} else if token := confirmToken(sb.Name, "attach", body.Provider, beyond); len(beyond) > 0 && body.Confirm != token {
 			var where []string
 			for _, b := range beyond {
-				where = append(where, b.Rule+": "+b.Host)
+				where = append(where, b.Rule+": "+b.Host+":"+joinPorts(b.Ports))
 			}
 			jsonResponse(w, 409, map[string]any{"code": "provider_attach_beyond_scope", "params": map[string]any{"provider": body.Provider, "rules": where},
 				"error":   body.Provider + " を付けると、ポリシーの規則がその認証情報をプロバイダーの範囲より広く届けます: " + strings.Join(where, "、"),
-				"confirm": token})
+				"confirm": token, "beyond": beyond})
 			return
 		}
 		applied, receipt, err = rt.AttachProvider(ctx, sb.Name, body.Provider)
@@ -767,8 +768,10 @@ func (s *Server) providerOutdated(sb Sandbox, names []string) []string {
 // Programs of the removed endpoints lose them; the page says which. An
 // endpoint the provider's rule would make ambiguous is removed too. With
 // enforce, one that only audits where the provider enforces is switched
-// to enforce instead, with the requests it allows now.
-func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Context, sb Sandbox, list []ProviderInfo, provider string, enforce bool) {
+// to enforce instead, with the requests it allows now. With confirm (the
+// attach's token), the endpoints that carry the credential beyond the
+// provider's scope are removed as well.
+func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Context, sb Sandbox, list []ProviderInfo, provider string, enforce bool, confirm string) {
 	i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == provider })
 	if i < 0 {
 		failCode(w, 404, "provider_missing", map[string]any{"name": provider}, "プロバイダー "+provider+" がありません")
@@ -794,8 +797,15 @@ func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Conte
 		return
 	}
 	var edits []PolicyEdit
+	add := func(e PolicyEdit) {
+		if !slices.ContainsFunc(edits, func(x PolicyEdit) bool {
+			return x.Rule == e.Rule && strings.EqualFold(x.Host, e.Host) && slices.Equal(x.Ports, e.Ports)
+		}) {
+			edits = append(edits, e)
+		}
+	}
 	for _, c := range conflicts {
-		edits = append(edits, PolicyEdit{Op: "remove-endpoint", Rule: c.Rule, Host: c.Host, Ports: c.Ports})
+		add(PolicyEdit{Op: "remove-endpoint", Rule: c.Rule, Host: c.Host, Ports: c.Ports})
 	}
 	for _, v := range ambiguities {
 		if isProviderRule(v.Rule) {
@@ -806,10 +816,20 @@ func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Conte
 		if enforce {
 			e.Op, e.Keep = "enforce", true
 		}
-		if !slices.ContainsFunc(edits, func(x PolicyEdit) bool {
-			return x.Rule == e.Rule && strings.EqualFold(x.Host, e.Host) && slices.Equal(x.Ports, e.Ports)
-		}) {
-			edits = append(edits, e)
+		add(e)
+	}
+	var beyond []BeyondScope
+	if confirm != "" {
+		if beyond, err = s.beyondScopeForAttach(ctx, sb, list[i]); err != nil {
+			failCode(w, 409, "policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
+			return
+		}
+		if confirmToken(sb.Name, "attach", provider, beyond) != confirm {
+			failCode(w, 409, "provider_fix_changed", nil, "ポリシーが変わりました。もう一度付けてください")
+			return
+		}
+		for _, b := range beyond {
+			add(PolicyEdit{Op: "remove-endpoint", Rule: b.Rule, Host: b.Host, Ports: b.Ports})
 		}
 	}
 	for _, edit := range edits {
@@ -832,7 +852,7 @@ func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Conte
 		s.recordPolicyChange(sb.Name, change)
 		log.Printf("sandbox %s: %s %s:%s of rule %s (for provider %s)", sb.Name, edit.Op, edit.Host, joinPorts(edit.Ports), edit.Rule, provider)
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "removed": conflicts, "fixed": ambiguities})
+	jsonResponse(w, 200, map[string]any{"ok": true, "removed": conflicts, "fixed": ambiguities, "beyond": beyond})
 }
 
 // providerProfileReader reads a profile the gateway holds (in Iwato's
