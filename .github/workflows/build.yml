@@ -90,9 +90,9 @@ jobs:
           retention-days: 30
   # The edge exes pull both images of their own sources by digest
   # (scripts/build-exe.sh --images --image-tag edge --image-digests).
-  # image.yml publishes them in parallel on the same push, or did on an
-  # earlier push when this one did not touch them, tagged src-<hash of their
-  # sources> (scripts/image-sources.sh): this job waits for that tag, so it
+  # image.yml publishes each in parallel on the same push, or did on an
+  # earlier push with the same sources, tagged src-<hash of its sources>
+  # (scripts/image-sources.sh NAME): this job waits for that tag, so it
   # never pins an older image. A newer push cancels the wait.
   edge-exes:
     if: github.ref == 'refs/heads/main'
@@ -134,10 +134,9 @@ jobs:
       - env:
           REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
-          src=$(scripts/image-sources.sh)
           digests=""
           for name in iwato-gateway iwato-sandbox; do
-            ref=$REGISTRY/$name:src-$src
+            ref=$REGISTRY/$name:src-$(scripts/image-sources.sh "${name#iwato-}")
             until d=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | jq -r .digest); echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}'; do
               echo "waiting for $ref (image.yml)"
               sleep 60

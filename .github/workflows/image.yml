@@ -1,9 +1,10 @@
 # Iwato's gateway and sandbox images for amd64 and arm64 (the sandbox image
-# carries Iwato's daemon cmd/iwato-entrypoint of the same commit). A push to
-# main publishes them on ghcr.io as `edge`, `sha-<commit>` and
-# `src-<hash of their sources>` (scripts/image-sources.sh), which the edge
-# exes wait for and pin (build.yml); a pull request that touches them only
-# builds them, so the Dockerfiles are checked before they reach main.
+# carries Iwato's daemon cmd/iwato-entrypoint of the same commit). Each image
+# is tagged `src-<hash of its sources>` (scripts/image-sources.sh NAME) and
+# built only when that tag is not in ghcr.io yet (a run by hand builds both).
+# A push to main publishes it and points `edge` and `sha-<commit>` at it, or
+# at the existing src- image; the edge exes wait for and pin these (build.yml).
+# A pull request only builds, so the Dockerfiles are checked before main.
 # Releases publish their own, tagged with the version (release.yml).
 # Each image and architecture builds natively on its own runner (no QEMU)
 # with a BuildKit cache per image and architecture, pushes by digest, and
@@ -26,18 +27,46 @@ env:
   # publishing.
   PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: plan
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          build=""
+          for name in iwato-gateway iwato-sandbox; do
+            ref=$REGISTRY/$name:src-$(scripts/image-sources.sh "${name#iwato-}")
+            if [ "$FORCE" != true ] && docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then
+              echo "$ref exists, not building it"
+            else
+              build="$build${build:+,}\"$name\""
+            fi
+          done
+          echo "build=[$build]" >> "$GITHUB_OUTPUT"
   images:
+    needs: plan
+    if: needs.plan.outputs.build != '[]'
     strategy:
       matrix:
-        name: [iwato-gateway, iwato-sandbox]
+        name: ${{ fromJSON(needs.plan.outputs.build) }}
         arch: [amd64, arm64]
         include:
-          - name: iwato-gateway
-            context: internal/openshell/gateway
-            target: gateway
-          - name: iwato-sandbox
-            context: sandboximage
-            target: ""
           - arch: amd64
             runner: ubuntu-24.04
           - arch: arm64
@@ -71,8 +100,8 @@ jobs:
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ${{ matrix.context }}
-          target: ${{ matrix.target }}
+          context: ${{ matrix.name == 'iwato-gateway' && 'internal/openshell/gateway' || 'sandboximage' }}
+          target: ${{ matrix.name == 'iwato-gateway' && 'gateway' || '' }}
           build-args: OPENSHELL_TAG=v${{ steps.openshell.outputs.version }}
           platforms: linux/${{ matrix.arch }}
           outputs: ${{ env.PUBLISH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=cacheonly' }}
@@ -92,8 +121,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
   merge:
-    needs: images
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [plan, images]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped') && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     strategy:
       matrix:
         name: [iwato-gateway, iwato-sandbox]
@@ -102,9 +131,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      BUILT: ${{ contains(fromJSON(needs.plan.outputs.build), matrix.name) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - if: env.BUILT == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-${{ matrix.name }}-*
@@ -117,10 +149,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          NAME: ${{ matrix.name }}
         run: |
-          src=$(scripts/image-sources.sh)
+          src=$(scripts/image-sources.sh "${NAME#iwato-}")
           set --
-          for d in "$RUNNER_TEMP"/digests/*; do set -- "$@" "$IMAGE@sha256:${d##*/}"; done
-          [ $# -eq 2 ] || { echo "expected 2 digests, got: $*" >&2; exit 1; }
-          docker buildx imagetools create -t "$IMAGE:edge" -t "$IMAGE:sha-${GITHUB_SHA::7}" -t "$IMAGE:src-$src" "$@"
+          if [ "$BUILT" = true ]; then
+            for d in "$RUNNER_TEMP"/digests/*; do set -- "$@" "$IMAGE@sha256:${d##*/}"; done
+            [ $# -eq 2 ] || { echo "expected 2 digests, got: $*" >&2; exit 1; }
+            set -- -t "$IMAGE:src-$src" "$@"
+          else
+            set -- "$IMAGE:src-$src"
+          fi
+          docker buildx imagetools create -t "$IMAGE:edge" -t "$IMAGE:sha-${GITHUB_SHA::7}" "$@"
           docker buildx imagetools inspect "$IMAGE:src-$src"
