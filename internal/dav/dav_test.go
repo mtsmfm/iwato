@@ -533,3 +533,31 @@ func (d *dirTransport) OpenSFTP() (io.Reader, io.WriteCloser, error) {
 	return b, b, nil
 }
 func (d *dirTransport) Close() error { return nil }
+
+// shortTransport asks for more per read than the server answers (pkg/sftp's
+// server sends at most 32 KiB), as a client tuned for another server would.
+type shortTransport struct{ Transport }
+
+func (shortTransport) ClientOptions() []sftp.ClientOption {
+	return []sftp.ClientOption{sftp.MaxPacketUnchecked(64 << 10)}
+}
+
+func TestGetPastShortReads(t *testing.T) {
+	mem := NewMemServer()
+	data := make([]byte, 100000)
+	for i := range data {
+		data[i] = byte(i * 13)
+	}
+	must(t, mem.WriteFile("f.bin", data))
+	p := NewPool(func(context.Context, string) (Transport, error) { return shortTransport{mem.Transport()}, nil })
+	defer p.CloseAll()
+	f, err := newFS(p, "dev").OpenFile(context.Background(), "/f.bin", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	got, err := io.ReadAll(f)
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("read %d of %d bytes: %v", len(got), len(data), err)
+	}
+}
