@@ -661,6 +661,11 @@
         // A change to confirm first (a provider's credential goes with it):
         // the retry carries the token; scoped: the provider's scope can say it.
         if (typeof data.confirm === 'string') { error.confirm = data.confirm.slice(0, 128); error.scoped = data.scoped === true; }
+        // The endpoints that would carry a provider's credential beyond its scope.
+        if (Array.isArray(data.beyond)) error.beyond = data.beyond.filter((b) => b && typeof b.rule === 'string').slice(0, 20).map((b) => ({
+          rule: text(b.rule, 200), host: text(b.host, 253), ports: (Array.isArray(b.ports) ? b.ports : []).filter(Number.isInteger).slice(0, 16),
+          binaries: (Array.isArray(b.binaries) ? b.binaries : []).filter((x) => typeof x === 'string').slice(0, 16).map((x) => x.slice(0, 512))
+        }));
         // The rules a recreate could not put back.
         if (Array.isArray(data.failed)) error.failed = carryFailures(data.failed);
         throw error;
@@ -4179,13 +4184,40 @@
       this.conflictBox.hidden = false;
     }
 
-    async fix(p, mode = 'remove') {
+    // Endpoints that would carry its credential beyond its scope: removed
+    // (the token says which), or attached anyway.
+    showBeyond(p, error) {
+      const beyond = error.beyond || [];
+      const list = element('ul', 'conflict-list');
+      for (const b of beyond) {
+        list.append(element('li', '', t('card.providers.beyond', { rule: b.rule, where: b.host + ':' + b.ports.join(',') }) + (b.binaries.length ? t('card.providers.conflict.binaries', { binaries: b.binaries.join(', ') }) : '')));
+      }
+      const choice = element('div', 'login-form');
+      choice.append(
+        button('button-start', t('card.providers.fix.remove'), () => this.fix(p, 'remove', error.confirm)),
+        button('button-disconnect', t('card.providers.fix.anyway'), () => this.change(p, true, error.confirm)),
+        button('button-subtle', t('providers.oauth.cancel'), () => { this.conflictBox.hidden = true; }));
+      this.conflictBox.replaceChildren(element('p', 'panel-meta', beyond.length ? t('card.providers.beyond.intro', { name: p.name }) : error.message), list, choice);
+      this.conflictBox.hidden = false;
+    }
+
+    // A refused attach the panel offers fixes for: shown, true.
+    showRefusal(p, error, confirm) {
+      const fixable = error.conflicts?.length || error.ambiguities?.length;
+      if (!fixable && !(error.confirm && !confirm)) return false;
+      if (fixable) this.showConflicts(p, error.conflicts || [], error.ambiguities || []);
+      else this.showBeyond(p, error);
+      this.status.textContent = t('card.providers.notYet', { name: p.name });
+      return true;
+    }
+
+    async fix(p, mode = 'remove', confirm = '') {
       const name = this.card.sandbox.name;
       if (!state.authorized || this.busy) return;
       this.conflictBox.hidden = true;
       this.status.textContent = mode === 'enforce' ? t('card.providers.enforcing') : t('card.providers.removing');
       try {
-        await api('/api/sandboxes/' + encodeURIComponent(name) + '/providers/fix', { method: 'POST', body: JSON.stringify({ provider: p.name, mode }), timeoutMs: 70000 });
+        await api('/api/sandboxes/' + encodeURIComponent(name) + '/providers/fix', { method: 'POST', body: JSON.stringify(confirm ? { provider: p.name, mode, confirm } : { provider: p.name, mode }), timeoutMs: 70000 });
       } catch (error) {
         this.status.textContent = t(mode === 'enforce' ? 'card.providers.enforceFailed' : 'card.providers.removeFailed', { message: error.message });
         if (error.status === 401 || error.status === 403) invalidateSession();
@@ -4197,7 +4229,6 @@
     async change(p, attach, confirm = '') {
       const name = this.card.sandbox.name;
       if (!state.authorized || this.busy) return;
-      let ask = null;
       this.busy = true;
       this.restartBox.hidden = true;
       this.conflictBox.hidden = true;
@@ -4212,23 +4243,14 @@
         await refreshSandboxes();
         await this.refresh(done);
       } catch (error) {
-        if (attach && (error.conflicts?.length || error.ambiguities?.length)) {
-          this.status.textContent = t('card.providers.notYet', { name: p.name });
-          this.showConflicts(p, error.conflicts || [], error.ambiguities || []);
-          return;
-        }
-        // Rules that let its credential go beyond its scope: asked first.
-        if (attach && error.confirm && !confirm) {
-          ask = error;
-          this.status.textContent = '';
-          return;
-        }
+        try {
+          if (attach && this.showRefusal(p, error, confirm)) return;
+        } catch (_) { /* the error as it came, below */ }
         errorContent(this.status, t(attach ? 'card.providers.attachFailed' : 'card.providers.removeFailed', { message: error.message }), error.raw);
         if (error.status === 401 || error.status === 403) invalidateSession();
       } finally {
         this.busy = false;
       }
-      if (ask && await askConfirm(t('card.providers.beyondConfirm', { message: ask.message }), { ok: t('card.providers.attach'), danger: true })) await this.change(p, true, ask.confirm);
     }
 
     async restart() {

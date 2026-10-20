@@ -8,7 +8,7 @@ A provider holds a credential (a token, an API key, an OAuth grant) in OpenShell
 
 Open **Providers** in the sidebar, choose a type, give the provider a name (it cannot be changed later; for example `github-personal`) and enter the value. Each type shows which variables it sets and where the value is sent.
 
-Attach providers in the create form, or later with the sandbox menu's Providers. Attaching or detaching on a running sandbox takes effect after a restart: the sandbox shows "Restart pending" until then, and "Waiting to apply" while the sandbox picks the change up. A provider attached while a process runs reaches only processes started afterwards. When a rule of the sandbox's policy would let the provider's credential reach more than the provider allows (for example full access to `api.github.com` with GitHub's read-only scope), attaching names the rule and asks first.
+Attach providers in the create form, or later with the sandbox menu's Providers. Attaching or detaching on a running sandbox takes effect after a restart: the sandbox shows "Restart pending" until then, and "Waiting to apply" while the sandbox picks the change up. A provider attached while a process runs reaches only processes started afterwards. When a rule of the sandbox's policy would let the provider's credential reach more than the provider allows (for example full access to `api.github.com` with GitHub's read-only scope), attaching names the rule and offers to remove it from the rule or to attach anyway.
 
 Iwato's provider types:
 

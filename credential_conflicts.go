@@ -389,11 +389,14 @@ func withinProvider(e v1.PolicyNetworkEndpoint, pe []v1.PolicyNetworkEndpoint) b
 	return true
 }
 
-// BeyondScope is a rule of the policy that would let a provider's
-// credential reach more than the provider's scope.
+// BeyondScope is an endpoint of a rule of the policy that would let a
+// provider's credential reach more than the provider's scope.
 type BeyondScope struct {
-	Rule string `json:"rule"`
-	Host string `json:"host"`
+	Rule  string   `json:"rule"`
+	Host  string   `json:"host"`
+	Ports []uint32 `json:"ports"`
+	// Binaries lose the endpoint when it is removed.
+	Binaries []string `json:"binaries"`
 }
 
 // beyondScope are the endpoints of rules (not the providers') that reach
@@ -409,7 +412,11 @@ func beyondScope(rules map[string]v1.NetworkPolicyRule, p string, m *pb.Provider
 		}
 		for _, e := range rules[name].Endpoints {
 			if slices.ContainsFunc(scopes, func(sc credScope) bool { return credentialReaches(e, sc) }) && !withinProvider(e, own) {
-				out = append(out, BeyondScope{Rule: name, Host: e.Host + ":" + joinPorts(endpointPorts(e))})
+				b := BeyondScope{Rule: name, Host: e.Host, Ports: endpointPorts(e), Binaries: []string{}}
+				for _, x := range rules[name].Binaries {
+					b.Binaries = append(b.Binaries, x.Path)
+				}
+				out = append(out, b)
 			}
 		}
 	}

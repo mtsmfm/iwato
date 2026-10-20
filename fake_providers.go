@@ -42,6 +42,7 @@ func (d *Fake) seedProviders() {
 		{Name: "huggingface", Profile: "iwato-huggingface", CreatedAt: at.AddDate(0, 0, 10)},
 		{Name: "openrouter", Profile: scopedProfileID("iwato-openrouter", "openrouter"), CreatedAt: at.AddDate(0, 0, 10)},
 		{Name: "grok-subscription", Profile: grokSubscriptionProfileID, CreatedAt: at.AddDate(0, 0, 11)},
+		{Name: "runpod", Profile: scopedProfileID("iwato-runpod", "runpod"), CreatedAt: at.AddDate(0, 0, 11)},
 		// Of a profile imported with OpenShell's CLI (not Iwato's).
 		{Name: "openai", Profile: "openai", Keys: []string{"OPENAI_API_KEY"}, CreatedAt: at.AddDate(0, 0, 12)},
 	} {
@@ -277,12 +278,13 @@ func (d *Fake) ProviderProfile(_ context.Context, id string) (*pb.ProviderProfil
 }
 
 // fakeProviderScopes are the fake configuration's scopes: github-work
-// writes to one repository, openrouter is read-only (the others have no
-// scope: they use the shared built-in profiles).
+// writes to one repository, openrouter and runpod are read-only (the
+// others have no scope: they use the shared built-in profiles).
 func fakeProviderScopes() map[string]ProviderScope {
 	return map[string]ProviderScope{
 		"github-work": {Base: githubProfileID, Mode: scopeRepos, Repos: []string{"mtsmfm/iwato"}},
 		"openrouter":  {Base: "iwato-openrouter", Mode: scopeReadOnly},
+		"runpod":      {Base: "iwato-runpod", Mode: scopeReadOnly},
 	}
 }
 

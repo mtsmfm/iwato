@@ -1842,6 +1842,45 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   }
 
   {
+  // A rule that would carry the credential beyond the provider's scope
+  // (409 with a confirm token): named, not silent; removed with the token,
+  // or attached anyway with it.
+  const profiles = [{id: 'iwato-runpod', label: 'RunPod', note: '', credentials: [{name: 'api_key', label: 'k'}]}];
+  let attached = []; let beyond = true; const posts = [];
+  const handler = (path, opt) => {
+    if (opt?.method === 'POST') {
+      const body = JSON.parse(opt.body); posts.push(path.split('/').pop() + (body.mode ? ':' + body.mode : '') + (body.confirm ? ':' + body.confirm : ''));
+      if (path.endsWith('/providers/attach')) {
+        if (beyond && body.confirm !== 'tok') return response({code: 'provider_attach_beyond_scope', params: {provider: 'runpod', rules: ['gql: api.runpod.io:443']}, error: 'runpod を付けると…', confirm: 'tok',
+          beyond: [{rule: 'gql', host: 'api.runpod.io', ports: [443], binaries: ['/usr/bin/python3']}]}, 409);
+        attached = ['api']; return response({ok: true, restart: false});
+      }
+      if (path.endsWith('/providers/fix')) { beyond = false; return response({ok: true}); }
+    }
+    return response({profiles, providers: [{name: 'runpod', profile: 'iwato-runpod', keys: ['RUNPOD_API_KEY'], attached, applying: []}]});
+  };
+  const bf = await environment({fake: false, status: 'running'}); bf.setProviderHandler(handler);
+  const menuItem = (card, key) => { let found; const w = (n) => { if (n.dataset?.action === key) found = n; n.children.forEach(w); }; w(card); return found; };
+  menuItem(bf.card(), 'providers').click(); await flush();
+  const panel = bf.side('provider-panel'); const [, , , conflictBox, status, list] = panel.children;
+  list.children[0].children[1].children[1].click(); await flush();
+  assert.equal(conflictBox.hidden, false); assert.match(status.textContent, /runpod はまだ付けていません/);
+  assert.match(conflictBox.children[0].textContent, /^runpod を付けると、次の宛先の規則がその値をプロバイダーの範囲より広く届けます/);
+  assert.equal(conflictBox.children[1].children[0].textContent, '規則 gql: api.runpod.io:443 · /usr/bin/python3 はこの宛先に出られなくなります');
+  assert.deepEqual(conflictBox.children[2].children.map((b) => b.textContent), ['この宛先を規則から外して付ける', 'このまま付ける', 'やめる']);
+  conflictBox.children[2].children[0].click(); await flush();
+  assert.deepEqual(posts, ['attach', 'fix:remove:tok', 'attach'], 'removed with the token, then attached');
+  assert.equal(conflictBox.hidden, true); assert.match(status.textContent, /runpod を付けました/);
+  // Attached anyway: the token goes with the attach.
+  attached = []; beyond = true; posts.length = 0;
+  menuItem(bf.card(), 'providers').click(); await flush(); menuItem(bf.card(), 'providers').click(); await flush();
+  list.children[0].children[1].children[1].click(); await flush();
+  conflictBox.children[2].children[1].click(); await flush();
+  assert.deepEqual(posts, ['attach', 'attach:tok']); assert.match(status.textContent, /runpod を付けました/);
+  ok('a rule reaching beyond the provider\'s scope is named; removed or attached anyway with the token');
+  }
+
+  {
   // A profile as YAML: Iwato's shipped file or a gateway profile rendered, read-only, with copy; the newest request wins.
   const profiles = [{id: 'iwato-github', label: 'GitHub', note: '', credentials: [{name: 'token', label: 'トークン'}]}];
   const provs = [{name: 'github-personal', profile: 'iwato-github', keys: ['GH_TOKEN'], attached: []}, {name: 'openai', profile: 'openai', keys: ['OPENAI_API_KEY'], attached: []}];
