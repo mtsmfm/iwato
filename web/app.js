@@ -2220,6 +2220,16 @@
     }
   }
 
+  // Updating Iwato (web/update.js): the sidebar's button when there is a new build.
+  const updateUI = window.IwatoUpdate.make({ element, button, api, onAuth: () => invalidateSession(), onCheck: () => refreshSandboxes().catch(() => {}) });
+  const updateDialog = new updateUI.UpdateDialog();
+  $('update-button').addEventListener('click', () => updateDialog.open());
+  function renderUpdate(info) {
+    const next = window.IwatoUpdate.build(info);
+    $('update-button').hidden = !next;
+    if (next) bindAttribute($('update-button'), 'title', 'update.badgeTitle', { build: window.IwatoUpdate.label(next) });
+  }
+
   async function refreshSandboxes() {
     if (!state.authorized || state.disposed) return;
     if (state.refreshing) return state.refreshing;
@@ -2234,6 +2244,7 @@
         renderImages(data.images, data.engine);
         renderCreateGpu(data.gpu !== false);
         renderBuild(data.server);
+        renderUpdate(data.update);
         const names = new Set(sandboxes.map((item) => item.name));
         for (const [name, card] of cards) {
           if (!names.has(name)) { card.dispose(); cards.delete(name); }
@@ -3759,11 +3770,13 @@
   let imageSettings = null;
   let checkSettings = null;
   let sessionSettings = null;
+  let updateSettings = null;
   function openSettings() {
     if (!settingsPanel) {
       imageSettings = new ImageSettings();
       checkSettings = new CheckSettings();
-      $('settings-body').append(window.IwatoI18n.languageSection(element), checkSettings.root, imageSettings.root);
+      updateSettings = new updateUI.UpdateSection(updateDialog);
+      $('settings-body').append(window.IwatoI18n.languageSection(element), updateSettings.root, checkSettings.root, imageSettings.root);
       settingsPanel = new ingressUI.SettingsPanel($('settings-body'));
       settingsPanel.onAuth = invalidateSession;
       settingsPanel.onChange = () => { for (const card of cards.values()) if (card.root.dataset.tab === 'ports') card.ports.refresh(); };
@@ -3774,6 +3787,7 @@
       $('settings-body').append(reset.root);
     }
     $('settings-panel').hidden = false;
+    updateSettings.refresh();
     checkSettings.refresh();
     imageSettings.refresh();
     settingsPanel.refresh();

@@ -51,6 +51,12 @@ Then:
 
 The console shows only the startup lines, the sign-in URL, a one-line notice when a startup check fails (the page has the details), and warnings and errors that need you (a failed preparation, a stopped driver, port problems). Everything else (the gateway and driver output, image builds, requests) goes to `iwato.log` in the config folder (moved to `iwato.log.1` at 10 MB) and to **Log** in the sidebar. `.\iwato.exe serve -verbose` also prints it on the console.
 
+## Updating Iwato
+
+The exes and binaries from GitHub Releases check for a new build when they start and every 6 hours: the edge pre-release for a new commit, a release for a newer release. When there is one, **Update** shows in the sidebar and in **Settings**. Iwato then downloads its new program from the same release, checks it against the release's SHA-256, replaces itself and restarts on the same URL; the page reconnects by itself and you stay signed in.
+
+Sandboxes and their terminals keep running, unless the update brings a new gateway: then OpenShell restarts the running sandboxes, which ends their processes and terminals (files are kept). The confirmation lists them first. Builds you made yourself do not check.
+
 ## Command line
 
 ```

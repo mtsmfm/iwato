@@ -1364,3 +1364,8 @@ func (o *OpenShell) TerminalStarted(w Sandbox, name string) (time.Time, bool) {
 	at, ok := o.termStarted[w.Name+"/"+name]
 	return at, ok
 }
+
+// GatewayImage is the image the gateway container runs (update.go).
+func (o *OpenShell) GatewayImage(ctx context.Context) string {
+	return gateway.ContainerImage(ctx, o.gatewayCLI(), o.e.config.prefix())
+}

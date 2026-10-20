@@ -68,6 +68,12 @@ func TestEnsureContainerKeepsARunningCurrentGateway(t *testing.T) {
 	if err := ensureContainer(context.Background(), f, o, "img:1"); err != nil || len(f.calls) != 1 {
 		t.Fatal(f.calls, err)
 	}
+	// The same digest under another tag (a release's version) keeps it.
+	f.inspect["container p-gateway"] = `[{"State":{"Running":true},"Config":{"Labels":{"iwato.gateway.image":"r/g:0.1.0@sha256:ab"}}}]`
+	f.calls = nil
+	if err := ensureContainer(context.Background(), f, o, "r/g:0.2.0@sha256:ab"); err != nil || len(f.calls) != 1 {
+		t.Fatal(f.calls, err)
+	}
 	// A new image replaces it.
 	f.calls = nil
 	if err := ensureContainer(context.Background(), f, o, "img:2"); err == nil || f.calls[1] != "container remove --force p-gateway" {

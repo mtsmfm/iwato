@@ -103,7 +103,13 @@ func run(args []string) error {
 		return errors.New("session-hours must be 1-720")
 	}
 	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose}
+	// Started by an update (update_restart_*.go): the old process's port.
+	if addr := os.Getenv(restartListenEnv); addr != "" {
+		_ = os.Unsetenv(restartListenEnv)
+		*listen, opts.listenWait = addr, 30*time.Second
+	}
 	if fake == nil {
+		go removeOldExe()
 		opts.pushFile = filepath.Join(filepath.Dir(*configFile), "webpush.json")
 		opts.configPath = *configFile
 		opts.logFile = filepath.Join(filepath.Dir(*configFile), logFileName)
@@ -118,9 +124,14 @@ type serveOptions struct {
 	logFile    string
 	verbose    bool
 	sessionTTL time.Duration
+	// listenWait: retry the listen address this long (a restart).
+	listenWait time.Duration
 }
 
 func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun, addr string, opts serveOptions) error {
+	// quit ends the server as Ctrl+C does (an update's restart).
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
 	var publicHost, publicOrigin string
 	if opts.publicOrigin != "" {
 		var e error
@@ -133,7 +144,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	var early logRing
 	restore, logErr := setupLogging(os.Stderr, &early, opts.logFile, opts.verbose)
 	defer func() { restore() }()
-	ln, e := listenLocal(addr)
+	ln, e := listenLocalWait(addr, opts.listenWait)
 	if e != nil {
 		return e
 	}
@@ -199,6 +210,12 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		setUserPresetDir(filepath.Join(filepath.Dir(opts.configPath), "presets"))
 	}
 	go s.ingress.loop(ctx)
+	if fake == nil && opts.configPath != "" {
+		if s.update = newSelfUpdate(); s.update != nil {
+			s.update.restart = quit
+			go s.update.loop(ctx)
+		}
+	}
 	if eng != nil && opts.configPath != "" {
 		dir := filepath.Dir(opts.configPath)
 		s.images = &imageManager{}
@@ -274,7 +291,9 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	if preparing {
 		go s.announcePreparation(ctx, os.Stdout, time.Second)
 	}
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		shutdown, cancel := timeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -283,10 +302,16 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	// The local ingress's hosts (<port>.<sandbox>.localhost) leave the
 	// listener before the admin UI's Host check (internal/ingress/local).
 	e = h.Serve(local.Split(ln, s.ingress.take, h.ReadHeaderTimeout, h.MaxHeaderBytes))
-	if errors.Is(e, http.ErrServerClosed) {
-		return nil
+	if !errors.Is(e, http.ErrServerClosed) {
+		return e
 	}
-	return e
+	if exe := s.update.swappedExe(); exe != "" {
+		<-shutdownDone
+		ln.Close()
+		fmt.Println("Restarting Iwato for the update…")
+		return relaunch(exe, ln.Addr().String())
+	}
+	return nil
 }
 
 // loginBlock tells the owner how to log in. The single-use token is shown
