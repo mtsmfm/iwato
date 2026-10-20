@@ -48,10 +48,11 @@ func (d *DaemonSFTP) OpenSFTP() (io.Reader, io.WriteCloser, error) {
 	return p, daemonChannel{p, d}, nil
 }
 
-// ClientOptions: the server (pkg/sftp's) takes packets up to 256 KiB, the
-// exec's messages carry 64 KiB ones well.
+// ClientOptions: daemons in older images answer a read with at most 32 KiB,
+// and pkg/sftp's concurrent reads take a shorter answer than asked for as
+// the end of the file.
 func (d *DaemonSFTP) ClientOptions() []sftp.ClientOption {
-	return []sftp.ClientOption{sftp.MaxPacketUnchecked(64 << 10), sftp.UseConcurrentWrites(true)}
+	return []sftp.ClientOption{sftp.MaxPacket(32 << 10), sftp.UseConcurrentWrites(true)}
 }
 
 // Close ends every server it started.
