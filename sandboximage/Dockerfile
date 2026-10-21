@@ -53,12 +53,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends bash bash-compl
 # --- the desktop -------------------------------------------------------------
 # Selkies' native package (https://docs.selkies.io/native): a private Python
 # environment in /opt/selkies with selkies, selkies-session and its libraries.
-# 2.0.0 is the release linuxserver/docker-baseimage-selkies pins. The
+# 2.1.0 is the release linuxserver/docker-baseimage-selkies pins. The
 # package's SHA-256 per architecture is pinned below (from the GitHub release's
 # asset digests, docs/dev/development.md#bumping-pinned-versions): a mismatch,
 # or a version or architecture with no hash, fails the build.
 # SELKIES_DEB_SHA256 overrides the pinned hash (for another SELKIES_VERSION).
-ARG SELKIES_VERSION=2.0.0
+ARG SELKIES_VERSION=2.1.0
 ARG SELKIES_DEB_SHA256=
 # Mesa's d3d12 driver and VA-API for the WSL GPU; Xvfb, PulseAudio, D-Bus and
 # Xfce for the session; CJK and emoji fonts.
@@ -113,8 +113,8 @@ RUN arch="$(dpkg --print-architecture)"; \
         || { echo "desktop: cannot download the Selkies package $url (check the release's assets, then SELKIES_VERSION and this URL)" >&2; exit 1; }; \
     want="$SELKIES_DEB_SHA256"; \
     [ -n "$want" ] || case "$SELKIES_VERSION-$arch" in \
-        2.0.0-amd64) want=bbaa4d71012b9374a753b7dfddc1da07e31f34b04277fe4fb3d045f18fd88391 ;; \
-        2.0.0-arm64) want=3900f3ba805898c495829629092553cc1cf4d5a864ffc4056f57d21646ad45e4 ;; \
+        2.1.0-amd64) want=cedba7a9d8bb4d07fd2b2139a518dc2c03452e0f0254c5bb088426623e2027f3 ;; \
+        2.1.0-arm64) want=7ed77ef1ddbb17e265adb01e4190a086df93f3af2bccbe326b9dcdb268279868 ;; \
     esac; \
     sum="$(sha256sum /tmp/selkies.deb | cut -d' ' -f1)"; \
     [ -n "$want" ] || { echo "desktop: no SHA-256 pinned for selkies $SELKIES_VERSION ($arch); its SHA-256 is $sum (pin it in sandboximage/Dockerfile after checking it against the release)" >&2; exit 1; }; \
