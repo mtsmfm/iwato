@@ -159,7 +159,8 @@ type fakeTerm struct {
 	// sandbox and name identify the terminal; key its history.
 	sandbox, name, key string
 	mu                 sync.Mutex
-	cols               int // as the attached client sized it
+	cols               int           // as the attached client sized it
+	spin               chan struct{} // stops cclink's status row
 	once               sync.Once
 	done               chan struct{}
 }
@@ -173,6 +174,11 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 	case <-t.done:
 		return 0, io.ErrClosedPipe
 	default:
+	}
+	if t.spin != nil {
+		close(t.spin)
+		t.spin = nil
+		t.output(fmt.Sprintf("\x1b[4B\x1b[%dG", len(t.id)+4))
 	}
 	// Mouse reports (SGR, after the "mouse" command enables them) are shown
 	// instead of typed, to check wheel/touch scrolling like tmux would get.
@@ -194,7 +200,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, url, framed, osc8, logo, lines, colors, diff, mouse, clear, exit\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, clear, exit\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -238,6 +244,31 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 					rest = rest[n:]
 				}
 				response = strings.TrimSuffix(b.String(), "\r\n")
+			case line == "cclink":
+				// Claude Code at work: Japanese, then a URL as an OSC 8
+				// hyperlink in two SGR runs, inside a frame (the next row the
+				// same URL as plain text), a status row redrawn until the next
+				// key, and the cursor parked on the first URL.
+				const u = "https://example.com/iwato/claude"
+				link := "\x1b]8;;" + u + "\x07\x1b[38;5;153m" + u[:19] + "\x1b[4m" + u[19:] + "\x1b[24;39m\x1b]8;;\x07"
+				t.output("\r\n╭──────────────────────────────────────────────╮\r\n│ 詳細は " + link + " を見てください │\r\n│ 参照: \x1b[38;5;153m" + u[:19] + "\x1b[1m" + u[19:] + "\x1b[0m        │\r\n╰──────────────────────────────────────────────╯\r\n\r\n" + t.id + " $ \x1b[4A\x1b[20G")
+				stop := make(chan struct{})
+				t.spin = stop
+				go func() {
+					tick := time.NewTicker(40 * time.Millisecond)
+					defer tick.Stop()
+					for i := 0; ; i++ {
+						select {
+						case <-stop:
+							return
+						case <-t.done:
+							return
+						case <-tick.C:
+							t.output(fmt.Sprintf("\x1b7\x1b[3B\r\x1b[38;5;174m%c\x1b[39m 考え中… %d\x1b8", []rune("✻✽✶✳")[i%4], i))
+						}
+					}
+				}()
+				return len(b), nil
 			case line == "framed":
 				// A URL that an application wraps itself inside a frame, at
 				// the terminal's edge (as Claude Code does).
