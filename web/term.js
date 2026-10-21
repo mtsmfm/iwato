@@ -285,6 +285,7 @@
     // The size that fits the host.
     fit() {
       this.remeasure();
+      this.schedule();
       const width = this.root.clientWidth;
       const height = this.root.clientHeight;
       return { cols: Math.max(2, Math.floor(width / this.cellW)), rows: Math.max(2, Math.floor(height / this.cellH)) };
@@ -621,6 +622,9 @@
       this.updateMore();
       if (this.alt || h.requested !== -1) return;
       const view = this.root.getBoundingClientRect();
+      // Hidden (display:none), every gap would look in view: fit fetches
+      // once shown.
+      if (!view.height) return;
       const margin = view.height;
       for (const gap of this.histEl.querySelectorAll(':scope > .iw-gap')) {
         const rect = gap.getBoundingClientRect();
