@@ -143,7 +143,7 @@ func TestSandboxImageHasTheDesktopAndEndsAsDev(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^FROM ubuntu:24\.04@sha256:[0-9a-f]{64}$`).MatchString(text) {
 		t.Error("the base image must be pinned by digest")
 	}
-	if !regexp.MustCompile(`2\.0\.0-amd64\) want=[0-9a-f]{64} ;;`).MatchString(text) || !regexp.MustCompile(`2\.0\.0-arm64\) want=[0-9a-f]{64} ;;`).MatchString(text) {
+	if !regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+-amd64\) want=[0-9a-f]{64} ;;`).MatchString(text) || !regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+-arm64\) want=[0-9a-f]{64} ;;`).MatchString(text) {
 		t.Error("the Selkies package's SHA-256 must be pinned per architecture")
 	}
 	if _, err := imageFiles.ReadFile("sandboximage/Dockerfile.desktop"); err == nil {
