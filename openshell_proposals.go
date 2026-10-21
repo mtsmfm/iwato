@@ -373,7 +373,7 @@ func (s ProposalScope) Validate() error {
 
 // validateRules accepts up to 16 rules with a known method and an absolute
 // path (or OpenShell's "**") without spaces or control characters. The 16 is
-// Iwato's own limit: OpenShell 0.1.4 sets none per endpoint (only the policy's
+// Iwato's own limit: OpenShell 0.1.5 sets none per endpoint (only the policy's
 // size, 256 KiB).
 func validateRules(rules []ProposalRule) error {
 	if len(rules) > 16 {

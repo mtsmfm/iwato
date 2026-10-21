@@ -38,9 +38,9 @@ import (
 // tag alone is found by it too). scripts/check-pins.sh checks the digests
 // against the registry; docs/dev/development.md#bumping-pinned-versions.
 const (
-	OpenShellVersion       = "0.1.4"
-	supervisorImageDigest  = "sha256:aa681d8264af6ee860e38349ed3c76609a51778eb6d0f02743df03787b80a290"
-	sandboxImageDigest     = "sha256:ca00c094aeaa60681b8196cda18ab3c5dd5f7d782d4c36798256427b67599070"
+	OpenShellVersion       = "0.1.5"
+	supervisorImageDigest  = "sha256:fabcd01f656e9d23df4386f82e80b4f48b90f3452d7d5c58889007643a069161"
+	sandboxImageDigest     = "sha256:e9adf9ecde328122414ad2ee8c6fc5d5b389e4cf168daf4357c46f5a77d55851"
 	DefaultSupervisorImage = "ghcr.io/nvidia/openshell/supervisor:" + OpenShellVersion + "@" + supervisorImageDigest
 	DefaultSandboxImage    = "ghcr.io/nvidia/openshell/sandbox:" + OpenShellVersion + "@" + sandboxImageDigest
 )
@@ -48,8 +48,9 @@ const (
 const (
 	driverName    = "wslc"
 	driverVersion = "0.1.0"
-	// contractCapability is the only compute capability of OpenShell v0.1.4;
-	// the gateway requires it from every compute driver.
+	// contractCapability is the only compute capability the gateway
+	// requires; the optional ones (launch-authentication, isolation-backend)
+	// are not declared.
 	contractCapability = "openshell.compute.contract"
 
 	labelManagedBy = "openshell.ai/managed-by"
@@ -73,7 +74,7 @@ const (
 	supervisorExitGrace = time.Second
 	// The sandbox answers SIGTERM by killing the workload at once
 	// (BoundaryRuntime::deactivate), so a longer grace buys the workload
-	// nothing. If its supervisor is gone without ending it, v0.1.4 (as
+	// nothing. If its supervisor is gone without ending it, v0.1.5 (as
 	// v0.1.2) can hang after SIGTERM until killed (docs/dev/openshell.md);
 	// a short grace bounds that.
 	stopTimeoutSec = 2
@@ -248,6 +249,8 @@ func validate(sb *computev1.DriverSandbox) error {
 	switch {
 	case spec == nil || tmpl == nil:
 		return status.Error(codes.InvalidArgument, "sandbox spec and template are required")
+	case spec.GetIsolationBackend() != nil:
+		return status.Error(codes.FailedPrecondition, "external isolation backends are not supported")
 	case tmpl.GetAgentSocketPath() != "":
 		return status.Error(codes.FailedPrecondition, "agent_socket_path is not supported")
 	case tmpl.GetPlatformConfig() != nil && len(tmpl.GetPlatformConfig().GetFields()) > 0:
@@ -1380,6 +1383,9 @@ func (d *driver) StopSandbox(ctx context.Context, r *computev1.StopSandboxReques
 }
 
 func (d *driver) StartSandbox(ctx context.Context, r *computev1.StartSandboxRequest) (*computev1.StartSandboxResponse, error) {
+	if r.GetIsolationBackend() != nil {
+		return nil, status.Error(codes.FailedPrecondition, "external isolation backends are not supported")
+	}
 	c, err := d.find(ctx, r.GetSandboxId(), r.GetName())
 	if err != nil {
 		return nil, err

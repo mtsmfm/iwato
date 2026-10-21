@@ -30,9 +30,9 @@ func mainProcessSpec(spec *computev1.DriverSandboxSpec) []byte {
 func base64url(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 // rotate gives a stopped workload a new session before it starts again:
-// new boundary TLS, the bootstrap's session fields and keys, the
-// descriptor's session and trust anchor, and the supervisor's credentials
-// (refresh_docker_boundary_authentication).
+// new boundary TLS, the generation and its evidence, the bootstrap's
+// session fields and keys, the descriptor's session and trust anchor, and
+// the supervisor's credentials (refresh_docker_boundary_authentication).
 func (d *driver) rotate(ctx context.Context, c *containerInfo, encoded []byte) error {
 	auth, err := decodeLaunchAuth(encoded)
 	if err != nil {
@@ -54,8 +54,24 @@ func (d *driver) rotate(ctx context.Context, c *containerInfo, encoded []byte) e
 	if err != nil {
 		return err
 	}
+	// Each start is a new generation, to which both files and their
+	// evidence are bound again.
+	key := evidenceKey
+	if _, ok := bootstrap[legacyEvidenceKey]; ok {
+		key = legacyEvidenceKey
+	}
+	claims, _ := bootstrap["resource_claims"].(map[string]any)
+	cid, _ := claims[claimContainerID].(string)
+	if cid == "" {
+		cid = c.ID
+	}
+	evidence, err := wslcEvidence(auth.generation(), cid, key == legacyEvidenceKey)
+	if err != nil {
+		return err
+	}
+	bootstrap[key], descriptor[key] = evidence, evidence
+	bootstrap["generation"], descriptor["generation"] = auth.generation(), auth.generation()
 	bootstrap["session_id"] = auth.session.SessionID
-	bootstrap["generation"] = auth.generation()
 	bootstrap["session_rotation"] = auth.session.SessionRotation
 	bootstrap["auth_epoch"] = auth.session.AuthEpoch
 	bootstrap["gateway_id"] = auth.GatewayID

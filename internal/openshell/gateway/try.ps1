@@ -4,9 +4,9 @@
 #   powershell -ExecutionPolicy Bypass -File .\try.ps1
 # Afterwards: wslc container remove --force openshell-gateway, and close the
 # minimized driver window. Check the output and driver.log.
-# -Release main tries OpenShell's rolling build of main instead of 0.1.4
+# -Release main tries OpenShell's rolling build of main instead of 0.1.5
 # (its gateway, CLI, sandbox and supervisor; the state volume is separate).
-param([int]$DriverPort = 17671, [ValidateSet("0.1.4", "main")][string]$Release = "0.1.4")
+param([int]$DriverPort = 17671, [ValidateSet("0.1.5", "main")][string]$Release = "0.1.5")
 $ErrorActionPreference = "Continue"
 # Pass the JSON quotes below the same way on Windows PowerShell and PowerShell 7.
 $PSNativeCommandArgumentPassing = "Legacy"
@@ -24,7 +24,7 @@ if ($Release -eq "main") {
 "== network and state volume"
 wslc network create openshell 2>&1 | Out-Null
 wslc volume create $state 2>&1 | Out-Null
-"== gateway image (the first build downloads OpenShell 0.1.4)"
+"== gateway image (the first build downloads OpenShell 0.1.5)"
 wslc image build --tag $image --target gateway --build-arg "OPENSHELL_TAG=$tag" --file Dockerfile .
 if ($LASTEXITCODE -ne 0) { "image build failed"; exit 1 }
 if ($Release -eq "main") {

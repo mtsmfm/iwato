@@ -66,21 +66,69 @@ func TestLaunchAuthSplit(t *testing.T) {
 	}
 }
 
-// The fence digest binds the evidence to the generation like
-// OuterFenceGuarantees::from_enforcement_evidence.
-func TestOuterFenceDigest(t *testing.T) {
-	f, err := wslcOuterFence("gen-1", "cid")
+// The digest binds the evidence to the generation like
+// ProvisioningEvidence::from_enforcement_evidence.
+func TestEvidenceDigest(t *testing.T) {
+	e, err := wslcEvidence("gen-1", "cid", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var n [8]byte
 	binary.BigEndian.PutUint64(n[:], 5)
 	sum := sha256.Sum256(append(append(n[:], "gen-1"...), `{"container_id":"cid","network_mode":"none","unexpected_networks":[]}`...))
-	if f.EvidenceDigest != hex.EncodeToString(sum[:]) || len(f.Established) != 4 {
-		t.Fatalf("%+v", f)
+	if e.EvidenceDigest != hex.EncodeToString(sum[:]) || e.Established != nil {
+		t.Fatalf("%+v", e)
 	}
-	if _, err := wslcOuterFence("", "cid"); err == nil {
+	if legacy, _ := wslcEvidence("gen-1", "cid", true); legacy.EvidenceDigest != e.EvidenceDigest || len(legacy.Established) != 4 {
+		t.Fatalf("%+v", legacy)
+	}
+	if _, err := wslcEvidence("", "cid", false); err == nil {
 		t.Fatal("empty generation accepted")
+	}
+}
+
+// Each start is a new generation (OpenShell v0.1.5): rotate binds both
+// files and their evidence to it, under the key the sandbox's runtime reads.
+func TestRotateRebindsTheGeneration(t *testing.T) {
+	a, err := decodeLaunchAuth(launchAuthJSON(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := buildBoundary("sb-1", a, "cid", "sha256:img", identity{UID: 1000, GID: 1000, SupplementaryGIDs: []uint32{}, Source: "image"}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := bytes.Replace(launchAuthJSON(t), []byte(`"gen-1"`), []byte(`"gen-2"`), 1)
+	for _, key := range []string{evidenceKey, legacyEvidenceKey} {
+		boot, desc := f.Bootstrap, f.Descriptor
+		if key == legacyEvidenceKey {
+			boot = bytes.Replace(boot, []byte(`"`+evidenceKey+`"`), []byte(`"`+key+`"`), 1)
+			desc = bytes.Replace(desc, []byte(`"`+evidenceKey+`"`), []byte(`"`+key+`"`), 1)
+		}
+		d := newDriver(Config{StateDir: t.TempDir()}, okRunner{})
+		if err := d.writeState("sb-1", map[string][]byte{"boundary-bootstrap.json": boot, "runtime-descriptor.json": desc, "identity": []byte("1000:1000")}); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.rotate(context.Background(), &containerInfo{ID: "cid", Labels: map[string]string{labelID: "sb-1"}}, next); err != nil {
+			t.Fatal(err)
+		}
+		st, _ := d.readState("sb-1", "boundary-bootstrap.json", "runtime-descriptor.json")
+		want, _ := wslcEvidence("gen-2", "cid", key == legacyEvidenceKey)
+		other := legacyEvidenceKey
+		if key == legacyEvidenceKey {
+			other = evidenceKey
+		}
+		for _, file := range []string{"boundary-bootstrap.json", "runtime-descriptor.json"} {
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(st[file], &m); err != nil {
+				t.Fatal(err)
+			}
+			var got provisioningEvidence
+			_ = json.Unmarshal(m[key], &got)
+			if string(m["generation"]) != `"gen-2"` || got.Generation != want.Generation || got.EvidenceDigest != want.EvidenceDigest || len(got.Established) != len(want.Established) || m[other] != nil {
+				t.Errorf("%s %s: %s", key, file, st[file])
+			}
+		}
 	}
 }
 

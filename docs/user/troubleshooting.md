@@ -28,6 +28,7 @@ Start with the settings' Startup checks (WSLc or the engine, and the configurati
 
 ## Terminals and files
 
+- **On macOS or Linux, a sandbox does not start after updating Iwato**: the Docker driver of OpenShell 0.1.5 cannot start sandboxes created with an earlier OpenShell. Recreate the sandbox; the home is kept ([sandboxes](sandboxes.md#recreate))
 - **A terminal does not come back after updating Iwato**: sandboxes made from an image without Iwato's daemon end extra terminals when Iwato exits. Recreate the sandbox with the standard image ([sandboxes](sandboxes.md#recreate))
 - **The files or editor show `/sandbox` instead of the home ("Opens the working directory (/sandbox).")**: the sandbox was made from an image without Iwato's daemon, or one whose daemon is older than Iwato; recreate it with the standard image
 - **A broken terminal screen**: turn on terminal recordings and replay them ([terminals](terminals.md#terminal-recordings))

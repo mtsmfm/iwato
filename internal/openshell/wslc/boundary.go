@@ -129,23 +129,30 @@ type identity struct {
 	ResourceDigest    string   `json:"resource_digest"`
 }
 
-type outerFence struct {
+// provisioningEvidence is ProvisioningEvidence. A sandbox created before
+// OpenShell v0.1.5 keeps that version's runtime, which reads it as
+// outer_fence with the four guarantees (OuterFenceGuarantees).
+type provisioningEvidence struct {
 	Generation     string   `json:"generation"`
-	Established    []string `json:"established"`
+	Established    []string `json:"established,omitempty"`
 	EvidenceDigest string   `json:"evidence_digest"`
 }
 
-// wslcOuterFence projects the workload's `--network none` (checked by
-// inspect) into the four guarantees the supervisor requires, binding the
-// evidence to the generation like OuterFenceGuarantees::from_enforcement_evidence.
-func wslcOuterFence(generation, containerID string) (outerFence, error) {
+const (
+	evidenceKey       = "provisioning_evidence"
+	legacyEvidenceKey = "outer_fence"
+)
+
+// wslcEvidence binds the workload's `--network none` (checked by inspect)
+// to the generation like ProvisioningEvidence::from_enforcement_evidence.
+func wslcEvidence(generation, containerID string, legacy bool) (provisioningEvidence, error) {
 	evidence, err := json.Marshal(struct {
 		ContainerID        string   `json:"container_id"`
 		NetworkMode        string   `json:"network_mode"`
 		UnexpectedNetworks []string `json:"unexpected_networks"`
 	}{containerID, "none", []string{}})
 	if err != nil || generation == "" || containerID == "" {
-		return outerFence{}, errors.New("outer fence evidence is incomplete")
+		return provisioningEvidence{}, errors.New("provisioning evidence is incomplete")
 	}
 	var n [8]byte
 	binary.BigEndian.PutUint64(n[:], uint64(len(generation)))
@@ -153,11 +160,11 @@ func wslcOuterFence(generation, containerID string) (outerFence, error) {
 	h.Write(n[:])
 	h.Write([]byte(generation))
 	h.Write(evidence)
-	return outerFence{
-		Generation:     generation,
-		Established:    []string{"default_deny_egress", "no_unmanaged_egress_path", "revocation_verified", "controller_loss_fails_closed"},
-		EvidenceDigest: hex.EncodeToString(h.Sum(nil)),
-	}, nil
+	e := provisioningEvidence{Generation: generation, EvidenceDigest: hex.EncodeToString(h.Sum(nil))}
+	if legacy {
+		e.Established = []string{"default_deny_egress", "no_unmanaged_egress_path", "revocation_verified", "controller_loss_fails_closed"}
+	}
+	return e, nil
 }
 
 // sandboxTLS is the per-session server identity of the Sandbox Protocol:
@@ -228,7 +235,7 @@ func buildBoundary(sandboxID string, auth *launchAuth, containerID, imageID stri
 		return boundaryFiles{}, err
 	}
 	gen := auth.generation()
-	fence, err := wslcOuterFence(gen, containerID)
+	evidence, err := wslcEvidence(gen, containerID, false)
 	if err != nil {
 		return boundaryFiles{}, err
 	}
@@ -256,7 +263,7 @@ func buildBoundary(sandboxID string, auth *launchAuth, containerID, imageID stri
 		"resource_claims":      claims,
 		"resource_claim_files": map[string]string{},
 		"workload_identity":    id,
-		"outer_fence":          fence,
+		evidenceKey:            evidence,
 		"child_env":            childEnv,
 	})
 	if err != nil {
@@ -271,7 +278,7 @@ func buildBoundary(sandboxID string, auth *launchAuth, containerID, imageID stri
 		"tls":               map[string]string{"server_name": tls.ServerName, "trust_anchor_pem": tls.TrustAnchorPEM},
 		"host_gateway_ip":   nil,
 		"resource_claims":   claims,
-		"outer_fence":       fence,
+		evidenceKey:         evidence,
 	})
 	if err != nil {
 		return boundaryFiles{}, err

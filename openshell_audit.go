@@ -44,10 +44,11 @@ const maxObserved = 50
 
 // l7Request matches the shorthand of the OCSF HTTP event the sandbox pushes
 // for every L7 decision (openshell-ocsf format_shorthand). The L7 relay
-// (CONNECT tunnels, l7/relay.rs build_l7_request_event) names no process
-// and always writes http with the port:
+// (CONNECT tunnels, l7/relay.rs build_l7_request_event) names no process;
+// it writes https without the default port for a TLS-terminated request
+// (before v0.1.5: http with the port):
 //
-//	HTTP:GET [MED] DENIED GET http://api.github.com:443/repos/o/r [policy:gh engine:l7] [reason:L7_REQUEST deny GET api.github.com:443/repos/o/r reason=GET /repos/o/r not permitted by policy]
+//	HTTP:GET [MED] DENIED GET https://api.github.com/repos/o/r [policy:gh engine:l7] [reason:L7_REQUEST deny GET api.github.com:443/repos/o/r reason=GET /repos/o/r not permitted by policy]
 //
 // the forward proxy (plain HTTP, proxy.rs FORWARD_L7) names it:
 //

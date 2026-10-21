@@ -1,4 +1,4 @@
-<!-- From NVIDIA OpenShell v0.1.4 (crates/openshell-supervisor-process/src/skills/policy_advisor.md), Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES, Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0). Modified by Iwato: this comment and the section "Iwato additions" at the end were added. -->
+<!-- From NVIDIA OpenShell v0.1.5 (crates/openshell-supervisor-process/src/skills/policy_advisor.md), Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES, Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0). Modified by Iwato: this comment and the section "Iwato additions" at the end were added. -->
 # OpenShell Policy Advisor
 
 Use this when OpenShell blocks a network request and the response or logs say
@@ -272,6 +272,6 @@ behavior:
 
 - `/var/log/openshell.YYYY-MM-DD.log` — shorthand log of sandbox activity.
   This is what `/v1/denials` reads from.
-- `/var/log/openshell-ocsf.YYYY-MM-DD.log` — full OCSF JSON events, only
+- `/var/log/openshell-ocsf.YYYY-MM-DD.jsonl` — full OCSF JSON events, only
   written when the `ocsf_json_enabled` setting is on. Not used by
   `/v1/denials`; useful for SIEM ingestion.
