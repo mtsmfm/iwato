@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+
 	"iwato/internal/openshell/client"
 )
 
@@ -34,16 +36,19 @@ import (
 const termEnvPath = ".config/iwato/env"
 
 // termEnvContent is the file: grok's GROK_AUTH_PROVIDER_COMMAND when the
-// xAI subscription provider gives XAI_OAUTH_TOKEN, and with a Claude
-// sign-in provider (claudeSignIn) its scopes, as both Claude providers
-// give CLAUDE_CODE_OAUTH_TOKEN.
-func termEnvContent(claudeSignIn bool) string {
+// xAI subscription provider gives XAI_OAUTH_TOKEN, with a Claude sign-in
+// provider (claudeSignIn) its scopes, as both Claude providers give
+// CLAUDE_CODE_OAUTH_TOKEN, and TZ for a zone other than UTC.
+func termEnvContent(claudeSignIn bool, zone string) string {
 	s := "# Written by Iwato; edits here are lost.\n" +
 		"# Set your own values in ~/.bashrc (read later).\n" +
 		termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand) +
 		// Claude Code scrolls 3 lines per wheel report only in the terminals it
 		// knows (VS Code, Windows Terminal); 1 elsewhere.
 		termEnvDefault("CLAUDE_CODE_SCROLL_SPEED", "3")
+	if zone != "" && zone != utcZone {
+		s += termEnvDefault("TZ", zone)
+	}
 	if claudeSignIn {
 		s += termEnvIf(claudeOAuthCredentialKey, "CLAUDE_CODE_OAUTH_SCOPES", claudeCodeScopes)
 	}
@@ -125,7 +130,10 @@ func (o *OpenShell) writeTermEnv(ctx context.Context, name string) {
 	if err != nil {
 		log.Printf("terminal env %s: %v", name, english(err))
 	}
-	content := termEnvContent(hasClaudeSignIn(list, attached[name]))
+	o.tzMu.Lock()
+	tz := o.timezone
+	o.tzMu.Unlock()
+	content := termEnvContent(hasClaudeSignIn(list, attached[name]), sandboxTimezone(tz))
 	p, err := client.Start(ctx, conn, openshellWorkspace, name, []string{"/bin/sh", "-c", termEnvScript, "iwato-term-env", content}, client.Options{Env: termEnv})
 	if err != nil {
 		log.Printf("terminal env %s: %v", name, english(err))
@@ -137,5 +145,26 @@ func (o *OpenShell) writeTermEnv(ctx context.Context, name string) {
 	code, err := p.Wait()
 	if s := strings.TrimSpace(string(out)); s != "" || code != 0 || err != nil {
 		log.Printf("terminal env %s: exit %d %v %s", name, code, english(err), s)
+	}
+}
+
+// SetTimezone changes the sandboxes' time zone setting (Config.Timezone).
+func (o *OpenShell) SetTimezone(setting string) {
+	o.tzMu.Lock()
+	o.timezone = setting
+	o.tzMu.Unlock()
+}
+
+// RewriteTermEnv writes the file again in those of names that run.
+func (o *OpenShell) RewriteTermEnv(ctx context.Context, names []string) {
+	api, err := o.sandboxes(ctx)
+	if err != nil {
+		log.Printf("terminal env: %v", english(err))
+		return
+	}
+	for _, name := range names {
+		if sb, err := api.Get(ctx, openshellWorkspace, name); err == nil && sb.Status.Phase == v1.SandboxReady {
+			o.writeTermEnv(ctx, name)
+		}
 	}
 }

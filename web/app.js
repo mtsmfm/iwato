@@ -3770,6 +3770,68 @@
     }
   }
 
+  // The sandboxes' time zone (/api/timezone): "" follows this PC's.
+  class TimezoneSettings {
+    constructor() {
+      this.root = element('div', 'timezone-settings');
+      this.title = element('h4', 'files-head');
+      this.select = element('select', 'text-input timezone-select');
+      this.select.id = 'timezone-select';
+      this.status = element('p', 'panel-meta');
+      this.status.setAttribute('role', 'status');
+      this.select.addEventListener('change', () => this.save());
+      this.root.append(this.title, this.select, this.status);
+      this.data = { timezone: '', host: '' };
+    }
+
+    async refresh() {
+      try {
+        const d = await api('/api/timezone');
+        this.data = { timezone: text(d?.timezone, 64), host: text(d?.host, 64) };
+        this.render();
+      } catch (error) {
+        this.status.textContent = error.message;
+        if (error.status === 401 || error.status === 403) invalidateSession();
+      }
+    }
+
+    render() {
+      bind(this.title, 'settings.timezone.title');
+      this.select.setAttribute('aria-label', t('settings.timezone.title'));
+      const option = (value, label) => { const o = element('option', '', label); o.value = value; return o; };
+      let zones = [];
+      try { zones = Intl.supportedValuesOf('timeZone'); } catch (_) { /* older browsers: the specials only */ }
+      zones = zones.filter((z) => z !== 'UTC' && z !== 'Etc/UTC');
+      const current = this.data.timezone;
+      if (current && current !== 'UTC' && !zones.includes(current)) zones.unshift(current);
+      const group = element('optgroup');
+      group.label = t('settings.timezone.other');
+      group.append(...zones.map((z) => option(z, z)));
+      this.select.replaceChildren(option('', t('settings.timezone.host', { zone: this.data.host || '?' })), option('UTC', 'UTC'), group);
+      this.select.value = current;
+      if (this.saved) this.status.textContent = t('settings.timezone.saved');
+    }
+
+    async save() {
+      const timezone = this.select.value;
+      this.select.disabled = true;
+      this.status.textContent = '';
+      this.saved = false;
+      try {
+        await api('/api/timezone', { method: 'POST', body: JSON.stringify({ timezone }) });
+        this.data.timezone = timezone;
+        this.saved = true;
+        this.status.textContent = t('settings.timezone.saved');
+      } catch (error) {
+        this.status.textContent = t('settings.timezone.failed', { message: error.message });
+        this.select.value = this.data.timezone;
+        if (error.status === 401 || error.status === 403) invalidateSession();
+      } finally {
+        this.select.disabled = false;
+      }
+    }
+  }
+
   // Port exposure: the settings and the Ports tab (web/ingress.js).
   const ingressUI = window.IwatoIngress.make({ element, button, panelHeader, api, askConfirm });
   let settingsPanel = null;
@@ -3777,12 +3839,14 @@
   let checkSettings = null;
   let sessionSettings = null;
   let updateSettings = null;
+  let timezoneSettings = null;
   function openSettings() {
     if (!settingsPanel) {
       imageSettings = new ImageSettings();
       checkSettings = new CheckSettings();
       updateSettings = new updateUI.UpdateSection(updateDialog);
-      $('settings-body').append(window.IwatoI18n.languageSection(element), updateSettings.root, checkSettings.root, imageSettings.root);
+      timezoneSettings = new TimezoneSettings();
+      $('settings-body').append(window.IwatoI18n.languageSection(element), timezoneSettings.root, updateSettings.root, checkSettings.root, imageSettings.root);
       settingsPanel = new ingressUI.SettingsPanel($('settings-body'));
       settingsPanel.onAuth = invalidateSession;
       settingsPanel.onChange = () => { for (const card of cards.values()) if (card.root.dataset.tab === 'ports') card.ports.refresh(); };
@@ -3794,6 +3858,7 @@
     }
     $('settings-panel').hidden = false;
     updateSettings.refresh();
+    timezoneSettings.refresh();
     checkSettings.refresh();
     imageSettings.refresh();
     settingsPanel.refresh();
@@ -5745,6 +5810,7 @@
     renderBuild(state.build);
     if (state.lastImages !== undefined) renderImages(state.lastImages, state.lastEngine);
     checkSettings?.render();
+    timezoneSettings?.render();
     if (!$('create-panel').hidden) createHint();
     if (!$('provider-panel').hidden) refreshProviders();
     if (!$('volume-panel').hidden) renderVolumes();

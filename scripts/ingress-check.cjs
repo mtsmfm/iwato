@@ -8,7 +8,7 @@
 // image (「標準イメージを更新」) and the recreate dialog's
 // 「最新のイメージを取得してから作り直す」; the settings' language
 // (English without a reload, remembered by the browser, back to automatic);
-// the settings' startup checks; Iwato's update (the settings, the sidebar's
+// the settings' startup checks and time zone; Iwato's update (the settings, the sidebar's
 // 「更新」, the dialog naming the sandboxes that restart, the reload on the
 // new build); then the settings' 「すべて消す」
 // (everything goes, the login ends, the console's new URL logs in again);
@@ -125,6 +125,14 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const logins = settings.locator('.session-settings');
     await logins.locator('.files-key').first().waitFor();
     check((await logins.locator('.files-key').first().innerText()).includes('この端末') && await logins.getByRole('button', { name: 'ログアウト' }).count() === 1, 'the logins list this browser with its sign-out');
+    // The time zone: this PC's by default, else a zone of the list.
+    const zone = settings.locator('.timezone-settings');
+    const zoneSelect = settings.getByLabel('タイムゾーン');
+    await zone.locator('option[value=""]').waitFor({ state: 'attached' });
+    check(await zone.locator('h4').innerText() === 'タイムゾーン' && /^この PC に合わせる \(.+\)$/.test(await zone.locator('option[value=""]').textContent()) && await zoneSelect.inputValue() === '', 'the time zone follows this PC by default');
+    await zoneSelect.selectOption('Asia/Tokyo');
+    await zone.getByText('保存しました。新しく開くターミナルから使われます。').waitFor();
+    check((await page.evaluate(() => fetch('/api/timezone').then((r) => r.json()))).timezone === 'Asia/Tokyo', 'the chosen zone is saved');
     // Iwato's update: the fake's next edge build changes the gateway.
     const update = settings.locator('.update-settings');
     await update.getByText(/^新しい版: v[\d.]+ · 2222222$/).waitFor();
@@ -213,6 +221,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(await page.locator('#login-input').getAttribute('placeholder') === 'https://…/#token=… or the token', 'placeholders change too');
     check(await settings.getByLabel('Display language').inputValue() === 'en', 'the choice shows');
     check(await noSideScroll(settings.locator('.login-body')), 'the settings do not scroll sideways (English)');
+    check(await settings.locator('.timezone-settings h4').innerText() === 'Time zone' && (await settings.locator('.timezone-settings option[value=""]').textContent()).startsWith('Match this PC (') && await settings.getByLabel('Time zone').inputValue() === 'Asia/Tokyo', 'the time zone section is English and keeps the choice');
     check(await settings.locator('.check-settings h4').innerText() === 'Startup checks' && (await settings.locator('.check-settings').innerText()).includes('docker buildx is missing'), 'the startup checks are English');
     await language.scrollIntoViewIfNeeded();
     await shot('settings-language-en.png');

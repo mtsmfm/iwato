@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// The sandbox list, the ingress settings and the providers' scopes are
-// editable while serve runs; the other fields are fixed.
+// The sandbox list, the ingress settings, the providers' scopes and the
+// time zone are editable while serve runs; the other fields are fixed.
 
 func (s *Server) sandboxList() []Sandbox {
 	s.mu.Lock()
@@ -29,7 +29,7 @@ func (s *Server) lookupSandbox(name string) (Sandbox, bool) {
 }
 
 // updateConfig changes the configuration as updateSandboxes does (the
-// ingress settings and the provider scopes).
+// ingress settings, the provider scopes and the time zone).
 func (s *Server) updateConfig(change func(*Config) error) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
@@ -51,6 +51,7 @@ func (s *Server) updateConfig(change func(*Config) error) error {
 	s.mu.Lock()
 	s.config.Ingress = next.Ingress
 	s.config.ProviderScopes = next.ProviderScopes
+	s.config.Timezone = next.Timezone
 	s.mu.Unlock()
 	return nil
 }

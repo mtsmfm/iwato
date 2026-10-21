@@ -208,6 +208,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/push/", s.handlePush)
 	mux.HandleFunc("/api/presence", s.handlePresence)
 	mux.HandleFunc("/api/reset", s.handleReset)
+	mux.HandleFunc("/api/timezone", s.handleTimezone)
 	mux.HandleFunc("/ws/", s.handleWS)
 	// Turns on the page's debug option (?font) in debug builds only.
 	mux.HandleFunc("/debug.js", func(w http.ResponseWriter, r *http.Request) {
