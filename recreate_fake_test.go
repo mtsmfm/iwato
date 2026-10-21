@@ -127,3 +127,33 @@ func TestRecreateFake(t *testing.T) {
 		t.Error("the missing carried rule was not added")
 	}
 }
+
+// A recreate turns the GPU on or off (absent: kept), and refuses to turn it
+// on where the engine has none.
+func TestRecreateGPUFake(t *testing.T) {
+	s, _ := newTestServer(t)
+	d := s.rt.(*Fake)
+	cookie, csrf := login(t, s)
+	if res, b := request(t, s, "/api/sandboxes/dev/start", "POST", `{}`, cookie, csrf); res.StatusCode != 200 {
+		t.Fatalf("start: %d %s", res.StatusCode, b)
+	}
+	recreate := func(body string, want int, gpu bool) {
+		t.Helper()
+		if res, b := request(t, s, "/api/sandboxes/dev/recreate", "POST", body, cookie, csrf); res.StatusCode != want {
+			t.Fatalf("%s: %d %s", body, res.StatusCode, b)
+		}
+		if sb, _ := s.lookupSandbox("dev"); sb.GPU != gpu {
+			t.Fatalf("%s: gpu %v", body, sb.GPU)
+		}
+	}
+	d.noGPU = true
+	if res, b := request(t, s, "/api/sandboxes/dev/recreate", "POST", `{"confirm":"dev","gpu":true}`, cookie, csrf); res.StatusCode != 400 || !strings.Contains(string(b), "gpu_unavailable") {
+		t.Fatalf("gpu without one: %d %s", res.StatusCode, b)
+	}
+	d.noGPU = false
+	recreate(`{"confirm":"dev","gpu":true}`, 200, true)
+	recreate(`{"confirm":"dev"}`, 200, true)
+	// Turning it off works without a GPU.
+	d.noGPU = true
+	recreate(`{"confirm":"dev","gpu":false}`, 200, false)
+}

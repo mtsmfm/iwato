@@ -2247,7 +2247,8 @@
         $('fake-banner').hidden = !state.fake;
         state.lastImages = data.images; state.lastEngine = data.engine;
         renderImages(data.images, data.engine);
-        renderCreateGpu(data.gpu !== false);
+        state.gpu = data.gpu !== false;
+        renderCreateGpu(state.gpu);
         renderBuild(data.server);
         renderUpdate(data.update);
         const names = new Set(sandboxes.map((item) => item.name));
@@ -3953,6 +3954,10 @@
       this.pullBox.type = 'checkbox';
       this.pull.append(this.pullBox, bind(element('span'), 'recreate.pull'));
       this.pull.hidden = true;
+      this.gpu = element('label', 'scope-choice recreate-gpu');
+      this.gpuBox = element('input');
+      this.gpuBox.type = 'checkbox';
+      this.gpu.append(this.gpuBox, bind(element('span'), 'create.gpu'));
       this.form = element('form', 'login-form');
       this.input = element('input', 'text-input');
       this.input.type = 'text';
@@ -3965,12 +3970,15 @@
       this.status = element('p', 'panel-meta', '');
       this.status.setAttribute('role', 'status');
       this.closeButton = bind(button('button-subtle', '', () => { this.close(); this.card.restoreFocus(); }), 'common.close');
-      this.root.append(panelHeader({ key: 'recreate.title' }, this.closeButton), this.note, this.kept, this.lost, this.pull, this.form, this.status);
+      this.root.append(panelHeader({ key: 'recreate.title' }, this.closeButton), this.note, this.kept, this.lost, this.pull, this.gpu, this.form, this.status);
     }
 
     toggle() {
       if (this.root.hidden) {
         this.input.placeholder = t('delete.confirmPlaceholder', { name: this.card.sandbox.name });
+        // Shown without a GPU too while the sandbox has one, to turn it off.
+        this.gpuBox.checked = this.card.sandbox.gpu === true;
+        this.gpu.hidden = state.gpu === false && !this.gpuBox.checked;
         this.root.hidden = false;
         if (!touchScreen()) this.input.focus();
         api('/api/images').then((d) => { this.pull.hidden = !imageView(d).moves; }, () => {});
@@ -4014,7 +4022,7 @@
       card.update(card.sandbox);
       let failed = [];
       try {
-        const result = await api('/api/sandboxes/' + encodeURIComponent(name) + '/recreate', { method: 'POST', body: JSON.stringify({ confirm: name }), timeoutMs: 610000 });
+        const result = await api('/api/sandboxes/' + encodeURIComponent(name) + '/recreate', { method: 'POST', body: JSON.stringify(this.gpu.hidden ? { confirm: name } : { confirm: name, gpu: this.gpuBox.checked }), timeoutMs: 610000 });
         if (result.ok !== true) throw new Error(t('recreate.unknownResult'));
         failed = carryFailures(result.failed);
         this.busy = false;

@@ -124,7 +124,7 @@ func TestOpenShellRecreateE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	failed, err := s.recreateSandbox(ctx, w)
+	failed, err := s.recreateSandbox(ctx, w, w.GPU)
 	if err != nil || len(failed) > 0 {
 		t.Fatalf("recreate: %v, rules not carried over: %+v", err, failed)
 	}
