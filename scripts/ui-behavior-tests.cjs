@@ -823,7 +823,8 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   assert.deepEqual(urls('https://a.example/x、次へ'), ['https://a.example/x'], 'CJK punctuation ends it even before text');
   assert.deepEqual(urls('(see https://a.example/a_(b))'), ['https://a.example/a_(b)']);
   assert.deepEqual(urls('see https://a.example/x. or https://a.example/y! or https://a.example/z?a=1? ok'), ['https://a.example/x', 'https://a.example/y', 'https://a.example/z?a=1']);
-  assert.deepEqual(urls('https://a.example/x?'), ['https://a.example/x?'], 'a ? that starts the query stays (UTS #58)');
+  assert.deepEqual(urls('see https://a.example/x? ok https://a.example/?! https://a.example/y?a https://a.example/z?='), ['https://a.example/x', 'https://a.example/', 'https://a.example/y?a', 'https://a.example/z?='], 'a ? at the end is left out, unlike in UTS #58');
+  assert.deepEqual(urls('run `https://a.example/c` or `https://a.example/d?`.'), ['https://a.example/c', 'https://a.example/d'], 'a backtick ends it, unlike in UTS #58');
   assert.deepEqual(urls('│ https://a.example/y │'), ['https://a.example/y']);
   const linked = (rows, cols) => Array.from(wrappedLinks(rows, cols, 1), (l) => l.url);
   const fit = (t) => linked([row2(t)], [...t].length);
@@ -850,7 +851,7 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
       if (differs.has(want)) { assert.notEqual(got, want, 'expected to differ: ' + want); seen.push(want); } else assert.equal(got, want);
     }
     assert.deepEqual(seen, [...differs.keys()]); assert(checked > 300, 'test lines: ' + checked); }
-  ok('URLs end as UTS #58 says, except at CJK punctuation and box drawing; | belongs to a URL unless it is a right border');
+  ok('URLs end as UTS #58 says, except at CJK punctuation, box drawing, backticks and a trailing ?; | belongs to a URL unless it is a right border');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
   const lk = await environment({fake: false, status: 'running'}); lk.buttons()[2].click(); await flush(); lk.sockets.at(-1).open(); const lkTerm = lk.terminals.at(-1);
