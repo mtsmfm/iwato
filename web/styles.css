@@ -102,7 +102,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .iw-cursor.iw-blur{background:none;outline:1px solid #a1ddba;outline-offset:-1px;animation:none}
 .iw-cursor.iw-blink{animation:iw-blink 1.2s steps(1) infinite}
 @keyframes iw-blink{50%{opacity:0}}
-.iw-input{position:absolute;left:0;top:0;width:1px;height:var(--iw-ch);margin:0;padding:0;border:0;outline:none;resize:none;overflow:hidden;opacity:0;background:transparent;color:inherit;caret-color:transparent;font:inherit;line-height:var(--iw-ch);white-space:pre;z-index:2}
+.iw-input{position:absolute;left:0;top:0;width:1px;pointer-events:none;height:var(--iw-ch);margin:0;padding:0;border:0;outline:none;resize:none;overflow:hidden;opacity:0;background:transparent;color:inherit;caret-color:transparent;font:inherit;line-height:var(--iw-ch);white-space:pre;z-index:2}
 .iw-preedit{position:absolute;left:0;top:0;pointer-events:none;z-index:3}.iw-preedit-line{position:absolute;left:0;top:0;height:var(--iw-ch);line-height:var(--iw-ch);white-space:pre}.iw-preedit-line>span{background:#111419;text-decoration:underline}
 .iw-composing .iw-cursor{visibility:hidden}
 @media(prefers-reduced-motion:reduce){.iw-cursor.iw-blink{animation:none}}

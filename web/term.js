@@ -653,7 +653,7 @@
         el.replaceChildren();
         this.renderCells(row.cells, el, true);
       }
-      if (drawn) { this.decorateScreenLinks(); if (this.hotGroup) this.lightLink(); }
+      if (drawn) { this.decorateScreenLinks(this.dirty); if (this.hotGroup) this.lightLink(); }
       const histLines = new Set();
       for (const seg of this.urlLines) {
         const line = seg.closest?.('.iw-line') || seg;
@@ -689,7 +689,7 @@
     // terminal wrapped and rows an application wrapped itself at the edge
     // (Claude Code), also inside a frame. Every piece of one URL carries it
     // whole and lights up with the others.
-    decorateScreenLinks() {
+    decorateScreenLinks(dirty) {
       if (!window.IwatoLinks || !this.rowEls) return;
       const rows = this.grid.map((row) => {
         const cells = [];
@@ -711,10 +711,13 @@
           pieces.get(y).push({ from, to, url: link.url, group });
         }
       }
-      const touched = new Set([...pieces.keys(), ...(this.linkRows || [])]);
-      for (const y of touched) {
+      // Rows left as they were keep their elements: replacing the one under
+      // a press would lose the click.
+      const sig = new Map([...pieces].map(([y, list]) => [y, JSON.stringify(list)]));
+      const old = this.screenLinks || new Map();
+      for (const y of new Set([...pieces.keys(), ...old.keys()])) {
         const el = this.rowEls[y];
-        if (!el) continue;
+        if (!el || (!dirty.has(y) && sig.get(y) === old.get(y)?.sig)) continue;
         for (const u of [...el.querySelectorAll('.iw-url')]) u.replaceWith(...u.childNodes);
         el.normalize();
         const list = pieces.get(y);
@@ -726,7 +729,7 @@
         offset[this.grid[y].cells.length] = at;
         for (const p of list.reverse()) wrapText(el, offset[p.from], offset[p.to + 1] ?? at, p.url, p.group);
       }
-      this.linkRows = [...pieces.keys()];
+      this.screenLinks = new Map([...pieces].map(([y, list]) => [y, { list, sig: sig.get(y) }]));
     }
 
     // Draws cells into parent: runs of a style in a span, ASCII as text,
@@ -1151,9 +1154,18 @@
       };
       this.root.addEventListener('mouseover', (event) => hot(event, true));
       this.root.addEventListener('mouseout', (event) => hot(event, false));
+      // Links open on release, when it is on the link pressed: a redraw
+      // during the press replaces the elements and the browser then sends
+      // no click.
+      let pressed = null;
+      this.root.addEventListener('mousedown', (event) => { pressed = event.button === 0 ? this.linkAt(event) : null; });
+      this.root.addEventListener('mouseup', (event) => {
+        const url = pressed;
+        pressed = null;
+        if (url && event.button === 0 && this.linkAt(event) === url) this.options.onLink?.(url, event);
+      });
       this.root.addEventListener('click', (event) => {
-        const url = this.linkAt(event);
-        if (url) { this.options.onLink?.(url, event); return; }
+        if (this.linkAt(event)) return;
         if (!window.getSelection()?.toString()) this.focus();
       });
       // Selecting text leaves the focus on the terminal itself: focusing the
@@ -1170,8 +1182,20 @@
       });
     }
 
-    // The URL under a click: an OSC 8 link, or a URL in the text.
+    // The URL under the pointer: an OSC 8 link, or a URL in the text. On
+    // the screen, from the cell, whatever element is on top of it.
     linkAt(event) {
+      const rect = this.screen.getBoundingClientRect();
+      const row = Math.floor((event.clientY - rect.top) / this.cellH);
+      if (row >= 0 && row < this.rows) {
+        let col = Math.floor((event.clientX - rect.left) / this.cellW);
+        const cells = this.grid[row]?.cells;
+        if (!cells || col < 0 || col >= cells.length) return null;
+        if (cells[col].w === 0 && col > 0) col--;
+        const link = this.styles.get(cells[col].s)?.link;
+        if (link && this.links.has(link)) return this.links.get(link);
+        return this.screenLinks?.get(row)?.list.find((p) => col >= p.from && col <= p.to)?.url || null;
+      }
       // An application's hyperlink first: its row shows only part of it.
       const linked = event.target.closest?.('[data-link]');
       if (linked && this.links.has(Number(linked.dataset.link))) return this.links.get(Number(linked.dataset.link));
@@ -1193,7 +1217,7 @@
       }
       const text = block.textContent;
       for (const m of findURLs(text)) {
-        if (offset >= m.index && offset <= m.index + m.url.length) return m.url;
+        if (offset >= m.index && offset < m.index + m.url.length) return m.url;
       }
       return null;
     }

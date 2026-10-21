@@ -101,6 +101,49 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(osc8, 'an application\'s hyperlink over several rows lights up as one');
     const underlines = await card.locator('.iw-screen [data-link]').evaluateAll((els) => els.every((e) => { const cs = getComputedStyle(e); return cs.textDecorationLine.includes('underline') && cs.textDecorationColor === cs.color && [...e.querySelectorAll('.iw-url')].every((u) => getComputedStyle(u).textDecorationLine === 'none'); }));
     check(underlines, 'and every row\'s underline is lit in one color, with no second underline over it');
+    // Every cell of a URL opens it, as Claude Code prints one: after
+    // Japanese, in a frame, in two SGR runs (an OSC 8 hyperlink, then plain
+    // text), with the cursor parked on it and a status row redrawn during
+    // the press. The cells either side open nothing.
+    await page.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; });
+    await page.keyboard.type('cclink');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const grid = await card.locator('.iw-term').evaluate((t) => {
+      const r = t.querySelector('.iw-screen').getBoundingClientRect();
+      return { left: r.left, top: r.top, cw: parseFloat(t.style.getPropertyValue('--iw-cw')), ch: parseFloat(t.style.getPropertyValue('--iw-ch')), rows: [...t.querySelectorAll('.iw-screen .iw-row')].map((e) => e.textContent) };
+    });
+    const ccURL = 'https://example.com/iwato/claude';
+    for (const [what, mark] of [['an OSC 8 link', '詳細は '], ['a URL in the text', '参照: ']]) {
+      const y = grid.rows.findIndex((r) => r.includes(mark));
+      const text = grid.rows[y] || '';
+      const col = [...text.slice(0, text.indexOf('https://'))].reduce((n, c) => n + (/[\u3000-\u9fff]/.test(c) ? 2 : 1), 0);
+      const missed = [];
+      for (let k = -1; k <= ccURL.length; k++) {
+        for (const fy of [0.15, 0.5, 0.85]) {
+          await page.evaluate(() => { window.__opened = []; });
+          const x = grid.left + (col + k + 0.5) * grid.cw;
+          const at = grid.top + (y + fy) * grid.ch;
+          if (phone) await page.touchscreen.tap(x, at);
+          else {
+            await page.keyboard.down('Control');
+            await page.mouse.move(x, at);
+            await page.mouse.down();
+            await page.waitForTimeout(60);
+            await page.mouse.up();
+            await page.keyboard.up('Control');
+          }
+          await page.waitForTimeout(phone ? 350 : 10);
+          const opened = await page.evaluate(() => window.__opened);
+          const inside = k >= 0 && k < ccURL.length;
+          if (inside ? !(opened.length === 1 && opened[0] === ccURL) : opened.length) missed.push(k + '@' + fy);
+        }
+      }
+      check(y >= 0 && missed.length === 0, 'every cell of ' + what + ' opens it, and only those' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : ''));
+    }
+    await input.focus();
+    await page.keyboard.press('Control+c');
+    await page.waitForTimeout(200);
     // IME: typing the next word commits the previous one (compositionend,
     // then at once compositionstart with the new letter in the field).
     // "iwato [convert] wo [enter]" must send 岩戸を, not 岩戸wを.
