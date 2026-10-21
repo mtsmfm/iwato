@@ -1,6 +1,6 @@
 # 0017. A terminal is "done" by what its screen shows, not by the owner's doing
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-21
 
 ## Context

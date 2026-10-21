@@ -1,6 +1,6 @@
 # 0016. No helper commands in the image for agents; Iwato writes what they read
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-20
 
 ## Context

@@ -1,6 +1,6 @@
 # 0015. One-click update from GitHub Releases
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-20
 
 ## Context
