@@ -3,13 +3,13 @@
 # checksums together. mise lives in a directory dev owns, so `mise
 # self-update` works without sudo (until the sandbox is created again).
 set -eu
-MISE_VERSION=2026.9.14
-STARSHIP_VERSION=1.26.0
+MISE_VERSION=2026.10.17
+STARSHIP_VERSION=1.27.0
 case "$(uname -m)" in
-  x86_64) mt=x64; ms=ac7c8d4ac0317a1c9d82091551640a447fc25998562a32745d48c3b6e4322d9b
-          st=x86_64; ss=b7c232b0e8249d8e55a40beb79c5c43a7d370f3f9408bd215deb0170daeaadf3 ;;
-  aarch64) mt=arm64; ms=f0df26181a3c1289f4cd6ba2fcfdaf5bd784c4032bf8f4efe3d0986b1eb88b9e
-          st=aarch64; ss=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b ;;
+  x86_64) mt=x64; ms=f6e5e457103252eca6032dbc5c29bff7e0c73f1bc0f915541e7658ba360d4287
+          st=x86_64; ss=10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89 ;;
+  aarch64) mt=arm64; ms=86d4db8bb1277ce164d75c0ba12179830ab172c318598f878f8286d27978e4f2
+          st=aarch64; ss=341f5cbf24699fa0b27ec88965ad25f862ea09e15d35a543fd6ffdff1d2aa00d ;;
   *) echo "unsupported architecture" >&2; exit 1 ;;
 esac
 install -d -o dev -g dev /usr/local/lib/mise
