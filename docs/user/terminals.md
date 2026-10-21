@@ -34,7 +34,10 @@ Paste an image into a terminal (a screenshot, any paste without text) or drop on
 Turn on push notifications with **Turn on notifications** in the sidebar on each device. Iwato sends one:
 
 - for an agent's network proposal (proposals within one minute are grouped)
-- when a terminal stops changing for one minute, for example when an agent has finished. Only terminals that changed after you stopped using Iwato count; redraws while you watch do not
+- when a terminal has finished working: its screen kept changing for 20 seconds or more, then stood still for a minute (for Claude Code and Codex, when their "working" line goes away). Changes within a few seconds of your own typing, scrolling, opening or closing, clocks and spinners, and one-off redraws do not count, and nothing is sent when the screen is back to what you last saw
+- when a program rings the bell (BEL) or sends a desktop notification (OSC 9, OSC 777, OSC 99): at once, with its text (at most once a minute per terminal)
+
+Tip: in Claude Code, set `/config` → Notifications to "Terminal bell" to be notified as soon as it finishes.
 
 Like Slack, notifications are sent only when no device is using Iwato (a page that is shown and was used within the last 5 minutes). While you use it, the page title shows the number of pending approvals, and stopped terminals get a mark in the sidebar and on the terminal's tab.
 

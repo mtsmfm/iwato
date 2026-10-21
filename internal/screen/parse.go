@@ -447,10 +447,7 @@ func (t *Term) osc(data string) {
 	num, rest, _ := strings.Cut(data, ";")
 	switch num {
 	case "0", "2":
-		if len(rest) > 4096 {
-			rest = rest[:4096]
-		}
-		t.title = rest
+		t.title = capText(rest)
 	case "8":
 		// OSC 8 ; params ; URI
 		_, uri, _ := strings.Cut(rest, ";")
@@ -473,6 +470,10 @@ func (t *Term) osc(data string) {
 		if url, ok := strings.CutPrefix(rest, "open;"); ok && len(url) <= maxLinkURL {
 			t.events = append(t.events, Event{Kind: EventOpen, Text: url})
 		}
+	case "9", "777", "99":
+		if text, ok := notification(num, rest); ok {
+			t.events = append(t.events, Event{Kind: EventNotify, Text: capText(text)})
+		}
 	case "10", "11", "12":
 		if rest == "?" {
 			c := map[string]uint32{"10": t.FG, "11": t.BG, "12": t.CursorColor}[num]
@@ -490,6 +491,57 @@ func (t *Term) osc(data string) {
 			}
 		}
 	}
+}
+
+const maxTitle = 4096
+
+func capText(s string) string {
+	if len(s) > maxTitle {
+		s = strings.ToValidUTF8(s[:maxTitle], "")
+	}
+	return s
+}
+
+// notification reads a desktop notification's text: OSC 9 (iTerm2; not
+// ConEmu's numbered forms such as 9;4 progress), OSC 777 notify;title;body
+// and OSC 99 (kitty: the last chunk, without queries and closes).
+func notification(num, rest string) (string, bool) {
+	switch num {
+	case "9":
+		n, _, _ := strings.Cut(rest, ";")
+		if _, err := strconv.Atoi(n); err == nil {
+			return "", false
+		}
+		return rest, true
+	case "777":
+		kind, msg, _ := strings.Cut(rest, ";")
+		if kind != "notify" {
+			return "", false
+		}
+		title, body, _ := strings.Cut(msg, ";")
+		return strings.TrimSpace(title + "\n" + body), true
+	case "99":
+		meta, payload, _ := strings.Cut(rest, ";")
+		b64 := false
+		for _, kv := range strings.Split(meta, ":") {
+			k, v, _ := strings.Cut(kv, "=")
+			switch {
+			case k == "d" && v == "0", k == "p" && v != "title" && v != "body":
+				return "", false
+			case k == "e" && v == "1":
+				b64 = true
+			}
+		}
+		if b64 {
+			b, err := base64.StdEncoding.DecodeString(payload)
+			if err != nil {
+				return "", false
+			}
+			payload = string(b)
+		}
+		return payload, true
+	}
+	return "", false
 }
 
 func rgb(c uint32) string {

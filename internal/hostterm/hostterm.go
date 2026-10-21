@@ -118,6 +118,9 @@ func (s *Session) Err() error {
 // Screen returns the terminal's size and the text of the rows it shows.
 func (s *Session) Screen() (cols, rows int, lines []string) { return s.hub.Screen() }
 
+// Activity is the clients' last input and the program's alerts.
+func (s *Session) Activity() termsync.Activity { return s.hub.Activity() }
+
 // Attach returns a client of the session: a Terminal carrying termsync
 // messages (the client's hello first, which sizes the session: the most
 // recent client decides; a hello of 0×0 keeps the size). Closing it leaves

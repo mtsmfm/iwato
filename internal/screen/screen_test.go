@@ -179,3 +179,33 @@ func TestLinkTableBounded(t *testing.T) {
 		t.Fatalf("id %d, old id's URL %q", id, tm.Link(kept+1))
 	}
 }
+
+func TestBellsAndNotifications(t *testing.T) {
+	for _, c := range []struct {
+		in     string
+		bells  int
+		notify []string
+	}{
+		{"done\a", 1, nil},
+		{"\x1b]0;title\a\x1bP1$r\a", 0, nil},
+		{"\x1b]9;Build finished\a", 0, []string{"Build finished"}},
+		{"\x1b]9;4;1;50\x1b\\", 0, nil},
+		{"\x1b]777;notify;Claude Code;Task done\x1b\\", 0, []string{"Claude Code\nTask done"}},
+		{"\x1b]777;other;x\a", 0, nil},
+		{"\x1b]99;i=1:d=0;Title\x1b\\\x1b]99;i=1:p=body;Body\x1b\\", 0, []string{"Body"}},
+		{"\x1b]99;e=1;" + "aGk=" + "\x1b\\\x1b]99;p=?;\x1b\\", 0, []string{"hi"}},
+		{"\x1b]9;" + strings.Repeat("é", 3000) + "\a", 0, []string{strings.Repeat("é", 2048)}},
+	} {
+		tm := New(20, 2)
+		tm.Write([]byte(c.in))
+		var got []string
+		for _, e := range tm.TakeEvents() {
+			if e.Kind == EventNotify {
+				got = append(got, e.Text)
+			}
+		}
+		if tm.Bells() != c.bells || fmt.Sprint(got) != fmt.Sprint(c.notify) {
+			t.Errorf("%q: bells %d, notifications %q", c.in, tm.Bells(), got)
+		}
+	}
+}

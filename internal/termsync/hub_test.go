@@ -604,3 +604,50 @@ func TestLaggingClientEvents(t *testing.T) {
 	defer h.mu.Unlock()
 	compare(t, c.m, h.term)
 }
+
+// Client input marks the activity; bells and notifications are alerts that
+// carry the input before them, and the notifications do not reach clients.
+func TestActivity(t *testing.T) {
+	h, in, mu := newHub(20, 5)
+	defer h.Close()
+	h.Feed([]byte("\a\a"))
+	if a := h.Activity(); a.Alerts != 1 || !a.Recent[0].Input.IsZero() {
+		t.Fatalf("one bell before any input: %+v", a)
+	}
+	c := startClient(t, h, 20, 5, true)
+	c.settle(t)
+	attached := h.Activity().Input
+	if attached.IsZero() {
+		t.Fatal("attaching is no input")
+	}
+	time.Sleep(10 * time.Millisecond)
+	c.send(KindInput, []byte("x"))
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		got := in.String()
+		mu.Unlock()
+		if got == "x" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no input")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !h.Activity().Input.After(attached) {
+		t.Fatal("input not marked")
+	}
+	for i := range 5 {
+		h.Feed([]byte(fmt.Sprintf("\x1b]9;n%d\a", i)))
+	}
+	a := h.Activity()
+	if a.Alerts != 6 || len(a.Recent) != maxAlerts || a.Recent[maxAlerts-1].Text != "n4" || !a.Recent[maxAlerts-1].Input.Equal(a.Input) {
+		t.Fatalf("%+v", a)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m.clipboard != nil || c.m.opens != nil || c.err != nil {
+		t.Fatalf("a notification reached the client: %v %v %v", c.m.clipboard, c.m.opens, c.err)
+	}
+}

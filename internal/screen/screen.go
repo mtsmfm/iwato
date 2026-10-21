@@ -84,6 +84,9 @@ const (
 	// EventOpen opens the link Text (OSC 6464 "open;", sent by programs in
 	// the sandbox: iwato-browser).
 	EventOpen
+	// EventNotify is a desktop notification with the text Text (OSC 9, OSC
+	// 777 notify, OSC 99). A bell is counted instead (Bells).
+	EventNotify
 )
 
 type cursor struct {

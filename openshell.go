@@ -1275,6 +1275,7 @@ func (o *OpenShell) TerminalScreens(w Sandbox) map[string]termScreen {
 		}
 		t := termScreen{attached: s.Started()}
 		t.cols, t.rows, t.lines = s.Screen()
+		t.activity = s.Activity()
 		out[name] = t
 	}
 	return out

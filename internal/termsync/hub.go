@@ -31,7 +31,27 @@ const (
 	// (screen.maxOSC bounds one clipboard write to 768 KiB).
 	maxOpens      = 16
 	maxEventBytes = 1 << 20
+	// maxAlerts bounds the alerts a hub keeps.
+	maxAlerts = 4
 )
+
+// Alert is a bell or a desktop notification from the program.
+type Alert struct {
+	At    time.Time
+	Input time.Time // the last client input before it
+	Text  string    // a notification's text; "" for a bell
+}
+
+// Activity is who last acted on the terminal and what the program asked
+// for attention.
+type Activity struct {
+	// Input is the last client input: keys, paste, mouse, a resize, a
+	// client attaching or leaving.
+	Input time.Time
+	// Alerts counts the alerts so far; Recent are the last of them.
+	Alerts uint64
+	Recent []Alert
+}
 
 // Hub holds a session's terminal and serves its clients.
 type Hub struct {
@@ -40,6 +60,8 @@ type Hub struct {
 	clients   map[*client]struct{}
 	syncSince time.Time // when the current synchronized update began
 	closed    bool
+	activity  Activity
+	bells     int
 
 	input   func([]byte) error
 	inputMu sync.Mutex
@@ -89,10 +111,44 @@ func (h *Hub) Feed(b []byte) {
 		h.syncSince = time.Now()
 	}
 	events := h.term.TakeEvents()
+	if b := h.term.Bells(); b != h.bells {
+		h.bells = b
+		h.alert("")
+	}
+	events = slices.DeleteFunc(events, func(e screen.Event) bool {
+		if e.Kind == screen.EventNotify {
+			h.alert(e.Text)
+		}
+		return e.Kind == screen.EventNotify
+	})
 	for c := range h.clients {
 		c.queue(events)
 		c.wakeUp()
 	}
+}
+
+func (h *Hub) alert(text string) {
+	a := &h.activity
+	a.Alerts++
+	a.Recent = append(a.Recent, Alert{At: time.Now(), Input: a.Input, Text: text})
+	if len(a.Recent) > maxAlerts {
+		a.Recent = slices.Delete(a.Recent, 0, len(a.Recent)-maxAlerts)
+	}
+}
+
+func (h *Hub) touched() {
+	h.mu.Lock()
+	h.activity.Input = time.Now()
+	h.mu.Unlock()
+}
+
+// Activity returns the terminal's activity.
+func (h *Hub) Activity() Activity {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	a := h.activity
+	a.Recent = slices.Clone(a.Recent)
+	return a
 }
 
 // Screen returns the terminal's size and the text of the rows it shows
@@ -191,12 +247,14 @@ func (h *Hub) ServeHello(rw io.ReadWriteCloser, hello []byte) error {
 	}
 	h.clients[c] = struct{}{}
 	h.mu.Unlock()
+	h.touched()
 	c.wakeUp()
 	go c.send()
 	err = c.read()
 	h.mu.Lock()
 	delete(h.clients, c)
 	h.mu.Unlock()
+	h.touched()
 	c.finish()
 	<-c.sent
 	return err
@@ -290,6 +348,7 @@ func (c *client) read() error {
 		}
 		switch kind {
 		case KindInput:
+			c.h.touched()
 			if err = c.h.write(p); err != nil {
 				return err
 			}
@@ -298,6 +357,7 @@ func (c *client) read() error {
 			if !ok || !validSize(int(v[0]), int(v[1])) {
 				return errors.New("invalid resize")
 			}
+			c.h.touched()
 			if err = c.h.setSize(int(v[0]), int(v[1])); err != nil {
 				return err
 			}
