@@ -26,6 +26,7 @@ Web assets:
 - Moralerspace 2.0.0 (Neon HW Regular/Bold, terminal font), SIL Open Font License 1.1. License in `web/vendor/LICENSE-moralerspace.txt`
 - CodeMirror 6 and Lezer (the editor tab, `web/vendor/codemirror.js`; with crelt, style-mod, w3c-keyname and @marijn/find-cluster-break), MIT. Versions in `web/vendor/manifest.json`, notices in `web/vendor/LICENSE-codemirror.txt`
 - marked (the editor's Markdown preview, `web/vendor/markdown.js`), MIT. Version in `web/vendor/manifest.json`, notice in `web/vendor/LICENSE-codemirror.txt`
+- Unicode 18.0 data of UTS #58 (Link Detection): the Link_Term and Link_Bracket tables in `web/links.js` are generated from `LinkTerm.txt` and `LinkBracket.txt`, and `scripts/testdata/LinkDetectionTest.txt` is copied unchanged, from https://www.unicode.org/Public/18.0.0/linkification/. © 2026 Unicode®, Inc., Unicode License v3 (full text in `LICENSES/Unicode-3.0.txt`)
 
 The font release archive SHA-256 and the SHA-256 of each vendored file are recorded in `web/vendor/manifest.json`.
 

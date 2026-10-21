@@ -818,6 +818,39 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   assert.equal(wrappedLinks([row2('see https://a.example/x.'), row2('next')], 30, 1)[0].url, 'https://a.example/x');
   assert.equal(wrappedLinks([row2('見て https://a.example/#/ds/261?tag=ほげ=A です')], 80, 1)[0].url, 'https://a.example/#/ds/261?tag=ほげ=A', 'letters beyond ASCII');
   assert.equal(wrappedLinks([row2('「https://a.example/q?x=日本」、次')], 80, 1)[0].url, 'https://a.example/q?x=日本', 'Japanese punctuation ends it');
+  const urls = (t) => Array.from(side.win.IwatoLinks.findURLs(t), (m) => m.url);
+  assert.deepEqual(urls('https://x.example/eval?step=1500&st=1&vs=1500|0.8 x'), ['https://x.example/eval?step=1500&st=1&vs=1500|0.8']);
+  assert.deepEqual(urls('https://a.example/x、次へ'), ['https://a.example/x'], 'CJK punctuation ends it even before text');
+  assert.deepEqual(urls('(see https://a.example/a_(b))'), ['https://a.example/a_(b)']);
+  assert.deepEqual(urls('see https://a.example/x. or https://a.example/y! or https://a.example/z?a=1? ok'), ['https://a.example/x', 'https://a.example/y', 'https://a.example/z?a=1']);
+  assert.deepEqual(urls('https://a.example/x?'), ['https://a.example/x?'], 'a ? that starts the query stays (UTS #58)');
+  assert.deepEqual(urls('│ https://a.example/y │'), ['https://a.example/y']);
+  const linked = (rows, cols) => Array.from(wrappedLinks(rows, cols, 1), (l) => l.url);
+  const fit = (t) => linked([row2(t)], [...t].length);
+  assert.deepEqual(fit('| https://a.example/y|'), ['https://a.example/y'], 'a | at the right edge is a border');
+  assert.deepEqual(fit('| https://a.example/y|z |'), ['https://a.example/y|z']);
+  assert.deepEqual(linked([row2('| https://a.example/aaaaaaa |'), row2('| bbb rest                  |')], 29), ['https://a.example/aaaaaaabbb'], 'app-wrapped inside | frames');
+  assert.deepEqual(linked([row2('https://x.example/eval?vs=1500|'), row2('0.8 x', true)], 31), ['https://x.example/eval?vs=1500|0.8'], 'a | where the terminal wraps is not a border');
+  // UTS #58's LinkDetectionTest.txt: the lines with http(s):// links, and the
+  // scheme-less links given https://; emails are not detected here.
+  { const differs = new Map([
+      ['See http://.foo.example.com/αβγ on…', 'hosts are not validated'], ['See http://foo..example.com/αβγ on…', ''], ['See http://-foo.example-.com. on…', ''],
+      ['http://john.smith@example.com', 'userinfo is linked (safeURL refuses to open it)'], ['http://john.smith@example.com/foo/bar', ''], ['http://john..smith@example.com', ''], ['http://john..smith@example.com/foo/bar', ''],
+      ['Lorem ipsum ⸠https://普遍适用测试。我爱你⸡ dolor sit amet', '。 ends a URL']]);
+    let checked = 0; const seen = [];
+    for (const line of fs.readFileSync(require('node:path').join(__dirname, 'testdata', 'LinkDetectionTest.txt'), 'utf8').split('\n')) {
+      if (!line.trim() || line.startsWith('#')) continue;
+      const want = line.replace(/⸠(.*?)⸡/g, (_, u) => /^https?:\/\//.test(u) ? '⸠' + u + '⸡' : /@|^mailto:/.test(u) ? u : '⸠https://' + u + '⸡');
+      const text = want.replace(/[⸠⸡]/g, '');
+      if (!/https?:\/\//.test(text)) continue;
+      let got = '', at = 0;
+      for (const m of side.win.IwatoLinks.findURLs(text)) { got += text.slice(at, m.index) + '⸠' + m.url + '⸡'; at = m.index + m.url.length; }
+      got += text.slice(at);
+      checked++;
+      if (differs.has(want)) { assert.notEqual(got, want, 'expected to differ: ' + want); seen.push(want); } else assert.equal(got, want);
+    }
+    assert.deepEqual(seen, [...differs.keys()]); assert(checked > 300, 'test lines: ' + checked); }
+  ok('URLs end as UTS #58 says, except at CJK punctuation and box drawing; | belongs to a URL unless it is a right border');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
   const lk = await environment({fake: false, status: 'running'}); lk.buttons()[2].click(); await flush(); lk.sockets.at(-1).open(); const lkTerm = lk.terminals.at(-1);
