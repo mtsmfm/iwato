@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -17,12 +18,19 @@ import (
 // Timing of frames: a frame goes out once output has paused for quiet, or
 // at most every busy while it continues. While the program holds a
 // synchronized update (mode 2026) the frame waits for its end, up to
-// syncLimit. A client gets no new frame while inFlight frames await its ack.
+// syncLimit. A client gets no new frame while maxUnacked frames, or
+// maxUnackedBytes of them, await its ack: enough for a frame per screen
+// refresh over a round trip of about 100 ms, and few enough that a slow
+// link gets the latest screen soon.
 const (
-	quiet     = 4 * time.Millisecond
-	busy      = 16 * time.Millisecond
-	syncLimit = time.Second
-	inFlight  = 2
+	quiet           = 4 * time.Millisecond
+	busy            = 16 * time.Millisecond
+	syncLimit       = time.Second
+	maxUnacked      = 6
+	maxUnackedBytes = 64 << 10
+	// maxInputBytes bounds a client's input waiting for the program (one
+	// message more may wait while the program reads none).
+	maxInputBytes = 1 << 20
 	// maxPage bounds the history lines of one page.
 	maxPage = 1000
 	// A client's queue of events (clipboard writes and links to open) is
@@ -239,7 +247,8 @@ func (h *Hub) ServeHello(rw io.ReadWriteCloser, hello []byte) error {
 			return err
 		}
 	}
-	c := &client{h: h, rw: rw, wake: make(chan struct{}, 1), reqs: make(chan [2]uint64, 16), done: make(chan struct{}), ending: make(chan struct{}), sent: make(chan struct{})}
+	c := &client{h: h, rw: rw, wake: make(chan struct{}, 1), reqs: make(chan [2]uint64, 16), done: make(chan struct{}), ending: make(chan struct{}), sent: make(chan struct{}), written: make(chan struct{})}
+	c.inCond = sync.NewCond(&c.inMu)
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
@@ -250,13 +259,22 @@ func (h *Hub) ServeHello(rw io.ReadWriteCloser, hello []byte) error {
 	h.touched()
 	c.wakeUp()
 	go c.send()
+	go c.writeInput()
 	err = c.read()
 	h.mu.Lock()
 	delete(h.clients, c)
 	h.mu.Unlock()
 	h.touched()
+	c.inMu.Lock()
+	c.inEnd = true
+	c.inCond.Broadcast()
+	c.inMu.Unlock()
 	c.finish()
+	<-c.written
 	<-c.sent
+	if e := c.inputErr(); e != nil {
+		return e
+	}
 	return err
 }
 
@@ -273,6 +291,17 @@ type client struct {
 	endOnce sync.Once
 	acked   atomic.Uint64
 	seq     uint64
+
+	// Input and resizes wait here for writeInput, so that a program slow
+	// to read them does not hold up the acks.
+	inMu    sync.Mutex
+	inCond  *sync.Cond
+	inQueue []inputItem
+	inBytes int
+	inEnd   bool  // read returned: write what is queued, then end
+	ended   bool  // finish was called
+	inErr   error // writing failed
+	written chan struct{}
 
 	// Under h.mu:
 	events     []screen.Event
@@ -337,7 +366,79 @@ func (c *client) finish() {
 	c.once.Do(func() {
 		close(c.done)
 		c.rw.Close()
+		c.inMu.Lock()
+		c.ended = true
+		c.inCond.Broadcast()
+		c.inMu.Unlock()
 	})
+}
+
+// inputItem is input for the program, or a resize.
+type inputItem struct {
+	input      []byte
+	resize     bool
+	cols, rows int
+}
+
+// enqueue queues an item for writeInput, waiting while the queue is full.
+func (c *client) enqueue(it inputItem) error {
+	c.inMu.Lock()
+	defer c.inMu.Unlock()
+	for c.inErr == nil && !c.ended && c.inBytes > 0 && c.inBytes+len(it.input) > maxInputBytes {
+		c.inCond.Wait()
+	}
+	if c.inErr != nil {
+		return c.inErr
+	}
+	if c.ended {
+		return net.ErrClosed
+	}
+	c.inQueue = append(c.inQueue, it)
+	c.inBytes += len(it.input)
+	c.inCond.Broadcast()
+	return nil
+}
+
+func (c *client) inputErr() error {
+	c.inMu.Lock()
+	defer c.inMu.Unlock()
+	return c.inErr
+}
+
+// writeInput writes the queued items in order until read has returned and
+// the queue is empty, or a write fails (which ends the client).
+func (c *client) writeInput() {
+	defer close(c.written)
+	for {
+		c.inMu.Lock()
+		for len(c.inQueue) == 0 && !c.inEnd {
+			c.inCond.Wait()
+		}
+		if len(c.inQueue) == 0 {
+			c.inMu.Unlock()
+			return
+		}
+		it := c.inQueue[0]
+		c.inQueue = c.inQueue[1:]
+		c.inMu.Unlock()
+		var err error
+		if it.resize {
+			err = c.h.setSize(it.cols, it.rows)
+		} else {
+			err = c.h.write(it.input)
+		}
+		c.inMu.Lock()
+		c.inBytes -= len(it.input)
+		if err != nil {
+			c.inErr, c.inQueue = err, nil
+		}
+		c.inCond.Broadcast()
+		c.inMu.Unlock()
+		if err != nil {
+			c.finish()
+			return
+		}
+	}
 }
 
 func (c *client) read() error {
@@ -349,7 +450,7 @@ func (c *client) read() error {
 		switch kind {
 		case KindInput:
 			c.h.touched()
-			if err = c.h.write(p); err != nil {
+			if err = c.enqueue(inputItem{input: p}); err != nil {
 				return err
 			}
 		case KindResize:
@@ -358,7 +459,7 @@ func (c *client) read() error {
 				return errors.New("invalid resize")
 			}
 			c.h.touched()
-			if err = c.h.setSize(int(v[0]), int(v[1])); err != nil {
+			if err = c.enqueue(inputItem{resize: true, cols: int(v[0]), rows: int(v[1])}); err != nil {
 				return err
 			}
 		case KindAck:
@@ -392,6 +493,10 @@ func (c *client) send() {
 	var timeout <-chan time.Time
 	dirty := false
 	var first, last time.Time
+	// The sizes of the frames not acked yet, oldest first.
+	var unacked []int
+	var unackedSeq uint64 // the seq of unacked[0]
+	unackedBytes := 0
 	for {
 		select {
 		case <-c.done:
@@ -430,7 +535,11 @@ func (c *client) send() {
 		if syncing && now.Sub(since) < syncLimit {
 			wait = max(wait, since.Add(syncLimit).Sub(now))
 		}
-		if c.seq-c.acked.Load() >= inFlight {
+		for acked := c.acked.Load(); len(unacked) > 0 && unackedSeq <= acked; unackedSeq++ {
+			unackedBytes -= unacked[0]
+			unacked = unacked[1:]
+		}
+		if len(unacked) >= maxUnacked || unackedBytes >= maxUnackedBytes {
 			continue // an ack wakes us
 		}
 		if wait > 0 {
@@ -446,6 +555,11 @@ func (c *client) send() {
 			if WriteMessage(c.rw, KindFrame, f) != nil {
 				return
 			}
+			if len(unacked) == 0 {
+				unackedSeq = c.seq
+			}
+			unacked = append(unacked, len(f))
+			unackedBytes += len(f)
 		}
 	}
 }

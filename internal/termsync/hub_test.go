@@ -281,6 +281,8 @@ type testClient struct {
 	err  error
 	ack  bool
 	send func(kind byte, p []byte)
+	// frameBytes counts the frames' bytes; lastFrame is the last one's.
+	frameBytes, lastFrame int
 }
 
 func startClient(t *testing.T, h *Hub, cols, rows int, ack bool) *testClient {
@@ -299,6 +301,10 @@ func startClient(t *testing.T, h *Hub, cols, rows int, ack bool) *testClient {
 				c.err = e
 			}
 			c.last = time.Now()
+			if kind == KindFrame {
+				c.frameBytes += len(p)
+				c.lastFrame = len(p)
+			}
 			n, ack := c.m.frames, c.ack
 			c.mu.Unlock()
 			if kind == KindFrame && ack {
@@ -385,32 +391,96 @@ func TestHistoryPages(t *testing.T) {
 }
 
 func TestSlowClientSkipsFrames(t *testing.T) {
-	h, _, _ := newHub(40, 10)
-	defer h.Close()
-	// Without acks only the first frames go out.
-	c := startClient(t, h, 40, 10, false)
-	for i := 0; i < 200; i++ {
-		h.Feed([]byte(fmt.Sprintf("\r\x1b[Kprogress %d", i)))
-		time.Sleep(time.Millisecond)
+	rng := rand.New(rand.NewSource(1))
+	for _, tc := range []struct {
+		name       string
+		cols, rows int
+		output     func(i int) string
+	}{
+		{"small frames", 40, 10, func(i int) string { return fmt.Sprintf("\r\x1b[Kprogress %d", i) }},
+		{"large frames", 250, 80, func(int) string {
+			b := []byte("\x1b[H")
+			for range 250 * 80 {
+				b = append(b, byte('a'+rng.Intn(26)))
+			}
+			return string(b)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _ := newHub(tc.cols, tc.rows)
+			defer h.Close()
+			// Without acks only the first frames go out.
+			c := startClient(t, h, tc.cols, tc.rows, false)
+			for i := 0; i < 200; i++ {
+				h.Feed([]byte(tc.output(i)))
+				time.Sleep(time.Millisecond)
+			}
+			time.Sleep(100 * time.Millisecond)
+			c.mu.Lock()
+			frames := c.m.frames
+			if frames > maxUnacked || c.frameBytes-c.lastFrame >= maxUnackedBytes {
+				t.Fatalf("%d frames, %d bytes without acks", frames, c.frameBytes)
+			}
+			c.mu.Unlock()
+			// Acking catches up with the latest state in one frame.
+			c.send(KindAck, uvarints(uint64(frames)))
+			c.settle(t)
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if c.m.frames != frames+1 {
+				t.Fatalf("frames %d, want %d", c.m.frames, frames+1)
+			}
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			compare(t, c.m, h.term)
+		})
 	}
-	time.Sleep(100 * time.Millisecond)
+}
+
+// A program that does not read its input holds up neither the frames nor
+// the acks; the input reaches it in order once it reads.
+func TestInputDoesNotHoldAcks(t *testing.T) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var in []byte
+	h := NewHub(20, 5, func(b []byte) error {
+		<-release
+		mu.Lock()
+		in = append(in, b...)
+		mu.Unlock()
+		return nil
+	}, func(int, int) error { return nil })
+	defer h.Close()
+	c := startClient(t, h, 20, 5, true)
+	c.settle(t)
+	for _, k := range []string{"a", "b", "c"} {
+		c.send(KindInput, []byte(k))
+	}
+	for i := range 3 * maxUnacked {
+		h.Feed([]byte(fmt.Sprintf("\r%d", i)))
+		time.Sleep(20 * time.Millisecond)
+	}
+	c.settle(t)
 	c.mu.Lock()
 	frames := c.m.frames
 	c.mu.Unlock()
-	if frames > inFlight {
-		t.Fatalf("%d frames without acks", frames)
+	if frames < 2*maxUnacked {
+		t.Fatalf("%d frames while the input waits", frames)
 	}
-	// Acking catches up with the latest state in one frame.
-	c.send(KindAck, uvarints(uint64(frames)))
-	c.settle(t)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.m.frames != frames+1 {
-		t.Fatalf("frames %d, want %d", c.m.frames, frames+1)
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		got := string(in)
+		mu.Unlock()
+		if got == "abc" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("input %q", got)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	compare(t, c.m, h.term)
 }
 
 func TestRepliesGoToProgram(t *testing.T) {

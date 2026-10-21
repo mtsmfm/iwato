@@ -50,6 +50,8 @@ type Fake struct {
 	shell     *OpenShell
 	// termEnded is told when a terminal ends (autostop.go).
 	termEnded func(sandbox string)
+	// latency is added to each terminal connection's round trip.
+	latency time.Duration
 }
 
 func NewFake() *Fake {
@@ -143,7 +145,11 @@ func (d *Fake) Attach(_ context.Context, w Sandbox, ref TermRef, cols, rows int)
 	go func() {
 		t.output("\x1b[36mIWATO · FAKE\x1b[0m\r\n実際のシェルではありません。help / echo / clear を試せます。\r\n" + history + "\r\n" + w.Name + " $ ")
 	}()
-	return &fakeAttach{Conn: termsync.Wrap(t, t.Resize, cols, rows)}, nil
+	conn := termsync.Wrap(t, t.Resize, cols, rows)
+	if d.latency > 0 {
+		conn = delayed(conn, d.latency)
+	}
+	return &fakeAttach{Conn: conn}, nil
 }
 
 // fakeAttach is an attachment to a fake terminal: its own termsync hub per attach.
@@ -159,7 +165,8 @@ type fakeTerm struct {
 	// sandbox and name identify the terminal; key its history.
 	sandbox, name, key string
 	mu                 sync.Mutex
-	cols               int           // as the attached client sized it
+	cols, rows         int           // as the attached client sized it
+	app                *ccscroll     // the full-screen app running, if any
 	spin               chan struct{} // stops cclink's status row
 	once               sync.Once
 	done               chan struct{}
@@ -179,6 +186,10 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 		close(t.spin)
 		t.spin = nil
 		t.output(fmt.Sprintf("\x1b[4B\x1b[%dG", len(t.id)+4))
+	}
+	if t.app != nil {
+		t.scrollInput(b)
+		return len(b), nil
 	}
 	// Mouse reports (SGR, after the "mouse" command enables them) are shown
 	// instead of typed, to check wheel/touch scrolling like tmux would get.
@@ -200,7 +211,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, clear, exit\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, ccscroll, clear, exit\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -284,6 +295,9 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 					rest = rest[n:]
 				}
 				response = strings.TrimSuffix(b.String(), "\r\n")
+			case line == "ccscroll":
+				t.startScroll()
+				return len(b), nil
 			case line == "mouse":
 				// What tmux sends with `set -g mouse on`.
 				t.output("\x1b[?1000h\x1b[?1002h\x1b[?1006h")
@@ -321,10 +335,13 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 	}
 	return len(b), nil
 }
-func (t *fakeTerm) Resize(cols, _ int) error {
+func (t *fakeTerm) Resize(cols, rows int) error {
 	t.mu.Lock()
-	t.cols = cols
-	t.mu.Unlock()
+	defer t.mu.Unlock()
+	t.cols, t.rows = cols, rows
+	if t.app != nil {
+		t.drawScroll()
+	}
 	return nil
 }
 
