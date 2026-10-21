@@ -28,6 +28,7 @@ func init() {
 func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 	fake := f.Bool("fake", false, "fake UI backend for the browser checks: does not run commands or sandboxes")
 	engineDown := f.Bool("fake-engine-down", false, "with -fake: the engine check fails until the page checks again")
+	latency := f.Duration("fake-latency", 0, "with -fake: added to the terminals' round trip")
 	return func() (*fakeRun, error) {
 		if *engineDown && !*fake {
 			return nil, errors.New("-fake-engine-down needs -fake")
@@ -46,6 +47,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 		c.Sandboxes = []Sandbox{dev, exp}
 		c.ProviderScopes = fakeProviderScopes()
 		d := NewFake()
+		d.latency = *latency
 		d.seedVolumes(c)
 		d.seedProviders()
 		return &fakeRun{config: c, rt: d, setup: func(s *Server) {

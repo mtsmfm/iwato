@@ -1102,13 +1102,23 @@
           this.root.scrollTop += event.deltaMode === 1 ? event.deltaY * this.cellH : event.deltaY;
           return;
         }
-        carry += event.deltaMode === 1 ? event.deltaY * 40 : event.deltaY;
-        const { col, row } = this.cellAt(event.clientX, event.clientY);
-        while (Math.abs(carry) >= 40) {
-          this.sendInput(this.mouseReport(carry < 0 ? 64 : 65, col, row, false, event));
-          carry -= Math.sign(carry) * 40;
+        // One report per notch (an event of 100 px or more, or in lines),
+        // as other terminals send, and per 50 px of a trackpad's smaller
+        // steps: apps scroll a few lines per report.
+        const d = event.deltaY;
+        if (!d) return;
+        let n;
+        if (event.deltaMode !== 0 || Math.abs(d) >= 100) {
+          n = Math.sign(d) * (event.deltaMode === 0 ? Math.floor(Math.abs(d) / 100) : 1);
+          carry = 0;
+        } else {
+          if (Math.sign(carry) === -Math.sign(d)) carry = 0;
+          carry += d;
+          n = Math.trunc(carry / 50);
+          carry -= n * 50;
         }
-        if (Math.abs(event.deltaY) >= 100 || event.deltaMode === 1) carry = 0;
+        const { col, row } = this.cellAt(event.clientX, event.clientY);
+        this.sendInput(this.mouseReport(n < 0 ? 64 : 65, col, row, false, event).repeat(Math.abs(n)));
       }, { passive: false });
       // A swipe goes to an app that reads the mouse as wheel reports.
       let lastY = null;
@@ -1125,13 +1135,12 @@
         const y = event.touches[0].clientY;
         swipe += y - lastY;
         lastY = y;
-        // One report per row of finger travel: an app scrolls a few rows
-        // for each, so the content keeps up with the finger.
-        const step = Math.max(8, this.cellH);
-        while (Math.abs(swipe) >= step) {
-          this.sendInput(this.mouseReport(swipe > 0 ? 64 : 65, cell.col, cell.row, false, null));
-          swipe -= Math.sign(swipe) * step;
-        }
+        // One report per 3 rows of finger travel: apps scroll about 3
+        // lines for each, so the content keeps up with the finger.
+        const step = 3 * Math.max(8, this.cellH);
+        const n = Math.trunc(swipe / step);
+        swipe -= n * step;
+        this.sendInput(this.mouseReport(n > 0 ? 64 : 65, cell.col, cell.row, false, null).repeat(Math.abs(n)));
       }, { passive: false });
       // A click without a selection types into the terminal; links open.
       // The pieces of one wrapped URL light up together.
