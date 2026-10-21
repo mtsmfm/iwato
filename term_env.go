@@ -40,7 +40,10 @@ const termEnvPath = ".config/iwato/env"
 func termEnvContent(claudeSignIn bool) string {
 	s := "# Written by Iwato; edits here are lost.\n" +
 		"# Set your own values in ~/.bashrc (read later).\n" +
-		termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand)
+		termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand) +
+		// Claude Code scrolls 3 lines per wheel report only in the terminals it
+		// knows (VS Code, Windows Terminal); 1 elsewhere.
+		termEnvDefault("CLAUDE_CODE_SCROLL_SPEED", "3")
 	if claudeSignIn {
 		s += termEnvIf(claudeOAuthCredentialKey, "CLAUDE_CODE_OAUTH_SCOPES", claudeCodeScopes)
 	}
@@ -69,6 +72,11 @@ func hasClaudeSignIn(list []ProviderInfo, attached []string) bool {
 // set and name is not.
 func termEnvIf(cond, name, value string) string {
 	return `if [ -n "${` + cond + `-}" ] && [ -z "${` + name + `-}" ]; then export ` + name + "=" + shellQuote(value) + "; fi\n"
+}
+
+// termEnvDefault is a line that exports name=value when name is not set.
+func termEnvDefault(name, value string) string {
+	return `if [ -z "${` + name + `-}" ]; then export ` + name + "=" + shellQuote(value) + "; fi\n"
 }
 
 // shellQuote quotes s for a POSIX shell.
