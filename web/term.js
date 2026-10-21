@@ -1135,10 +1135,10 @@
         const y = event.touches[0].clientY;
         swipe += y - lastY;
         lastY = y;
-        // One report per 3 rows of finger travel: apps scroll about 3
-        // lines for each, so the content keeps up with the finger.
-        const step = 3 * Math.max(8, this.cellH);
+        // One report per row of finger travel.
+        const step = Math.max(8, this.cellH);
         const n = Math.trunc(swipe / step);
+        if (!n) return;
         swipe -= n * step;
         this.sendInput(this.mouseReport(n > 0 ? 64 : 65, cell.col, cell.row, false, null).repeat(Math.abs(n)));
       }, { passive: false });
