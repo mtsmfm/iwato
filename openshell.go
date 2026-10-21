@@ -59,6 +59,9 @@ type OpenShell struct {
 	conn   *grpc.ClientConn
 	// env is the shells' environment.
 	env map[string]string
+	// timezone is Config.Timezone, as the owner last set it.
+	tzMu     sync.Mutex
+	timezone string
 
 	termMu sync.Mutex
 	terms  map[string]map[string]*hostterm.Session // sandbox name → terminal name
@@ -114,7 +117,7 @@ type OpenShell struct {
 }
 
 func NewOpenShell(e *Engine, configDir string) *OpenShell {
-	return &OpenShell{e: e, dir: filepath.Join(configDir, "openshell"), ready: make(chan struct{}), env: termEnv, terms: map[string]map[string]*hostterm.Session{},
+	return &OpenShell{e: e, dir: filepath.Join(configDir, "openshell"), ready: make(chan struct{}), env: termEnv, timezone: e.config.Timezone, terms: map[string]map[string]*hostterm.Session{},
 		legacyPlaced: !e.docker && termbin.Binary() != nil}
 }
 

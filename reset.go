@@ -343,7 +343,7 @@ func (s *Server) resetFiles(ownerFiles bool) []resetWarn {
 	s.mu.Unlock()
 	next.Sandboxes, next.ProviderScopes = []Sandbox{}, nil
 	if ownerFiles {
-		next.Ingress, next.TermTrace = nil, false
+		next.Ingress, next.TermTrace, next.Timezone = nil, false, ""
 	}
 	if s.configPath != "" {
 		warnTo("config", nil, "could not write iwato.json", writeConfig(s.configPath, next))
@@ -351,6 +351,9 @@ func (s *Server) resetFiles(ownerFiles bool) []resetWarn {
 	s.mu.Lock()
 	s.config = next
 	s.mu.Unlock()
+	if ownerFiles {
+		s.applyTimezone("")
+	}
 	warnTo("tailscale_secret", nil, "could not delete the Tailscale secret", s.ingress.setSecret(""))
 	warnTo("secret_key", nil, "could not delete the key of the secret files", deleteSecretKey())
 	if s.push != nil {

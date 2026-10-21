@@ -48,6 +48,8 @@ type Config struct {
 	// screen later (internal/hostterm/trace.go, traceScript). The files
 	// hold whatever the terminals showed.
 	TermTrace bool `json:"termTrace,omitempty"`
+	// Timezone is the sandboxes' time zone (timezone.go): "" the host's.
+	Timezone string `json:"timezone,omitempty"`
 	// ProviderScopes are the access scopes of the providers with their own
 	// profile, by provider name (providers_scope.go).
 	ProviderScopes map[string]ProviderScope `json:"providerScopes,omitempty"`
@@ -188,6 +190,9 @@ func (c Config) Validate() error {
 	}
 	if e := c.Ingress.Validate(); e != nil {
 		return fmt.Errorf("ingress: %w", e)
+	}
+	if _, ok := normalTimezone(c.Timezone); c.Timezone != "" && !ok {
+		return errors.New("invalid timezone")
 	}
 	if e := validScopes(c.ProviderScopes); e != nil {
 		return e
