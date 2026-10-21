@@ -37,12 +37,26 @@ func work(n int, word string) []termStep {
 	return out
 }
 
-// rotating is n polls of a row that changes alone (a tip, a status word).
+// rotating is n polls of a row that changes alone (a tip, a status word)
+// every other poll.
 func rotating(n int) []termStep {
 	words := []string{"apple", "banana", "cherry", "damson"}
 	var out []termStep
 	for i := range n {
-		out = append(out, termStep{lines: screenWith("Done.", "", "tip: "+words[i%len(words)])})
+		if i%2 == 1 {
+			out = append(out, quiet(termPoll))
+			continue
+		}
+		out = append(out, termStep{lines: screenWith("Done.", "", "tip: "+words[i/2%len(words)])})
+	}
+	return out
+}
+
+// ticking is n polls of a row that changes every poll, made by f.
+func ticking(n int, f func(i int) []string) []termStep {
+	var out []termStep
+	for i := range n {
+		out = append(out, termStep{lines: f(i)})
 	}
 	return out
 }
@@ -130,9 +144,17 @@ func TestTerminalDone(t *testing.T) {
 			nil},
 		{"a timer ticking alone", steps(termStep{lines: timer("1s")}, termStep{lines: timer("6s")}, termStep{lines: timer("11s")}, termStep{lines: timer("16s")}, termStep{lines: timer("21s")}, quiet(3*time.Minute)),
 			nil},
-		{"work, then a timer ticks on", steps(work(6, "build"), termStep{lines: timer("1s")}, termStep{lines: timer("6s")}, termStep{lines: timer("11s")}, quiet(55*time.Second), termStep{lines: timer("2m")}),
-			[]string{"9:done"}},
-		{"work, then a row that changes alone", steps(work(6, "build"), rotating(30)), []string{"20:done"}},
+		{"work, then a timer ticks for a while", steps(work(6, "build"), ticking(36, func(i int) []string { return timer(fmt.Sprintf("%ds", i*5)) }), slices.Repeat([]termStep{quiet(termPoll)}, 14)),
+			[]string{"53:done"}},
+		{"work, then progress counts up, then quiet", steps(work(6, "build"), ticking(36, func(i int) []string { return screenWith("Building… " + fmt.Sprint(i+10) + "%") }), slices.Repeat([]termStep{quiet(termPoll)}, 14)),
+			[]string{"53:done"}},
+		{"work, then a spinner alone", steps(work(6, "build"), ticking(60, func(i int) []string { return screenWith("Done.", "", string("⠋⠙⠹⠸"[i%4*3:i%4*3+3])) })),
+			nil},
+		{"work, then a clock that changes once a minute", steps(work(6, "build"), ticking(37, func(i int) []string { return screenWith("Done.", "", fmt.Sprintf("12:%02d", (i+6)/12)) })),
+			[]string{"18:done"}},
+		{"a ticking burst after idle (a recap)", steps(quiet(10*time.Minute), ticking(2, func(i int) []string { return screenWith("※ recap: fixed the bug", fmt.Sprint(i)) }), quiet(3*time.Minute)),
+			nil},
+		{"work, then a row that changes alone", steps(work(6, "build"), rotating(30)), []string{"22:done"}},
 		{"a working hint holds it, its end is done", steps(
 			termStep{lines: spinner("1s")}, termStep{lines: spinner("6s")}, termStep{lines: spinner("11s")}, termStep{lines: spinner("16s")}, termStep{lines: spinner("21s")},
 			slices.Repeat([]termStep{quiet(termPoll)}, 36), termStep{lines: screenWith("Done.", "", "✻ Worked for 3m")}),
