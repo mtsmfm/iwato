@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/bits"
 	"net/url"
 	"slices"
 	"strings"
@@ -259,14 +260,16 @@ func (n *notifier) collect(ctx context.Context, w Sandbox) []PushMessage {
 	return append(out, n.watchTerms(w)...)
 }
 
-// Terminals (ADR 0017). Each poll compares a terminal's screen with the
+// Terminals (ADR 0017, 0018). Each poll compares a terminal's screen with the
 // last one, by the letters of each row (counters and spinner glyphs are no
 // change). Changes within ownerWindow after a client's input are the
 // owner's doing (a TUI redraws on a resize, a scroll, an attach). Rows that
 // change alone again and again (timers, spinners) are volatile: no change.
 // A terminal worked when it changed in workPolls polls over workSpan, and is
 // done idleAfter after its last change, or at once when an agent's working
-// hint goes away. Done is pushed unless the screen is the one the owner saw
+// hint goes away. A raw change (digits and glyphs too) in aliveTicks of the
+// last alivePolls polls makes it alive: idleAfter counts from when that
+// ticking stops. Done is pushed unless the screen is the one the owner saw
 // when they last left, volatile rows aside. A bell or a notification from
 // the program outside an input window is pushed at once, once per
 // alertEvery.
@@ -280,6 +283,9 @@ const (
 	workSpan    = 20 * time.Second
 	idleAfter   = time.Minute
 	alertEvery  = time.Minute
+	// A clock that changes once a minute stays well below this.
+	alivePolls = 4
+	aliveTicks = 3
 	// A row is volatile after volatileHits polls within volatileWindow
 	// changed it alone.
 	volatileHits   = 3
@@ -299,7 +305,10 @@ var workingHints = []string{
 
 // termWatch is what the notifier knows of one terminal.
 type termWatch struct {
-	lines              []string // at the last poll (screenKeys)
+	lines              []string  // at the last poll (screenKeys)
+	raw                []string  // at the last poll, as shown
+	ticks              uint      // a bit per poll, newest lowest: the raw screen changed
+	ticked, alive      time.Time // the last raw change; the last one while alive
 	cols, rows         int
 	seen               []string // the screen when the owner last left, or when first seen (screenKeys)
 	polled             time.Time
@@ -325,7 +334,7 @@ const (
 
 func newTermWatch(now time.Time, scr termScreen, present bool, uses uint64) *termWatch {
 	keys := screenKeys(scr.lines)
-	return &termWatch{lines: keys, seen: keys, cols: scr.cols, rows: scr.rows, polled: now,
+	return &termWatch{lines: keys, raw: scr.lines, seen: keys, cols: scr.cols, rows: scr.rows, polled: now,
 		present: present, uses: uses, attached: scr.attached, alerts: scr.activity.Alerts}
 }
 
@@ -377,8 +386,8 @@ func (t *termWatch) takeAlerts(a termsync.Activity) (bool, string) {
 
 // compare takes the screen and tells whether the terminal is done.
 func (t *termWatch) compare(now time.Time, scr termScreen, left, owner bool) bool {
-	prev := t.lines
-	t.lines = screenKeys(scr.lines)
+	prev, prevRaw := t.lines, t.raw
+	t.lines, t.raw = screenKeys(scr.lines), scr.lines
 	hinted := t.hinted
 	t.hinted = workingHint(scr.lines)
 	if left {
@@ -391,6 +400,14 @@ func (t *termWatch) compare(now time.Time, scr termScreen, left, owner bool) boo
 	if scr.cols != t.cols || scr.rows != t.rows {
 		t.cols, t.rows, t.hits = scr.cols, scr.rows, nil
 		return false
+	}
+	t.ticks <<= 1
+	if !owner && !slices.Equal(prevRaw, scr.lines) {
+		t.ticks |= 1
+		t.ticked = now
+	}
+	if bits.OnesCount(t.ticks&(1<<alivePolls-1)) >= aliveTicks {
+		t.alive = t.ticked
 	}
 	work := t.hinted && !owner
 	if !owner {
@@ -418,7 +435,7 @@ func (t *termWatch) compare(now time.Time, scr termScreen, left, owner bool) boo
 	}
 	worked := t.runPolls >= workPolls && t.lastWork.Sub(t.runStart) >= workSpan
 	gone := hinted && !owner // the working hint went away by itself
-	if !worked || t.hinted || !gone && now.Sub(t.lastWork) < idleAfter {
+	if !worked || t.hinted || !gone && (now.Sub(t.lastWork) < idleAfter || now.Sub(t.alive) < idleAfter) {
 		return false
 	}
 	t.runPolls = 0
