@@ -1192,8 +1192,8 @@
         offset += n.textContent.length;
       }
       const text = block.textContent;
-      for (const m of text.matchAll(/https?:\/\/[^\s"'<>`]+/g)) {
-        if (offset >= m.index && offset <= m.index + m[0].length) return m[0].replace(/[).,;:!?\]]+$/, '');
+      for (const m of findURLs(text)) {
+        if (offset >= m.index && offset <= m.index + m.url.length) return m.url;
       }
       return null;
     }
@@ -1248,7 +1248,7 @@
 
   // URLs in the text look like links (a click with Ctrl or ⌘, or a tap,
   // opens them: see linkAt).
-  const urlPattern = /https?:\/\/[^\s"'<>`]+/g;
+  const findURLs = (text) => window.IwatoLinks ? window.IwatoLinks.findURLs(text) : [];
   const touchOnly = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
   const urlTitle = () => touchOnly ? '' : t('term.linkTitle', { key: /Mac/.test(navigator.platform || '') ? '⌘' : 'Ctrl' });
 
@@ -1289,10 +1289,7 @@
       for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push({ n, at: text.length }); text += n.data; }
     }
     if (!text.includes('://')) return;
-    const matches = [...text.matchAll(urlPattern)].map((m) => {
-      const url = m[0].replace(/[).,;:!?\]]+$/, '');
-      return { url, start: m.index, end: m.index + url.length };
-    });
+    const matches = findURLs(text).map((m) => ({ url: m.url, start: m.index, end: m.index + m.url.length }));
     // Backwards, so that splitting a text node keeps the offsets before it.
     for (const m of matches.reverse()) {
       for (const { n, at } of [...nodes].reverse()) {
