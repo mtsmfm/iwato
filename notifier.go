@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"maps"
 	"net/url"
 	"slices"
@@ -11,11 +10,13 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"iwato/internal/termsync"
 )
 
 // notifier polls the sandboxes' proposals waiting for the owner and
 // forwards new ones an agent made as Web Push messages, and tells when a
-// terminal stopped changing (an agent finished its task: see idleAfter).
+// terminal is done (an agent finished its task: see idleAfter).
 // It pushes only while at least one device is subscribed and no page is
 // open and in use (presence.go); without subscriptions it still watches the
 // terminals, for the marks on the page (stopped).
@@ -41,15 +42,20 @@ func newNotifier(s *Server) *notifier {
 }
 
 func (n *notifier) run(ctx context.Context) {
-	t := time.NewTicker(n.interval)
+	t := time.NewTicker(termPoll)
 	defer t.Stop()
+	var read time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			proposals := n.now().Sub(read) >= n.interval
+			if proposals {
+				read = n.now()
+			}
 			if n.s.push != nil && n.s.push.Count() > 0 {
-				n.poll(ctx)
+				n.poll(ctx, proposals)
 			} else {
 				list := n.s.sandboxList()
 				for _, w := range list {
@@ -61,9 +67,20 @@ func (n *notifier) run(ctx context.Context) {
 	}
 }
 
-func (n *notifier) poll(ctx context.Context) {
+// poll pushes what is new: the terminals at every call, the proposals too
+// when asked (they are read from the gateway, less often).
+func (n *notifier) poll(ctx context.Context, proposals bool) {
 	list := n.s.sandboxList()
-	n.push(ctx, list, n.batch(n.gather(ctx, list)))
+	var messages []PushMessage
+	if proposals {
+		messages = n.gather(ctx, list)
+	} else {
+		for _, w := range list {
+			messages = append(messages, n.watchTerms(w)...)
+		}
+		n.forget(list)
+	}
+	n.push(ctx, list, n.batch(messages))
 }
 
 // batch adds the new messages to those held and returns what to push now:
@@ -242,74 +259,228 @@ func (n *notifier) collect(ctx context.Context, w Sandbox) []PushMessage {
 	return append(out, n.watchTerms(w)...)
 }
 
-// A terminal is active once its screen has changed (output that left the
-// screen as it was, a blinking cursor or a resize does not count). An
-// active terminal whose screen has not changed for idleAfter has stopped:
-// an agent at work keeps its screen changing, so it finished or waits for
-// the owner. That is pushed once. The screens are compared at each poll.
+// Terminals (ADR 0017). Each poll compares a terminal's screen with the
+// last one, by the letters of each row (counters and spinner glyphs are no
+// change). Changes within ownerWindow after a client's input are the
+// owner's doing (a TUI redraws on a resize, a scroll, an attach). Rows that
+// change alone again and again (timers, spinners) are volatile: no change.
+// A terminal worked when it changed in workPolls polls over workSpan, and is
+// done idleAfter after its last change, or at once when an agent's working
+// hint goes away. Done is pushed unless the screen is the one the owner saw
+// when they last left, volatile rows aside. A bell or a notification from
+// the program outside an input window is pushed at once, once per
+// alertEvery.
 //
-// While a page is in use (presence.go), changes are no news for a push:
-// the owner sees them, and viewing a terminal redraws it. Such a change
-// still marks the terminal once it stops, but nothing is pushed for it.
-// When the owner leaves, the screen of that moment is the new baseline.
+// While a page is in use (presence.go) nothing is pushed: the page marks
+// the terminal instead.
 const (
-	idleAfter = time.Minute
+	termPoll    = 5 * time.Second
+	ownerWindow = 5 * time.Second
+	workPolls   = 3
+	workSpan    = 20 * time.Second
+	idleAfter   = time.Minute
+	alertEvery  = time.Minute
+	// A row is volatile after volatileHits polls within volatileWindow
+	// changed it alone.
+	volatileHits   = 3
+	volatileWindow = 2 * time.Minute
+	// hintRows are the last rows searched for workingHints.
+	hintRows = 12
 	// idleLines bounds the last screen lines a push about it shows.
 	idleLines = 5
 )
 
-// termWatch is what the notifier knows of one terminal (poll only).
-type termWatch struct {
-	sum        uint64 // of the screen's text
-	cols, rows int
-	changed    time.Time // when a poll saw the screen change
-	active     bool      // changed since it was pushed about (or first seen)
-	stopped    time.Time // when it stopped, until it changes again
-	present    bool      // a page was in use at the last poll
-	uses       uint64    // presence.used at the last poll
-	attached   time.Time // the screen's attachment (termScreen.attached)
+// workingHints are what agents show near the bottom of the screen while
+// they work.
+var workingHints = []string{
+	"esc to interrupt", // Claude Code, Codex
+	"• Working (",      // Codex
 }
 
-// observe takes the terminal's screen at now and reports whether it has
-// just stopped. present tells whether a page is in use, uses is
-// presence.used().
-func (t *termWatch) observe(now time.Time, scr termScreen, present bool, uses uint64) bool {
-	sum := screenSum(scr)
+// termWatch is what the notifier knows of one terminal.
+type termWatch struct {
+	lines              []string // at the last poll (screenKeys)
+	cols, rows         int
+	seen               []string // the screen when the owner last left, or when first seen (screenKeys)
+	polled             time.Time
+	hits               map[int][]time.Time // row → its last small changes
+	runStart, lastWork time.Time           // the current run of changes
+	runPolls           int
+	hinted             bool      // a working hint showed at the last poll
+	stopped            time.Time // when it was done, until it changes again
+	present            bool      // a page was in use at the last poll
+	uses               uint64    // presence.used at the last poll
+	attached           time.Time // the screen's attachment (termScreen.attached)
+	alerts             uint64    // termsync.Activity.Alerts seen
+	alerted            time.Time // the last alert pushed
+}
+
+type termEvent int
+
+const (
+	termNone termEvent = iota
+	termDone
+	termAlert
+)
+
+func newTermWatch(now time.Time, scr termScreen, present bool, uses uint64) *termWatch {
+	keys := screenKeys(scr.lines)
+	return &termWatch{lines: keys, seen: keys, cols: scr.cols, rows: scr.rows, polled: now,
+		present: present, uses: uses, attached: scr.attached, alerts: scr.activity.Alerts}
+}
+
+// observe takes the terminal's screen at now and tells whether it is done
+// or rang (with the notification's text). present tells whether a page is
+// in use, uses is presence.used().
+func (t *termWatch) observe(now time.Time, scr termScreen, present bool, uses uint64) (termEvent, string) {
 	// A page used since the last poll and closed again (a look at a push
 	// between two polls) is a leave too.
 	left := (t.present || t.uses != uses) && !present
 	t.present, t.uses = present, uses
+	in := scr.activity.Input
+	owner := !in.IsZero() && in.After(t.polled.Add(-ownerWindow))
+	t.polled = now
+	alert, text := t.takeAlerts(scr.activity)
+	done := t.compare(now, scr, left, owner)
 	switch {
-	case left:
-		// The owner just left: what they saw and what their viewing redrew
-		// is no change; only what comes after is.
-		if sum != t.sum {
+	case alert:
+		t.runPolls, t.stopped = 0, now
+		if now.Sub(t.alerted) >= alertEvery {
+			t.alerted = now
+			return termAlert, text
+		}
+	case done:
+		t.stopped = now
+		return termDone, ""
+	}
+	return termNone, ""
+}
+
+func (t *termWatch) takeAlerts(a termsync.Activity) (bool, string) {
+	n := 0
+	if a.Alerts > t.alerts {
+		n = int(min(a.Alerts-t.alerts, uint64(len(a.Recent))))
+	}
+	t.alerts = a.Alerts
+	found, text := false, ""
+	for _, al := range a.Recent[len(a.Recent)-n:] {
+		if !al.Input.IsZero() && al.At.Sub(al.Input) < ownerWindow {
+			continue
+		}
+		found = true
+		if al.Text != "" {
+			text = al.Text
+		}
+	}
+	return found, text
+}
+
+// compare takes the screen and tells whether the terminal is done.
+func (t *termWatch) compare(now time.Time, scr termScreen, left, owner bool) bool {
+	prev := t.lines
+	t.lines = screenKeys(scr.lines)
+	hinted := t.hinted
+	t.hinted = workingHint(scr.lines)
+	if left {
+		if !slices.Equal(prev, t.lines) {
 			t.stopped = time.Time{}
 		}
-		t.sum, t.cols, t.rows, t.active = sum, scr.cols, scr.rows, false
-	case scr.cols != t.cols || scr.rows != t.rows:
-		// A resize redraws the screen; it is not the program's doing.
-		t.sum, t.cols, t.rows = sum, scr.cols, scr.rows
-	case sum != t.sum:
-		t.sum, t.changed, t.active, t.stopped = sum, now, true, time.Time{}
-	case t.active && now.Sub(t.changed) >= idleAfter:
-		t.active, t.stopped = false, now
-		return true
+		t.seen, t.runPolls = t.lines, 0
+		return false
+	}
+	if scr.cols != t.cols || scr.rows != t.rows {
+		t.cols, t.rows, t.hits = scr.cols, scr.rows, nil
+		return false
+	}
+	work := t.hinted && !owner
+	if !owner {
+		var changed []int
+		for y, l := range t.lines {
+			if y >= len(prev) || prev[y] != l {
+				changed = append(changed, y)
+			}
+		}
+		for _, y := range changed {
+			if len(changed) == 1 {
+				t.hit(y, now)
+			}
+			if !t.volatile(y, now) {
+				work = true
+			}
+		}
+	}
+	if work {
+		if t.runPolls == 0 || now.Sub(t.lastWork) >= idleAfter {
+			t.runStart, t.runPolls = now, 0
+		}
+		t.runPolls++
+		t.lastWork, t.stopped = now, time.Time{}
+	}
+	worked := t.runPolls >= workPolls && t.lastWork.Sub(t.runStart) >= workSpan
+	gone := hinted && !owner // the working hint went away by itself
+	if !worked || t.hinted || !gone && now.Sub(t.lastWork) < idleAfter {
+		return false
+	}
+	t.runPolls = 0
+	return !t.asSeen(now)
+}
+
+func (t *termWatch) hit(y int, now time.Time) {
+	if t.hits == nil {
+		t.hits = map[int][]time.Time{}
+	}
+	h := append(t.hits[y], now)
+	if len(h) > volatileHits {
+		h = h[len(h)-volatileHits:]
+	}
+	t.hits[y] = h
+}
+
+func (t *termWatch) volatile(y int, now time.Time) bool {
+	h := t.hits[y]
+	return len(h) >= volatileHits && now.Sub(h[0]) < volatileWindow
+}
+
+// asSeen tells whether the screen is the one the owner saw, volatile rows
+// aside.
+func (t *termWatch) asSeen(now time.Time) bool {
+	if len(t.seen) != len(t.lines) {
+		return false
+	}
+	for y := range t.lines {
+		if t.lines[y] != t.seen[y] && !t.volatile(y, now) {
+			return false
+		}
+	}
+	return true
+}
+
+func screenKeys(lines []string) []string {
+	keys := make([]string, len(lines))
+	for y, l := range lines {
+		keys[y] = strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) {
+				return r
+			}
+			return -1
+		}, l)
+	}
+	return keys
+}
+
+func workingHint(lines []string) bool {
+	for _, l := range lines[max(0, len(lines)-hintRows):] {
+		for _, h := range workingHints {
+			if strings.Contains(l, h) {
+				return true
+			}
+		}
 	}
 	return false
 }
 
-func screenSum(scr termScreen) uint64 {
-	h := fnv.New64a()
-	for _, l := range scr.lines {
-		h.Write([]byte(l))
-		h.Write([]byte{'\n'})
-	}
-	return h.Sum64()
-}
-
-// watchTerms returns a message for each of the sandbox's terminals that
-// has just stopped (none while a page is in use: the page marks them).
+// watchTerms returns a message for each of the sandbox's terminals that is
+// done or rang (none while a page is in use: the page marks them).
 // Terminals that ended are forgotten.
 func (n *notifier) watchTerms(w Sandbox) []PushMessage {
 	rt, ok := n.s.rt.(screensRuntime)
@@ -330,15 +501,16 @@ func (n *notifier) watchTerms(w Sandbox) []PushMessage {
 		t := old[name]
 		if t == nil || !t.attached.Equal(scr.attached) {
 			// First seen, or attached again (after an update of Iwato, a
-			// lost connection): what is on the screen already is no
-			// change. A stop stays marked until the screen changes.
-			fresh := &termWatch{sum: screenSum(scr), cols: scr.cols, rows: scr.rows, present: present, uses: uses, attached: scr.attached}
+			// lost connection): what is on the screen already, and the
+			// replayed bells, are no news. A stop stays marked until the
+			// screen changes.
+			fresh := newTermWatch(now, scr, present, uses)
 			if t != nil {
 				fresh.stopped = t.stopped
 			}
 			t = fresh
-		} else if t.observe(now, scr, present, uses) && !present {
-			out = append(out, idleMessage(w.Name, name, scr.lines))
+		} else if ev, text := t.observe(now, scr, present, uses); ev != termNone && !present {
+			out = append(out, termMessage(w.Name, name, scr.lines, ev, text))
 		}
 		current[name] = t
 	}
@@ -371,10 +543,11 @@ func (n *notifier) stopped(sandbox string) map[string]int64 {
 	return out
 }
 
-// idleMessage tells that a terminal stopped, with the last lines of its
-// screen that say something (not the borders and blank lines an agent's
-// input box draws). A newer one about the terminal replaces it on the device.
-func idleMessage(sandbox, term string, lines []string) PushMessage {
+// termMessage tells that a terminal is done (or rang: alert, with the
+// notification's text), with the last lines of its screen that say
+// something (not the borders and blank lines an agent's input box draws). A
+// newer one about the terminal replaces it on the device.
+func termMessage(sandbox, term string, lines []string, ev termEvent, text string) PushMessage {
 	var tail []string
 	for i := len(lines) - 1; i >= 0 && len(tail) < idleLines; i-- {
 		if l := strings.TrimSpace(lines[i]); strings.IndexFunc(l, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0 {
@@ -386,18 +559,29 @@ func idleMessage(sandbox, term string, lines []string) PushMessage {
 	if term != mainTerm {
 		label += " (" + term + ")"
 	}
-	summary := "止まりました"
+	what := "止まりました"
+	if ev == termAlert {
+		what = "通知"
+	}
+	summary := what
 	if term != mainTerm {
 		summary = "(" + term + ") " + summary
+	}
+	body := strings.Join(tail, "\n")
+	if text = strings.TrimSpace(text); text != "" {
+		body, tail = text, strings.Split(text, "\n")
 	}
 	if len(tail) > 0 {
 		summary += ": " + truncate(tail[len(tail)-1], 60)
 	}
-	body := truncate(strings.Join(tail, "\n"), 300)
+	body = truncate(body, 300)
 	if body == "" {
 		body = "画面が変わらなくなりました"
+		if ev == termAlert {
+			body = "ベルが鳴りました"
+		}
 	}
-	return PushMessage{Title: label + ": 止まりました", Body: body, Tag: "idle-" + sandbox + "-" + term,
+	return PushMessage{Title: label + ": " + what, Body: body, Tag: "idle-" + sandbox + "-" + term,
 		Path: openPath(sandbox, "term", term), sandbox: sandbox, summary: summary, idle: true}
 }
 

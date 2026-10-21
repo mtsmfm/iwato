@@ -14,6 +14,8 @@ import (
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 	"rsc.io/qr"
+
+	"iwato/internal/termsync"
 )
 
 // Optional runtime capabilities. OpenShell and Fake implement them; tests
@@ -63,13 +65,14 @@ type screensRuntime interface {
 	TerminalScreens(Sandbox) map[string]termScreen
 }
 
-// termScreen is a terminal's size and the text of the rows it shows, and
-// when Iwato attached it (a new attachment's screen is the replayed output
-// and a repaint, no news).
+// termScreen is a terminal's size and the text of the rows it shows, when
+// Iwato attached it (a new attachment's screen is the replayed output and a
+// repaint, no news), and its clients' input and its alerts.
 type termScreen struct {
 	cols, rows int
 	lines      []string
 	attached   time.Time
+	activity   termsync.Activity
 }
 
 func (s *Server) handleSandbox(w http.ResponseWriter, r *http.Request) {

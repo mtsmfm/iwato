@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"iwato/internal/termsync"
 )
 
 func TestPublicOriginForTailscaleServe(t *testing.T) {
@@ -133,107 +135,64 @@ type screensNotifyRuntime struct {
 
 func (r *screensNotifyRuntime) TerminalScreens(Sandbox) map[string]termScreen { return r.screens }
 
-// A terminal is pushed about once when its screen, after changing, stays
-// the same for idleAfter; again only after it changes again. What was on
-// the screen when first seen, a resize and what changed while a page was
-// in use (the owner's viewing redraws it) are no change for a push.
+// Through collect: the messages, the marks, and no push while a page is in
+// use (the rules are in notifier_test.go).
 func TestNotifierPushesATerminalThatStopped(t *testing.T) {
 	rt := &screensNotifyRuntime{}
 	s := newServer(testConfig(), rt, false, "127.0.0.1:1")
 	n := newNotifier(s)
 	clock := time.Unix(1_000_000, 0)
 	n.now = func() time.Time { return clock }
+	s.presence.now = n.now
 	w := s.config.Sandboxes[0]
-	show := func(cols int, lines ...string) {
-		rt.screens = map[string]termScreen{"2": {cols: cols, rows: 4, lines: lines}}
+	var activity termsync.Activity
+	show := func(lines ...string) {
+		rt.screens = map[string]termScreen{"2": {cols: 80, rows: 4, lines: lines, activity: activity}}
 	}
 	poll := func(d time.Duration) []PushMessage {
 		clock = clock.Add(d)
 		return n.collect(context.Background(), w)
 	}
-	show(80, "$ claude", "")
-	if got := poll(0); len(got) != 0 {
-		t.Fatalf("first seen: %+v", got)
+	work := func(text string) {
+		for i := range 6 {
+			show(fmt.Sprintf("%s %c", text, 'a'+i), fmt.Sprintf("output %c", 'b'+i), "╭──╮", "│ > │")
+			poll(termPoll)
+		}
 	}
-	if got := poll(2 * time.Minute); len(got) != 0 {
-		t.Fatalf("never active: %+v", got)
-	}
-	show(80, "✻ Working… (3s)", "")
-	poll(15 * time.Second)
-	show(80, "Done: fixed the bug.", "╭──╮", "│ > │", "╰──╯")
-	if got := poll(15 * time.Second); len(got) != 0 {
-		t.Fatalf("still changing: %+v", got)
-	}
-	if got := poll(45 * time.Second); len(got) != 0 {
+	show("$ claude", "")
+	poll(0)
+	work("Working")
+	show("Done: fixed the bug.", "", "╭──╮", "│ > │")
+	poll(termPoll)
+	if got := poll(idleAfter - time.Second); len(got) != 0 {
 		t.Fatalf("too early: %+v", got)
 	}
-	got := poll(15 * time.Second)
+	got := poll(time.Second)
 	if len(got) != 1 || got[0].Title != w.Name+" (2): 止まりました" || got[0].Body != "Done: fixed the bug." || got[0].Path != "/?sandbox="+w.Name+"&term=2" {
 		t.Fatalf("%+v", got)
 	}
-	if got := poll(2 * time.Minute); len(got) != 0 {
-		t.Fatalf("pushed twice: %+v", got)
-	}
-	if at := n.stopped(w.Name)["2"]; at == 0 {
-		t.Fatal("the page is not told the terminal stopped")
-	}
-	show(120, "Done: fixed the bug. (redrawn wider)")
-	if got := poll(2 * time.Minute); len(got) != 0 {
-		t.Fatalf("a resize made it active: %+v", got)
-	}
-	show(120, "next task")
-	poll(15 * time.Second)
-	if len(n.stopped(w.Name)) != 0 {
-		t.Fatal("a terminal that changed again is still marked stopped")
-	}
-	if got := poll(time.Minute); len(got) != 1 {
-		t.Fatalf("active again, then stopped: %+v", got)
+	if got := poll(2 * time.Minute); len(got) != 0 || n.stopped(w.Name)["2"] == 0 {
+		t.Fatalf("pushed twice or not marked: %+v", got)
 	}
 
-	// While a page is in use, changes are not pushed about: the owner
-	// views the stopped terminal (which redraws it), then closes the page
-	// within idleAfter. The screen at that moment is the baseline.
-	s.presence.now = n.now
+	// While a page is in use, a stop is marked, not pushed.
 	page := strings.Repeat("a", 32)
 	s.presence.report(page, true)
-	show(120, "next task (redrawn on view)")
-	if got := poll(15 * time.Second); len(got) != 0 {
-		t.Fatalf("a change while in use: %+v", got)
-	}
-	s.presence.report(page, false)
-	poll(15 * time.Second)
-	if got := poll(2 * time.Minute); len(got) != 0 || len(n.stopped(w.Name)) != 0 {
-		t.Fatalf("pushed or marked after the owner left with no change since: %+v %v", got, n.stopped(w.Name))
-	}
-	// A stop while the owner stays on the page is marked there, not pushed,
-	// and not pushed after they leave either.
-	s.presence.report(page, true)
-	show(120, "work while the owner watches")
-	poll(15 * time.Second)
-	if got := poll(time.Minute); len(got) != 0 || len(n.stopped(w.Name)) != 1 {
+	work("Again")
+	show("Done again.")
+	poll(termPoll)
+	if got := poll(idleAfter); len(got) != 0 || n.stopped(w.Name)["2"] != clock.Unix() {
 		t.Fatalf("a stop while in use must be marked, not pushed: %+v %v", got, n.stopped(w.Name))
 	}
 	s.presence.report(page, false)
-	if got := poll(2 * time.Minute); len(got) != 0 {
-		t.Fatalf("pushed after leaving about a stop while in use: %+v", got)
-	}
-	// A change after the owner left, then idleAfter without one: one push.
-	show(120, "the agent went on")
-	poll(15 * time.Second)
-	if got := poll(time.Minute); len(got) != 1 {
-		t.Fatalf("a change after leaving, then stopped: %+v", got)
-	}
-	if got := poll(2 * time.Minute); len(got) != 0 {
-		t.Fatalf("pushed twice: %+v", got)
-	}
-	// A look between two polls (tap the push, view, close): no poll sees
-	// the page in use, but its redraw is no change either.
-	s.presence.report(page, true)
-	show(120, "the agent went on (redrawn on view)")
-	s.presence.report(page, false)
-	poll(15 * time.Second)
-	if got := poll(2 * time.Minute); len(got) != 0 || len(n.stopped(w.Name)) != 0 {
-		t.Fatalf("a look between polls made it active: %+v %v", got, n.stopped(w.Name))
+
+	// A bell: pushed at once, with the notification's text.
+	activity.Alerts++
+	activity.Recent = append(activity.Recent, termsync.Alert{At: clock, Text: "Claude is waiting for your input"})
+	show("Done again.")
+	got = poll(termPoll)
+	if len(got) != 1 || got[0].Title != w.Name+" (2): 通知" || got[0].Body != "Claude is waiting for your input" {
+		t.Fatalf("%+v", got)
 	}
 }
 
