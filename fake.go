@@ -52,11 +52,14 @@ type Fake struct {
 	termEnded func(sandbox string)
 	// latency is added to each terminal connection's round trip.
 	latency time.Duration
+	// noGPU: the engine offers no GPU.
+	noGPU bool
 }
 
 func NewFake() *Fake {
 	return &Fake{started: map[string]bool{}, stopped: map[string]bool{}, history: map[string]string{}, terms: map[string]map[string][]*fakeTerm{}, renewed: map[string]bool{}}
 }
+func (d *Fake) GPUAvailable(context.Context) bool { return !d.noGPU }
 func (d *Fake) Status(_ context.Context, w Sandbox) Status {
 	d.mu.Lock()
 	defer d.mu.Unlock()

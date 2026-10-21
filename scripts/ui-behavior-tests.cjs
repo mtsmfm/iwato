@@ -891,20 +891,29 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   assert.equal(delPanel.hidden, true); assert.equal(del.card().children[0].children[1].textContent, '未作成');
   ok('sandbox deletion requires typing the name, sends purge only when chosen, and refreshes the list');
   const rec = await environment({fake: false, status: 'running'}); const recButton = rec.buttons()[7]; assert.equal(recButton.textContent, '作り直す'); assert.equal(recButton.disabled, false); recButton.click();
-  const recPanel = rec.side('recreate-panel'); assert.equal(recPanel.hidden, false); const [, , kept, lost, recPull, recForm, recStatus] = recPanel.children; assert.equal(recPull.hidden, true, 'no pull option for a tag that does not move'); const [recInput] = recForm.children;
+  const recPanel = rec.side('recreate-panel'); assert.equal(recPanel.hidden, false); const [, , kept, lost, recPull, recGpu, recForm, recStatus] = recPanel.children; assert.equal(recPull.hidden, true, 'no pull option for a tag that does not move'); assert.equal(recGpu.hidden, false); assert.equal(recGpu.children[1].textContent, 'GPU を使う'); assert.equal(recGpu.children[0].checked, false); recGpu.children[0].checked = true; const [recInput] = recForm.children;
   const items = box => box.children[1].children.map(li => li.textContent).join(' ');
   assert.match(items(kept), /ボリューム.*\/home\/dev/); assert.match(items(kept), /プロバイダー/); assert.match(items(kept), /ポリシーの規則/); assert.match(items(kept), /作成時の設定: イメージ・通信のプリセット/); assert.match(items(kept), /ホームの外のパスは引き継がず/); assert.match(items(lost), /ボリューム以外/); assert.match(items(lost), /提案.*履歴/);
   recInput.value = 'wrong'; recForm.listeners.submit({preventDefault() {}}); await flush(); assert.equal(rec.requests.filter(r => r.path.endsWith('/recreate')).length, 0); assert.match(recStatus.textContent, /一致しません/);
   recInput.value = 'api'; recForm.listeners.submit({preventDefault() {}}); await flush();
-  const recReq = rec.requests.find(r => r.path === '/api/sandboxes/api/recreate'); assert.deepEqual(JSON.parse(recReq.body), {confirm: 'api'}); assert.equal(recReq.headers['X-CSRF-Token'], 'csrf123');
+  const recReq = rec.requests.find(r => r.path === '/api/sandboxes/api/recreate'); assert.deepEqual(JSON.parse(recReq.body), {confirm: 'api', gpu: true}); assert.equal(recReq.headers['X-CSRF-Token'], 'csrf123');
   assert.equal(recPanel.hidden, false, 'the panel stays open to show the rules not carried over'); assert.match(recStatus.textContent, /作り直しました。.*allow_x_443 — refused <b>/);
   ok('recreating a sandbox requires typing the name, says what is kept and lost, and reports the rules not carried over');
+  for (const gpu of [false, true]) {
+    const rg = await environment({fake: false, status: 'running'}); rg.setSandboxHandler(() => response({fake: false, sandboxes: [{...rg.sandbox, gpu}], gpu: false})); await rg.tickPoll();
+    rg.buttons()[7].click(); await flush(); const [, , , , , gpuLabel, gpuForm] = rg.side('recreate-panel').children;
+    assert.equal(gpuLabel.hidden, !gpu); assert.equal(gpuLabel.children[0].checked, gpu);
+    if (gpu) gpuLabel.children[0].checked = false;
+    gpuForm.children[0].value = 'api'; gpuForm.listeners.submit({preventDefault() {}}); await flush();
+    assert.deepEqual(JSON.parse(rg.requests.find(r => r.path.endsWith('/recreate')).body), gpu ? {confirm: 'api', gpu: false} : {confirm: 'api'});
+  }
+  ok('without a GPU, recreate shows the GPU choice only to turn it off');
   {
   // 最新のイメージを取得してから作り直す: the pull goes first; a failed one recreates nothing.
   const rp = await environment({fake: false, status: 'running'}); let phase = 'updated'; const order = [];
   rp.setImagesHandler((path, opt) => { if (opt?.method === 'POST') { order.push('pull'); return response({ok: true}); } return response({available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:edge', source: 'pull', moves: true, present: true, update: order.length ? {phase, message: phase === 'failed' ? 'pull <b>failed</b>' : '新しいイメージを取得しました'} : {}}); });
   rp.buttons()[7].click(); await flush();
-  const rpPanel = rp.side('recreate-panel'); const [, , , , pullLabel, rpForm, rpStatus] = rpPanel.children;
+  const rpPanel = rp.side('recreate-panel'); const [, , , , pullLabel, , rpForm, rpStatus] = rpPanel.children;
   assert.equal(pullLabel.hidden, false); assert.equal(pullLabel.children[1].textContent, '最新のイメージを取得してから作り直す');
   phase = 'failed'; pullLabel.children[0].checked = true; rpForm.children[0].value = 'api'; rpForm.listeners.submit({preventDefault() {}}); await flush();
   assert.deepEqual(order, ['pull']); assert.equal(rp.requests.filter(r => r.path.endsWith('/recreate')).length, 0, 'a failed pull recreates nothing'); assert.match(rpStatus.textContent, /作り直していません。pull <b>failed<\/b>/);

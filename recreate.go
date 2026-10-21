@@ -22,9 +22,10 @@ import (
 //   - the home's volume: the delete keeps it, and its name comes from the
 //     sandbox's name and the path (persistVolume), so the new sandbox
 //     mounts the same one;
-//   - the creation settings: the configuration entry (image, presets, GPU,
-//     ingress) stays as it is; the paths outside the home that a sandbox
-//     made before the image convention kept (LegacyPersist) are dropped:
+//   - the creation settings: the configuration entry (image, presets,
+//     ingress) stays as it is, except the GPU, which the request may turn
+//     on or off; the paths outside the home that a sandbox made before the
+//     image convention kept (LegacyPersist) are dropped:
 //     only the home persists, and their volumes stay unused;
 //   - the providers: OpenShell's list for the sandbox goes into the
 //     configuration, which the new sandbox is created with;
@@ -216,9 +217,9 @@ type recreateRuntime interface {
 }
 
 // recreateSandbox recreates the sandbox and starts it: see the top of this
-// file. A previous carry-over that did not finish is applied first. The
-// error says what state the sandbox was left in.
-func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox) ([]CarryFailure, error) {
+// file, with the GPU set to gpu. A previous carry-over that did not finish
+// is applied first. The error says what state the sandbox was left in.
+func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox, gpu bool) ([]CarryFailure, error) {
 	rt, ok := s.rt.(recreateRuntime)
 	if !ok {
 		return nil, errors.New("recreate unavailable")
@@ -264,7 +265,7 @@ func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox) ([]CarryFailur
 			if len(providers) == 0 {
 				providers = nil
 			}
-			list[i].Providers, list[i].Carry = providers, carry
+			list[i].Providers, list[i].Carry, list[i].GPU = providers, carry, gpu
 			// Only the home persists: the new sandbox does not mount the
 			// volumes of the paths an older one kept outside it, which
 			// stay in the volumes screen, no longer in use.
@@ -280,6 +281,16 @@ func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox) ([]CarryFailur
 			return nil, fmt.Errorf("サンドボックスを削除できませんでした: %s。ボリュームと設定は残っています。もう一度「作り直す」を試してください", safeCLIError(err))
 		}
 		s.forgetSandboxSessions(sb.Name)
+	} else if sb.GPU != gpu {
+		err := s.updateSandboxes(func(list []Sandbox) ([]Sandbox, error) {
+			if i := slices.IndexFunc(list, func(x Sandbox) bool { return x.Name == sb.Name }); i >= 0 {
+				list[i].GPU = gpu
+			}
+			return list, nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	sb, ok = s.lookupSandbox(sb.Name)
 	if !ok {
@@ -392,8 +403,9 @@ func (s *Server) clearCarry(name string) {
 }
 
 // handleRecreate recreates the sandbox (POST .../recreate); the body
-// repeats its name as confirmation, as a delete's does. It answers once the
-// new sandbox runs, with the rules that could not be carried over.
+// repeats its name as confirmation, as a delete's does, and may set the
+// GPU (absent: kept). It answers once the new sandbox runs, with the rules
+// that could not be carried over.
 func (s *Server) handleRecreate(w http.ResponseWriter, r *http.Request, parts []string) {
 	if r.Method != http.MethodPost {
 		fail(w, 405, "method not allowed")
@@ -405,9 +417,18 @@ func (s *Server) handleRecreate(w http.ResponseWriter, r *http.Request, parts []
 	}
 	var body struct {
 		Confirm string `json:"confirm"`
+		GPU     *bool  `json:"gpu"`
 	}
 	if decode(w, r, &body) != nil || body.Confirm != sb.Name {
 		fail(w, 400, "confirm must equal the sandbox name")
+		return
+	}
+	gpu := sb.GPU
+	if body.GPU != nil {
+		gpu = *body.GPU
+	}
+	if gpu && !sb.GPU && !s.gpuAvailable(r.Context()) {
+		failCode(w, 400, "gpu_unavailable", nil, "この環境では GPU を使えません")
 		return
 	}
 	if _, ok := s.rt.(recreateRuntime); !ok {
@@ -422,7 +443,7 @@ func (s *Server) handleRecreate(w http.ResponseWriter, r *http.Request, parts []
 	}
 	var e error
 	defer func() { s.endOp(sb.Name, op, e) }()
-	failed, e := s.recreateSandbox(op.ctx, sb)
+	failed, e := s.recreateSandbox(op.ctx, sb, gpu)
 	if failed == nil {
 		failed = []CarryFailure{}
 	}

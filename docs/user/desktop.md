@@ -14,7 +14,7 @@ The standard image has a desktop for GUI apps: Xfce, Firefox and Selkies (a remo
 
 ## GPU
 
-The GPU is optional. Tick Use the GPU when creating the sandbox (it can be set only then) to render and encode on the GPU; without it the desktop renders on the CPU. WSLc passes the whole GPU (`--gpus all`): there is no choice of model or count. The card shows a GPU mark.
+The GPU is optional. Tick Use the GPU when creating the sandbox (or later when recreating it) to render and encode on the GPU; without it the desktop renders on the CPU. WSLc passes the whole GPU (`--gpus all`): there is no choice of model or count. The card shows a GPU mark.
 
 - NVIDIA gets CUDA as on WSL. AMD and Intel get D3D12 / DirectML and Mesa's d3d12 (no `/dev/dri`)
 - Every sandbox gets a 1 GB `/dev/shm` (Firefox crashes with Docker's default 64 MB)

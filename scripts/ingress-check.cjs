@@ -184,6 +184,9 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const pull = recreate.getByLabel('最新のイメージを取得してから作り直す');
     await pull.waitFor();
     await pull.check();
+    const gpu = recreate.getByLabel('GPU を使う');
+    check(await gpu.isVisible() && !(await gpu.isChecked()), 'the recreate dialog offers the GPU, preset to the sandbox\'s');
+    await gpu.check();
     check(await noSideScroll(recreate), 'the recreate dialog does not scroll sideways');
     await shot('recreate-pull.png');
     await recreate.getByLabel('確認のためサンドボックス名を入力').fill('dev');
@@ -191,6 +194,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await recreate.getByText(/最新のイメージを取得しています/).waitFor();
     await card.locator('.badge[data-state=running]').waitFor({ timeout: 20000 });
     check(await recreate.isHidden(), 'the recreate finished after the pull');
+    await card.locator('.badge-gpu:not([hidden])').waitFor({ timeout: 10000 });
 
     // The language (web/i18n.js): English at once, remembered, then automatic (ja-JP here).
     const openSettings = async (p) => {
