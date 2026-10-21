@@ -816,6 +816,8 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
   const found = wrappedLinks([row2('日本語 ' + long.slice(0, 23)), row2('  ' + long.slice(23, 51)), row2('  ' + long.slice(51) + ' done')], 30, 10);
   assert.equal(found.length, 1); assert.equal(found[0].url, long); assert.deepEqual(JSON.parse(JSON.stringify(found[0].start)), {x: 8, y: 10}); assert.deepEqual(JSON.parse(JSON.stringify(found[0].end)), {x: 7, y: 12});
   assert.equal(wrappedLinks([row2('see https://a.example/x.'), row2('next')], 30, 1)[0].url, 'https://a.example/x');
+  assert.equal(wrappedLinks([row2('見て https://a.example/#/ds/261?tag=ほげ=A です')], 80, 1)[0].url, 'https://a.example/#/ds/261?tag=ほげ=A', 'letters beyond ASCII');
+  assert.equal(wrappedLinks([row2('「https://a.example/q?x=日本」、次')], 80, 1)[0].url, 'https://a.example/q?x=日本', 'Japanese punctuation ends it');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
   const lk = await environment({fake: false, status: 'running'}); lk.buttons()[2].click(); await flush(); lk.sockets.at(-1).open(); const lkTerm = lk.terminals.at(-1);
