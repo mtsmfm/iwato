@@ -1,8 +1,11 @@
 /* Pure link detection for terminal rows; no DOM access. */
 (() => {
   'use strict';
-  const URL_CHARS = /[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]/;
-  const URL_RE = /https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g;
+  // Letters beyond ASCII count too (https://example.com/?tag=ほげ), except
+  // spaces, punctuation and box drawing, which end a URL in running text.
+  const URL_CHAR = "[A-Za-z0-9\\-._~:/?#[\\]@!$&'()*+,;=%]|[^\\x00-\\x7f\\s\\u2000-\\u206f\\u2500-\\u257f\\u3000-\\u303f\\uff01-\\uff0f\\uff1a-\\uff20\\uff3b-\\uff40\\uff5b-\\uff65]";
+  const URL_CHARS = new RegExp('^(?:' + URL_CHAR + ')$');
+  const URL_RE = new RegExp('https?://(?:' + URL_CHAR + ')+', 'g');
   const FRAME = '│┃║|';
 
   // A row is {cells: [{c, x}], wrapped}: one entry per code unit with its
