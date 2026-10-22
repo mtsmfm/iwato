@@ -259,6 +259,16 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();
     await dialog.waitFor();
     await page.fill('#policy-rule', 'curl_audit');
+    let adds = 0;
+    const countAdd = (r) => { if (r.url().endsWith('/policy/add')) adds++; };
+    page.on('request', countAdd);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    check(await dialog.isHidden() && adds === 0, 'Escape cancels the add-rule form, sending nothing');
+    page.off('request', countAdd);
+    await current.getByRole('button', { name: '規則を追加', exact: true }).click();
+    await dialog.waitFor();
+    check(await page.inputValue('#policy-rule') === 'curl_audit', 'as キャンセル, it keeps what was typed');
     await page.fill('#policy-binaries', '/usr/bin/curl');
     await page.fill('#policy-host', 'api.github.com');
     await page.fill('#policy-ports', '443');
@@ -301,7 +311,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await dialog.isHidden(), 'a click on the backdrop closes the dialog');
     await gitItem.getByRole('button', { name: '承認', exact: true }).click();
     await dialog.waitFor();
-    await page.click('#confirm-cancel');
+    await page.keyboard.press('Escape');
+    check(await dialog.isHidden(), 'Escape closes the approve dialog');
 
     // Approving: the change shows 反映待ち until the sandbox loads it (the
     // fake takes 3 seconds, in place of the sandbox's settings poll, about

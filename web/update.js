@@ -50,7 +50,6 @@
         this.root.hidden = true;
         this.body = element('div', 'login-body update-body');
         this.root.append(this.body);
-        this.root.addEventListener('keydown', (event) => { if (event.key === 'Escape') this.close(); });
       }
 
       async open() {

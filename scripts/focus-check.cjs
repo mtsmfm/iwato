@@ -125,6 +125,27 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check((await active()) === 'input.text-input', 'the delete panel takes the keyboard for the name');
     await card.locator('.delete-panel').getByRole('button', { name: '閉じる' }).click();
     check(await onTerminal(), 'closing the delete panel gives the keyboard back');
+    // Esc does what each panel's 閉じる does.
+    await more.click();
+    await card.locator('[data-action=providers]').click();
+    await page.waitForTimeout(800);
+    await page.keyboard.press('Escape');
+    check(await card.locator('.provider-panel').isHidden() && await onTerminal(), 'Escape closes the providers panel and gives the keyboard back');
+    await more.click();
+    await card.locator('[data-action=delete]').click();
+    await page.keyboard.press('Escape');
+    check(await card.locator('.delete-panel').isHidden() && await onTerminal(), 'Escape in the delete panel closes it and gives the keyboard back');
+    // With a panel open, Esc typed in the terminal is the program's.
+    await page.locator('#create-button').click();
+    await card.locator('.iw-input').focus();
+    typed = '';
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    check(typed === '\x1b' && await page.locator('#create-panel').isVisible(), 'Escape in the terminal reaches the session and leaves the panel open (' + JSON.stringify(typed) + ')');
+    await page.locator('#create-name').focus();
+    await page.keyboard.press('Escape');
+    check(await page.locator('#create-panel').isHidden(), 'Escape in the create panel closes it');
+    await card.locator('.iw-input').focus();
 
     // The confirmation dialog: cancel, Escape, the backdrop.
     for (const [how, answer] of [['キャンセル', () => page.locator('#confirm-cancel').click()], ['Escape', () => page.keyboard.press('Escape')], ['the backdrop', () => page.locator('#confirm-panel').click({ position: { x: 5, y: 5 } })]]) {

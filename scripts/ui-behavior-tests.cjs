@@ -167,6 +167,12 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
 }
 const mutations = env => env.requests.filter(request => /\/proposals\/(approve|reject|scope)$/.test(request.path));
 const proposalReads = env => env.requests.filter(request => request.path.endsWith('/proposals'));
+// Esc pressed with the focus on target, as the browser delivers it (after the focused element's own handlers).
+const escape = (env, target = null, prevented = false) => {
+  const event = {type: 'keydown', key: 'Escape', defaultPrevented: prevented, preventDefault() { this.defaultPrevented = true; }};
+  env.document.activeElement = target; for (const fn of [...env.document.allListeners.keydown]) fn(event); return event;
+};
+const findNode = (node, test) => test(node) ? node : node.children.map((child) => findNode(child, test)).find(Boolean) || null;
 (async () => {
   let tests = 0; const ok = name => { tests++; console.log('PASS ' + name); };
   const env = await environment();
@@ -190,8 +196,25 @@ const proposalReads = env => env.requests.filter(request => request.path.endsWit
     assert.equal(conn.hidden, true); assert.equal(st.hidden, true); assert.equal(reconn.hidden, false); assert.equal(disc, undefined, 'no disconnect item');
     assert.deepEqual([stop, del].map((b) => b.parent), [menu, menu]); assert.equal(menu.hidden, true);
     more.click(); assert.equal(menu.hidden, false); assert.equal(more.getAttribute('aria-expanded'), 'true');
-    const keydowns = () => env.document.allListeners.keydown.length; const before = keydowns(); [...env.document.allListeners.keydown].forEach((fn) => fn({type: 'keydown', key: 'Escape'})); assert.equal(menu.hidden, true, 'Escape closes the menu'); assert.equal(keydowns(), before - 1, 'and stops listening'); }
+    const focusBefore = env.terminals[0].focusCount || 0; assert.equal(escape(env, more).defaultPrevented, true); assert.equal(menu.hidden, true, 'Escape closes the menu'); assert.equal(more.getAttribute('aria-expanded'), 'false');
+    assert.equal(env.terminals[0].focusCount || 0, focusBefore, 'the keyboard goes back only to a terminal that had it'); }
   ok('while connected only ⋯ stays in view; reconnect, stop and delete are in its menu');
+  { const surface = findNode(env.card(), (n) => n.className === 'terminal-surface'); const panel = env.els['create-panel']; env.els['log-panel'].hidden = true;
+    env.els['create-button'].hidden = false; env.els['create-button'].click(); await flush(); assert.equal(panel.hidden, false);
+    assert.equal(escape(env, surface, true).defaultPrevented, true); assert.equal(panel.hidden, false, 'the terminal took Esc');
+    assert.equal(escape(env, surface).defaultPrevented, false, 'Esc in a terminal is not the page\'s even when the terminal left it'); assert.equal(panel.hidden, false);
+    env.els['volume-button'].click(); await flush(); panel.append(env.els['create-name']); const del = env.buttons()[4]; del.click(); const delPanel = env.side('delete-panel'); assert.equal(delPanel.hidden, false);
+    assert.equal(escape(env, env.els['create-name']).defaultPrevented, true); assert.equal(panel.hidden, true, 'the panel holding the focus closes first'); assert.equal(delPanel.hidden, false); assert.equal(env.els['volume-panel'].hidden, false);
+    escape(env, null); assert.equal(delPanel.hidden, true, 'then the card\'s panel'); assert.equal(env.els['volume-panel'].hidden, false, 'one at a time');
+    escape(env, null); assert.equal(env.els['volume-panel'].hidden, true);
+    assert.equal(escape(env, null).defaultPrevented, false, 'nothing open: Esc is left alone');
+    env.els['volume-button'].click(); await flush(); let during = null;
+    env.setConfirmHandler(() => { escape(env, env.els['confirm-cancel']); during = [env.els['confirm-panel'].hidden, env.els['volume-panel'].hidden]; return true; });
+    const stops = () => env.requests.filter((r) => r.path.endsWith('/stop')).length; const stopsBefore = stops();
+    env.buttons()[1].click(); await flush(); env.setConfirmHandler(null);
+    assert.deepEqual(during, [true, false], 'Esc answers only the confirmation over a panel'); assert.equal(stops(), stopsBefore, 'as its cancel button'); assert.equal(env.els['volume-panel'].hidden, false);
+    escape(env, null); assert.equal(env.els['volume-panel'].hidden, true); }
+  ok('Esc closes the topmost overlay as its close button does, never from a terminal');
   const terminalSent = () => env.sockets[0].sent.filter((m) => m.type !== 'focus');
   env.terminals[0].input('echo 日本語\r'); assert.deepEqual(terminalSent(), [{type: 'hello', cols: 80, rows: 24}, {type: 'input', data: 'echo 日本語\r'}]);
   ok('the hello sizes the session; input follows as termsync messages');

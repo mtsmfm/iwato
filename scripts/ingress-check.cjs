@@ -146,6 +146,10 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await shot('update-dialog.png');
     await updateDialog.getByRole('button', { name: 'キャンセル' }).click();
     check(await updateDialog.isHidden(), 'cancel closes the update dialog');
+    await update.getByRole('button', { name: '更新', exact: true }).click();
+    await updateDialog.waitFor();
+    await page.keyboard.press('Escape');
+    check(await updateDialog.isHidden() && await settings.isVisible(), 'Escape closes only the update dialog');
     check(await noSideScroll(settings.locator('.login-body')), 'the settings do not scroll sideways');
     await shot('settings.png');
     await settings.locator('details.ingress-steps').scrollIntoViewIfNeeded();
@@ -162,7 +166,8 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await settings.locator('.ingress-nodes').getByText('接続中').first().waitFor({ timeout: 20000 }).catch(() => {});
     await settings.locator('.login-body').evaluate((el) => { el.scrollTop = 0; });
     await shot('settings-on.png');
-    await page.click('#settings-close');
+    await page.keyboard.press('Escape');
+    check(await settings.isHidden(), 'Escape closes the settings');
 
     // The tab: the node and the ports.
     await panel.locator('.port-link').first().waitFor({ timeout: 20000 });
@@ -286,6 +291,9 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(await noSideScroll(dialog.locator('.reset-body')), 'the reset dialog does not scroll sideways');
     check((await dialog.innerText()).includes('VHDX') && (await dialog.locator('.reset-kept').innerText()).includes('presets/'), 'the dialog says what stays');
     await shot('reset-dialog.png');
+    await page.keyboard.press('Escape');
+    check(await dialog.isHidden() && await page.locator('#settings-panel').isVisible(), 'Escape closes only the reset dialog');
+    await resetSection.getByRole('button', { name: 'すべて消す' }).click();
     const go = dialog.getByRole('button', { name: 'すべて消す', exact: true });
     check(await go.isDisabled(), 'すべて消す needs the word');
     await dialog.getByLabel('確認のため reset と入力').fill('reset');

@@ -59,7 +59,6 @@
         this.dialog.hidden = true;
         this.body = element('div', 'login-body reset-body');
         this.dialog.append(this.body);
-        this.dialog.addEventListener('keydown', (event) => { if (event.key === 'Escape') this.close(); });
       }
 
       show() {

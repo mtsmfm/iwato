@@ -124,8 +124,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.click('#provider-profile-yaml');
     await page.waitForFunction(() => { const el = document.querySelector('#provider-yaml .provider-yaml-view .cm-editor'); return !!el && window.IwatoCodeMirror.EditorView.findFromDOM(el).state.doc.toString().includes('\nid: iwato-claude\n'); });
     check((await yamlBox.locator('.tag-source').innerText()) === 'Iwato 同梱', 'the add form shows the chosen profile as YAML');
-    await yamlBox.getByRole('button', { name: '閉じる' }).click();
-    check(!(await yamlBox.isVisible()), 'the YAML closes');
+    await yamlBox.locator('.cm-content').click();
+    await page.keyboard.press('Escape');
+    check(!(await yamlBox.isVisible()) && await panel.isVisible(), 'Escape in the YAML closes only the YAML');
     await page.selectOption('#provider-profile', 'iwato-github');
 
     // The type selector groups the profiles (agents, source control,
@@ -337,7 +338,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       check(true, 'the Claude provider is listed');
       await box.getByRole('button', { name: '閉じる' }).click();
     }
-    await page.click('#provider-close');
+    await page.keyboard.press('Escape');
+    check(await panel.isHidden(), 'Escape closes the providers');
 
     // The create form's picker.
     await menu('#create-button');
@@ -346,7 +348,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(options.join(',') === 'なし,github-personal,github-work', 'the create form offers one GitHub provider at most (' + options.join(', ') + ')');
     await page.locator('#create-providers select[data-profile=iwato-github]').selectOption('github-work');
     await shot('create-providers.png');
-    await page.click('#create-close');
+    await page.keyboard.press('Escape');
+    check(await page.locator('#create-panel').isHidden(), 'Escape closes the create form');
 
     // A running sandbox: attach, the restart choice, 再起動待ち.
     const start = card.getByRole('button', { name: '起動' });
@@ -393,7 +396,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await side.getByRole('button', { name: 'あとで' }).click();
     const badge = card.locator('.badge-restart');
     check(await badge.isVisible(), 'あとで leaves the card marked 再起動待ち');
-    await side.getByRole('button', { name: '閉じる' }).click();
+    await page.keyboard.press('Escape');
+    check(await side.isHidden(), 'Escape closes the card\'s providers');
     await card.locator('.term-tab .term-provider').first().waitFor();
     check(await card.locator('.term-notice[data-kind=provider]').isVisible(), 'the main terminal says it lacks the change');
     await shot('restart-pending.png');
