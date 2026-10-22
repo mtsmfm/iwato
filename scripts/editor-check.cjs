@@ -142,7 +142,9 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     const goColor = await colored(textSel, 'package');
     check(goColor.color && goColor.color !== goColor.base, 'Go is highlighted (' + JSON.stringify(goColor) + ')');
     if (!phone) {
-      // Search: Ctrl+F opens CodeMirror's panel (in the page's language), Escape closes it.
+      // Search: Ctrl+F opens CodeMirror's panel (in the page's language),
+      // Escape closes it and leaves a panel of the page (the log) open.
+      await page.click('#log-button');
       await page.evaluate((sel) => __editorFocus(sel), textSel);
       await page.keyboard.press(mod + '+F');
       await page.waitForSelector(panelSel + ' .cm-search', { state: 'visible' });
@@ -152,7 +154,10 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
       check(await page.evaluate((sel) => !!document.querySelector(sel + ' .cm-searchMatch'), panelSel), 'the search marks the match');
       await page.keyboard.press('Escape');
       await page.waitForSelector(panelSel + ' .cm-search', { state: 'detached' });
-      check(true, 'Escape closes the search');
+      check(await page.isVisible('#log-panel'), 'Escape closes the search, not the log');
+      await page.keyboard.press('Escape');
+      check(await page.isVisible('#log-panel'), 'Escape in the editor leaves the log open');
+      await page.click('#log-close');
     }
     check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'the page does not scroll sideways');
 

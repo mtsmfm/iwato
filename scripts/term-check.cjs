@@ -197,6 +197,17 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     }
     await page.waitForTimeout(200);
     check(typed === '\x1b[A\x1b[B\x10\x0e', 'IME on: the arrows and Ctrl+P/N reported as keyCode 229 reach the session (' + JSON.stringify(typed) + ')');
+    // Esc is the program's; on the links tab it closes the tab as 閉じる does.
+    typed = '';
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    check(typed === '\x1b', 'Escape reaches the session (' + JSON.stringify(typed) + ')');
+    await card.getByRole('button', { name: 'その他の操作' }).click();
+    await card.getByRole('menuitem', { name: 'リンク' }).click();
+    await card.locator('.links-panel').waitFor();
+    await page.keyboard.press('Escape');
+    check(await card.locator('.links-panel').isHidden() && await card.locator('.iw-screen').isVisible(), 'Escape closes the links tab');
+    await input.focus();
     await page.keyboard.press('Control+c');
     await page.keyboard.type('logo');
     await page.keyboard.press('Enter');

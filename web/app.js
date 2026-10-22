@@ -547,7 +547,6 @@
     if (event.target === backdrop && confirmPressed === backdrop) answerConfirm(false);
     confirmPressed = null;
   });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && pendingConfirm) answerConfirm(false); });
   function showNotice(title, message) {
     // A script's title replaces the default's key.
     $('notice-title').removeAttribute('data-i18n');
@@ -3835,6 +3834,7 @@
   // Port exposure: the settings and the Ports tab (web/ingress.js).
   const ingressUI = window.IwatoIngress.make({ element, button, panelHeader, api, askConfirm });
   let settingsPanel = null;
+  let resetSection = null;
   let imageSettings = null;
   let checkSettings = null;
   let sessionSettings = null;
@@ -3853,8 +3853,8 @@
       // The logins (web/sessions.js), then delete everything at the bottom (web/reset.js).
       sessionSettings = new (window.IwatoSessions.make({ element, button, api, askConfirm, onEnded: invalidateSession, onAuth: invalidateSession }).SessionSection)();
       $('settings-body').append(sessionSettings.root);
-      const reset = new (window.IwatoReset.make({ element, button, api, onEnded: invalidateSession, onAuth: invalidateSession }).ResetSection)();
-      $('settings-body').append(reset.root);
+      resetSection = new (window.IwatoReset.make({ element, button, api, onEnded: invalidateSession, onAuth: invalidateSession }).ResetSection)();
+      $('settings-body').append(resetSection.root);
     }
     $('settings-panel').hidden = false;
     updateSettings.refresh();
@@ -4611,16 +4611,11 @@
     openActionMenu() {
       this.actionMenu.hidden = false;
       this.moreButton.setAttribute('aria-expanded', 'true');
-      // Closes on the next click or Escape anywhere else.
+      // Closes on the next click elsewhere (Esc: escapeTarget).
       this.menuDismiss = (event) => {
-        if (event.type === 'keydown' ? event.key === 'Escape' : !this.actionMenu.contains(event.target) && !this.moreButton.contains(event.target)) {
-          this.closeActionMenu();
-          // A click elsewhere puts the keyboard there; Escape gives it back.
-          if (event.type === 'keydown') this.restoreFocus();
-        }
+        if (!this.actionMenu.contains(event.target) && !this.moreButton.contains(event.target)) this.closeActionMenu();
       };
       document.addEventListener('pointerdown', this.menuDismiss, true);
-      document.addEventListener('keydown', this.menuDismiss, true);
     }
 
     closeActionMenu() {
@@ -4628,7 +4623,6 @@
       this.moreButton.setAttribute('aria-expanded', 'false');
       if (!this.menuDismiss) return;
       document.removeEventListener('pointerdown', this.menuDismiss, true);
-      document.removeEventListener('keydown', this.menuDismiss, true);
       this.menuDismiss = null;
     }
 
@@ -5724,6 +5718,40 @@
   });
   $('sidebar-actions').addEventListener('click', (event) => { if (event.target !== $('sidebar-actions')) closeMenu(); });
   $('notice').addEventListener('click', clearNotice);
+  // Esc does what the topmost open overlay's close or cancel button does.
+  // Dialogs and menus come first wherever the keyboard is; a panel only
+  // when the keyboard is not in a terminal or the editor (their programs
+  // use Esc), the one holding the focus first. Keys the focused element
+  // took (a terminal, CodeMirror's search, the quick open) are left alone.
+  function escapeTarget(at) {
+    const shown = (node) => node && !node.hidden && node.isConnected !== false && node.checkVisibility?.() !== false;
+    const card = cards.get(state.selected);
+    const first = [
+      [$('confirm-panel'), () => answerConfirm(false)],
+      [updateDialog.root, () => updateDialog.close()],
+      [resetSection?.dialog, () => resetSection.close()],
+      ...[...cards.values()].map((c) => [c.actionMenu, () => { c.closeActionMenu(); c.restoreFocus(); }])
+    ];
+    if ($('menu-button').getAttribute('aria-expanded') === 'true') first.push([$('sidebar-actions'), closeMenu]);
+    const top = first.find(([node]) => shown(node));
+    if (top) return top;
+    if (at && [...cards.values()].some((c) => c.surface.contains(at) || c.editor.root.contains(at))) return null;
+    const panels = [[$('provider-yaml'), closeProfileYAML], [$('provider-oauth'), endOAuth]];
+    if (card) for (const panel of [card.deletion, card.recreation, card.providers, card.links, card.text]) panels.push([panel.root, () => panel.closeButton.click()]);
+    for (const id of ['create', 'pair', 'log', 'volume', 'provider', 'settings']) panels.push([$(id + '-panel'), () => $(id + '-close').click()]);
+    const open = panels.filter(([node]) => shown(node));
+    return open.find(([node]) => at && node.contains(at)) || open[0] || null;
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return;
+    const at = document.activeElement;
+    const [node, close] = escapeTarget(at) || [];
+    if (!close) return;
+    event.preventDefault();
+    // As a click on the close button, which takes the focus out first.
+    if (at && node.contains(at)) at.blur?.();
+    close();
+  });
   // Pushes go out only while no page is open and in use (presence.go): the
   // page tells the server when the owner touches it (at most every 30 s),
   // when it is shown and when it is hidden or closed.

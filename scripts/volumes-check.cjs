@@ -59,7 +59,12 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.click('#confirm-ok');
     await group('scratch').waitFor({ state: 'detached' });
     check(await panel.locator('.volume-group').count() === 2, 'the removed volume is gone');
-    await page.click('#volume-close');
+    await group('old-app').getByRole('button', { name: '削除' }).first().click();
+    await page.locator('#confirm-panel').waitFor();
+    await page.keyboard.press('Escape');
+    check(await page.locator('#confirm-panel').isHidden() && await panel.isVisible() && await panel.locator('.volume-group').count() === 2, 'Escape answers only the confirmation, as キャンセル');
+    await page.keyboard.press('Escape');
+    check(await panel.isHidden(), 'Escape then closes the panel');
 
     await menu('#create-button');
     await page.fill('#create-name', 'old-app');
