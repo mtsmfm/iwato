@@ -37,6 +37,7 @@ import (
 //	GET  /api/sandboxes/NAME/editor/dir?path=DIR                 one directory's entries (the tree)
 //	GET  /api/sandboxes/NAME/editor/file?path=PATH              a file's text and version
 //	GET  /api/sandboxes/NAME/editor/raw?path=PATH               an image's bytes (the preview)
+//	GET  /api/sandboxes/NAME/editor/media?path=PATH             audio or video, streamed (Range)
 //	POST /api/sandboxes/NAME/editor/file                         save {path, content, base, force}
 //
 // Paths are relative to the SFTP root. A version is the content's SHA-256:
@@ -45,7 +46,9 @@ import (
 //
 // The raw route serves only images a browser shows (editorImageType, by
 // the content, not the name), under a CSP that sandboxes it and nosniff:
-// it never serves the sandbox's HTML or script as this origin's page.
+// it never serves the sandbox's HTML or script as this origin's page. The
+// media route does the same with the type from the name's extension
+// (editorMediaTypes): a name it does not know is refused.
 
 const (
 	maxEditorBytes = 5 << 20
@@ -69,6 +72,7 @@ var (
 	errEditorChanged    = errCode("editor_changed", nil, "ファイルはほかで変更されています")
 	errEditorNotFile    = errCode("editor_not_file", nil, "ファイルではありません")
 	errEditorImage      = errCode("editor_not_image", nil, "テキストでも画像でもない (バイナリの) ファイルは開けません")
+	errEditorMedia      = errCode("editor_not_media", nil, "音声・動画として開ける種類のファイルではありません")
 	errEditorImageLarge = errCode("editor_image_too_large", map[string]any{"max": maxEditorImageBytes >> 20}, fmt.Sprintf("画像が大きすぎます (%d MB まで)", maxEditorImageBytes>>20))
 	// errNoRipgrep: the sandbox has no rg; the listing walks SFTP instead.
 	errNoRipgrep = errors.New("no ripgrep in the sandbox")
@@ -454,6 +458,13 @@ func isSVG(data []byte) bool {
 	}
 }
 
+// editorMediaTypes are the audio and video the editor plays, by extension.
+var editorMediaTypes = map[string]string{
+	".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".opus": "audio/ogg",
+	".m4a": "audio/mp4", ".aac": "audio/aac", ".flac": "audio/flac", ".weba": "audio/webm",
+	".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".ogv": "video/ogg", ".mov": "video/quicktime", ".mkv": "video/x-matroska",
+}
+
 // readEditorImage reads an image (following a link) and tells its type.
 func readEditorImage(c *sftp.Client, p string) ([]byte, string, error) {
 	fi, err := c.Stat(p)
@@ -494,7 +505,7 @@ func editorFail(w http.ResponseWriter, name, what string, err error) {
 		jsonResponse(w, 409, map[string]any{"error": err.Error(), "code": "editor_changed", "changed": true})
 	case errors.Is(err, errEditorPath), errors.Is(err, errEditorNotFile), errors.Is(err, errEditorNoDir):
 		failErr(w, 400, err)
-	case errors.Is(err, errEditorBinary), errors.Is(err, errEditorImage):
+	case errors.Is(err, errEditorBinary), errors.Is(err, errEditorImage), errors.Is(err, errEditorMedia):
 		failErr(w, 415, err)
 	case errors.Is(err, errEditorLarge), errors.Is(err, errEditorImageLarge):
 		failErr(w, 413, err)
@@ -510,7 +521,7 @@ func editorFail(w http.ResponseWriter, name, what string, err error) {
 
 // handleEditor serves the editor's routes (parts: NAME, "editor", what).
 func (s *Server) handleEditor(w http.ResponseWriter, r *http.Request, parts []string) {
-	if len(parts) != 3 || (parts[2] != "files" && parts[2] != "file" && parts[2] != "dir" && parts[2] != "raw" && parts[2] != "root") {
+	if len(parts) != 3 || (parts[2] != "files" && parts[2] != "file" && parts[2] != "dir" && parts[2] != "raw" && parts[2] != "media" && parts[2] != "root") {
 		fail(w, 404, "unknown sandbox route")
 		return
 	}
@@ -536,6 +547,8 @@ func (s *Server) handleEditor(w http.ResponseWriter, r *http.Request, parts []st
 		s.editorDir(w, r, sb)
 	case parts[2] == "raw":
 		s.editorRaw(w, r, sb)
+	case parts[2] == "media":
+		s.editorMedia(w, r, sb)
 	case save:
 		s.editorSave(w, r, sb)
 	default:
@@ -697,6 +710,41 @@ func (s *Server) editorRaw(w http.ResponseWriter, r *http.Request, sb Sandbox) {
 	h.Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(200)
 	_, _ = w.Write(data)
+}
+
+// editorMedia streams audio or video with Range (seeking) under the raw
+// route's headers. The response holds an SFTP lease while it is read, as a
+// WebDAV GET does, with no time limit (playback may pause).
+func (s *Server) editorMedia(w http.ResponseWriter, r *http.Request, sb Sandbox) {
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	h.Set("Cache-Control", "no-store")
+	p, err := editorPath(r.URL.Query().Get("path"), false)
+	if err != nil {
+		failErr(w, 400, err)
+		return
+	}
+	typ := editorMediaTypes[strings.ToLower(path.Ext(p))]
+	if typ == "" {
+		failErr(w, 415, errEditorMedia)
+		return
+	}
+	ctx, cancel := timeout(r.Context(), time.Minute)
+	defer cancel()
+	f, fi, err := s.files.OpenRead(ctx, sb.Name, p)
+	if err == nil && !fi.Mode().IsRegular() {
+		f.Close()
+		err = errEditorNotFile
+	}
+	if err != nil {
+		editorFail(w, sb.Name, "media "+p, err)
+		return
+	}
+	defer f.Close()
+	h.Set("Content-Type", typ)
+	h.Set("Content-Disposition", "inline")
+	http.ServeContent(w, r, "", fi.ModTime(), f)
 }
 
 func (s *Server) editorSave(w http.ResponseWriter, r *http.Request, sb Sandbox) {

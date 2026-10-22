@@ -5,7 +5,7 @@
 // saving (Ctrl+S or 「保存」), a save refused because the file changed
 // meanwhile (overwrite, reload), the folder's tree (beside the text, a
 // drawer on phones), a binary file refused, images previewed (PNG, SVG,
-// WebP; HTML named .png refused), Ctrl+P left to the terminal, and a
+// WebP; HTML named .png refused), audio and video played (Range), Ctrl+P left to the terminal, and a
 // stopped sandbox. The text is CodeMirror: Go and JavaScript highlighted,
 // Ctrl+F's search, no CSP violations. A Markdown preview. Saves
 // screenshots. Usage
@@ -335,6 +335,29 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     });
     check(raw.type === 'image/svg+xml' && /sandbox/.test(raw.csp) && raw.nosniff === 'nosniff' && raw.fake === 415, 'the raw route: SVG as an image under a sandboxing CSP, HTML refused (' + JSON.stringify(raw) + ')');
     for (const name of ['icon.png', 'logo.svg', 'dot.webp']) await click(page, panelSel + ' .editor-tabs', 'work/iwato/web/' + name + ' を閉じる');
+    // Audio and video: a player of the media route (Range), play only, a
+    // download link; one the browser cannot play says so.
+    await openQuick('tonewav', 'work/iwato/media/tone.wav');
+    await page.waitForFunction((sel) => document.querySelector(sel + ' audio')?.readyState >= 1, imageSel);
+    const tone = await page.evaluate((sel) => { const d = document.querySelector(sel + ' a.button'); const a = document.querySelector(sel + ' audio'); return { controls: a.controls, duration: a.duration, download: d.offsetParent !== null && d.download === 'tone.wav', save: [...document.querySelectorAll('.terminal-card.selected .editor-panel button')].find((b) => b.textContent.trim() === '保存').disabled }; }, imageSel);
+    check(tone.controls && Math.abs(tone.duration - 0.5) < 0.05 && tone.download && tone.save, 'a WAV opens in an audio player, play only, with a download link (' + JSON.stringify(tone) + ')');
+    await openQuick('clipmp4', 'work/iwato/media/clip.mp4');
+    await page.waitForFunction((sel) => document.querySelector(sel + ' video')?.readyState >= 1, imageSel);
+    const clip = await page.evaluate((sel) => { const box = document.querySelector(sel + ' .editor-image-box').getBoundingClientRect(); const v = document.querySelector(sel + ' video'); const r = v.getBoundingClientRect(); return { w: v.videoWidth, meta: document.querySelector(sel + ' .editor-image-meta').textContent, fits: r.width <= box.width + 1 && r.height <= box.height + 1, note: document.querySelector(sel + ' .editor-media-note').offsetParent !== null }; }, imageSel);
+    check(clip.w === 64 && /64 × 36 px/.test(clip.meta) && clip.fits && !clip.note, 'an MP4 opens in a video player that fits the view (' + JSON.stringify(clip) + ')');
+    await shot('editor-video.png');
+    const media = await page.evaluate(async () => {
+      const u = '/api/sandboxes/dev/editor/media?path=';
+      const r = await fetch(u + encodeURIComponent('work/iwato/media/clip.mp4'), { headers: { Range: 'bytes=4-11' } });
+      const body = new TextDecoder().decode(await r.arrayBuffer());
+      const html = await fetch(u + encodeURIComponent('work/iwato/web/fake.png'));
+      return { status: r.status, type: r.headers.get('content-type'), csp: r.headers.get('content-security-policy'), nosniff: r.headers.get('x-content-type-options'), body, other: html.status };
+    });
+    check(media.status === 206 && media.type === 'video/mp4' && /sandbox/.test(media.csp) && media.nosniff === 'nosniff' && media.body === 'ftypisom' && media.other === 415, 'the media route answers a Range with 206 under a sandboxing CSP, other names refused (' + JSON.stringify(media) + ')');
+    await openQuick('brokenmp4', 'work/iwato/media/broken.mp4');
+    await page.waitForFunction((sel) => document.querySelector(sel + ' video')?.getAttribute('aria-label') === 'broken.mp4' && document.querySelector(sel + ' .editor-media-note').offsetParent !== null, imageSel);
+    check(true, 'a file the browser cannot play opens with a note');
+    for (const name of ['tone.wav', 'clip.mp4', 'broken.mp4']) await click(page, panelSel + ' .editor-tabs', 'work/iwato/media/' + name + ' を閉じる');
     // JavaScript is highlighted too (a string).
     await openQuick('wapjs', 'work/iwato/web/app.js');
     await page.waitForFunction((sel) => __editorText(sel).startsWith("'use strict'"), textSel);

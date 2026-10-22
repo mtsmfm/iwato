@@ -354,6 +354,18 @@ type renamed struct {
 
 func (r renamed) Name() string { return r.name }
 
+// OpenRead opens a file (relative to the SFTP root, links followed) to
+// read as a GET does. ctx bounds only the stat: the channel is leased from
+// the first read until Close.
+func (p *Pool) OpenRead(ctx context.Context, name, file string) (io.ReadSeekCloser, fs.FileInfo, error) {
+	f := newFS(p, name)
+	fi, err := f.stat(ctx, file)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &readFile{fs: f, ctx: context.WithoutCancel(ctx), p: file, info: fi}, fi, nil
+}
+
 // readFile opens the SFTP file only when read: a listing opens every entry
 // (webdav reads their properties through OpenFile) without reading it.
 // Reads go through a large buffer, which pkg/sftp fills with several
