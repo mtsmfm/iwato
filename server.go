@@ -370,7 +370,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 			}
 			list[i].GPU = sb.GPU
 			list[i].Stopped = s.notifier.stopped(sb.Name)
-			list[i].RestartPending = list[i].State == "running" && !sb.ProvidersChangedAt.IsZero()
+			list[i].RestartPending = list[i].State == "running" && s.restartPending(sb)
 			s.autoStopStatus(&list[i], sb)
 		}(i, sb)
 	}

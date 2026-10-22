@@ -351,3 +351,45 @@ func (r *readinessRuntime) ProviderReadiness(ctx context.Context, sandbox, provi
 	}
 	return r.Fake.ProviderReadiness(ctx, sandbox, provider, receipt)
 }
+
+// A restart Iwato's handlers did not see (OpenShell's, the VM's) renews
+// main: the badge goes and the stored change is forgotten.
+func TestRestartPendingEndsWithAnUnseenRestart(t *testing.T) {
+	s, d, do := providerServer(t)
+	if code, body := do("POST", "/api/sandboxes/dev/start", `{}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	pending := func() bool {
+		t.Helper()
+		_, body := do("GET", "/api/sandboxes", "")
+		var l struct{ Sandboxes []Status }
+		if json.Unmarshal([]byte(body), &l) != nil {
+			t.Fatal(body)
+		}
+		return l.Sandboxes[0].RestartPending
+	}
+	time.Sleep(2 * time.Millisecond)
+	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"huggingface"}`); code != 200 || !strings.Contains(body, `"restart":true`) {
+		t.Fatal(code, body)
+	}
+	if !pending() || !pending() {
+		t.Fatal("not pending after the change")
+	}
+	sb, _ := s.lookupSandbox("dev")
+	d.mu.Lock()
+	d.termStarted["dev/"+mainTerm] = sb.ProvidersChangedAt.Add(time.Second)
+	d.mu.Unlock()
+	if pending() {
+		t.Fatal("still pending after the restart")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for sb, _ := s.lookupSandbox("dev"); !sb.ProvidersChangedAt.IsZero(); sb, _ = s.lookupSandbox("dev") {
+		if time.Now().After(deadline) {
+			t.Fatal("the change is not forgotten")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pending() {
+		t.Fatal("pending again")
+	}
+}
