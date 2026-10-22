@@ -15,7 +15,8 @@
 // not text) opens as a read-only preview: an img of the raw route, which
 // serves only images told by their content, under a sandboxing CSP. A
 // Markdown file can show a preview (web/vendor/markdown.js, loaded when
-// first shown) instead of the text or beside it.
+// first shown) instead of the text or beside it. Audio and video (by the
+// name) play in the same view from the media route, which streams them.
 (() => {
   'use strict';
   // The UI's strings (web/i18n.js), looked up when used.
@@ -141,6 +142,8 @@
   // imageName: a name the preview opens without asking for text first (the
   // server decides by the content: editor.go editorImageType).
   const imageName = (p) => /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i.test(p);
+  // mediaKind: audio or video by the name (editor.go editorMediaTypes).
+  const mediaKind = (p) => /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac|weba)$/i.test(p) ? 'audio' : /\.(mp4|m4v|webm|ogv|mov|mkv)$/i.test(p) ? 'video' : '';
   const viewKey = 'iwato-editor-view';
   const savedView = () => {
     try { const v = localStorage.getItem(viewKey); return v === 'preview' || v === 'both' ? v : 'text'; } catch (_) { return 'text'; }
@@ -148,6 +151,19 @@
   // The preview's images: at most this many per file, each this big.
   const maxPreviewImages = 30;
   const maxPreviewImage = 5 << 20;
+  // duration: seconds as m:ss (h:mm:ss from an hour).
+  const duration = (s) => {
+    const n = Math.ceil(s), two = (v) => String(v).padStart(2, '0');
+    return n >= 3600 ? Math.floor(n / 3600) + ':' + two(Math.floor(n / 60) % 60) + ':' + two(n % 60) : Math.floor(n / 60) + ':' + two(n % 60);
+  };
+  // dropMedia stops a closed tab's player and its download (the server's
+  // SFTP lease goes with the request).
+  const dropMedia = (doc) => {
+    if (!doc?.media) return;
+    doc.img.pause();
+    doc.img.removeAttribute('src');
+    doc.img.load();
+  };
   const sizeText = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
   // The tree's expanded folders per sandbox: in the page, and in the
   // browser's storage when it has one.
@@ -573,7 +589,7 @@
       constructor(sandbox, selected) {
         this.sandbox = sandbox;
         this.selected = selected || (() => true);
-        this.docs = []; // {path, content (as saved), version, value, start, end, scroll}; an image: {path, image, img, width, height, size, fit}
+        this.docs = []; // {path, content (as saved), version, value, start, end, scroll}; an image: {path, image, img, width, height, size, fit}; audio or video adds media, url, duration, unplayable (img is the player)
         this.current = null;
         this.recent = [];
         this.lists = {}; // folder -> {files, truncated, via, at}
@@ -674,9 +690,12 @@
         this.imageFit = button('button-subtle editor-image-fit', '100 %', () => this.toggleFit());
         this.imageText = button('button-subtle', t('editor.image.asText'), () => this.openAsText());
         this.imageText.title = t('editor.image.asText.title');
-        imageHead.append(this.imageName, this.imageMeta, this.imageFit, this.imageText, button('button-subtle', t('common.reload'), () => this.reload()));
+        this.mediaDownload = element('a', 'button button-subtle', t('editor.media.download'));
+        this.imageReload = button('button-subtle', t('common.reload'), () => this.reload());
+        imageHead.append(this.imageName, this.imageMeta, this.imageFit, this.imageText, this.mediaDownload, this.imageReload);
+        this.mediaNote = element('p', 'panel-error editor-media-note', t('editor.media.unsupported'));
         this.imageBox = element('div', 'editor-image-box');
-        this.image.append(imageHead, this.imageBox);
+        this.image.append(imageHead, this.mediaNote, this.imageBox);
         this.empty = element('div', 'editor-empty');
         this.empty.append(element('strong', '', t('editor.empty')),
           element('p', '', coarse() ? t('editor.empty.touch') : t('editor.empty.keys', { key })));
@@ -768,7 +787,7 @@
       // button, or the open button.
       focusTarget() {
         if (!this.current) return this.openButton;
-        if (this.current.image) return this.imageFit;
+        if (this.current.image) return this.current.media ? this.current.img : this.imageFit;
         return this.body.dataset.mode === 'preview' ? this.viewButtons[1] : this.text;
       }
 
@@ -1153,7 +1172,8 @@
         this.status.textContent = t('editor.opening', { path });
         try {
           let doc;
-          if (imageName(path)) doc = await this.openImage(path);
+          if (mediaKind(path)) doc = await this.openMedia(path);
+          else if (imageName(path)) doc = await this.openImage(path);
           else {
             try {
               doc = await this.openText(path);
@@ -1169,9 +1189,9 @@
           // Keep a few open: the saved ones used longest ago go.
           const unused = (d) => { const i = this.recent.indexOf(d.path); return i < 0 ? Infinity : i; };
           const saved = this.docs.filter((d) => d !== doc && !this.dirty(d)).sort((a, b) => unused(b) - unused(a));
-          while (this.docs.length > maxTabs && saved.length) this.docs.splice(this.docs.indexOf(saved.shift()), 1);
+          while (this.docs.length > maxTabs && saved.length) dropMedia(this.docs.splice(this.docs.indexOf(saved.shift()), 1)[0]);
           this.renderTabs();
-          this.status.textContent = doc.path + (doc.image ? t('editor.image.readOnly') : '');
+          this.status.textContent = doc.path + (doc.media ? t('editor.media.readOnly') : doc.image ? t('editor.image.readOnly') : '');
         } catch (error) {
           this.status.textContent = path + ': ' + error.message;
           if (!coarse()) this.focusTarget().focus();
@@ -1225,15 +1245,55 @@
         return { path, image: true, fit: true, ...await this.loadImage(path), content: '', value: '', version: '', eol: '\n', start: 0, end: 0, scroll: 0 };
       }
 
+      // loadMedia plays the media route in an audio or video element, which
+      // fetches it in ranges. When it cannot play, the route says why, or
+      // (it served the file) the browser cannot: the view says so.
+      async loadMedia(path) {
+        const kind = mediaKind(path);
+        const el = element(kind, 'editor-media editor-media-' + kind);
+        el.controls = true;
+        el.preload = 'metadata';
+        el.setAttribute('aria-label', baseName(path));
+        const url = '/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/media?path=' + encodeURIComponent(path);
+        const loaded = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(true), 15000);
+          el.addEventListener('loadedmetadata', () => { clearTimeout(timer); resolve(true); }, { once: true });
+          el.addEventListener('error', () => { clearTimeout(timer); resolve(false); }, { once: true });
+          el.src = url;
+        });
+        if (!loaded) await api(url, { timeoutMs: 70000, headers: { Range: 'bytes=0-0' } });
+        el.addEventListener('error', () => {
+          const doc = this.docs.find((d) => d.img === el);
+          if (!doc) return;
+          doc.unplayable = true;
+          if (doc === this.current) this.mediaNote.hidden = false;
+        });
+        const i = path.lastIndexOf('/');
+        const size = this.treeDirs[i < 0 ? '' : path.slice(0, i)]?.entries?.find((e) => e.name === baseName(path))?.size || 0;
+        return { img: el, media: kind, unplayable: !loaded, url, width: el.videoWidth || 0, height: el.videoHeight || 0, duration: el.duration, size };
+      }
+
+      async openMedia(path) {
+        return { path, image: true, ...await this.loadMedia(path), content: '', value: '', version: '', eol: '\n', start: 0, end: 0, scroll: 0 };
+      }
+
       showImage(doc) {
         this.imageBox.replaceChildren(doc.img);
-        this.image.dataset.fit = doc.fit ? 'fit' : 'actual';
+        this.image.dataset.fit = doc.media ? 'media' : doc.fit ? 'fit' : 'actual';
         this.imageName.textContent = baseName(doc.path);
         this.imageName.title = doc.path;
-        this.imageMeta.textContent = [doc.width && doc.height ? doc.width + ' × ' + doc.height + ' px' : '', doc.size ? sizeText(doc.size) : ''].filter(Boolean).join(' · ');
+        const length = Number.isFinite(doc.duration) && doc.duration > 0 ? duration(doc.duration) : '';
+        this.imageMeta.textContent = [doc.width && doc.height ? doc.width + ' × ' + doc.height + ' px' : '', length, doc.size ? sizeText(doc.size) : ''].filter(Boolean).join(' · ');
+        this.imageFit.hidden = !!doc.media;
         this.imageFit.textContent = doc.fit ? '100 %' : t('editor.image.fit');
         this.imageFit.title = doc.fit ? t('editor.image.actual.title') : t('editor.image.fit.title');
         this.imageText.hidden = !/\.svg$/i.test(doc.path);
+        this.mediaDownload.hidden = !doc.media;
+        if (doc.media) {
+          this.mediaDownload.href = doc.url;
+          this.mediaDownload.download = baseName(doc.path);
+        }
+        this.mediaNote.hidden = !doc.unplayable;
         this.image.hidden = false;
       }
 
@@ -1284,6 +1344,7 @@
         const i = this.docs.indexOf(doc);
         if (i < 0) return;
         this.docs.splice(i, 1);
+        dropMedia(doc);
         if (doc === this.current) {
           this.current = null;
           const next = this.docs[Math.min(i, this.docs.length - 1)];
@@ -1307,7 +1368,7 @@
       async save(force = false) {
         const doc = this.current;
         if (!doc || this.saving) return;
-        if (doc.image) { this.status.textContent = t('editor.image.noSave'); return; }
+        if (doc.image) { this.status.textContent = t(doc.media ? 'editor.media.noSave' : 'editor.image.noSave'); return; }
         if (this.sandbox.status && this.sandbox.status !== 'running') { this.status.textContent = t('editor.save.stopped'); return; }
         const value = this.text.value;
         this.saving = true;
@@ -1344,7 +1405,9 @@
         if (doc.image) {
           this.status.textContent = t('editor.loading', { path: doc.path });
           try {
-            Object.assign(doc, await this.loadImage(doc.path));
+            const old = { ...doc };
+            Object.assign(doc, await (doc.media ? this.loadMedia(doc.path) : this.loadImage(doc.path)));
+            dropMedia(old);
             if (doc === this.current) this.showImage(doc);
             this.status.textContent = t('editor.reloaded', { path: doc.path });
           } catch (error) {

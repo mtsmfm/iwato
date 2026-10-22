@@ -3,9 +3,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -105,6 +107,68 @@ func TestEditorRaw(t *testing.T) {
 	}
 	if res, _ := request(t, s, "/api/sandboxes/dev/editor/raw?path=i/a.png", "POST", "", c, ""); res.StatusCode != 405 {
 		t.Errorf("POST: %d", res.StatusCode)
+	}
+}
+
+// The media route: the type from the name's allowlist, Range, the raw
+// route's headers; other names and non-files refused.
+func TestEditorMedia(t *testing.T) {
+	s, c, _ := newFilesServer(t)
+	data := make([]byte, 300000)
+	for i := range data {
+		data[i] = byte(i * 7)
+	}
+	err := s.files.Do(context.Background(), "dev", "test", func(sc *sftp.Client) error {
+		if err := sc.MkdirAll("m/dir.mp4"); err != nil {
+			return err
+		}
+		for _, p := range []string{"m/a.MP4", "m/a.wav", "m/a.html", "m/a"} {
+			f, err := sc.Create(p)
+			if err != nil {
+				return err
+			}
+			f.Write(data)
+			f.Close()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(p, rng string, cookie *http.Cookie) (*http.Response, []byte) {
+		r, _ := http.NewRequest("GET", s.origin+"/api/sandboxes/dev/editor/media?path="+url.QueryEscape(p), nil)
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		if rng != "" {
+			r.Header.Set("Range", rng)
+		}
+		res, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res, b
+	}
+	if res, _ := get("m/a.wav", "", nil); res.StatusCode != 401 {
+		t.Fatalf("without a session: %d", res.StatusCode)
+	}
+	res, b := get("m/a.MP4", "bytes=200000-200099", c)
+	h := res.Header
+	if res.StatusCode != 206 || !bytes.Equal(b, data[200000:200100]) || h.Get("Content-Range") != "bytes 200000-200099/300000" || h.Get("Content-Type") != "video/mp4" {
+		t.Errorf("range: %d %v (%d bytes)", res.StatusCode, h, len(b))
+	}
+	if h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") != "default-src 'none'; style-src 'unsafe-inline'; sandbox" || h.Get("Content-Disposition") != "inline" {
+		t.Errorf("headers: %v", h)
+	}
+	if res, b := get("m/a.wav", "", c); res.StatusCode != 200 || !bytes.Equal(b, data) || res.Header.Get("Content-Type") != "audio/wav" {
+		t.Errorf("whole: %d %q (%d bytes)", res.StatusCode, res.Header.Get("Content-Type"), len(b))
+	}
+	for p, want := range map[string]int{"m/a.html": 415, "m/a": 415, "m/dir.mp4": 400, "m/nope.mp4": 404, "../x.mp4": 400, "/etc/x.mp4": 400} {
+		if res, b := get(p, "", c); res.StatusCode != want || strings.HasPrefix(res.Header.Get("Content-Type"), "video") || bytes.Contains(b, data[:50]) {
+			t.Errorf("%s: %d %q", p, res.StatusCode, res.Header.Get("Content-Type"))
+		}
 	}
 }
 

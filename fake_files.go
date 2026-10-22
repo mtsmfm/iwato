@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 
 	"iwato/internal/dav"
 )
@@ -42,6 +44,12 @@ func (d *Fake) DialFiles(_ context.Context, w Sandbox) (dav.Transport, error) {
 		webp, _ := base64.StdEncoding.DecodeString("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==")
 		_ = m.WriteFile("work/iwato/web/dot.webp", webp)
 		_ = m.WriteFile("work/iwato/web/fake.png", []byte("<!doctype html><script>alert(1)</script>"))
+		// For the media player: a tone, a clip (VP9 in MP4, which Chromium
+		// builds without H.264 play too), and one no browser plays.
+		_ = m.WriteFile("work/iwato/media/tone.wav", fakeWAV())
+		clip, _ := base64.StdEncoding.DecodeString(fakeClip)
+		_ = m.WriteFile("work/iwato/media/clip.mp4", clip)
+		_ = m.WriteFile("work/iwato/media/broken.mp4", []byte("not a video"))
 		// For the tree: links (to a file, a folder, nowhere).
 		_ = m.Symlink("README.md", "work/iwato/LINK.md")
 		_ = m.Symlink("work/iwato", "iwato")
@@ -94,6 +102,27 @@ func fakePNG() []byte {
 	_ = png.Encode(&b, img)
 	return b.Bytes()
 }
+
+// fakeWAV is half a second of a 440 Hz tone (8 kHz, 8-bit mono PCM).
+func fakeWAV() []byte {
+	const rate, n = 8000, 4000
+	var b bytes.Buffer
+	b.WriteString("RIFF")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(36+n))
+	b.WriteString("WAVEfmt ")
+	for _, v := range []any{uint32(16), uint16(1), uint16(1), uint32(rate), uint32(rate), uint16(1), uint16(8)} {
+		_ = binary.Write(&b, binary.LittleEndian, v)
+	}
+	b.WriteString("data")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(n))
+	for i := range n {
+		b.WriteByte(byte(128 + 60*math.Sin(2*math.Pi*440*float64(i)/rate)))
+	}
+	return b.Bytes()
+}
+
+// fakeClip is a 64×36, 0.4 s solid colour clip (ffmpeg, libvpx-vp9).
+const fakeClip = "AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAvZtb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAABkAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACRXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAABkAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAQAAAACQAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAAZAAAAAAAAEAAAAAAb1tZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAACgAAAAQAFXEAAAAAAAtaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAFZpZGVvSGFuZGxlcgAAAAFobWluZgAAABR2bWhkAAAAAQAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAABKHN0YmwAAACoc3RzZAAAAAAAAAABAAAAmHZwMDkAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAQAAkAEgAAABIAAAAAAAAAAEPTGF2YyBsaWJ2cHgtdnA5AAAAAAAAAAAAAAAAAAAAAAAY//8AAAAUdnBjQwEAAAAACoICAgIAAAAAAApmaWVsAQAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAAEYAAABGAAAAAYc3R0cwAAAAAAAAABAAAAAgAACAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAgAAAAEAAAAcc3RzegAAAAAAAAAAAAAAAgAAACkAAAAPAAAAFHN0Y28AAAAAAAAAAQAAAyIAAAA9dWR0YQAAADVtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAAhpbHN0AAAACGZyZWUAAABAbWRhdIJJg0IAA/ACNgA4JBwYSgAAMGAAABO///OvIABH////kgh/////V7AAhgBAkpwAUAAAAyAAAFRw"
 
 // fakeSVG has a script, which an img (and the raw route's CSP) never runs.
 const fakeSVG = `<?xml version="1.0" encoding="UTF-8"?>
