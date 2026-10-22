@@ -232,7 +232,7 @@ func TestOpenShellFilesE2E(t *testing.T) {
 		Environment: sandboxEnv(ro),
 		Policy:      policy,
 		TTY:         true,
-	}, map[string]string{"iwato.sandbox": ro.Name}); err != nil {
+	}, v1.WithLabels(map[string]string{"iwato.sandbox": ro.Name})); err != nil {
 		t.Fatal("create read-only:", err)
 	}
 	defer o.Delete(context.Background(), ro, true)

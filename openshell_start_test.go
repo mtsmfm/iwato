@@ -50,7 +50,7 @@ func (f *fakeSandboxes) record(call string) {
 	f.calls = append(f.calls, call)
 }
 
-func (f *fakeSandboxes) Create(_ context.Context, _, name string, spec *v1.SandboxSpec, _ map[string]string, _ ...v1.CreateOptions) (*v1.Sandbox, error) {
+func (f *fakeSandboxes) Create(_ context.Context, _, name string, spec *v1.SandboxSpec, _ ...v1.CreateOption) (*v1.Sandbox, error) {
 	f.record("create")
 	f.mu.Lock()
 	f.specs = append(f.specs, spec)

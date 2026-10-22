@@ -21,7 +21,7 @@ Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude`, `iwato-
 Checks:
 
 - `go test -tags uitest -run 'Profile|YAML' .`: the files load, unknown keys are rejected, and the protos built from YAML equal the ones formerly written in Go (same hash, so the gateway's profiles are not updated)
-- OpenShell's lint (it calls the gateway's `LintProviderProfiles`, so it needs a gateway): `MODE=tls internal/openshell/wslc/e2e.sh` runs `openshell provider profile lint -f` on `profiles/*.yaml`. By hand, while the e2e runs (or against Iwato's gateway): `~/.cache/openshell-e2e/0.1.4/openshell provider profile lint -f profiles/iwato-github.yaml`
+- OpenShell's lint (it calls the gateway's `LintProviderProfiles`, so it needs a gateway): `MODE=tls internal/openshell/wslc/e2e.sh` runs `openshell provider profile lint -f` on `profiles/*.yaml`. By hand, while the e2e runs (or against Iwato's gateway): `~/.cache/openshell-e2e/0.1.5/openshell provider profile lint -f profiles/iwato-github.yaml`
 
 The providers panel's **View the profile as YAML** (for each provider and for the type chosen in the add form) shows the bundled file for Iwato's profiles (**Shipped with Iwato**), and for profiles imported with OpenShell's CLI the gateway's copy written out in OpenShell's format (**From the gateway**; without comments and formatting, `resource_version`, `annotations`, `source` or `scope`) (`GET /api/provider-profiles/ID`).
 
@@ -81,7 +81,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
 - Lifetimes of the access and refresh tokens, and whether the refresh token rotates: Iwato's log (menu **Log**) shows them on connect, never the values
   - `atlassian oauth: NAME: token response fields ..., lifetimes map[expires_in:N ...] s, refresh_token true, scope "..."`: the exchange's response (`refresh_token_expires_in` etc. would show here)
   - `the gateway refreshed it; access token lifetime ...`: the gateway's first refresh right after connecting (capped at the profile's max_lifetime of 1 hour)
-- Whether refresh needs `resource`: OpenShell v0.1.4's refresh sends only `grant_type=refresh_token, client_id, refresh_token` (no client_secret, scope or resource). If the first refresh fails, the UI shows "Connected, but the gateway's first refresh failed (STATE)". `invalid_target` / `invalid_request` suggest resource is required (needs an OpenShell change; the current token works until it expires)
+- Whether refresh needs `resource`: OpenShell v0.1.5's refresh sends only `grant_type=refresh_token, client_id, refresh_token` (no client_secret, scope or resource). If the first refresh fails, the UI shows "Connected, but the gateway's first refresh failed (STATE)". `invalid_target` / `invalid_request` suggest resource is required (needs an OpenShell change; the current token works until it expires)
 - Rotation: two successful **Refresh now** in a row mean the gateway stores and uses the new refresh token (`reauthorization_required` / `oauth_invalid_grant` on the second points at storing the rotation or resource)
 
 ### Steps

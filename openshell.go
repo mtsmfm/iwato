@@ -599,7 +599,7 @@ func (o *OpenShell) Start(ctx context.Context, w Sandbox) error {
 			// which then outlive Iwato; without a terminal of its own.
 			spec.Command, spec.TTY = []string{o.daemonPath(termd.Path), "serve", "-key", w.Name}, false
 		}
-		_, err = api.Create(ctx, openshellWorkspace, w.Name, spec, map[string]string{"iwato.sandbox": w.Name})
+		_, err = api.Create(ctx, openshellWorkspace, w.Name, spec, v1.WithLabels(map[string]string{"iwato.sandbox": w.Name}))
 		if err != nil {
 			return err
 		}
