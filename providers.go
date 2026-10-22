@@ -736,6 +736,40 @@ func (s *Server) clearProvidersChanged(name string) {
 	}
 }
 
+// restartPending tells whether the running sandbox still lacks its last
+// provider change: its main terminal started before it, or at an unknown
+// time. A main started since (a restart Iwato did not see) also forgets
+// the change, in the background.
+func (s *Server) restartPending(sb Sandbox) bool {
+	if sb.ProvidersChangedAt.IsZero() {
+		return false
+	}
+	if len(s.providerOutdated(sb, []string{mainTerm})) > 0 {
+		return true
+	}
+	go s.forgetProvidersChanged(sb.Name, sb.ProvidersChangedAt)
+	return false
+}
+
+// forgetProvidersChanged clears the provider change made at at, unless a
+// newer one replaced it. The receipts stay: their checks end on their own.
+func (s *Server) forgetProvidersChanged(name string, at time.Time) {
+	if sb, ok := s.lookupSandbox(name); !ok || !sb.ProvidersChangedAt.Equal(at) {
+		return
+	}
+	err := s.updateSandboxes(func(list []Sandbox) ([]Sandbox, error) {
+		for i := range list {
+			if list[i].Name == name && list[i].ProvidersChangedAt.Equal(at) {
+				list[i].ProvidersChangedAt = time.Time{}
+			}
+		}
+		return list, nil
+	})
+	if err != nil {
+		log.Printf("sandbox %s: %v", name, english(err))
+	}
+}
+
 // terminalStarts tells when each of a sandbox's terminals started (false
 // when unknown: main without a terminal daemon, the sandbox's main
 // process). OpenShell and Fake implement it.
