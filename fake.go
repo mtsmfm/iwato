@@ -214,7 +214,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, ccscroll, clear, exit\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -323,6 +323,13 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 		case 3:
 			t.line = ""
 			t.output("^C\r\n" + t.id + " $ ")
+		case 4:
+			// Ctrl-D on an empty line ends the shell, as bash.
+			if t.line == "" {
+				t.output("\r\nlogout\r\n")
+				go t.d.endTerminal(t.sandbox, t.name)
+				return len(b), nil
+			}
 		case 127, 8:
 			if len(t.line) > 0 {
 				r := []rune(t.line)

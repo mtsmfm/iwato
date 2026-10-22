@@ -5158,6 +5158,12 @@
         this.termNames = ['main'];
         this.termMulti = false;
         this.termsLoaded = false;
+        // Its last screen would look live: the placeholder shows instead.
+        if (this.terminal && !this.desired) {
+          this.terminal.dispose();
+          this.terminal = null;
+          this.placeholder.hidden = false;
+        }
       } else if (!this.termsLoaded) {
         this.termsLoaded = true;
         this.loadTerms();

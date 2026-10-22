@@ -340,6 +340,27 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       check(m.font.startsWith('"Moralerspace') && Math.abs(m.cell - m.advance) < 0.01 && Math.abs(m.wide - 2 * m.advance) < 0.01, 'a font that loads while the terminal is hidden: cells match the glyphs (cell ' + m.cell + ', advance ' + m.advance + ', wide ' + m.wide + ')');
       await p.close();
     }
+    // Ctrl-D ends a shell: an extra terminal gives way to main; main, the
+    // last one, stops the sandbox (autostop.go), and the card shows it
+    // stopped instead of the last screen.
+    await card.getByRole('button', { name: '新しいターミナル' }).click();
+    await page.waitForTimeout(1000);
+    const tabs = () => card.locator('.term-tab').count();
+    const opened = await tabs();
+    await input.focus();
+    await page.keyboard.press('Control+d');
+    await page.waitForTimeout(1500);
+    check(opened === 2 && await tabs() === 1 && await card.locator('.connection-label[data-state=connected]').count() === 1, 'Ctrl-D in an extra terminal shows main');
+    await input.focus();
+    await page.keyboard.press('Control+d');
+    await card.locator('.badge[data-state=stopped]').waitFor({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    check(await card.locator('.badge[data-state=stopped]').count() === 1 && await start.isVisible() && await card.locator('.iw-term').count() === 0 && await card.locator('.terminal-placeholder').isVisible(), 'Ctrl-D in the last terminal: the card shows the sandbox stopped, not the last screen');
+    await page.screenshot({ path: path.join(dir, 'ended.png') });
+    await start.click();
+    await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached' });
+    await page.waitForTimeout(500);
+    check((await screenText()).includes('IWATO · FAKE'), 'starting it again shows a new session');
     console.log('traffic: sent ' + traffic.sent + ' B, received ' + traffic.received + ' B, ' + traffic.frames + ' frames, ' + traffic.pages + ' pages');
     console.log('screenshots in ' + dir);
   } finally {
