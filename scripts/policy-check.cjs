@@ -484,7 +484,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await presets.locator('.policy-preset', { hasText: '(mtsmfm/iwato)' }).getByRole('button', { name: '外す' }).click();
     await page.click('#confirm-ok');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .policy-current')?.innerText.includes('mirror_mtsmfm_iwato'));
-    check(await presets.locator('.policy-preset', { hasText: '(mtsmfm/iwato)' }).count() === 0, 'taking the preset out removes its rule');
+    check(await presets.locator('.policy-preset', { hasText: '(mtsmfm/iwato)' }).waitFor({ state: 'detached', timeout: 10000 }).then(() => true, () => false), 'taking the preset out removes its rule');
     // The owner's presets as YAML: a provider's host is refused inline,
     // a good one is saved and listed, then deleted.
     await presets.getByRole('button', { name: '新しいプリセット' }).click();
