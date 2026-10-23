@@ -1,0 +1,81 @@
+# Iwato's Cloudflare profile: the Cloudflare API (api.cloudflare.com/client/v4)
+# that wrangler and cloudflared's tunnel management use. Iwato imports it into
+# the gateway (platform scope) when it prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-cloudflare.yaml
+#
+# Client binaries:   mise's node (wrangler is a Node script: `mise use -g
+#                    npm:wrangler` or the project's npx; OpenShell matches
+#                    the interpreter, not the script, so any Node program,
+#                    the cloudflare SDK too, may use the token), cloudflared
+#                    (`mise use -g cloudflared`, aqua: installs/cloudflared/
+#                    VERSION/cloudflared), curl. Python (the cloudflare SDK)
+#                    is not listed and gets a proposal.
+# Credential scope:  CLOUDFLARE_API_TOKEN (workers-auth credentials.ts
+#                    getCloudflareAPITokenFromEnv), sent by wrangler as a
+#                    bearer authorization header (workers-utils cfetch
+#                    addAuthorizationHeader) to api.cloudflare.com/client/v4
+#                    only (misc-variables.ts getCloudflareApiBaseUrl).
+#                    Not set: CF_API_TOKEN (wrangler's deprecated alias, read
+#                    only without CLOUDFLARE_API_TOKEN) and the global API key
+#                    (CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL as X-Auth-Key and
+#                    X-Auth-Email): it reaches the whole account and cannot be
+#                    narrowed by Cloudflare; wrangler prefers it over the
+#                    token when both are set. CLOUDFLARE_ACCOUNT_ID is not a
+#                    secret and profiles carry only credentials: the owner
+#                    sets it (or account_id in wrangler's config).
+#                    cloudflared does not read the variable: its tunnel
+#                    commands take the token in cert.pem (`cloudflared tunnel
+#                    login`, TUNNEL_ORIGIN_CERT; credentials/origin_cert.go)
+#                    and send it the same way (cfapi/base_client.go); listing
+#                    it keeps those calls in this provider's scope.
+#                    `cloudflared tunnel run` connects to Cloudflare's edge
+#                    (*.argotunnel.com, port 7844) with a tunnel token and is
+#                    outside this provider.
+# Endpoint access:   reads only: GET, HEAD and OPTIONS, and GraphQL queries
+#                    (/client/v4/graphql, POST: `wrangler d1 info`, `d1
+#                    insights`, `r2 bucket info`). Deploys, uploads, DNS and
+#                    other changes (POST, PUT, PATCH, DELETE), and D1 queries
+#                    (POST), take a policy proposal or the scope's Allow
+#                    writes (ADR 0006, 0014).
+#                    Not listed: api.sql.cloudflarestorage.com (`wrangler r2
+#                    sql query` falls back to the token there), the FedRAMP
+#                    API (api.fed.cloudflare.com), the dev preview hosts
+#                    (preview tokens), R2's S3 endpoints (their own keys),
+#                    sparrow.cloudflare.com (telemetry) and dash.cloudflare.com
+#                    (OAuth login): none of these get this token.
+# Verified:          from cloudflare/workers-sdk (main, 55b3d470da1a,
+#                    2026-10-23, wrangler 4.152.0) and cloudflare/cloudflared
+#                    (master, 8cc81c7fcc52, 2026-10-23), via GitHub;
+#                    cloudflared's mise path by installing cloudflared
+#                    2026.10.3.
+
+id: iwato-cloudflare
+display_name: Cloudflare (Iwato)
+description: Cloudflare API for Iwato's sandbox image
+category: other
+credentials:
+  - name: api_token
+    description: Cloudflare API token
+    env_vars: [CLOUDFLARE_API_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_token]
+endpoints:
+  - host: api.cloudflare.com
+    port: 443
+    path: /client/v4/graphql
+    protocol: graphql
+    access: read-only
+    enforcement: enforce
+  - host: api.cloudflare.com
+    port: 443
+    path: /client/v4/**
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+binaries:
+  - /home/dev/.local/share/mise/installs/node/*/bin/node
+  - /home/dev/.local/share/mise/installs/cloudflared/*/cloudflared
+  - /usr/bin/curl

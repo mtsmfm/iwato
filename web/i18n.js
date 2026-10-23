@@ -852,6 +852,7 @@
     'providers.group.source': 'ソース管理',
     'providers.group.models': 'モデル配布',
     'providers.group.cloud': '生成・GPU クラウド',
+    'providers.group.hosting': 'ホスティング・デプロイ',
     'providers.group.custom': 'カスタム',
     // Iwato's provider profiles in other languages: the server sends the
     // Japanese (providers_profiles.go), so these keys have no ja entry
@@ -2436,6 +2437,7 @@
     'providers.group.source': 'Source control',
     'providers.group.models': 'Model hubs',
     'providers.group.cloud': 'Generation and GPU clouds',
+    'providers.group.hosting': 'Hosting and deployment',
     'providers.group.custom': 'Custom',
     'profile.iwato-claude-subscription.label': 'Claude Code (sign in with Claude)',
     'profile.iwato-claude-subscription.note': 'CLAUDE_CODE_OAUTH_TOKEN. Signs in with your Claude account; the sandbox\'s claude sends it to api.anthropic.com.',
@@ -2467,6 +2469,9 @@
     'profile.iwato-runpod.note': 'RUNPOD_API_KEY, sent to api.runpod.io, rest.runpod.io, api.runpod.ai (serverless) and hapi.runpod.net. Reads only; creating and starting pods and serverless runs (which cost money) are allowed through policy proposals.',
     'profile.iwato-runpod.credential.api_key': 'API key',
     'profile.iwato-runpod.hint': 'runpodctl (mise use -g github:runpod/runpodctl) and the runpod Python SDK read RUNPOD_API_KEY (no runpodctl doctor needed). To check: runpodctl user.',
+    'profile.iwato-cloudflare.note': 'CLOUDFLARE_API_TOKEN, sent to api.cloudflare.com/client/v4. Reads only; deploys and DNS changes are allowed through policy proposals or the scope\'s Allow writes.',
+    'profile.iwato-cloudflare.credential.api_token': 'API token',
+    'profile.iwato-cloudflare.hint': 'wrangler (mise use -g npm:wrangler) reads CLOUDFLARE_API_TOKEN (no wrangler login needed). The account ID is not a secret: set CLOUDFLARE_ACCOUNT_ID or account_id in wrangler\'s config yourself. For wrangler deploy, set Change scope to Allow writes. To check: wrangler whoami.',
     'files.ago.unused': 'never used',
     'files.ago.now': 'just now',
     'files.ago.minutes': '{count} min ago',

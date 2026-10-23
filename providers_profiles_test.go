@@ -84,6 +84,8 @@ func TestServiceProfiles(t *testing.T) {
 		{"iwato-vastai", "bearer", "authorization", []string{"VAST_API_KEY"}, []string{"console.vast.ai/api/**"}, python},
 		{"iwato-runpod", "bearer", "authorization", []string{"RUNPOD_API_KEY"}, []string{"api.runpod.io/graphql", "api.runpod.io/v2/**", "rest.runpod.io/v1/**", "api.runpod.ai/v2/**", "hapi.runpod.net/v1/**"},
 			append([]string{"/home/dev/.local/share/mise/installs/github-runpod-runpodctl/*/runpodctl", "/usr/local/bin/runpodctl"}, append(slices.Clone(python), node)...)},
+		{"iwato-cloudflare", "bearer", "authorization", []string{"CLOUDFLARE_API_TOKEN"}, []string{"api.cloudflare.com/client/v4/graphql", "api.cloudflare.com/client/v4/**"},
+			[]string{node, "/home/dev/.local/share/mise/installs/cloudflared/*/cloudflared", "/usr/bin/curl"}},
 		{"iwato-comfy-cloud", "header", "x-api-key", []string{"COMFY_CLOUD_API_KEY", "COMFY_API_KEY"}, []string{"cloud.comfy.org/api/**", "cloud.comfy.org/api/prompt", "cloud.comfy.org/ws", "api.comfy.org"}, append(slices.Clone(python), node)},
 	} {
 		p := mustProfile(t, c.id)
@@ -146,6 +148,12 @@ func TestServiceProfiles(t *testing.T) {
 	for _, e := range mustProfile(t, "iwato-runpod").proto().Endpoints {
 		if e.Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_ONLY || len(e.Rules) > 0 || (e.Protocol == "graphql") != (e.Path == "/graphql") {
 			t.Error("runpod", e.Host+e.Path, e.Protocol, e.Access)
+		}
+	}
+	// Cloudflare: reads and GraphQL queries; deploys take a proposal.
+	for _, e := range mustProfile(t, "iwato-cloudflare").proto().Endpoints {
+		if e.Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_ONLY || len(e.Rules) > 0 || (e.Protocol == "graphql") != strings.HasSuffix(e.Path, "/graphql") {
+			t.Error("cloudflare", e.Host+e.Path, e.Protocol, e.Access)
 		}
 	}
 	// Comfy Cloud: the body is rewritten for /api/prompt only (uploads
