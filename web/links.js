@@ -173,10 +173,13 @@
       // Build one logical line: text plus the cell/row of every code unit.
       let text = '';
       const pos = [];
-      const push = (row, r, from) => {
-        // A '|' that is a right border ends a URL, though '|' belongs to URLs elsewhere.
+      // A '|' that is a right border ends a URL, though '|' belongs to URLs elsewhere.
+      const chars = (row, r, from) => {
         const border = rows[r + 1]?.wrapped ? -1 : rightBorder(row, cols);
-        for (let k = from; k < row.cells.length; k++) { text += k === border ? '│' : row.cells[k].c; pos.push({x: row.cells[k].x, r}); }
+        return row.cells.slice(from).map((cell, k) => k + from === border ? '│' : cell.c);
+      };
+      const push = (row, r, from) => {
+        for (const [k, c] of chars(row, r, from).entries()) { text += c; pos.push({x: row.cells[from + k].x, r}); }
       };
       push(rows[i], i, 0);
       let j = i + 1;
@@ -184,12 +187,16 @@
         const prev = rows[j - 1], row = rows[j];
         if (row.wrapped) { text = text.replace(/ +$/, ''); pos.length = text.length; push(row, j, 0); j++; continue; }
         if (!reachesEdge(prev, cols)) break;
-        // Join only when a URL ends at the edge and the next row continues it.
+        // Join only when a URL (or the start of its scheme: the application
+        // may break inside https://) ends at the edge and the next row
+        // continues it into one URL.
         const before = text.replace(/[ │┃║|]+$/, '');
-        const tail = before.match(/https?:\/\/\S*$/);
+        const tail = /https?:\/\/\S*$|(?<![A-Za-z0-9])(?:https?(?::\/?)?|htt?|h)$/.test(before);
         let k = 0;
         while (k < row.cells.length && (row.cells[k].c === ' ' || FRAME.includes(row.cells[k].c))) k++;
         if (!tail || k >= row.cells.length || linkTerm((row.cells[k].c + (row.cells[k + 1]?.c || '')).codePointAt(0)) === HARD) break;
+        const joined = before + chars(row, j, k).join('');
+        if (!findURLs(joined).some((u) => u.index < before.length && u.index + u.url.length > before.length)) break;
         text = before; pos.length = before.length;
         push(row, j, k);
         j++;

@@ -217,7 +217,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -305,6 +305,24 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 				}
 				b.WriteString("╰" + strings.Repeat("─", width+2) + "╯\r\n")
 				b.WriteString(bold(u + "/wrapped-by-the-terminal?pad=" + strings.Repeat("b", t.cols)))
+				response = b.String()
+			case line == "ccwrap":
+				// Claude Code's own wrap of a long URL, broken inside its
+				// scheme at the edge, the rest on rows indented by two.
+				const u = "https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html"
+				width := max(t.cols-2, 40)
+				words := "レポートの一番上に並べました: "
+				lead := width - 7 - 30
+				if lead < 0 {
+					words, lead = "", width-7
+				}
+				var b strings.Builder
+				b.WriteString("⏺ " + strings.Repeat("あ", lead/2) + strings.Repeat(" ", lead%2) + words + u[:7])
+				for rest := u[7:]; rest != ""; {
+					n := min(width, len(rest))
+					b.WriteString("\r\n  " + rest[:n])
+					rest = rest[n:]
+				}
 				response = b.String()
 			case line == "framed":
 				// A URL that an application wraps itself inside a frame, at
