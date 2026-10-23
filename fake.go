@@ -173,7 +173,8 @@ type fakeTerm struct {
 	mu                 sync.Mutex
 	cols, rows         int           // as the attached client sized it
 	app                *ccscroll     // the full-screen app running, if any
-	spin               chan struct{} // stops cclink's status row
+	spin               chan struct{} // stops cclink's status row or tui
+	spinEnd            string        // written when spin stops
 	once               sync.Once
 	done               chan struct{}
 }
@@ -191,7 +192,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 	if t.spin != nil {
 		close(t.spin)
 		t.spin = nil
-		t.output(fmt.Sprintf("\x1b[4B\x1b[%dG", len(t.id)+4))
+		t.output(t.spinEnd)
 	}
 	if t.app != nil {
 		t.scrollInput(b)
@@ -217,7 +218,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, logo, lines, colors, diff, mouse, ccscroll, tui MS [LINES], clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -271,6 +272,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 				t.output("\r\n╭──────────────────────────────────────────────╮\r\n│ 詳細は " + link + " を見てください │\r\n│ 参照: \x1b[38;5;153m" + u[:19] + "\x1b[1m" + u[19:] + "\x1b[0m        │\r\n╰──────────────────────────────────────────────╯\r\n\r\n" + t.id + " $ \x1b[4A\x1b[20G")
 				stop := make(chan struct{})
 				t.spin = stop
+				t.spinEnd = fmt.Sprintf("\x1b[4B\x1b[%dG", len(t.id)+4)
 				go func() {
 					tick := time.NewTicker(40 * time.Millisecond)
 					defer tick.Stop()
@@ -341,6 +343,11 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 				response = strings.TrimSuffix(b.String(), "\r\n")
 			case line == "ccscroll":
 				t.startScroll()
+				return len(b), nil
+			case strings.HasPrefix(line, "tui "):
+				var ms, lines int
+				fmt.Sscanf(line[4:], "%d %d", &ms, &lines)
+				t.startTUI(time.Duration(max(ms, 10))*time.Millisecond, lines)
 				return len(b), nil
 			case line == "mouse":
 				// What tmux sends with `set -g mouse on`.
@@ -613,3 +620,45 @@ func (d *Fake) Reset(_ context.Context, sandboxes []Sandbox, step func(code stri
 }
 
 func (d *Fake) PrepareAgain(context.Context) {}
+
+// startTUI keeps a terminal busy: as Claude Code at work, redrawing the
+// whole alternate screen every period until the next key, or printing a
+// numbered line every period, lines in all.
+func (t *fakeTerm) startTUI(period time.Duration, lines int) {
+	log := lines > 0
+	stop := make(chan struct{})
+	t.spin = stop
+	t.spinEnd = ""
+	if !log {
+		t.output("\x1b[?1049h\x1b[?25l")
+		t.spinEnd = "\x1b[?25h\x1b[?1049l"
+	}
+	rows := max(t.rows, 5)
+	go func() {
+		tick := time.NewTicker(period)
+		defer tick.Stop()
+		for i := 1; ; i++ {
+			select {
+			case <-stop:
+				return
+			case <-t.done:
+				return
+			case <-tick.C:
+			}
+			if log {
+				t.output(fmt.Sprintf("\r\nlog %d https://example.com/log/%d", i, i))
+				if i == lines {
+					return
+				}
+				continue
+			}
+			var b strings.Builder
+			b.WriteString("\x1b[?2026h\x1b[H")
+			for y := range rows - 1 {
+				fmt.Fprintf(&b, "\x1b[3%dm⏺\x1b[0m frame %d row %d: Reading \x1b[1mweb/term.js\x1b[0m https://example.com/doc/%d\x1b[K\r\n", (i+y)%7+1, i, y, i+y)
+			}
+			fmt.Fprintf(&b, "\x1b[38;5;174m%c\x1b[39m Thinking… frame %d\x1b[K\x1b[?2026l", []rune("✻✽✶✳")[i%4], i)
+			t.output(b.String())
+		}
+	}()
+}

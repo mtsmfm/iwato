@@ -467,6 +467,38 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       check(m.font.startsWith('"Moralerspace') && Math.abs(m.cell - m.advance) < 0.01 && Math.abs(m.wide - 2 * m.advance) < 0.01, 'a font that loads while the terminal is hidden: cells match the glyphs (cell ' + m.cell + ', advance ' + m.advance + ', wide ' + m.wide + ')');
       await p.close();
     }
+    // Output while another sandbox is shown: frames are acknowledged but
+    // nothing is drawn; switching back shows all of it, at the bottom.
+    {
+      await input.focus();
+      await page.keyboard.type('tui 15 80');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(300);
+      const home = await page.locator('#sandbox-nav .nav-sandbox.active .nav-name').innerText();
+      const screen = await card.locator('.iw-screen').elementHandle();
+      await page.locator('#sandbox-nav').getByText('experiment', { exact: true }).first().click();
+      // After the frame already scheduled when it was hidden.
+      await screen.evaluate((el) => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.rowMutations = 0;
+        window.rowObserver = new MutationObserver((list) => { window.rowMutations += list.length; });
+        window.rowObserver.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
+        done();
+      }))));
+      const frames = traffic.frames;
+      await page.waitForTimeout(1500);
+      const hidden = { frames: traffic.frames - frames, mutations: await page.evaluate(() => { window.rowObserver.disconnect(); return window.rowMutations; }) };
+      check(hidden.frames > 20 && hidden.mutations === 0, 'output while another sandbox is shown: frames keep coming, nothing drawn (' + JSON.stringify(hidden) + ')');
+      await page.locator('#sandbox-nav').getByText(home, { exact: true }).first().click();
+      await page.waitForTimeout(300);
+      const shown = await card.locator('.iw-term').evaluate((root) => {
+        const n = [...root.innerText.matchAll(/^log (\d+) /gm)].map((m) => Number(m[1]));
+        const rows = [...root.querySelectorAll('.iw-screen .iw-row')].filter((r) => r.textContent.trim());
+        return { n, last: rows.at(-1)?.textContent, url: !!rows.at(-1)?.querySelector('.iw-url'), bottom: root.scrollHeight - root.clientHeight - root.scrollTop };
+      });
+      const max = Math.max(...shown.n);
+      check(max === 80 && shown.n.every((v, i) => i === 0 || v === shown.n[i - 1] + 1) && shown.last.startsWith('log ' + max + ' ') && shown.url, 'switching back shows the output that came while hidden (log 1…' + max + ', last row ' + JSON.stringify(shown.last) + ')');
+      check(shown.bottom < 4, 'switching back shows the bottom (' + shown.bottom + ' px above it)');
+    }
     // Ctrl-D ends a shell: an extra terminal gives way to main; main, the
     // last one, stops the sandbox (autostop.go), and the card shows it
     // stopped instead of the last screen.

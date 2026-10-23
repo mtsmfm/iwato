@@ -181,6 +181,7 @@
       this.ackDue = 0;
       this.composing = false;
       this.focused = false;
+      this.visible = true;
 
       this.root = document.createElement('div');
       this.root.className = 'iw-term iw-t' + this.id;
@@ -218,6 +219,8 @@
       this.root.append(this.selEl);
       this.onSelection = () => this.drawSelection();
       document.addEventListener('selectionchange', this.onSelection);
+      this.onVisibility = () => this.schedule();
+      document.addEventListener('visibilitychange', this.onVisibility);
       host.append(this.root);
       this.stick = true;
       this.stuckTop = 0;
@@ -317,7 +320,24 @@
       } else if (kind === KIND.page) {
         this.apply(r);
       }
+      if (this.drawn()) this.schedule();
+      else this.ack();
+    }
+
+    // Whether the terminal is shown (the page tells it: the sandbox and the
+    // tab shown). Hidden, it keeps the model and acknowledges frames, so
+    // that termsync does not hold them back, but draws only once shown.
+    setVisible(on) {
+      this.visible = on;
       this.schedule();
+    }
+
+    drawn() { return this.visible && !document.hidden; }
+
+    ack() {
+      if (!this.ackDue) return;
+      this.options.send(message(KIND.ack, uvarints(this.ackDue)));
+      this.ackDue = 0;
     }
 
     apply(r) {
@@ -602,6 +622,8 @@
         top.remove();
       }
       this.recomputeFrom();
+      // They pile up while hidden.
+      for (const seg of this.urlLines) if (!seg.isConnected) this.urlLines.delete(seg);
       if (!this.stick) this.root.scrollTop -= before - this.root.scrollHeight;
       this.updateMore();
     }
@@ -647,7 +669,7 @@
     // ------------------------------------------------------------ drawing
 
     schedule() {
-      if (this.frame !== null) return;
+      if (this.frame !== null || !this.drawn()) return;
       this.frame = requestAnimationFrame(() => { this.frame = null; this.render(); });
     }
 
@@ -672,10 +694,7 @@
       this.placeCursor();
       if (this.stick) this.keepBottom();
       if (this.selEl.firstChild) this.drawSelection();
-      if (this.ackDue) {
-        this.options.send(message(KIND.ack, uvarints(this.ackDue)));
-        this.ackDue = 0;
-      }
+      this.ack();
       this.maybeFetch();
       if (this.cursorMoved) { this.cursorMoved = false; this.options.onCursor?.(); }
     }
@@ -1332,6 +1351,7 @@
     dispose() {
       if (this.frame !== null) cancelAnimationFrame(this.frame);
       document.removeEventListener('selectionchange', this.onSelection);
+      document.removeEventListener('visibilitychange', this.onVisibility);
       clearTimeout(this.hintTimer);
       window.removeEventListener('keydown', this.onModifier);
       window.removeEventListener('keyup', this.onModifier);

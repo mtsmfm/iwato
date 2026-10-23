@@ -90,6 +90,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     cursorRow() { return this.cursorY ?? 0; }
     cursorMove() { this.options.onCursor?.(); }
     setFont(family) { this.options.fontFamily = family; }
+    setVisible(on) { this.visible = on; }
     toBottom() { this.bottomed = (this.bottomed || 0) + 1; }
     focus() { this.focusCount = (this.focusCount || 0) + 1; } dispose() { this.disposed = true; }
   }
