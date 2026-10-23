@@ -1101,6 +1101,7 @@
 
     // ------------------------------------------------------------ pointer
 
+    // The cell at a point as mouse reports count it: 1-based, clamped.
     cellAt(clientX, clientY) {
       const rect = this.screen.getBoundingClientRect();
       const col = Math.min(this.cols, Math.max(1, Math.floor((clientX - rect.left) / this.cellW) + 1));
@@ -1210,6 +1211,8 @@
         return piece ? 'U' + piece.dataset.url : null;
       };
       const hot = (event, on) => {
+        // A tap's mouseover would leave the URL lit: touch has no hover.
+        if (touchOnly) return;
         const next = on ? groupOf(event.target) : groupOf(event.relatedTarget);
         if (next === this.hotGroup) return;
         this.hotGroup = next;
@@ -1217,7 +1220,7 @@
       };
       this.root.addEventListener('mouseover', (event) => hot(event, true));
       const hint = (event) => {
-        const next = touchOnly ? null : { ...this.cellAt(event.clientX, event.clientY), ctrlKey: event.ctrlKey, metaKey: event.metaKey };
+        const next = touchOnly ? null : { ...this.screenCell(event.clientX, event.clientY), ctrlKey: event.ctrlKey, metaKey: event.metaKey };
         const h = this.hint;
         if (next?.row === h?.row && next?.col === h?.col && next?.ctrlKey === h?.ctrlKey && next?.metaKey === h?.metaKey) return;
         this.hint = next && next.col >= 0 ? next : null;
@@ -1263,7 +1266,7 @@
     }
 
     // The screen cell at a point: {row, col}, or {row} off the screen's rows.
-    cellAt(x, y) {
+    screenCell(x, y) {
       const rect = this.screen.getBoundingClientRect();
       const row = Math.floor((y - rect.top) / this.cellH);
       if (row < 0 || row >= this.rows) return { row: -1 };
@@ -1277,7 +1280,7 @@
     // The link under the pointer: an OSC 8 link, or a URL or path in the text. On
     // the screen, from the cell, whatever element is on top of it.
     linkAt(event) {
-      const { row, col } = this.cellAt(event.clientX, event.clientY);
+      const { row, col } = this.screenCell(event.clientX, event.clientY);
       if (row >= 0) {
         if (col < 0) return null;
         const link = this.styles.get(this.grid[row].cells[col].s)?.link;
