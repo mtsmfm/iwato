@@ -38,11 +38,13 @@ import (
 //	GET  /api/sandboxes/NAME/editor/file?path=PATH              a file's text and version
 //	GET  /api/sandboxes/NAME/editor/raw?path=PATH               an image's bytes (the preview)
 //	GET  /api/sandboxes/NAME/editor/media?path=PATH             audio or video, streamed (Range)
+//	GET  /api/sandboxes/NAME/editor/resolve?path=P&term=T       a path printed in terminal T, as a file under the root
 //	POST /api/sandboxes/NAME/editor/file                         save {path, content, base, force}
 //
-// Paths are relative to the SFTP root. A version is the content's SHA-256:
-// a save names the version it was edited from (base) and is refused (409,
-// "changed") when the file is no longer that, unless forced.
+// Paths are relative to the SFTP root (resolve's is as the terminal printed
+// it). A version is the content's SHA-256: a save names the version it was
+// edited from (base) and is refused (409, "changed") when the file is no
+// longer that, unless forced.
 //
 // The raw route serves only images a browser shows (editorImageType, by
 // the content, not the name), under a CSP that sandboxes it and nosniff:
@@ -76,6 +78,8 @@ var (
 	errEditorImageLarge = errCode("editor_image_too_large", map[string]any{"max": maxEditorImageBytes >> 20}, fmt.Sprintf("画像が大きすぎます (%d MB まで)", maxEditorImageBytes>>20))
 	// errNoRipgrep: the sandbox has no rg; the listing walks SFTP instead.
 	errNoRipgrep = errors.New("no ripgrep in the sandbox")
+	// errEditorOutside: a terminal's path is not under the root.
+	errEditorOutside = errors.New("outside the editor's root")
 	// errEditorNoDir: the folder to list does not exist.
 	errEditorNoDir = errCode("editor_no_dir", nil, "フォルダーがありません")
 )
@@ -521,7 +525,7 @@ func editorFail(w http.ResponseWriter, name, what string, err error) {
 
 // handleEditor serves the editor's routes (parts: NAME, "editor", what).
 func (s *Server) handleEditor(w http.ResponseWriter, r *http.Request, parts []string) {
-	if len(parts) != 3 || (parts[2] != "files" && parts[2] != "file" && parts[2] != "dir" && parts[2] != "raw" && parts[2] != "media" && parts[2] != "root") {
+	if len(parts) != 3 || (parts[2] != "files" && parts[2] != "file" && parts[2] != "dir" && parts[2] != "raw" && parts[2] != "media" && parts[2] != "root" && parts[2] != "resolve") {
 		fail(w, 404, "unknown sandbox route")
 		return
 	}
@@ -541,6 +545,8 @@ func (s *Server) handleEditor(w http.ResponseWriter, r *http.Request, parts []st
 	switch {
 	case parts[2] == "root":
 		s.editorRoot(w, r, sb)
+	case parts[2] == "resolve":
+		s.editorResolve(w, r, sb)
 	case parts[2] == "files":
 		s.editorFiles(w, r, sb)
 	case parts[2] == "dir":
@@ -591,6 +597,83 @@ func (s *Server) editorRoot(w http.ResponseWriter, r *http.Request, sb Sandbox) 
 		return
 	}
 	jsonResponse(w, 200, v)
+}
+
+// termDirRuntime tells a terminal's working directory ("" when unknown).
+type termDirRuntime interface {
+	TermDir(ctx context.Context, w Sandbox, term string) string
+}
+
+// terminalPath turns a path printed in a terminal into one relative to
+// root: ~/ is the home, and a relative path is taken from dir (the
+// terminal's working directory, else where terminals start).
+func terminalPath(p, dir, root string) (string, error) {
+	switch {
+	case p == "~" || strings.HasPrefix(p, "~/"):
+		p = homeDir + p[1:]
+	case !strings.HasPrefix(p, "/"):
+		if !strings.HasPrefix(dir, "/") {
+			dir = homeDir + "/" + workDir
+		}
+		p = dir + "/" + p
+	}
+	rel, ok := strings.CutPrefix(path.Clean(p), strings.TrimSuffix(root, "/")+"/")
+	if !ok {
+		return "", errEditorOutside
+	}
+	return editorPath(rel, false)
+}
+
+// editorResolve answers {path} for a path printed in a terminal when it is
+// a file under the root.
+func (s *Server) editorResolve(w http.ResponseWriter, r *http.Request, sb Sandbox) {
+	q := r.URL.Query()
+	p := q.Get("path")
+	if p == "" || len(p) > 4096 || strings.ContainsRune(p, 0) {
+		failErr(w, 400, errEditorPath)
+		return
+	}
+	rt, ok := s.rt.(filesRootRuntime)
+	if !ok {
+		failCode(w, 501, "editor_unavailable", nil, "エディタは使えません")
+		return
+	}
+	ctx, cancel := timeout(r.Context(), time.Minute)
+	defer cancel()
+	if s.rt.Status(ctx, sb).State != "running" {
+		editorFail(w, sb.Name, "resolve", dav.ErrStopped)
+		return
+	}
+	root, err := rt.FilesRoot(ctx, sb)
+	if err != nil {
+		editorFail(w, sb.Name, "resolve", err)
+		return
+	}
+	dir := ""
+	if td, ok := s.rt.(termDirRuntime); ok && !strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "~") && validTermName(q.Get("term")) {
+		dctx, dcancel := context.WithTimeout(ctx, 2*time.Second)
+		dir = td.TermDir(dctx, sb, q.Get("term"))
+		dcancel()
+	}
+	rel, err := terminalPath(p, dir, root.Path)
+	if errors.Is(err, errEditorOutside) {
+		failCode(w, 400, "editor_outside", map[string]any{"root": root.Path}, root.Path+" の外のファイルはエディタで開けません")
+		return
+	}
+	if err == nil {
+		err = s.files.Do(ctx, sb.Name, "editor resolve "+rel, func(c *sftp.Client) error {
+			fi, err := c.Stat(rel)
+			if err == nil && fi.IsDir() {
+				err = errEditorNotFile
+			}
+			return err
+		})
+	}
+	if err != nil {
+		editorFail(w, sb.Name, "resolve "+rel, err)
+		return
+	}
+	jsonResponse(w, 200, map[string]any{"path": rel})
 }
 
 func (s *Server) editorFiles(w http.ResponseWriter, r *http.Request, sb Sandbox) {

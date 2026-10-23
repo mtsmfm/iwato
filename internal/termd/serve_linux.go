@@ -351,6 +351,16 @@ func (d *daemon) attach(c *net.UnixConn, r *bufio.Reader, o Open) {
 			}
 		case KindEnd:
 			go t.kill()
+		case KindCwd:
+			m := Message(KindCwd, []byte(t.cwd()))
+			t.mu.Lock()
+			if _, ok := t.clients[cl]; ok {
+				select {
+				case cl.out <- m:
+				default:
+				}
+			}
+			t.mu.Unlock()
 		}
 		if err != nil {
 			break
@@ -362,6 +372,24 @@ func (d *daemon) attach(c *net.UnixConn, r *bufio.Reader, o Open) {
 		cl.drop()
 	}
 	t.mu.Unlock()
+}
+
+// cwd is the working directory of the PTY's foreground process group
+// leader, or of the terminal's first process when that has gone.
+func (t *term) cwd() string {
+	pgrp := 0
+	if raw, err := t.ptm.SyscallConn(); err == nil {
+		_ = raw.Control(func(fd uintptr) { pgrp, _ = unix.IoctlGetInt(int(fd), unix.TIOCGPGRP) })
+	}
+	for _, pid := range []int{pgrp, t.cmd.Process.Pid} {
+		if pid <= 0 {
+			continue
+		}
+		if dir, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/cwd"); err == nil && strings.HasPrefix(dir, "/") {
+			return dir
+		}
+	}
+	return ""
 }
 
 // repaintDelay is how long the terminal stays a row shorter: long enough

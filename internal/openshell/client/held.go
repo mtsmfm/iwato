@@ -32,6 +32,8 @@ type Held struct {
 	wmu     sync.Mutex
 	pending []byte
 	closed  atomic.Bool
+	cwdMu   sync.Mutex  // one cwd question at a time
+	cwd     chan string // its answer
 }
 
 // termCommand runs bin with args, or exits quietly when the sandbox has no
@@ -55,7 +57,7 @@ func AttachHeld(ctx context.Context, conn grpc.ClientConnInterface, workspace, s
 	if err != nil {
 		return nil, err
 	}
-	h := &Held{p: p, r: bufio.NewReaderSize(p, 64<<10)}
+	h := &Held{p: p, r: bufio.NewReaderSize(p, 64<<10), cwd: make(chan string, 1)}
 	kind, payload, err := first(ctx, p, h.r)
 	if err == nil {
 		switch kind {
@@ -140,6 +142,11 @@ func (h *Held) Read(b []byte) (int, error) {
 			return 0, io.EOF
 		case termd.KindError:
 			return 0, daemonError(payload)
+		case termd.KindCwd:
+			select {
+			case h.cwd <- string(payload):
+			default:
+			}
 		}
 	}
 	n := copy(b, h.pending)
@@ -164,6 +171,29 @@ func (h *Held) Write(b []byte) (int, error) {
 
 func (h *Held) Resize(cols, rows int) error {
 	return h.send(termd.KindResize, termd.ResizePayload(cols, rows))
+}
+
+// Cwd asks the daemon for the terminal's working directory ("" when it
+// does not know or cannot tell). The answer comes through Read.
+func (h *Held) Cwd(ctx context.Context) string {
+	if !termd.Has(h.Hello.Version, h.Hello.Capabilities, termd.CapCwd) {
+		return ""
+	}
+	h.cwdMu.Lock()
+	defer h.cwdMu.Unlock()
+	select {
+	case <-h.cwd: // a late answer to an earlier question
+	default:
+	}
+	if h.send(termd.KindCwd, nil) != nil {
+		return ""
+	}
+	select {
+	case dir := <-h.cwd:
+		return dir
+	case <-ctx.Done():
+		return ""
+	}
 }
 
 // Kill ends the terminal; its exit ends the output.

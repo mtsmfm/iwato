@@ -3,12 +3,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"iwato/internal/dav"
 	"iwato/internal/termsync"
 	"net"
+	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -26,6 +28,7 @@ type Fake struct {
 	started map[string]bool
 	stopped map[string]bool
 	history map[string]string // by sandbox/terminal
+	dirs    map[string]string // the working directories cd set, by sandbox/terminal
 	// terms are each sandbox's running terminals and their attachments.
 	terms map[string]map[string][]*fakeTerm
 	// renewed are terminals restarted once; before that, "2" shows as one
@@ -214,7 +217,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -305,6 +308,17 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 				// What tmux sends with `set -g mouse on`.
 				t.output("\x1b[?1000h\x1b[?1002h\x1b[?1006h")
 				response = "mouse reporting on (scroll to test)"
+			case strings.HasPrefix(line, "cd "):
+				t.d.mu.Lock()
+				if t.d.dirs == nil {
+					t.d.dirs = map[string]string{}
+				}
+				dir := strings.TrimSpace(strings.TrimPrefix(line, "cd "))
+				if !path.IsAbs(dir) {
+					dir = path.Join(cmp.Or(t.d.dirs[t.key], homeDir+"/"+workDir), dir)
+				}
+				t.d.dirs[t.key] = path.Clean(dir)
+				t.d.mu.Unlock()
 			case strings.HasPrefix(line, "echo "):
 				response = strings.TrimPrefix(line, "echo ")
 			case line == "clear":
@@ -516,6 +530,13 @@ func (d *Fake) RemoveVolume(_ context.Context, name string) error {
 	}
 	delete(d.volumes, name)
 	return nil
+}
+
+// TermDir is where the terminal's last cd went ("" before any).
+func (d *Fake) TermDir(_ context.Context, w Sandbox, name string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.dirs[w.Name+"/"+name]
 }
 
 func (d *Fake) markStarted(sandbox, name string) {

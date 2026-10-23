@@ -144,6 +144,31 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await input.focus();
     await page.keyboard.press('Control+c');
     await page.waitForTimeout(200);
+    // A file path opens in the editor at its line; one that is missing or
+    // outside the home says so instead.
+    {
+      const { clickPath, editorAt } = require('./path-links.cjs');
+      await clickPath(page, card, '見て iwato/web/app.js:2:3 を開く', 'iwato/web/app.js:2:3', phone);
+      const at = await editorAt(page);
+      check(await card.getAttribute('data-tab') === 'editor' && at.text.includes("console.log('app')") && at.line === 2 && at.col === 3, 'a relative path (from ~/work) opens in the editor tab at its line and column (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
+      await card.getByRole('tab', { name: /^ターミナル/ }).click();
+      const message = () => card.locator('.card-message-text').innerText();
+      await clickPath(page, card, 'iwato/nope.js と /etc/hosts', 'iwato/nope.js', phone);
+      await page.waitForTimeout(400);
+      check((await message()).includes('ファイルがありません') && await card.getAttribute('data-tab') === 'terminal', 'a missing file says so and stays on the terminal');
+      await clickPath(page, card, '/etc/hosts', '/etc/hosts', phone);
+      await page.waitForTimeout(400);
+      check((await message()).includes('/home/dev の外'), 'a path outside the home says it cannot be opened');
+      await card.getByRole('button', { name: 'その他の操作' }).click();
+      await card.getByRole('menuitem', { name: 'リンク' }).click();
+      const listed = card.locator('.links-panel .terminal-path', { hasText: 'iwato/web/app.js:2:3' });
+      check(await listed.count() > 0, 'the links view lists the paths too');
+      await listed.first().click();
+      const fromList = await editorAt(page);
+      check(await card.getAttribute('data-tab') === 'editor' && fromList.line === 2, 'a path in the links view opens in the editor');
+      await card.getByRole('tab', { name: /^ターミナル/ }).click();
+      await input.focus();
+    }
     // IME: typing the next word commits the previous one (compositionend,
     // then at once compositionstart with the new letter in the field).
     // "iwato [convert] wo [enter]" must send 岩戸を, not 岩戸wを.

@@ -2322,20 +2322,24 @@
     link.addEventListener('click', (event) => { if (androidApp()) { event.preventDefault(); openLink(url); } });
   }
 
-  // URLs in the terminal's history and screen, newest first. Detects URLs
-  // that span rows, including ones wrapped by applications (real newlines)
-  // rather than by the terminal, by reading neighbour rows.
+  // URLs ({url}) and file paths ({path}: IwatoLinks.findPaths) in the
+  // terminal's history and screen, newest first. Detects URLs that span
+  // rows, including ones wrapped by applications (real newlines) rather
+  // than by the terminal, by reading neighbour rows.
   function bufferLinks(terminal) {
     const lines = terminal.textLines();
     const rows = lines.map((line) => ({ cells: Array.from(line, (c, x) => ({ c, x })), wrapped: false }));
     const width = Math.max(1, ...lines.map((line) => line.length));
     const seen = new Set();
-    const urls = [];
+    const links = [];
     for (const link of window.IwatoLinks.wrappedLinks(rows, width, 1).reverse()) {
-      const url = window.IwatoLinks.safeURL(link.url);
-      if (url && !seen.has(url)) { seen.add(url); urls.push(url); }
+      const path = window.IwatoLinks.pathOf(link.url);
+      const url = path ? '' : window.IwatoLinks.safeURL(link.url);
+      if ((!url && !path) || seen.has(link.url)) continue;
+      seen.add(link.url);
+      links.push(path ? { path, text: link.url.slice(link.url.indexOf(':') + 1) } : { url });
     }
-    return urls;
+    return links;
   }
 
   function bufferText(terminal) { return terminal.textLines().join('\n') + '\n'; }
@@ -3583,12 +3587,14 @@
     }
   }
 
-  // URLs printed in the terminal (its history), newest first. Links open
-  // only on an explicit tap, in a new tab without opener or referrer.
+  // URLs and file paths printed in the terminal (its history), newest
+  // first. Links open only on an explicit tap, in a new tab without opener
+  // or referrer; paths open in the editor (openPath).
   class LinksPanel {
-    constructor(sandbox, terminalOf) {
+    constructor(sandbox, terminalOf, openPath) {
       this.sandbox = sandbox;
       this.terminalOf = terminalOf;
+      this.openPath = openPath;
       this.root = element('section', 'side-panel links-panel');
       bindAttribute(this.root, 'aria-label', 'links.label');
       this.root.hidden = true;
@@ -3607,15 +3613,23 @@
       this.list.replaceChildren();
       if (!terminal) { this.status.textContent = t('links.disconnected'); return; }
       {
-        const urls = bufferLinks(terminal).slice(0, 30);
-        for (const url of urls) {
+        const links = bufferLinks(terminal).slice(0, 30);
+        for (const { url, path, text } of links) {
           const item = element('li');
-          const link = element('a', 'terminal-link', url);
-          linkAnchor(link, url);
+          let link;
+          if (path) {
+            link = element('button', 'terminal-link terminal-path', text);
+            link.type = 'button';
+            link.addEventListener('click', () => this.openPath(path));
+            link.title = t('links.pathTitle');
+          } else {
+            link = element('a', 'terminal-link', url);
+            linkAnchor(link, url);
+          }
           item.append(link);
           this.list.append(item);
         }
-        this.status.textContent = urls.length ? (androidApp() ? t('links.share') : t('links.open')) : t('links.none');
+        this.status.textContent = links.length ? (androidApp() ? t('links.share') : t('links.open')) : t('links.none');
       }
     }
 
@@ -4573,7 +4587,7 @@
       this.policy = new PolicyPanel(this.sandbox);
       this.policy.onChange = () => { this.renderTabs(); renderPendingTotal(); this.followPolicy(); };
       this.selectTab('terminal');
-      this.links = new LinksPanel(this.sandbox, () => this.terminal);
+      this.links = new LinksPanel(this.sandbox, () => this.terminal, (found) => this.openPath(found));
       this.deletion = new DeletePanel(this);
       this.recreation = new RecreatePanel(this);
       this.providers = new ProviderPanel(this);
@@ -5305,7 +5319,11 @@
         send: (bytes) => this.sendRaw(bytes),
         input: (text) => { if (this.desired && this.connection === 'connected') this.send({ type: 'input', data: text }); },
         mapInput: (text) => this.applyCtrl(text),
-        onLink: (url, event) => { if (linkClick(event)) openLink(url); },
+        onLink: (url, event) => {
+          if (!linkClick(event)) return;
+          const found = window.IwatoLinks?.pathOf(url);
+          if (found) this.openPath(found); else openLink(url);
+        },
         // OSC 52 may only write the clipboard right after the owner's own
         // input, and links from programs in the sandbox (OSC 6464) open only then,
         // in the shown sandbox: output alone changes nothing.
@@ -5328,6 +5346,21 @@
         this.terminal.setFont(terminalFont.family);
         this.fit();
       });
+    }
+
+    // Opens a path printed in the terminal (IwatoLinks.findPaths) in the
+    // editor: beside the terminal when side by side, else in its tab. The
+    // server takes a relative path from the terminal's working directory
+    // and says when it is not a file there.
+    async openPath(found) {
+      try {
+        const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/resolve?term=' + encodeURIComponent(this.termName) + '&path=' + encodeURIComponent(found.path), { timeoutMs: 70000 });
+        if (this.disposed) return;
+        if (this.root.dataset.split !== 'true') this.selectTab('editor');
+        await this.editor.open(String(data.path), found.line ? { line: found.line, col: found.col } : null);
+      } catch (error) {
+        if (!this.disposed) this.showError(t('term.path.failed', { path: found.path, message: error.message }));
+      }
     }
 
     sendRaw(bytes) {

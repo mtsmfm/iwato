@@ -67,6 +67,19 @@ func TestDaemon(t *testing.T) {
 	}
 	a.send(KindInput, []byte("echo MARK-$((40+2))\n"))
 	a.waitFor(t, "MARK-42")
+	a.send(KindInput, []byte("cd / && echo CD-$((1+1))\n"))
+	a.waitFor(t, "CD-2")
+	a.send(KindCwd, nil)
+	if dir := a.waitCwd(t); dir != "/" {
+		t.Fatalf("cwd: %q", dir)
+	}
+	// The foreground job's, not the shell's.
+	a.send(KindInput, []byte("sh -c 'cd /usr && echo IN-$((2+2)) && sleep 3'\n"))
+	a.waitFor(t, "IN-4")
+	a.send(KindCwd, nil)
+	if dir := a.waitCwd(t); dir != "/usr" {
+		t.Fatalf("cwd of the foreground job: %q", dir)
+	}
 	a.close()
 
 	// The shell is still there, with what it wrote.
@@ -168,6 +181,22 @@ func (a *attached) waitFor(t *testing.T, want string) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatalf("no %q in %q", want, a.seen.String())
+	}
+}
+
+// waitCwd reads until the cwd message.
+func (a *attached) waitCwd(t *testing.T) string {
+	t.Helper()
+	timer := time.AfterFunc(10*time.Second, func() { a.cmd.Process.Kill() })
+	defer timer.Stop()
+	for {
+		k, p, err := ReadMessage(a.r)
+		if err != nil {
+			t.Fatal("waiting for the cwd:", err)
+		}
+		if k == KindCwd {
+			return string(p)
+		}
 	}
 }
 

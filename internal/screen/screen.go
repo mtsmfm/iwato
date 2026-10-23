@@ -143,6 +143,7 @@ type Term struct {
 	MaxHistLines, MaxHistBytes int
 
 	title   string
+	dir     string // OSC 7
 	bells   int
 	events  []Event
 	version uint64
@@ -227,6 +228,9 @@ func (t *Term) Modes() Modes { return t.modes }
 
 // Title is the window title (OSC 0/2).
 func (t *Term) Title() string { return t.title }
+
+// Dir is the working directory the program last reported (OSC 7), "" when none.
+func (t *Term) Dir() string { return t.dir }
 
 // Bells counts the bells rung so far.
 func (t *Term) Bells() int { return t.bells }

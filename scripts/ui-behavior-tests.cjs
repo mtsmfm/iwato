@@ -875,6 +875,13 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     }
     assert.deepEqual(seen, [...differs.keys()]); assert(checked > 300, 'test lines: ' + checked); }
   ok('URLs end as UTS #58 says, except at CJK punctuation, box drawing, backticks and a trailing ?; | belongs to a URL unless it is a right border');
+  { const paths = (t) => Array.from(side.win.IwatoLinks.findPaths(t), (p) => [p.path, p.line, p.col, t.slice(p.index, p.index + p.length)]);
+    assert.deepEqual(paths('web/editor.js:12:3: error'), [['web/editor.js', 12, 3, 'web/editor.js:12:3']], 'line and column');
+    assert.deepEqual(paths('src/Makefile:7: x and ./run, ~/.bashrc, ../up/y.'), [['src/Makefile', 7, 0, 'src/Makefile:7'], ['./run', 0, 0, './run'], ['~/.bashrc', 0, 0, '~/.bashrc'], ['../up/y', 0, 0, '../up/y']]);
+    assert.deepEqual(paths('「/home/dev/work/a.go:5」を見て、web/editor.jsを開く'), [['/home/dev/work/a.go', 5, 0, '/home/dev/work/a.go:5'], ['web/editor.js', 0, 0, 'web/editor.js']], 'Japanese around a path');
+    assert.deepEqual(paths('and/or 1/2 3.4/5.6 2026/10/23 TCP/IP /tmp v1.2/3 @web/a.js host:a/b.js a//b.js dir/ https://x.example/a/b.js?f=c/d.js'), [], 'no false positives');
+    assert.deepEqual(JSON.parse(JSON.stringify(side.win.IwatoLinks.pathOf(wrappedLinks([row2('see https://a.example/x and web/app.js:2')], 80, 1)[1].url))), {path: 'web/app.js', line: 2, col: 0, index: 0, length: 12}); }
+  ok('file paths: absolute, ~/, relative with a slash, with :LINE[:COL]; not ratios, dates, words or parts of URLs');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
   const lk = await environment({fake: false, status: 'running'}); lk.buttons()[2].click(); await flush(); lk.sockets.at(-1).open(); const lkTerm = lk.terminals.at(-1);

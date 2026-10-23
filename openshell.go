@@ -1343,6 +1343,18 @@ func (o *OpenShell) KillTerminal(ctx context.Context, w Sandbox, name string) er
 	return client.KillHeld(ctx, conn, openshellWorkspace, w.Name, d.bin, w.Name, name)
 }
 
+// TermDir is the working directory of one of the sandbox's terminals as
+// far as known (hostterm.Session.Dir), "" otherwise.
+func (o *OpenShell) TermDir(ctx context.Context, w Sandbox, name string) string {
+	o.termMu.Lock()
+	s := o.terms[w.Name][name]
+	o.termMu.Unlock()
+	if s == nil {
+		return ""
+	}
+	return s.Dir(ctx)
+}
+
 // dropTerminals forgets a stopped or deleted sandbox's terminals.
 func (o *OpenShell) dropTerminals(w Sandbox) {
 	o.termMu.Lock()
