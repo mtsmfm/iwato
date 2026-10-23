@@ -6,7 +6,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Setup
 
-1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod` (not on later starts)
+1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-cloudflare` (not on later starts)
 2. Check that the key is on the volume (so values stay readable after the gateway is recreated):
 
        wslc container exec iwato-personal-gateway ls -l /var/lib/openshell/credentials
@@ -16,7 +16,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Profile YAML (profiles/)
 
-Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`), written in OpenShell's format (OpenShell's `providers/*.yaml`, `docs/how-it-works/providers/profiles.mdx`). They are embedded in the exe (go:embed), and `providers_yaml.go` turns them into protos with the same rules as OpenShell's CLI (enum names follow `crates/openshell-providers/src/profiles.rs` and `crates/openshell-policy/src/l7_validate.rs`). OpenShell silently ignores unknown keys; Iwato rejects them (to catch typos). What only the UI uses (display name, category heading, description, value field names, usage hints, experimental, OAuth, hint commands) is not in the YAML but in `providers_profiles.go`.
+Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-cloudflare`), written in OpenShell's format (OpenShell's `providers/*.yaml`, `docs/how-it-works/providers/profiles.mdx`). They are embedded in the exe (go:embed), and `providers_yaml.go` turns them into protos with the same rules as OpenShell's CLI (enum names follow `crates/openshell-providers/src/profiles.rs` and `crates/openshell-policy/src/l7_validate.rs`). OpenShell silently ignores unknown keys; Iwato rejects them (to catch typos). What only the UI uses (display name, category heading, description, value field names, usage hints, experimental, OAuth, hint commands) is not in the YAML but in `providers_profiles.go`.
 
 Checks:
 
@@ -118,14 +118,14 @@ On failure:
 - atlassian fails in `/mcp` with "Authorization header ... rejected": does `claude mcp get atlassian` still show `${ATLASSIAN_ACCESS_TOKEN}`? If it shows the placeholder string, it was registered with double quotes; `claude mcp remove atlassian` and redo 7. Also look at denied requests in the policy tab
 - The running claude's executable: `readlink /proc/$(pgrep -n claude)/exe` is `/home/dev/.local/share/claude/versions/*` or `/home/dev/.local/share/mise/installs/claude/*/claude`
 
-## Model hubs, generation and GPU clouds (common)
+## Model hubs, generation, GPU clouds and hosting (common)
 
-`iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai` and `iwato-runpod` are not checked against real OpenShell (substitution). The comment at the top of each YAML gives the sources (official code and docs) and what could not be checked.
+`iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod` and `iwato-cloudflare` are not checked against real OpenShell (substitution). The comment at the top of each YAML gives the sources (official code and docs) and what could not be checked.
 
 - **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). It is replaced with the real value in HTTP headers (Bearer, Basic, any header), the path and the query (`?token=` etc.) of requests to the profile's endpoints (host, port, path). `auth_style` / `header_name` are display metadata and do not decide where substitution happens. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
 - **Programs**: these tools run on python (`hf`, `vastai`, `comfy`, ComfyUI, SDKs), node or curl. OpenShell matches the executable (or an ancestor process), not the script, so allowing python lets any python program reach the endpoint with the value. It cannot be narrower, so the profiles list the standard image's `/usr/bin/python3*`, mise's `/home/dev/.local/share/mise/installs/python/*/bin/python3*`, uv's `/home/dev/.local/share/uv/python/*/bin/python3*` (venv pythons link to these), mise's node, curl and wget (not in the standard image). Python elsewhere (pyenv, conda, …) gets proposals
 - **Download hosts (no value needed)**: Hugging Face's `cdn-lfs*.huggingface.co` and `*.hf.co` (Xet: `cas-bridge.xethub.hf.co` etc.), Civitai's signed-URL storage and Comfy Cloud's output storage carry their own authorization in signed URLs, and clients send no value there. They are not in the profiles: every endpoint of a profile with a value is a credential endpoint, so the placeholder would be substituted there too (the value could reach a CDN), and rules allowing those hosts uninspected (L4, as proposed) would be refused (above). Outside the profile they appear as ordinary proposals on the first download; check the program and host and approve with **Read only** (inspected, so a stray placeholder stops at `credential_endpoint_mismatch`)
-- **Writes and billing**: Hugging Face uploads, Civitai generation (Buzz), creating or deleting Vast.ai instances and RunPod pods are not allowed by the read-only scope. They show up as proposals; approving one widens the provider to **Allow writes** (ADR 0014), or set it under **Change scope**. OpenRouter inference and running Comfy Cloud workflows are what those keys are for, so they are allowed
+- **Writes and billing**: Hugging Face uploads, Civitai generation (Buzz), creating or deleting Vast.ai instances and RunPod pods, and Cloudflare deploys are not allowed by the read-only scope. They show up as proposals; approving one widens the provider to **Allow writes** (ADR 0014), or set it under **Change scope**. OpenRouter inference and running Comfy Cloud workflows are what those keys are for, so they are allowed
 
 To check (each with `sh providers-check.sh NAME`, never printing tokens; add a provider of the type, attach it and restart first):
 
@@ -229,3 +229,12 @@ Iwato.exe signs in with Claude Code's public OAuth client (authorization code wi
 1. Menu **Providers** → type **Claude Code (sign in with Claude)** → **Sign in to Claude** → **Sign in with Claude** (on a phone: **Sign in on a phone (paste a code)** and paste the code Claude's page shows)
 2. Press **Refresh now** twice; both succeed. If the first refresh fails, the UI says so (the gateway sends a form body; Claude Code sends JSON)
 3. Attach it and restart, then `sh providers-check.sh claude` as in (c)
+
+## (m) Cloudflare (iwato-cloudflare)
+
+`providers-check.sh` has no Cloudflare case; check by hand.
+
+1. Type **Cloudflare**, value: a Cloudflare API token (not the global API key). Install wrangler with mise (`mise use -g npm:wrangler`) and set `CLOUDFLARE_ACCOUNT_ID` in the terminal
+2. `CLOUDFLARE_API_TOKEN` is a placeholder, and `wrangler whoami` and `wrangler deployments list` work (GETs). `wrangler d1 info DB` checks GraphQL queries (POST `/client/v4/graphql`)
+3. `wrangler deploy` is proposed (it needs writes, including the assets upload with its own JWT). Approving widens the provider to **Allow writes**
+4. To check: cloudflared (`mise use -g cloudflared`) after `cloudflared tunnel login` (its token is in cert.pem, not the variable): `cloudflared tunnel list` passes and `cloudflared tunnel create` is proposed. See denied requests in the policy tab

@@ -164,13 +164,14 @@ func oauthCredentialKey(profile string) string {
 // The headings of the page's type selector, in its order (ids: the page
 // shows web/i18n.js providers.group.<id>).
 const (
-	groupAgent  = "agent"
-	groupSource = "source"
-	groupModels = "models"
-	groupCloud  = "cloud"
+	groupAgent   = "agent"
+	groupSource  = "source"
+	groupModels  = "models"
+	groupCloud   = "cloud"
+	groupHosting = "hosting"
 )
 
-var profileGroups = []string{groupAgent, groupSource, groupModels, groupCloud}
+var profileGroups = []string{groupAgent, groupSource, groupModels, groupCloud, groupHosting}
 
 // providerProfiles are Iwato's profiles, in the page's order (by
 // profileGroups: TestProfileMetadata).
@@ -239,6 +240,12 @@ var providerProfiles = []providerProfile{
 		Note:        "RUNPOD_API_KEY。api.runpod.io、rest.runpod.io、api.runpod.ai (サーバーレス)、hapi.runpod.net に送ります。読み取りだけで、Pod の作成・起動とサーバーレスの実行 (費用がかかる) はポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
 		Hint:        "runpodctl (mise use -g github:runpod/runpodctl) と runpod の Python SDK は RUNPOD_API_KEY を読みます (runpodctl doctor は不要)。確かめるには runpodctl user。",
+	},
+	{
+		ID: "iwato-cloudflare", Label: "Cloudflare", Group: groupHosting, Scoped: true,
+		Note:        "CLOUDFLARE_API_TOKEN。api.cloudflare.com/client/v4 に送ります。読み取りだけで、デプロイや DNS の変更はポリシーの提案か、範囲の「書き込みも許可」で許可します。",
+		Credentials: []profileCredential{{Name: "api_token", Label: "API トークン"}},
+		Hint:        "wrangler (mise use -g npm:wrangler) は CLOUDFLARE_API_TOKEN を読みます (wrangler login は不要)。アカウント ID は秘密ではないので、CLOUDFLARE_ACCOUNT_ID か wrangler の設定の account_id に自分で書きます。wrangler deploy には「範囲を変更」で「書き込みも許可」にします。確かめるには wrangler whoami。",
 	},
 }
 

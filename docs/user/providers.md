@@ -24,6 +24,7 @@ Iwato's provider types:
 | Comfy Cloud | `COMFY_CLOUD_API_KEY`, `COMFY_API_KEY` | also runs workflows (uses credits) |
 | Vast.ai | `VAST_API_KEY` | read and search offers only; creating instances needs approved proposals |
 | RunPod | `RUNPOD_API_KEY` | read only (api.runpod.io, rest.runpod.io, api.runpod.ai, hapi.runpod.net); creating and starting pods and serverless runs need approved proposals |
+| Cloudflare | `CLOUDFLARE_API_TOKEN` | read only (api.cloudflare.com/client/v4); deploys and DNS changes need approved proposals or **Allow writes**. Set `CLOUDFLARE_ACCOUNT_ID` yourself (it is not a secret) |
 
 Only GitHub and Atlassian (MCP) were tried on real hardware so far. The profiles name the agents' executables where mise and the agents' own updaters put them (for example Claude Code under `/home/dev/.local/share/claude/versions/*` and mise's `/home/dev/.local/share/mise/installs/claude/*/claude`).
 
