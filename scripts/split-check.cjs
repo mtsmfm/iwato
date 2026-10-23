@@ -102,6 +102,9 @@ function resizeCols(m) {
     await clickPath(page, card, '~/work/iwato/web/editor.js:1', '~/work/iwato/web/editor.js:1', phone);
     const at = await editorAt(page);
     check(at.text.startsWith("'use strict'") && at.line === 1 && await both() && await card.getAttribute('data-split') === 'true', 'a path in the terminal opens in the editor pane, both still shown');
+    await clickPath(page, card, '~/work/iwato/nope.js:3', '~/work/iwato/nope.js:3', phone);
+    await page.waitForTimeout(600);
+    check((await editorAt(page)).text.startsWith("'use strict'") && !/開け/.test(await card.locator('.card-message-text').allInnerTexts().then((a) => a.join(' '))), 'a missing file\'s path does nothing');
 
     // The divider: the terminal follows it once it rests.
     await page.waitForTimeout(400);

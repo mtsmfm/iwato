@@ -3589,12 +3589,13 @@
 
   // URLs and file paths printed in the terminal (its history), newest
   // first. Links open only on an explicit tap, in a new tab without opener
-  // or referrer; paths open in the editor (openPath).
+  // or referrer; paths that resolve to a file open in the editor (openPath).
   class LinksPanel {
-    constructor(sandbox, terminalOf, openPath) {
+    constructor(sandbox, terminalOf, openPath, resolvePath) {
       this.sandbox = sandbox;
       this.terminalOf = terminalOf;
       this.openPath = openPath;
+      this.resolvePath = resolvePath;
       this.root = element('section', 'side-panel links-panel');
       bindAttribute(this.root, 'aria-label', 'links.label');
       this.root.hidden = true;
@@ -3608,12 +3609,16 @@
     show() { this.root.hidden = false; this.refresh(); }
     hide() { this.root.hidden = true; }
 
-    refresh() {
+    async refresh() {
       const terminal = this.terminalOf();
+      const seq = this.seq = (this.seq || 0) + 1;
       this.list.replaceChildren();
       if (!terminal) { this.status.textContent = t('links.disconnected'); return; }
       {
-        const links = bufferLinks(terminal).slice(0, 30);
+        const found = bufferLinks(terminal).slice(0, 30);
+        const opens = await Promise.all(found.map((l) => l.path ? this.resolvePath(l.path.path) : true));
+        if (seq !== this.seq) return;
+        const links = found.filter((_, i) => opens[i]);
         for (const { url, path, text } of links) {
           const item = element('li');
           let link;
@@ -4384,6 +4389,7 @@
       // terminal daemon, or main in a sandbox without one).
       this.sandboxRestart = ['main'];
       this.termName = savedTerm(sandbox.name);
+      this.resolved = new Map(); // terminal + '\n' + path → resolvePath's
       this.termNew = false;
       // When each stopped terminal stopped, as last seen here (stoppedUnseen).
       this.seenStops = {};
@@ -4587,7 +4593,7 @@
       this.policy = new PolicyPanel(this.sandbox);
       this.policy.onChange = () => { this.renderTabs(); renderPendingTotal(); this.followPolicy(); };
       this.selectTab('terminal');
-      this.links = new LinksPanel(this.sandbox, () => this.terminal, (found) => this.openPath(found));
+      this.links = new LinksPanel(this.sandbox, () => this.terminal, (found) => this.openPath(found), (path) => this.resolvePath(path).promise);
       this.deletion = new DeletePanel(this);
       this.recreation = new RecreatePanel(this);
       this.providers = new ProviderPanel(this);
@@ -5317,12 +5323,21 @@
       this.terminal = new window.IwatoTerminal(this.host, {
         theme, fontFamily: terminalFont.ready ? terminalFont.family : terminalFont.fallback, fontSize: 12, lineHeight: 1.25,
         send: (bytes) => this.sendRaw(bytes),
-        input: (text) => { if (this.desired && this.connection === 'connected') this.send({ type: 'input', data: text }); },
+        input: (text) => {
+          if (text.includes('\r')) this.forgetRelativePaths();
+          if (this.desired && this.connection === 'connected') this.send({ type: 'input', data: text });
+        },
         mapInput: (text) => this.applyCtrl(text),
         onLink: (url, event) => {
           if (!linkClick(event)) return;
           const found = window.IwatoLinks?.pathOf(url);
           if (found) this.openPath(found); else openLink(url);
+        },
+        openable: (url) => {
+          const found = window.IwatoLinks?.pathOf(url);
+          if (!found) return true;
+          const entry = this.resolvePath(found.path);
+          return entry.value !== undefined ? entry.value !== null : entry.promise.then((rel) => rel !== null);
         },
         // OSC 52 may only write the clipboard right after the owner's own
         // input, and links from programs in the sandbox (OSC 6464) open only then,
@@ -5348,16 +5363,42 @@
       });
     }
 
+    // A path printed in the terminal as {promise, value}: the file under
+    // the editor's root, or null when it does not open there (value is
+    // undefined until known). The server takes a relative path from the
+    // terminal's working directory. Answers are kept a short while, a
+    // relative one only until the next Enter (the directory may change).
+    resolvePath(path) {
+      const now = Date.now();
+      const key = this.termName + '\n' + path;
+      const hit = this.resolved.get(key);
+      if (hit && now - hit.at < 15000) return hit;
+      if (this.resolved.size > 200) this.resolved.clear();
+      const entry = { at: now, value: undefined };
+      const url = '/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/resolve?term=' + encodeURIComponent(this.termName) + '&path=' + encodeURIComponent(path);
+      entry.promise = api(url, { timeoutMs: 70000 }).then((data) => String(data.path), (error) => {
+        // Only "not a file there" is kept: a stopped sandbox or a network error may pass.
+        if (!(error.status >= 400 && error.status < 500 && error.status !== 409) && this.resolved.get(key) === entry) this.resolved.delete(key);
+        return null;
+      }).then((rel) => { entry.value = rel; return rel; });
+      this.resolved.set(key, entry);
+      return entry;
+    }
+
+    forgetRelativePaths() {
+      for (const key of this.resolved.keys()) if (!/^[/~]/.test(key.slice(key.indexOf('\n') + 1))) this.resolved.delete(key);
+    }
+
     // Opens a path printed in the terminal (IwatoLinks.findPaths) in the
-    // editor: beside the terminal when side by side, else in its tab. The
-    // server takes a relative path from the terminal's working directory
-    // and says when it is not a file there.
+    // editor: beside the terminal when side by side, else in its tab. One
+    // that does not open is plain text: a tap on it focuses the terminal.
     async openPath(found) {
+      const rel = await this.resolvePath(found.path).promise;
+      if (this.disposed) return;
+      if (rel === null) { if (touchScreen()) this.terminal?.focus(); return; }
       try {
-        const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/resolve?term=' + encodeURIComponent(this.termName) + '&path=' + encodeURIComponent(found.path), { timeoutMs: 70000 });
-        if (this.disposed) return;
         if (this.root.dataset.split !== 'true') this.selectTab('editor');
-        await this.editor.open(String(data.path), found.line ? { line: found.line, col: found.col } : null);
+        await this.editor.open(rel, found.line ? { line: found.line, col: found.col } : null);
       } catch (error) {
         if (!this.disposed) this.showError(t('term.path.failed', { path: found.path, message: error.message }));
       }

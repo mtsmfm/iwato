@@ -145,24 +145,48 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.keyboard.press('Control+c');
     await page.waitForTimeout(200);
     // A file path opens in the editor at its line; one that is missing or
-    // outside the home says so instead.
+    // outside the home is plain text.
     {
-      const { clickPath, editorAt } = require('./path-links.cjs');
+      const { clickPath, editorAt, pathPoint, mod } = require('./path-links.cjs');
+      await page.keyboard.type('echo see iwato/web/app.js:2 and iwato/nope.js here');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      check(await card.locator('.iw-screen .iw-url[data-url^="iwato-path:"]').count() === 0, 'paths are not underlined while typing');
+      if (!phone) {
+        const hint = card.locator('.iw-hint > div');
+        const hover = async (text) => {
+          const at = await pathPoint(card, text);
+          await page.mouse.move(at.x, at.y);
+          const before = await hint.count();
+          await page.keyboard.down(mod);
+          await page.waitForTimeout(600);
+          const held = { count: await hint.count(), pointer: await card.locator('.iw-term').evaluate((e) => getComputedStyle(e).cursor) };
+          await page.keyboard.up(mod);
+          await page.waitForTimeout(100);
+          return { before, held, after: await hint.count() };
+        };
+        const file = await hover('iwato/web/app.js:2');
+        check(file.before === 0 && file.held.count === 1 && file.held.pointer === 'pointer' && file.after === 0, 'a file\'s path is underlined only while ' + mod + ' is held over it (' + JSON.stringify(file) + ')');
+        const missing = await hover('iwato/nope.js');
+        check(missing.held.count === 0 && missing.held.pointer !== 'pointer', 'a missing file\'s path is not (' + JSON.stringify(missing) + ')');
+        await input.focus();
+      }
       await clickPath(page, card, '見て iwato/web/app.js:2:3 を開く', 'iwato/web/app.js:2:3', phone);
       const at = await editorAt(page);
       check(await card.getAttribute('data-tab') === 'editor' && at.text.includes("console.log('app')") && at.line === 2 && at.col === 3, 'a relative path (from ~/work) opens in the editor tab at its line and column (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
       await card.getByRole('tab', { name: /^ターミナル/ }).click();
-      const message = () => card.locator('.card-message-text').innerText();
+      const message = () => card.locator('.card-message-text').allInnerTexts().then((a) => a.join(' '));
       await clickPath(page, card, 'iwato/nope.js と /etc/hosts', 'iwato/nope.js', phone);
-      await page.waitForTimeout(400);
-      check((await message()).includes('ファイルがありません') && await card.getAttribute('data-tab') === 'terminal', 'a missing file says so and stays on the terminal');
+      await page.waitForTimeout(600);
+      check(!/ファイルがありません|開け/.test(await message()) && await card.getAttribute('data-tab') === 'terminal', 'a click on a missing file does nothing');
       await clickPath(page, card, '/etc/hosts', '/etc/hosts', phone);
-      await page.waitForTimeout(400);
-      check((await message()).includes('/home/dev の外'), 'a path outside the home says it cannot be opened');
+      await page.waitForTimeout(600);
+      check(!/開け/.test(await message()) && await card.getAttribute('data-tab') === 'terminal', 'nor on a path outside the home');
       await card.getByRole('button', { name: 'その他の操作' }).click();
       await card.getByRole('menuitem', { name: 'リンク' }).click();
       const listed = card.locator('.links-panel .terminal-path', { hasText: 'iwato/web/app.js:2:3' });
-      check(await listed.count() > 0, 'the links view lists the paths too');
+      await listed.first().waitFor({ timeout: 5000 }).catch(() => {});
+      check(await listed.count() > 0 && await card.locator('.links-panel .terminal-path', { hasText: 'nope.js' }).count() === 0, 'the links view lists the paths of files, not missing ones');
       await listed.first().click();
       const fromList = await editorAt(page);
       check(await card.getAttribute('data-tab') === 'editor' && fromList.line === 2, 'a path in the links view opens in the editor');
