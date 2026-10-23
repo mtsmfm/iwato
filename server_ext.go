@@ -130,12 +130,16 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 		if e != nil {
 			v = ProposalView{Error: safeCLIError(e), Pending: []PendingProposal{}, Rejected: []RejectedProposal{}, Unlinked: []UnlinkedProposal{}}
 		}
-		providers := s.ruleProviders(ctx, sb)
-		nameProviderRules(v.Policy, providers)
-		targets, terr := s.scopeTargets(ctx, sb)
-		if terr != nil {
-			log.Printf("sandbox %s: providers for the proposals: %v", sb.Name, safeText(english(terr)))
+		providers := map[string]RuleProvider{}
+		var targets []scopeTarget
+		if prt, ok := s.rt.(providerRuntime); ok {
+			if list, attached, err := s.providerState(ctx, prt); err != nil {
+				log.Printf("sandbox %s: providers for the proposals: %v", sb.Name, safeText(english(err)))
+			} else {
+				providers, targets = ruleProvidersOf(list, attached[sb.Name]), s.scopeTargetsOf(list, attached[sb.Name])
+			}
 		}
+		nameProviderRules(v.Policy, providers)
 		for i := range v.Pending {
 			v.Pending[i].Blocked = blockedChoices(v.Pending[i].fit, v.Pending[i].Rule, providers)
 			if r := v.Pending[i].rule; r != nil {

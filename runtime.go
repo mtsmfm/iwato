@@ -21,6 +21,9 @@ type Status struct {
 	// AutoStopAt: when the sandbox stops, after its last terminal ended
 	// (autostop.go; Unix seconds), unless a terminal runs by then.
 	AutoStopAt int64 `json:"autoStopAt,omitempty"`
+	// Pending: the agent's proposals waiting for the owner, for the badges
+	// while the policy tab is not shown (pendingInList).
+	Pending *[]PendingProposal `json:"pending,omitempty"`
 }
 
 // Terminal is an attachment to a terminal session. It carries termsync

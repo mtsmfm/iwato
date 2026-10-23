@@ -417,9 +417,10 @@ func globRegexp(pattern string) *regexp.Regexp {
 }
 
 // logCacheFor is how long a sandbox's log lines are reused: the policy
-// tab reads the policy every few seconds, and each read would fetch 2000
-// lines from the gateway.
-const logCacheFor = 5 * time.Second
+// tab reads the policy every 10 seconds (every 2 while following), and
+// each read would fetch 2000 lines from the gateway. Between one and two
+// polls: every other poll reads them, and they are at most 20 seconds old.
+const logCacheFor = 15 * time.Second
 
 type cachedLogLines struct {
 	at    time.Time

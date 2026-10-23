@@ -572,6 +572,7 @@
     card.root.classList.add('selected');
     card.nav.classList.add('active');
     card.armAutoConnect();
+    if (card.policyShown) card.policy.refresh();
   }
   // On phones the global actions sit behind the ≡ button.
   function closeMenu() {
@@ -605,7 +606,7 @@
   // proposals waiting for the owner, as the pushes do (notifier.go).
   const baseTitle = document.title || 'Iwato';
   function renderPendingTotal() {
-    const total = [...cards.values()].reduce((sum, card) => sum + agentPending(card.policy?.snapshot), 0);
+    const total = [...cards.values()].reduce((sum, card) => sum + (card.policy?.waitingAgent?.length || 0), 0);
     const title = (total ? '(' + total + ') ' : '') + baseTitle;
     if (document.title !== title) document.title = title;
     if (total === renderPendingTotal.last) return;
@@ -2164,7 +2165,9 @@
         autoStopAt: Number.isFinite(item.autoStopAt) ? item.autoStopAt : 0,
         // Terminals that stopped changing (notifier.go): name → when.
         stopped: Object.fromEntries(Object.entries(item.stopped && typeof item.stopped === 'object' ? item.stopped : {})
-          .filter(([name, at]) => termNamePattern.test(name) && Number.isFinite(at)).slice(0, 32))
+          .filter(([name, at]) => termNamePattern.test(name) && Number.isFinite(at)).slice(0, 32)),
+        // The agent's proposals waiting (a running sandbox's only; PolicyPanel.setWaiting).
+        pending: Array.isArray(item.pending) ? item.pending.slice(0, 50) : null
       };
     });
   }
@@ -2261,7 +2264,7 @@
         // A notification's sandbox is selected first, not connected after another.
         if (!cards.has(state.selected)) selectCard(cards.get(state.openRequest?.sandbox) || cards.values().next().value || null);
         applyOpen();
-        if (!document.hidden) for (const card of cards.values()) { card.policy.refresh(); }
+        if (!document.hidden) for (const item of sandboxes) cards.get(item.name)?.pollProposals(item.pending);
         $('empty-state').hidden = sandboxes.length > 0;
         if (!sandboxes.length) {
           bind($('empty-title'), 'empty.none.title');
@@ -2389,6 +2392,9 @@
     constructor(sandbox) {
       this.sandbox = sandbox;
       this.snapshot = null;
+      // The agent's proposals waiting, for the badges: from the last full
+      // read or the sandbox list, whichever came last (null: none yet).
+      this.waitingAgent = null;
       this.refreshing = null;
       this.mutating = false;
       this.disposed = false;
@@ -3494,6 +3500,7 @@
     clear(message = '') {
       this.generation += 1;
       this.snapshot = null;
+      this.waitingAgent = null;
       this.showError(message);
       this.render();
     }
@@ -3507,6 +3514,7 @@
           const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals');
           if (this.disposed || epoch !== this.generation) return;
           this.snapshot = this.validate(data);
+          this.waitingAgent = this.snapshot.pending.filter((p) => p.source === 'agent');
           this.showError(this.snapshot.error);
           // An open history follows new revisions.
           const version = this.snapshot.policy?.version;
@@ -3522,6 +3530,13 @@
       })();
       this.render();
       return this.refreshing;
+    }
+
+    // The sandbox list's pending proposals, while the tab is not shown.
+    setWaiting(list) {
+      if (this.disposed || this.mutating || this.refreshing) return;
+      this.waitingAgent = list.filter((p) => p && /^[a-f0-9]{32}$/.test(p.id) && p.state === 'pending-approval').map((p) => this.validateProposal(p)).filter((p) => p.source === 'agent');
+      this.onChange?.();
     }
 
     // Approving asks first; the request carries the proposal's ID and the
@@ -4775,11 +4790,18 @@
       this.followPolicy();
     }
 
-    // The policy tab follows new proposals with the sandbox list, which
-    // reads every card's policy every 10 s (each read makes the server
-    // read the draft, the policy and the logs), and every 2 s while it
-    // shows and a change waits for the sandbox to load it or the owner
-    // just acted.
+    // The policy tab, while it shows on the selected card, reads the policy
+    // with the sandbox list (every 10 s; each read makes the server read
+    // the draft, the policy, the logs and the providers), and every 2 s
+    // while a change waits for the sandbox to load it or the owner just
+    // acted. Otherwise the list's pending proposals keep the badges; a
+    // sandbox that is not running, which gets none, is read once.
+    pollProposals(pending) {
+      if (this.policyShown && state.selected === this.sandbox.name) this.policy.refresh();
+      else if (pending) this.policy.setWaiting(pending);
+      else if (!this.policy.waitingAgent) this.policy.refresh();
+    }
+
     followPolicy() {
       const fast = Boolean(this.policyShown && this.policy.following());
       if (fast === Boolean(this.policyTimer)) return;
@@ -4960,7 +4982,7 @@
     }
 
     waitingProposals() {
-      return (this.policy?.snapshot?.pending || []).filter((p) => p.source === 'agent');
+      return this.policy?.waitingAgent || [];
     }
 
     // One line over the open view while the agent's proposals wait, until
@@ -4980,8 +5002,10 @@
     }
 
     // One proposal opens its approval; several open the policy tab to choose.
-    reviewProposals() {
-      const waiting = this.waitingProposals();
+    async reviewProposals() {
+      // Approving needs the whole read (blocked, providerScope), not the list's.
+      await this.policy.refresh();
+      const waiting = (this.policy.snapshot?.pending || []).filter((p) => p.source === 'agent');
       if (waiting.length === 1 && !waiting[0].providerScope?.resolving) this.policy.decide(waiting[0], 'approve');
       else { this.policy.showView('list'); this.selectTab('policy'); }
     }
@@ -4990,7 +5014,7 @@
     // owner (not OpenShell's automatic ones; agentPending).
     renderTabs() {
       if (!this.policy) return;
-      const count = agentPending(this.policy.snapshot);
+      const count = this.policy.waitingAgent?.length || 0;
       const tab = this.tabButtons.policy;
       const value = count ? String(count) : '';
       if (tab.badge.textContent !== value) tab.badge.textContent = value;

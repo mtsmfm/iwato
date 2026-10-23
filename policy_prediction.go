@@ -743,16 +743,21 @@ func (s *Server) policyLayers(ctx context.Context, sb Sandbox) (base, effective 
 // sandbox: its attached providers, as OpenShell names their rules (in
 // their order; a name taken gets _2, _3).
 func (s *Server) ruleProviders(ctx context.Context, sb Sandbox) map[string]RuleProvider {
-	byRule := map[string]RuleProvider{}
 	rt, ok := s.rt.(providerRuntime)
 	if !ok {
-		return byRule
+		return map[string]RuleProvider{}
 	}
 	list, attached, err := s.providerState(ctx, rt)
 	if err != nil {
-		return byRule
+		return map[string]RuleProvider{}
 	}
-	for _, name := range attached[sb.Name] {
+	return ruleProvidersOf(list, attached[sb.Name])
+}
+
+// ruleProvidersOf is ruleProviders from a providerState read.
+func ruleProvidersOf(list []ProviderInfo, attached []string) map[string]RuleProvider {
+	byRule := map[string]RuleProvider{}
+	for _, name := range attached {
 		i := slices.IndexFunc(list, func(x ProviderInfo) bool { return x.Name == name })
 		if i < 0 {
 			continue

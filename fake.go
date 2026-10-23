@@ -357,6 +357,9 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 				}
 				t.d.dirs[t.key] = path.Clean(dir)
 				t.d.mu.Unlock()
+			case strings.HasPrefix(line, "propose "):
+				// An agent's proposal through policy.local.
+				response = t.d.fakePropose(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "propose ")))
 			case strings.HasPrefix(line, "echo "):
 				response = strings.TrimPrefix(line, "echo ")
 			case line == "clear":

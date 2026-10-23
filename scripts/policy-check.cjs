@@ -669,6 +669,27 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await exp.locator('.policy-current').getByText('allow_many_example').first().waitFor();
     check(true, 'the 100-rule proposal is approved');
 
+    // A proposal raised while the policy tab is hidden: the badge, the title
+    // and the bar follow the sandbox list, without reading the whole policy.
+    await exp.locator('.card-tab', { hasText: 'ターミナル' }).click();
+    const expConnect = exp.getByRole('button', { name: /^接続/ });
+    if (await expConnect.isVisible() && await expConnect.isEnabled()) await expConnect.click();
+    await exp.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached' });
+    const policyBadge = exp.locator('.card-tab', { hasText: 'ポリシー' }).locator('.tab-badge');
+    const waitingBefore = Number(await policyBadge.textContent()) || 0;
+    const titleBefore = Number((await page.title()).match(/^\((\d+)\)/)?.[1] || 0);
+    const fullReads = [];
+    page.on('request', (r) => { if (r.method() === 'GET' && r.url().endsWith('/sandboxes/experiment/proposals')) fullReads.push(r.url()); });
+    await exp.locator('.iw-input').focus();
+    await page.keyboard.type('propose new.example');
+    await page.keyboard.press('Enter');
+    await policyBadge.filter({ hasText: new RegExp('^' + (waitingBefore + 1) + '$') }).waitFor({ timeout: 15000 });
+    check(await policyBadge.isVisible() && (await page.title()).startsWith('(' + (titleBefore + 1) + ') ') && (await exp.locator('.proposal-bar-text').innerText()).startsWith('提案 ' + (waitingBefore + 1) + ' 件'), 'a proposal raised with the policy tab hidden shows in the badge, the title and the bar');
+    check(fullReads.length === 0, 'with the policy tab hidden the page does not read the whole policy: ' + fullReads.length);
+    await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    await expPending.locator('.proposal-item', { hasText: 'new.example' }).waitFor();
+    check(fullReads.length > 0, 'showing the tab reads it, with the new proposal');
+
     if (!phone) {
       await page.setViewportSize({ width: 700, height: 860 });
       await page.waitForTimeout(200);

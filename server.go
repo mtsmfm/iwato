@@ -372,6 +372,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 			list[i].Stopped = s.notifier.stopped(sb.Name)
 			list[i].RestartPending = list[i].State == "running" && s.restartPending(sb)
 			s.autoStopStatus(&list[i], sb)
+			list[i].Pending = s.pendingInList(ctx, sb, list[i].State)
 		}(i, sb)
 	}
 	wg.Wait()
@@ -391,6 +392,29 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		body["gpu"] = s.gpuAvailable(ctx)
 	}
 	jsonResponse(w, 200, body)
+}
+
+// pendingInList reads a running sandbox's pending proposals, the agent's
+// only (as the badges count them). A sandbox that is not running gets no
+// new ones: nil, and the page keeps what it last read.
+func (s *Server) pendingInList(ctx context.Context, sb Sandbox, state string) *[]PendingProposal {
+	rt, ok := s.rt.(pendingRuntime)
+	if !ok || state != "running" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	all, err := rt.PendingProposals(ctx, sb)
+	if err != nil {
+		return nil
+	}
+	agent := []PendingProposal{}
+	for _, p := range all {
+		if p.Source == "agent" {
+			agent = append(agent, p)
+		}
+	}
+	return &agent
 }
 
 // sandboxOp is a start, stop or delete in progress on one sandbox. Its
