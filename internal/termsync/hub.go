@@ -159,8 +159,16 @@ func (h *Hub) Activity() Activity {
 	return a
 }
 
+// Dir is the working directory the program last reported (OSC 7).
+func (h *Hub) Dir() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.term.Dir()
+}
+
 // Screen returns the terminal's size and the text of the rows it shows
 // (without trailing blanks).
+
 func (h *Hub) Screen() (cols, rows int, lines []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

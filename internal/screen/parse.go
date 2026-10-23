@@ -3,6 +3,7 @@ package screen
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -457,6 +458,11 @@ func (t *Term) osc(data string) {
 			pen.Link = t.linkID(uri)
 		}
 		t.setPen(pen)
+	case "7":
+		// OSC 7 ; file://host/path (the host is not checked: one machine).
+		if u, err := url.Parse(rest); err == nil && u.Scheme == "file" && strings.HasPrefix(u.Path, "/") && len(u.Path) <= maxTitle {
+			t.dir = u.Path
+		}
 	case "52":
 		_, payload, ok := strings.Cut(rest, ";")
 		// "?" asks to read the clipboard: never answered.

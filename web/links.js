@@ -1,4 +1,4 @@
-/* Pure link detection for terminal rows; no DOM access. */
+/* Pure link and file path detection for terminal rows; no DOM access. */
 (() => {
   'use strict';
   // Where a URL ends follows UTS #58 (Unicode Link Detection), except that
@@ -86,6 +86,52 @@
     return found;
   }
 
+  // A file path: absolute, ~/, or relative with a slash, in ASCII, with an
+  // optional :LINE or :LINE:COL. Without ./, ../, ~/ or a leading /, a
+  // relative path needs an extension with a letter or a line (not 1/2,
+  // and/or, 2026/10/23), and an absolute one two names or an extension.
+  // A slash, letter, digit, colon or @ before it is not a start (URLs,
+  // host:path, @mentions).
+  const PATH = /(?<![\w.+@%~\/:-])[\w.~\/-][\w.+@%~\/-]*(?::(\d+)(?::(\d+))?)?/g;
+  const EXT = /\.[\w-]*[A-Za-z][\w-]*$/;
+
+  // findPaths returns the file paths in text, outside its URLs, as
+  // [{path, line, col, index, length}] (line and col 0 when not given).
+  function findPaths(text, urls = findURLs(text)) {
+    if (!text.includes('/')) return [];
+    const spans = urls.map((u) => [u.index, u.index + u.url.length]);
+    const found = [];
+    for (const m of text.matchAll(PATH)) {
+      const line = Number(m[1] || 0), col = Number(m[2] || 0);
+      let path = m[1] ? m[0].slice(0, m[0].indexOf(':')) : m[0].replace(/\.+$/, '');
+      if (!path.includes('/') || path.includes('//') || path.endsWith('/')) continue;
+      if (spans.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
+      if (path[0] === '~' && !path.startsWith('~/')) continue;
+      const names = path.split('/').filter(Boolean);
+      const last = names[names.length - 1];
+      if (!last || last === '.' || last === '..') continue;
+      const anchored = /^(~|\.{1,2})\//.test(path);
+      if (path[0] === '/' ? names.length < 2 && !EXT.test(last) : !anchored && !EXT.test(last) && !line) continue;
+      const length = m[1] ? m[0].length : path.length;
+      found.push({path, line, col, index: m.index, length});
+    }
+    return found;
+  }
+
+  // findLinks returns the URLs and file paths in text as [{target, index,
+  // length}], in order; a path's target is pathTarget's.
+  function findLinks(text) {
+    const urls = findURLs(text);
+    const paths = findPaths(text, urls).map((p) => ({target: pathTarget(text.slice(p.index, p.index + p.length)), index: p.index, length: p.length}));
+    return urls.map((u) => ({target: u.url, index: u.index, length: u.url.length})).concat(paths).sort((a, b) => a.index - b.index);
+  }
+
+  // A path link's target: the text as printed, marked so that it is never
+  // taken for a URL (pathOf reads it back).
+  const PATH_MARK = 'iwato-path:';
+  const pathTarget = (text) => PATH_MARK + text;
+  const pathOf = (target) => typeof target === 'string' && target.startsWith(PATH_MARK) ? findPaths(target.slice(PATH_MARK.length))[0] || null : null;
+
   const FRAME = '│┃║|';
 
   // A row is {cells: [{c, x}], wrapped}: one entry per code unit with its
@@ -116,7 +162,8 @@
   }
 
   // wrappedLinks returns [{url, start: {x, y}, end: {x, y}}] in 1-based,
-  // inclusive cell coordinates. rows[0] is buffer line firstY.
+  // inclusive cell coordinates (url is a path's target for a path). rows[0]
+  // is buffer line firstY.
   function wrappedLinks(rows, cols, firstY) {
     const links = [];
     let i = 0;
@@ -145,9 +192,9 @@
         push(row, j, k);
         j++;
       }
-      for (const {url, index} of findURLs(text)) {
-        const a = pos[index], b = pos[index + url.length - 1];
-        links.push({url, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}});
+      for (const {target, index, length} of findLinks(text)) {
+        const a = pos[index], b = pos[index + length - 1];
+        links.push({url: target, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}});
       }
       i = j;
     }
@@ -162,5 +209,5 @@
     } catch (_) { return ''; }
   }
 
-  window.IwatoLinks = Object.freeze({findURLs, wrappedLinks, safeURL});
+  window.IwatoLinks = Object.freeze({findURLs, findPaths, findLinks, pathOf, wrappedLinks, safeURL});
 })();

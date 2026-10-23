@@ -93,6 +93,10 @@ func TestEvents(t *testing.T) {
 	if tm.Title() != "title" {
 		t.Fatalf("title %q", tm.Title())
 	}
+	tm.Write([]byte("\x1b]7;file://host/home/dev/my%20work\x07\x1b]7;http://x/y\x07"))
+	if tm.Dir() != "/home/dev/my work" {
+		t.Fatalf("OSC 7: %q", tm.Dir())
+	}
 }
 
 func TestLink(t *testing.T) {

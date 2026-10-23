@@ -245,3 +245,33 @@ func TestEditorDir(t *testing.T) {
 		t.Fatalf("stopped: %d %s", code, body)
 	}
 }
+
+// A path printed in a terminal: ~/, absolute, or relative to the terminal's
+// working directory (~/work before a cd), and only a file under the root.
+func TestEditorResolve(t *testing.T) {
+	s, c, _ := newFilesServer(t)
+	get := func(p string) (int, string) {
+		res, b := request(t, s, "/api/sandboxes/dev/editor/resolve?term=main&path="+url.QueryEscape(p), "GET", "", c, "")
+		var v struct{ Path, Code string }
+		_ = json.Unmarshal(b, &v)
+		return res.StatusCode, v.Path + v.Code
+	}
+	for p, want := range map[string]string{
+		"iwato/main.go":        "work/iwato/main.go",
+		"~/README.md":          "README.md",
+		"/home/dev/.bashrc":    ".bashrc",
+		"/etc/passwd":          "editor_outside",
+		"../../../etc/passwd":  "editor_outside",
+		"iwato/nope.go":        "editor_missing",
+		"iwato":                "editor_not_file",
+		"/home/dev/../dev/src": "editor_not_file",
+	} {
+		if _, got := get(p); got != want {
+			t.Errorf("%q: %q, want %q", p, got, want)
+		}
+	}
+	s.rt.(*Fake).dirs = map[string]string{"dev/main": homeDir + "/work/iwato"}
+	if _, got := get("web/app.js"); got != "work/iwato/web/app.js" {
+		t.Errorf("after a cd: %q", got)
+	}
+}

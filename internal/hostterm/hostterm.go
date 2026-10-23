@@ -6,6 +6,7 @@
 package hostterm
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -22,6 +23,11 @@ type Backend interface {
 	// Close hangs up the process (or leaves it, when it outlives the
 	// connection, as a sandbox's main process does).
 	Close() error
+}
+
+// Cwder is a backend that can tell its process's working directory.
+type Cwder interface {
+	Cwd(ctx context.Context) string
 }
 
 // Killer is a backend whose process outlives Close: Kill ends it.
@@ -117,6 +123,17 @@ func (s *Session) Err() error {
 
 // Screen returns the terminal's size and the text of the rows it shows.
 func (s *Session) Screen() (cols, rows int, lines []string) { return s.hub.Screen() }
+
+// Dir is the terminal's working directory as far as known: the backend's
+// (Cwder), else the last one the shell reported (OSC 7); "" otherwise.
+func (s *Session) Dir(ctx context.Context) string {
+	if c, ok := s.backend.(Cwder); ok {
+		if dir := c.Cwd(ctx); dir != "" {
+			return dir
+		}
+	}
+	return s.hub.Dir()
+}
 
 // Activity is the clients' last input and the program's alerts.
 func (s *Session) Activity() termsync.Activity { return s.hub.Activity() }

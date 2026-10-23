@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { clickPath, editorAt } = require('./path-links.cjs');
 
 const repo = path.join(__dirname, '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iwato-split-'));
@@ -74,6 +75,10 @@ function resizeCols(m) {
       await card.getByRole('tab', { name: 'エディタ' }).click();
       await page.waitForTimeout(300);
       check(await card.locator('.editor-panel').isVisible() && !(await card.locator('.terminal-surface').isVisible()), 'on a phone the editor tab replaces the terminal');
+      await card.getByRole('tab', { name: /^ターミナル/ }).click();
+      await clickPath(page, card, '~/work/iwato/web/editor.js:1', '~/work/iwato/web/editor.js:1', phone);
+      const at = await editorAt(page);
+      check(at.text.startsWith("'use strict'") && await card.getAttribute('data-tab') === 'editor', 'on a phone a path opens in the editor tab');
       return;
     }
 
@@ -92,6 +97,11 @@ function resizeCols(m) {
     check(selected.some((s) => s.startsWith('ターミナル')) && selected.some((s) => s.startsWith('エディタ')), 'both tabs show as current');
     check(await page.evaluate(() => document.activeElement?.classList.contains('iw-input')), 'the terminal keeps the keyboard when the split opens');
     await shot('split.png');
+
+    // A path in the terminal opens in the editor beside it.
+    await clickPath(page, card, '~/work/iwato/web/editor.js:1', '~/work/iwato/web/editor.js:1', phone);
+    const at = await editorAt(page);
+    check(at.text.startsWith("'use strict'") && at.line === 1 && await both() && await card.getAttribute('data-split') === 'true', 'a path in the terminal opens in the editor pane, both still shown');
 
     // The divider: the terminal follows it once it rests.
     await page.waitForTimeout(400);

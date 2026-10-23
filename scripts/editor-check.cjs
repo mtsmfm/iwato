@@ -435,6 +435,30 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     await page.waitForFunction((sel) => __editorText(sel) === 'package main // third\n', textSel);
     check(await page.evaluate((sel) => document.querySelector(sel).offsetParent === null, viewSel), 'other files have no view switch');
 
+    // A path printed in the terminal, relative to where cd went, opens here
+    // at its line and column: a new file, and one open already.
+    {
+      const { clickPath, editorAt } = require('./path-links.cjs');
+      const card = page.locator('.terminal-card.selected');
+      await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
+      await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached' });
+      await card.locator('.iw-input').focus();
+      await page.keyboard.type('cd iwato');
+      await page.keyboard.press('Enter');
+      await clickPath(page, card, 'ok ./web/styles.css:1:6', './web/styles.css:1:6', phone);
+      let at = await editorAt(page);
+      check(at.text.startsWith('body {') && at.line === 1 && at.col === 6, 'a path from the terminal opens at its line and column, from where cd went (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
+      await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
+      await clickPath(page, card, 'main.go: ./main.go:1:9', './main.go:1:9', phone);
+      await page.waitForFunction(() => document.querySelector('.terminal-card.selected')?.dataset.tab === 'editor');
+      at = await editorAt(page);
+      check(at.text === 'package main // third\n' && at.line === 1 && at.col === 9, 'a file open already keeps its edits and gets the cursor (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
+      // The cursor back at the start, where the next step types.
+      await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
+      await clickPath(page, card, './main.go:1:1', './main.go:1:1', phone);
+      await page.waitForFunction(() => document.querySelector('.terminal-card.selected')?.dataset.tab === 'editor');
+    }
+
     // Stopped: the tab and the text stay; saving says why it cannot.
     await page.evaluate((sel) => __editorFocus(sel), textSel);
     await page.keyboard.type('z');

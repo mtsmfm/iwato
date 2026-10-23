@@ -26,6 +26,7 @@
 //	'i' input: bytes for the terminal
 //	'r' resize: uint16 cols, rows
 //	'x' kill: end the terminal (its exit follows)
+//	'w' cwd: ask for the working directory (daemons with CapCwd)
 //
 // From the daemon:
 //
@@ -35,6 +36,8 @@
 //	'e' error: JSON Error, instead of hello (or of a list or kill answer)
 //	'l' list: JSON List
 //	'k' killed: the kill's answer
+//	'w' cwd: the working directory of the terminal's foreground process
+//	    (else its first process), empty when unknown
 package termd
 
 import (
@@ -60,10 +63,12 @@ const (
 	// CapSFTP: `iwato-entrypoint sftp`, an SFTP server rooted at the home
 	// (internal/rootsftp).
 	CapSFTP = "sftp"
+	// CapCwd: the cwd message.
+	CapCwd = "cwd"
 )
 
 // Capabilities are this daemon's.
-var Capabilities = []string{CapTerminals, CapSFTP}
+var Capabilities = []string{CapTerminals, CapSFTP, CapCwd}
 
 // Has tells whether a daemon of version with caps (as its list or hello
 // said them) serves capability c. Version 1 said none: it has terminals.
@@ -96,6 +101,7 @@ const (
 	KindError  byte = 'e'
 	KindListed byte = 'l'
 	KindKilled byte = 'k'
+	KindCwd    byte = 'w'
 )
 
 // Path is where the sandbox image carries iwato-entrypoint (root's, 0555;

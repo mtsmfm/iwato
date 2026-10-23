@@ -342,6 +342,16 @@
     clear() { this.doc = null; this.dom.value = ''; }
     focus() { this.dom.focus(); }
     refresh() {}
+    goto(line, col) {
+      const rows = this.dom.value.split('\n');
+      const n = Math.min(Math.max(line, 1), rows.length) - 1;
+      let at = 0;
+      for (let i = 0; i < n; i++) at += rows[i].length + 1;
+      at += Math.min(Math.max(col - 1, 0), rows[n].length);
+      this.dom.setSelectionRange?.(at, at);
+      const height = typeof getComputedStyle === 'function' ? parseFloat(getComputedStyle(this.dom).lineHeight) || 16 : 16;
+      this.dom.scrollTop = Math.max(0, n * height - this.dom.clientHeight / 2);
+    }
     key(event) {
       if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       const t = this.dom;
@@ -464,6 +474,12 @@
     }
     clear() { this.view.setState(this.state('', '')); }
     focus() { this.view.focus(); }
+    goto(line, col) {
+      const doc = this.view.state.doc;
+      const l = doc.line(Math.min(Math.max(line, 1), doc.lines));
+      const at = Math.min(l.from + Math.max(col - 1, 0), l.to);
+      this.view.dispatch({ selection: { anchor: at }, effects: this.CM.EditorView.scrollIntoView(at, { y: 'center' }) });
+    }
     // refresh measures again once the panel shows (it was display:none).
     refresh() { this.view.requestMeasure(); }
   }
@@ -503,6 +519,7 @@
     show(doc) { this.impl?.show(doc); }
     stash(doc) { this.impl?.stash(doc); }
     clear() { this.impl?.clear(); }
+    goto(line, col) { this.impl?.goto(line, col); }
     focus() { this.impl ? this.impl.focus() : this.box.focus?.(); }
     refresh() { this.impl?.refresh(); }
   }
@@ -1165,10 +1182,12 @@
       }
 
       // open opens path as a tab: an image by its name, else as text, and
-      // as an image when the server says it is not text.
-      async open(path) {
+      // as an image when the server says it is not text. at ({line, col},
+      // 1-based) puts the cursor there in a text.
+      async open(path, at) {
+        const go = (doc) => { if (at && !doc.image) this.text.goto(at.line, at.col || 1); };
         const known = this.docs.find((d) => d.path === path);
-        if (known) { this.switchTo(known); return; }
+        if (known) { this.switchTo(known); go(known); return; }
         this.status.textContent = t('editor.opening', { path });
         try {
           let doc;
@@ -1183,9 +1202,10 @@
             }
           }
           const again = this.docs.find((d) => d.path === doc.path);
-          if (again) { this.switchTo(again); return; }
+          if (again) { this.switchTo(again); go(again); return; }
           this.docs.push(doc);
           this.switchTo(doc);
+          go(doc);
           // Keep a few open: the saved ones used longest ago go.
           const unused = (d) => { const i = this.recent.indexOf(d.path); return i < 0 ? Infinity : i; };
           const saved = this.docs.filter((d) => d !== doc && !this.dirty(d)).sort((a, b) => unused(b) - unused(a));

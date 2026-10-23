@@ -689,7 +689,7 @@
       for (const p of this.root.querySelectorAll('.iw-url')) if (p.dataset.url === url) p.classList.add('iw-url-hot');
     }
 
-    // Underlines the screen's URLs as links.js finds them: across rows the
+    // Underlines the screen's URLs and paths as links.js finds them: across rows the
     // terminal wrapped and rows an application wrapped itself at the edge
     // (Claude Code), also inside a frame. Every piece of one URL carries it
     // whole and lights up with the others.
@@ -1195,7 +1195,7 @@
       });
     }
 
-    // The URL under the pointer: an OSC 8 link, or a URL in the text. On
+    // The link under the pointer: an OSC 8 link, or a URL or path in the text. On
     // the screen, from the cell, whatever element is on top of it.
     linkAt(event) {
       const rect = this.screen.getBoundingClientRect();
@@ -1229,8 +1229,8 @@
         offset += n.textContent.length;
       }
       const text = block.textContent;
-      for (const m of findURLs(text)) {
-        if (offset >= m.index && offset < m.index + m.url.length) return m.url;
+      for (const m of findLinks(text)) {
+        if (offset >= m.index && offset < m.index + m.length) return m.target;
       }
       return null;
     }
@@ -1283,11 +1283,11 @@
     return 'rgb(' + g + ',' + g + ',' + g + ')';
   }
 
-  // URLs in the text look like links (a click with Ctrl or ⌘, or a tap,
-  // opens them: see linkAt).
-  const findURLs = (text) => window.IwatoLinks ? window.IwatoLinks.findURLs(text) : [];
+  // URLs and file paths in the text look like links (a click with Ctrl or
+  // ⌘, or a tap, opens them: see linkAt).
+  const findLinks = (text) => window.IwatoLinks ? window.IwatoLinks.findLinks(text) : [];
   const touchOnly = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
-  const urlTitle = () => touchOnly ? '' : t('term.linkTitle', { key: /Mac/.test(navigator.platform || '') ? '⌘' : 'Ctrl' });
+  const urlTitle = (target) => touchOnly ? '' : t(window.IwatoLinks?.pathOf(target) ? 'term.pathTitle' : 'term.linkTitle', { key: /Mac/.test(navigator.platform || '') ? '⌘' : 'Ctrl' });
 
   // Wraps text offsets [from, to) of el in link spans (one per text node).
   function wrapText(el, from, to, url, group) {
@@ -1305,13 +1305,13 @@
       link.className = 'iw-url';
       link.dataset.url = url;
       if (group) link.dataset.group = String(group);
-      if (urlTitle()) link.title = urlTitle();
+      if (urlTitle(url)) link.title = urlTitle(url);
       piece.replaceWith(link);
       link.append(piece);
     }
   }
 
-  // Underlines the URLs in elements that hold one logical line (screen
+  // Underlines the URLs and paths in elements that hold one logical line (screen
   // rows joined by wrapping, or a history line's segments), also where a
   // URL crosses from one to the next. Each piece keeps the whole URL.
   function decorateURLs(els) {
@@ -1325,8 +1325,8 @@
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push({ n, at: text.length }); text += n.data; }
     }
-    if (!text.includes('://')) return;
-    const matches = findURLs(text).map((m) => ({ url: m.url, start: m.index, end: m.index + m.url.length }));
+    if (!text.includes('/')) return;
+    const matches = findLinks(text).map((m) => ({ url: m.target, start: m.index, end: m.index + m.length }));
     // Backwards, so that splitting a text node keeps the offsets before it.
     for (const m of matches.reverse()) {
       for (const { n, at } of [...nodes].reverse()) {
@@ -1338,7 +1338,7 @@
         const link = document.createElement('span');
         link.className = 'iw-url';
         link.dataset.url = m.url;
-        if (urlTitle()) link.title = urlTitle();
+        if (urlTitle(m.url)) link.title = urlTitle(m.url);
         piece.replaceWith(link);
         link.append(piece);
       }
