@@ -67,11 +67,9 @@ Iwato のプリセット:
 
 | プリセット | 許すもの |
 |---|---|
-| 「Claude Code を mise で入れる」 | mise のダウンロード (GitHub、mise-versions.jdx.dev) と、Claude Code の更新・設定の取得 (downloads.claude.ai、platform.claude.com、raw.githubusercontent.com) |
-| 「Grok Build を mise で入れる」 | mise の版の確認とダウンロード、grok 自身の更新 (x.ai、storage.googleapis.com) |
-| 「パッケージのダウンロード」 | どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS と、読むだけの POST: npm の audit、レジストリーのトークン): npm、PyPI (uv の Python も)、crates.io、Rust のツールチェーン (rustup)、Go のプロキシ、RubyGems、mise、Node.js と Go の本体、GitHub のリリース・アーカイブの転送先と raw、Docker Hub と ghcr.io のイメージ。公開・アップロードは通りません |
+| 「パッケージと Claude Code・Grok Build のダウンロード」 | どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS と、読むだけの POST: npm の audit、レジストリーのトークン): npm、PyPI (uv の Python も)、crates.io、Rust のツールチェーン (rustup)、Go のプロキシ、RubyGems、mise、Node.js と Go の本体、GitHub のリリース・アーカイブの転送先と raw、Docker Hub と ghcr.io のイメージ。公開・アップロードは通りません。mise・claude・grok にだけ: mise のダウンロード (GitHub、mise-versions.jdx.dev)、Claude Code の更新・設定の取得 (downloads.claude.ai、platform.claude.com)、grok の版の確認・ダウンロード・更新 (x.ai、storage.googleapis.com) |
 
-プロバイダーの認証情報が届く宛先 (github.com、api.github.com、エージェントの API) はプリセットに入れません。そこはプロバイダーのものです。例外は Claude Code を mise で入れるプリセットの GitHub の規則 (mise が GitHub からダウンロードする) だけで、一覧に印が出ます。
+プロバイダーの認証情報が届く宛先 (github.com、api.github.com、エージェントの API) はプリセットに入れません。そこはプロバイダーのものです。例外はパッケージのプリセットにある mise の読み取りだけの GitHub の規則 (mise が GitHub からダウンロードする) だけで、一覧に印が出ます。
 
 ### 自分のプリセット
 

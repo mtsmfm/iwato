@@ -24,7 +24,7 @@
 #                    (downloads.claude.ai for updates, platform.claude.com,
 #                    raw.githubusercontent.com). They are not listed here
 #                    on purpose: an endpoint of a profile gets the token.
-#                    The network preset presets/claude-mise.yaml allows them
+#                    The network preset presets/packages.yaml allows them
 #                    without it. Claude Code takes the scopes of
 #                    a token from CLAUDE_CODE_OAUTH_TOKEN from
 #                    CLAUDE_CODE_OAUTH_SCOPES (else user:inference only),

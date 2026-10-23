@@ -99,8 +99,8 @@ type networkPreset struct {
 	Hosts  []string `json:"hosts"`
 	// ProviderHosts are endpoints where a provider's credential goes
 	// (ADR 0006: those hosts belong to the providers). An owner's preset
-	// with any is refused; Iwato's claude-mise keeps its mise rules on
-	// GitHub from before, listed here.
+	// with any is refused; Iwato's packages keeps mise's read-only rules on
+	// GitHub, listed here.
 	ProviderHosts []string `json:"providerHosts"`
 	// rules hold ${NAME} where the parameters go.
 	rules    map[string]v1.NetworkPolicyRule

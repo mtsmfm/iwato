@@ -58,7 +58,7 @@ On failure, look at denied requests in the **Policy** tab. `credential_endpoint_
 
 ## (c) claude (iwato-claude-subscription, experimental)
 
-0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, preset `claude-mise`) (the home `/home/dev` is always a volume, so no reinstall later). The profile's programs cover both (below)
+0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, preset `packages`) (the home `/home/dev` is always a volume, so no reinstall later). The profile's programs cover both (below)
 1. Add a provider of type **Claude Code (sign in with Claude)** as in (l)
 2. Attach it to the sandbox and restart (or open a new terminal)
 3. `sh providers-check.sh claude`. `PROVIDER-OK` means Claude Code runs on the placeholder and OpenShell substitutes `Authorization: Bearer` to `api.anthropic.com`
@@ -210,7 +210,7 @@ Precedence (Auth Precedence in grok's guide, `flow.rs`): a model's `api_key` > t
 1. Start the new exe. The log shows `imported the provider profile iwato-grok-subscription`
 2. Menu **Providers** → type **Grok Build (xAI subscription)** → **Connect to xAI**. A code and **Allow in xAI** appear. On a PC or a phone, log in on xAI's page, check the code matches and allow (within the time limit). Iwato shows "Connected as grok-subscription" and **The gateway refreshes it**, with the expiry and the next refresh
 3. Press **Refresh now** twice in the list; both succeed
-4. Attach it from the sandbox's ⋯ → **Providers** and **Restart now** (or choose it in the create form). Install grok with mise (`mise use -g grok`, preset `grok-mise`)
+4. Attach it from the sandbox's ⋯ → **Providers** and **Restart now** (or choose it in the create form). Install grok with mise (`mise use -g grok`, preset `packages`)
 5. In a terminal, `cat ~/.config/iwato/env` shows an `export GROK_AUTH_PROVIDER_COMMAND=…` line conditional on `XAI_OAUTH_TOKEN`, `echo "$GROK_AUTH_PROVIDER_COMMAND"` prints the command, and `sh -c "$GROK_AUTH_PROVIDER_COMMAND"` prints `{"access_token":"<placeholder>",…,"issuer":"https://auth.x.ai"}` (the placeholder is not a secret, but do not paste it into an agent's conversation)
 6. `grok logout`, then `grok -p 'hello'`. A reply means grok sent the placeholder to `cli-chat-proxy.grok.com/v1` and OpenShell substituted it. Interactive `grok` starts right away, without a login screen
 7. The same grok keeps working for over an hour (the placeholder does not change on refresh)

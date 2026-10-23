@@ -153,11 +153,11 @@ func TestApplyAndRemovePresets(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes", `{"name":"bad","presets":["nope"]}`); code != 400 {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes", `{"name":"mise","presets":["claude-mise",`+repo+`],"providers":["github-personal"]}`); code != 200 {
+	if code, body := do("POST", "/api/sandboxes", `{"name":"mise","presets":["packages",`+repo+`],"providers":["github-personal"]}`); code != 200 {
 		t.Fatal(code, body)
 	}
 	sb, _ = s.lookupSandbox("mise")
-	if len(sb.Presets) != 2 || sb.Presets[0].ID != "claude-mise" || sb.Presets[1].Params["repo"] != "mtsmfm/iwato" {
+	if len(sb.Presets) != 2 || sb.Presets[0].ID != "packages" || sb.Presets[1].Params["repo"] != "mtsmfm/iwato" {
 		t.Fatalf("%+v", sb.Presets)
 	}
 	if _, ok := sandboxPolicy(sb).NetworkPolicies["mirror_mtsmfm_iwato"]; !ok {

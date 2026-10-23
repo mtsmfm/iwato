@@ -1,19 +1,21 @@
 # Iwato's network preset: package downloads for any program, read only
 # (GET, HEAD and OPTIONS, plus the few POSTs that only read: npm's audit and
-# the registries' token requests). Every endpoint is inspected (rest, enforce), as
-# the providers' endpoints are, so attaching a provider later (GitHub's
-# included) never makes an endpoint ambiguous. HEAD is allowed wherever GET
-# is (OpenShell matches a HEAD against GET rules). Ubuntu's apt mirrors are
-# left out: the sandbox has no root. github.com and api.github.com are
-# left out too (ADR 0006): the GitHub provider's token goes to every path
-# there, so what is allowed on them is the provider's to say. Downloads
-# from github.com (release assets, archives) need that provider, or a
-# proposal, for their first request; the redirects they lead to
-# (objects/release-assets.githubusercontent.com, codeload.github.com)
-# carry no credential and are here.
+# the registries' token requests), and the installs and updates of Claude
+# Code and Grok Build for their own programs. Every endpoint is inspected
+# (rest, enforce), as the providers' endpoints are, so attaching a provider
+# later (GitHub's included) never makes an endpoint ambiguous. HEAD is
+# allowed wherever GET is (OpenShell matches a HEAD against GET rules).
+# Ubuntu's apt mirrors are left out: the sandbox has no root. github.com and
+# api.github.com are left out for other programs (ADR 0006): the GitHub
+# provider's token goes to every path there, so what is allowed on them is
+# the provider's to say. Downloads from github.com (release assets,
+# archives) need that provider, or a proposal, for their first request; the
+# redirects they lead to (objects/release-assets.githubusercontent.com,
+# codeload.github.com) carry no credential and are here. The exception is
+# mise's own read-only rules there (the list marks them).
 id: packages
-label: パッケージのダウンロード
-note: npm・PyPI (uv の Python も)・crates.io・Rust のツールチェーン・Go・RubyGems・mise・Node.js と Go の本体・GitHub のリリース・アーカイブの転送先と raw (github.com と api.github.com そのものは GitHub のプロバイダーの宛先なので含みません)・Docker Hub と ghcr.io のイメージを、どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS。POST は読むだけの npm の audit とレジストリーのトークンだけ) 許可します。公開・アップロードは通りません
+label: パッケージと Claude Code・Grok Build のダウンロード
+note: npm・PyPI (uv の Python も)・crates.io・Rust のツールチェーン・Go・RubyGems・mise・Node.js と Go の本体・GitHub のリリース・アーカイブの転送先と raw (github.com と api.github.com そのものは GitHub のプロバイダーの宛先なので、後述の mise の分のほかは含みません)・Docker Hub と ghcr.io のイメージを、どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS。POST は読むだけの npm の audit とレジストリーのトークンだけ) 許可します。公開・アップロードは通りません。mise で入れる Claude Code と Grok Build のインストールと更新も、mise・claude・grok 自身にだけ許可します (mise の GitHub からの読み取りと mise-versions.jdx.dev への版の問い合わせ、downloads.claude.ai、platform.claude.com、x.ai の /cli/、storage.googleapis.com の grok-build-public-artifacts/cli)。api.anthropic.com と api.x.ai はそれぞれのプロバイダーで通します
 network_policies:
   # npm install and npm audit send the dependency list by POST to the
   # advisory endpoints; they only read (without them every install warns).
@@ -185,3 +187,83 @@ network_policies:
     endpoints:
       - { host: pkg-containers.githubusercontent.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
     binaries: ["/**"]
+  # mise use -g claude / grok: mise reads GitHub's releases (read only, its
+  # own program only), and asks mise-versions for claude's version by POST.
+  preset_packages_api_github_com_mise:
+    endpoints:
+      - { host: api.github.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: [/usr/local/lib/mise/mise]
+  preset_packages_github_com_mise:
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+    binaries: [/usr/local/lib/mise/mise]
+  preset_packages_mise_versions_jdx_dev_mise:
+    endpoints:
+      - host: mise-versions.jdx.dev
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+          - allow: { method: POST, path: /api/tools/claude }
+    binaries: [/usr/local/lib/mise/mise]
+  # Claude Code's updates and settings (installed by mise or by its own
+  # updater into versions/).
+  preset_packages_downloads_claude_ai:
+    endpoints:
+      - host: downloads.claude.ai
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/claude-code-releases/**" }
+    binaries:
+      - /home/dev/.local/share/claude/versions/*
+      - /home/dev/.local/share/mise/installs/claude/*/claude
+  preset_packages_platform_claude_com:
+    endpoints:
+      - { host: platform.claude.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries:
+      - /home/dev/.local/share/claude/versions/*
+      - /home/dev/.local/share/mise/installs/claude/*/claude
+  # mise's registry installs grok with its http backend: the version from
+  # x.ai/cli/stable, the binary from xAI's bucket. grok installed this way
+  # counts itself as installed by xAI's installer, so its updater checks
+  # and downloads new versions from x.ai/cli (storage.googleapis.com as the
+  # fallback) into ~/.grok/downloads (grok-VERSION-linux-ARCH, with .zst/.gz
+  # variants).
+  preset_packages_x_ai:
+    endpoints:
+      - host: x.ai
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/cli/**" }
+          - allow: { method: HEAD, path: "/cli/**" }
+    binaries:
+      - /usr/local/lib/mise/mise
+      - /home/dev/.local/share/mise/installs/grok/*/grok
+      - /home/dev/.grok/downloads/grok-*
+  preset_packages_storage_googleapis_com_grok:
+    endpoints:
+      - host: storage.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/grok-build-public-artifacts/cli/**" }
+          - allow: { method: HEAD, path: "/grok-build-public-artifacts/cli/**" }
+    binaries:
+      - /usr/local/lib/mise/mise
+      - /home/dev/.local/share/mise/installs/grok/*/grok
+      - /home/dev/.grok/downloads/grok-*
