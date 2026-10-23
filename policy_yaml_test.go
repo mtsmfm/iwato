@@ -127,7 +127,7 @@ func TestPolicyYAMLProviderHosts(t *testing.T) {
 	}
 }
 
-// Iwato's presets with rules on GitHub's hosts (claude-mise) fit the
+// Iwato's presets with rules on GitHub's hosts (packages) fit the
 // GitHub provider's scope; wider access does not.
 func TestBeyondScope(t *testing.T) {
 	for _, prof := range allProfiles() {

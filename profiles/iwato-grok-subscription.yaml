@@ -36,7 +36,7 @@
 #                    refresh token; the gateway stores the new one.
 # Not listed:        grok's own login (~/.grok/auth.json) cannot be a
 #                    placeholder. x.ai/cli (the installer and the updater)
-#                    needs no token: the network preset grok-mise allows it.
+#                    needs no token: the network preset packages allows it.
 # Verified:          from xai-org/grok-build's source (crates/codegen/
 #                    xai-grok-login: config.rs, device_code.rs,
 #                    oidc/protocol.rs, external_auth.rs; the install paths:

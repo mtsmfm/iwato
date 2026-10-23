@@ -105,15 +105,15 @@ func TestOpenShellPresetsE2E(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/presets/remove", mirror("o/b")); code != 200 || !strings.Contains(body, `"kept":[]`) {
 		t.Fatal("remove:", code, body)
 	}
-	// user:shared shares allow_downloads_claude_ai_443 with claude-mise:
-	// taken out, the rule stays as claude-mise makes it.
+	// user:shared shares preset_packages_downloads_claude_ai with packages:
+	// taken out, the rule stays as packages makes it.
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/presets/remove", `"user:shared"`); code != 200 || !strings.Contains(body, `"kept":[]`) {
 		t.Fatal("remove a preset sharing a rule:", code, body)
 	}
 	base, _, _ = o.PolicyLayers(ctx, w)
-	mise, _ := presetRefRules(PresetRef{ID: "claude-mise"})
+	mise, _ := presetRefRules(PresetRef{ID: "packages"})
 	oa, _ := presetRefRules(PresetRef{ID: "user:mirror", Params: map[string]string{"repo": "o/a"}})
-	if _, ok := base["mirror_o_b"]; ok || !samePresetRule(base["mirror_o_a"], oa["mirror_o_a"]) || !samePresetRule(base["allow_downloads_claude_ai_443"], mise["allow_downloads_claude_ai_443"]) {
+	if _, ok := base["mirror_o_b"]; ok || !samePresetRule(base["mirror_o_a"], oa["mirror_o_a"]) || !samePresetRule(base["preset_packages_downloads_claude_ai"], mise["preset_packages_downloads_claude_ai"]) {
 		t.Fatalf("after the removals: %+v", base)
 	}
 	if _, ok := base["allow_claude_ai_443"]; ok {

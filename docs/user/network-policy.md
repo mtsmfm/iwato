@@ -67,11 +67,9 @@ Iwato's presets:
 
 | Preset | What it allows |
 |---|---|
-| Install Claude Code with mise | mise's downloads (GitHub, mise-versions.jdx.dev) and Claude Code's updates and settings (downloads.claude.ai, platform.claude.com, raw.githubusercontent.com) |
-| Install Grok Build with mise | mise's version check and download, and grok's own updates (x.ai, storage.googleapis.com) |
-| Package downloads | read-only (GET, HEAD, OPTIONS, and the POSTs that only read: npm's audit, the registries' tokens) from any program: npm, PyPI (and uv's Python builds), crates.io, the Rust toolchains (rustup), the Go proxy, RubyGems, mise, the Node.js and Go downloads, GitHub release and archive downloads and raw files, Docker Hub and ghcr.io images. No publishing or uploads |
+| Package, Claude Code and Grok Build downloads | read-only (GET, HEAD, OPTIONS, and the POSTs that only read: npm's audit, the registries' tokens) from any program: npm, PyPI (and uv's Python builds), crates.io, the Rust toolchains (rustup), the Go proxy, RubyGems, mise, the Node.js and Go downloads, GitHub release and archive downloads and raw files, Docker Hub and ghcr.io images. No publishing or uploads. For mise, claude and grok only: mise's downloads (GitHub, mise-versions.jdx.dev), Claude Code's updates and settings (downloads.claude.ai, platform.claude.com), grok's version check, download and updates (x.ai, storage.googleapis.com) |
 
-Presets never include hosts where a provider's credentials go (github.com, api.github.com, the agents' APIs): those belong to the providers. The only exception is the GitHub rules of the mise preset for Claude Code (mise downloads from GitHub); the list marks them.
+Presets never include hosts where a provider's credentials go (github.com, api.github.com, the agents' APIs): those belong to the providers. The only exception is mise's read-only GitHub rules in the package preset (mise downloads from GitHub); the list marks them.
 
 ### Your own presets
 

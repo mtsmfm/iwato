@@ -59,7 +59,7 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	}
 	defer o.DeleteProvider(context.Background(), "github-yaml")
 	w := newSandbox("iwato-yaml-e2e")
-	w.Presets = []PresetRef{{ID: "claude-mise"}}
+	w.Presets = []PresetRef{{ID: "packages"}}
 	w.Providers = []string{"github-yaml"}
 	if err := o.Start(ctx, w); err != nil {
 		t.Fatal(err)
@@ -99,19 +99,19 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	// A program more on the preset's rule for api.github.com: the token
 	// would go with it.
 	wider := cloneRules(rules)
-	r0 := wider["allow_api_github_com_443"]
+	r0 := wider["preset_packages_api_github_com_mise"]
 	r0.Binaries = append(r0.Binaries, v1.PolicyNetworkBinary{Path: "/usr/bin/curl"})
-	wider["allow_api_github_com_443"] = r0
+	wider["preset_packages_api_github_com_mise"] = r0
 	if code, v := post(got.Version, wider, false); code != 409 || v["code"] != "policy_provider_host" {
 		t.Fatal("a program more on a provider's host:", code, v)
 	}
 	// A copy of the rule for mise-versions.jdx.dev under another name and
 	// program, and the one for release assets taken out.
 	edited := cloneRules(rules)
-	copied := cloneRule(edited["allow_mise_versions_jdx_dev_443"])
+	copied := cloneRule(edited["preset_packages_mise_versions_jdx_dev_mise"])
 	copied.Name, copied.Binaries = "mise_versions_curl", []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}
 	edited[copied.Name] = copied
-	delete(edited, "allow_release_assets_githubusercontent_com_443")
+	delete(edited, "preset_packages_release_assets_githubusercontent_com")
 	if code, v := post(got.Version, edited, true); code != 200 {
 		t.Fatal("apply:", code, v)
 	}
@@ -120,10 +120,10 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := after.Revision.Policy
-	if _, ok := p.NetworkPolicies["allow_release_assets_githubusercontent_com_443"]; ok {
+	if _, ok := p.NetworkPolicies["preset_packages_release_assets_githubusercontent_com"]; ok {
 		t.Fatal("the removed rule stayed")
 	}
-	if r, ok := p.NetworkPolicies[copied.Name]; !ok || !samePresetRule(r, copied) || !samePresetRule(p.NetworkPolicies["allow_mise_versions_jdx_dev_443"], rules["allow_mise_versions_jdx_dev_443"]) {
+	if r, ok := p.NetworkPolicies[copied.Name]; !ok || !samePresetRule(r, copied) || !samePresetRule(p.NetworkPolicies["preset_packages_mise_versions_jdx_dev_mise"], rules["preset_packages_mise_versions_jdx_dev_mise"]) {
 		t.Fatalf("the copy was not kept under its own name: %+v", p.NetworkPolicies)
 	}
 	if !reflect.DeepEqual(p.Filesystem, before.Revision.Policy.Filesystem) || !reflect.DeepEqual(p.Landlock, before.Revision.Policy.Landlock) || !reflect.DeepEqual(p.Process, before.Revision.Policy.Process) {

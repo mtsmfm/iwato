@@ -43,7 +43,7 @@ network_policies:
 `
 
 // sharedPreset is an owner's preset with a rule of the same name as
-// claude-mise's (downloads.claude.ai) and one of its own.
+// packages' (downloads.claude.ai) and one of its own.
 const sharedPreset = `id: shared
 label: 共有する規則
 network_policies:
@@ -56,7 +56,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: /install.sh }
     binaries: [/usr/bin/curl]
-  allow_downloads_claude_ai_443:
+  preset_packages_downloads_claude_ai:
     endpoints:
       - host: downloads.claude.ai
         port: 443
@@ -86,7 +86,7 @@ func withUserPresets(t *testing.T, files map[string]string) string {
 
 // Iwato's presets, all of them together, and every Iwato provider: no
 // endpoint OpenShell would refuse as ambiguous, none that carries a
-// credential uninspected, none (but claude-mise's old rules) on a provider's
+// credential uninspected, none (but mise's in packages) on a provider's
 // host. Every endpoint is inspected and enforced, names
 // programs, and none is an agent's API (that is a provider's).
 func TestBuiltinPresetsFitTheProviders(t *testing.T) {
@@ -95,9 +95,9 @@ func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The hosts a provider's credential reaches are the provider's (ADR
-	// 0006): only claude-mise keeps mise's GitHub rules.
+	// 0006): only packages keeps mise's GitHub rules.
 	for _, p := range builtinPresets() {
-		if want := p.ID == "claude-mise"; (len(p.ProviderHosts) > 0) != want {
+		if want := p.ID == "packages"; (len(p.ProviderHosts) > 0) != want {
 			t.Errorf("%s reaches a provider's hosts: %v", p.ID, p.ProviderHosts)
 		}
 	}
@@ -137,7 +137,7 @@ func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 // Presets with a rule of one name: the rule joins their programs.
 func TestPresetsOfOneRuleNameJoin(t *testing.T) {
 	withUserPresets(t, map[string]string{"shared.yaml": sharedPreset})
-	rule := presetRules([]PresetRef{{ID: "claude-mise"}, {ID: "user:shared"}})["allow_downloads_claude_ai_443"]
+	rule := presetRules([]PresetRef{{ID: "packages"}, {ID: "user:shared"}})["preset_packages_downloads_claude_ai"]
 	var paths []string
 	for _, b := range rule.Binaries {
 		paths = append(paths, b.Path)
@@ -211,7 +211,7 @@ func TestUserPresets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("a.yaml", `id: claude-mise
+	write("a.yaml", `id: packages
 label: 自分の
 params:
   - { name: host, label: ホスト, pattern: '[a-z]+\.example\.com' }
@@ -230,8 +230,8 @@ network_policies:
 	write("nobin.yaml", "id: nobin\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: a.example, port: 443}]\n    binaries: []\n")
 	setUserPresetDir(dir)
 	list, errs := presetList()
-	mine := findPreset("user:claude-mise")
-	if mine == nil || findPreset("claude-mise").Source != "builtin" || len(list) != len(builtinPresets())+2 {
+	mine := findPreset("user:packages")
+	if mine == nil || findPreset("packages").Source != "builtin" || len(list) != len(builtinPresets())+2 {
 		t.Fatalf("%+v", list)
 	}
 	var bad []string
@@ -250,16 +250,16 @@ network_policies:
 	if e := errs[5]; e.Code != "preset_param_unknown" || e.Params["name"] != "nope" || e.en != "rule r_${nope}: no params named ${nope}" {
 		t.Fatalf("%+v", e)
 	}
-	rules := presetRules([]PresetRef{{ID: "user:claude-mise", Params: map[string]string{"host": "api.example.com"}}})
+	rules := presetRules([]PresetRef{{ID: "user:packages", Params: map[string]string{"host": "api.example.com"}}})
 	if r, ok := rules["mine_api_example_com"]; !ok || r.Endpoints[0].Host != "api.example.com" {
 		t.Fatalf("%v", rules)
 	}
-	if validPresetList([]PresetRef{{ID: "user:claude-mise", Params: map[string]string{"host": "evil.com"}}}) == nil {
+	if validPresetList([]PresetRef{{ID: "user:packages", Params: map[string]string{"host": "evil.com"}}}) == nil {
 		t.Fatal("took a value its pattern refuses")
 	}
 	os.Remove(filepath.Join(dir, "a.yaml"))
 	reloadUserPresets()
-	if findPreset("user:claude-mise") != nil {
+	if findPreset("user:packages") != nil {
 		t.Fatal("a removed file stayed")
 	}
 }
@@ -268,7 +268,7 @@ network_policies:
 // as the others make it, and leaves a rule changed since.
 func TestPresetRemoval(t *testing.T) {
 	withUserPresets(t, map[string]string{"shared.yaml": sharedPreset})
-	mise, shared := PresetRef{ID: "claude-mise"}, PresetRef{ID: "user:shared"}
+	mise, shared := PresetRef{ID: "packages"}, PresetRef{ID: "user:shared"}
 	all := presetRules([]PresetRef{mise, shared})
 	base := map[string]v1.NetworkPolicyRule{}
 	for name, r := range all {
@@ -292,7 +292,7 @@ func TestPresetRemoval(t *testing.T) {
 			got = append(got, "add "+op.AddRule.RuleName)
 		}
 	}
-	if !slices.Equal(got, []string{"remove allow_downloads_claude_ai_443", "add allow_downloads_claude_ai_443"}) || !slices.Equal(kept, []string{"allow_claude_ai_443"}) {
+	if !slices.Equal(got, []string{"remove preset_packages_downloads_claude_ai", "add preset_packages_downloads_claude_ai"}) || !slices.Equal(kept, []string{"allow_claude_ai_443"}) {
 		t.Fatalf("%v %v", got, kept)
 	}
 	// A rule of the preset that OpenShell folded into another: named, with
@@ -304,8 +304,8 @@ func TestPresetRemoval(t *testing.T) {
 		t.Fatalf("%v", kept)
 	}
 	// Putting a fold back: the changed rule as it was, the new one out.
-	before := map[string]v1.NetworkPolicyRule{"hand": base["allow_downloads_claude_ai_443"]}
-	after := map[string]v1.NetworkPolicyRule{"hand": all["allow_downloads_claude_ai_443"], "new": folded, "_provider_x": folded}
+	before := map[string]v1.NetworkPolicyRule{"hand": base["preset_packages_downloads_claude_ai"]}
+	after := map[string]v1.NetworkPolicyRule{"hand": all["preset_packages_downloads_claude_ai"], "new": folded, "_provider_x": folded}
 	got = nil
 	for _, op := range rollbackOps(before, after) {
 		switch {

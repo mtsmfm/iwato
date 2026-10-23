@@ -8,10 +8,9 @@ The standard image contains no agent CLI and no agent settings. Install each age
 
 A new sandbox allows no network. To avoid approving each download, pick a preset at creation, or later in the policy tab ([presets](network-policy.md#presets)):
 
-- Install Claude Code with mise
-- Install Grok Build with mise
+- Package, Claude Code and Grok Build downloads
 
-They add narrow rules (program, method, path) for the download hosts, which carry no credentials, including the agents' own updates. The agents' API hosts (`api.anthropic.com`, `api.x.ai`, …) are not in the presets: attach the agent's provider, or approve the agent's proposals ([providers](providers.md)). Anything else an agent needs, it proposes ([proposals](network-policy.md#how-rules-get-proposed)).
+Besides read-only package downloads for any program, it adds narrow rules (program, method, path) for mise, Claude Code and Grok Build on their download hosts, which carry no credentials, including the agents' own updates. The agents' API hosts (`api.anthropic.com`, `api.x.ai`, …) are not in the presets: attach the agent's provider, or approve the agent's proposals ([providers](providers.md)). Anything else an agent needs, it proposes ([proposals](network-policy.md#how-rules-get-proposed)).
 
 ## Claude Code
 
