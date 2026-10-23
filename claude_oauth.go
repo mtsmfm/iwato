@@ -18,8 +18,7 @@ import (
 )
 
 // Claude Code with the owner's Claude account, signed in by Iwato
-// (iwato-claude-subscription; `claude setup-token` with
-// iwato-claude stays the recommended way). Iwato signs in with Claude
+// (iwato-claude-subscription). Iwato signs in with Claude
 // Code's public client as `claude auth login` does: the authorization code
 // with PKCE S256 and state, and both of Claude Code's redirects.
 //
@@ -430,7 +429,7 @@ func (s *Server) finishClaude(f *claudeFlow, code, redirectURI string) {
 	g := oauthGrant{log: "claude oauth", name: f.name, reconnect: f.reconnect, profile: claudeSubscriptionProfileID, key: claudeOAuthCredentialKey, clientID: f.backend.ClientID(),
 		noRefresh:   coded("oauth_claude_no_refresh", nil, "refresh token がありません。ゲートウェイが更新できないので、プロバイダーは作りませんでした。"),
 		refreshCode: "oauth_first_refresh_claude",
-		refreshHint: "Anthropic がゲートウェイの更新の形 (フォーム形式) を受け付けていないかもしれません。その場合は「Claude Code (セットアップトークン)」(claude setup-token) を使ってください。",
+		refreshHint: "Anthropic がゲートウェイの更新の形 (フォーム形式) を受け付けていないかもしれません。",
 		named: func(name string) {
 			s.claude.mu.Lock()
 			f.name = name

@@ -144,7 +144,7 @@ func TestProviderChangeIsAppliedInTheBackground(t *testing.T) {
 func TestProviderAPIValidation(t *testing.T) {
 	s, _, do, cookie := providerServerCookie(t)
 	l := listProviders(t, do)
-	if len(l.Profiles) != len(providerProfiles) || l.Profiles[0].ID != "iwato-claude" || !l.Profiles[1].OAuth || !l.Profiles[2].OAuth || !l.Profiles[4].OAuth || l.Profiles[5].ID != "iwato-github" || l.Profiles[6].Group != groupModels || len(l.Providers) != 10 {
+	if len(l.Profiles) != len(providerProfiles) || l.Profiles[0].ID != claudeSubscriptionProfileID || !l.Profiles[0].OAuth || !l.Profiles[1].OAuth || !l.Profiles[3].OAuth || l.Profiles[4].ID != "iwato-github" || l.Profiles[5].Group != groupModels || len(l.Providers) != 11 {
 		t.Fatalf("%+v", l)
 	}
 	for _, c := range []struct{ body, want string }{
@@ -183,7 +183,7 @@ func TestProviderAPIValidation(t *testing.T) {
 	if code, body := do("POST", "/api/providers/github-new/update", `{"values":{"token":"ghp_other"}}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	if code, _ := do("POST", "/api/providers/github-new/update", `{"profile":"iwato-claude","values":{"token":"x"}}`); code != 400 {
+	if code, _ := do("POST", "/api/providers/github-new/update", `{"profile":"iwato-openrouter","values":{"token":"x"}}`); code != 400 {
 		t.Fatal("changed the profile", code)
 	}
 	if code, _ := do("POST", "/api/providers/missing/update", `{"values":{"token":"x"}}`); code != 404 {
@@ -391,5 +391,31 @@ func TestRestartPendingEndsWithAnUnseenRestart(t *testing.T) {
 	}
 	if pending() {
 		t.Fatal("pending again")
+	}
+}
+
+// A provider of a type Iwato no longer ships (retiredBases) is listed,
+// attached, detached and deleted with its scope.
+func TestRetiredProvider(t *testing.T) {
+	s, _, do := providerServer(t)
+	if err := s.updateConfig(func(c *Config) error {
+		c.ProviderScopes = map[string]ProviderScope{"claude-token": {Base: "iwato-claude", Mode: scopeReadOnly}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p, ok := provider(listProviders(t, do), "claude-token"); !ok || p.Base != "" || p.Scope != nil || len(p.Keys) != 1 {
+		t.Fatalf("%+v", p)
+	}
+	for _, op := range []string{"attach", "detach"} {
+		if code, body := do("POST", "/api/sandboxes/dev/providers/"+op, `{"provider":"claude-token"}`); code != 200 {
+			t.Fatal(op, code, body)
+		}
+	}
+	if code, body := do("POST", "/api/providers/claude-token/delete", `{}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	if _, ok := s.providerScope("claude-token"); ok {
+		t.Fatal("the scope stayed")
 	}
 }

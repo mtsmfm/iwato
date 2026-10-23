@@ -39,7 +39,7 @@ func TestCreateProviderNamed(t *testing.T) {
 			t.Fatal(n, err, want)
 		}
 	}
-	if n, err := createProviderNamed(ctx, d, "", "iwato-claude", nil); n != "claude-2" || err != nil {
+	if n, err := createProviderNamed(ctx, d, "", "iwato-openrouter", nil); n != "openrouter-2" || err != nil {
 		t.Fatal(n, err)
 	}
 	// Taken meanwhile: the gateway says so and the next is tried.
@@ -75,7 +75,7 @@ func (r *staleList) CreateProvider(ctx context.Context, name, profile string, cr
 func TestProviderAPICreatesWithoutAName(t *testing.T) {
 	_, _, do, _ := providerServerCookie(t)
 	l := listProviders(t, do)
-	if l.Profiles[5].DefaultName != "github" || l.Profiles[4].DefaultName != "atlassian" || l.Profiles[8].DefaultName != "comfy-cloud" || l.Profiles[1].DefaultName != "claude-subscription" || l.Profiles[2].DefaultName != "grok-subscription" {
+	if l.Profiles[4].DefaultName != "github" || l.Profiles[3].DefaultName != "atlassian" || l.Profiles[7].DefaultName != "comfy-cloud" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" {
 		t.Fatalf("%+v", l.Profiles)
 	}
 	for _, want := range []string{"github", "github-2"} {

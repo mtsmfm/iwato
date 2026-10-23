@@ -36,7 +36,9 @@ func (d *Fake) seedProviders() {
 		{Name: "github-personal", Profile: "iwato-github", CreatedAt: at},
 		// With its own profile: the scope fakeProviderScopes gives it.
 		{Name: "github-work", Profile: scopedProfileID(githubProfileID, "github-work"), CreatedAt: at.AddDate(0, 0, 3)},
-		{Name: "claude", Profile: "iwato-claude", CreatedAt: at.AddDate(0, 0, 5)},
+		{Name: "claude", Profile: claudeSubscriptionProfileID, CreatedAt: at.AddDate(0, 0, 5)},
+		// Of a type Iwato no longer ships (retiredBases): the gateway keeps its profile.
+		{Name: "claude-token", Profile: scopedProfileID("iwato-claude", "claude-token"), Keys: []string{claudeOAuthCredentialKey}, CreatedAt: at.AddDate(0, 0, 6)},
 		{Name: "atlassian-work", Profile: atlassianProfileID, CreatedAt: at.AddDate(0, 0, 8)},
 		{Name: "atlassian-oss", Profile: atlassianProfileID, CreatedAt: at.AddDate(0, 0, 9)},
 		{Name: "huggingface", Profile: "iwato-huggingface", CreatedAt: at.AddDate(0, 0, 10)},
@@ -53,6 +55,7 @@ func (d *Fake) seedProviders() {
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	d.prov.refresh = map[string]RefreshInfo{
+		"claude":            {Status: "refreshed", LastRefreshAt: now.Add(-10 * time.Minute), ExpiresAt: now.Add(50 * time.Minute), NextRefreshAt: now.Add(45 * time.Minute)},
 		"atlassian-work":    {Status: "refreshed", LastRefreshAt: now.Add(-20 * time.Minute), ExpiresAt: now.Add(40 * time.Minute), NextRefreshAt: now.Add(35 * time.Minute)},
 		"grok-subscription": {Status: "refreshed", LastRefreshAt: now.Add(-5 * time.Minute), ExpiresAt: now.Add(10 * time.Minute), NextRefreshAt: now.Add(5 * time.Minute)},
 		// The owner revoked it at Atlassian: 再接続.
@@ -282,9 +285,10 @@ func (d *Fake) ProviderProfile(_ context.Context, id string) (*pb.ProviderProfil
 // others have no scope: they use the shared built-in profiles).
 func fakeProviderScopes() map[string]ProviderScope {
 	return map[string]ProviderScope{
-		"github-work": {Base: githubProfileID, Mode: scopeRepos, Repos: []string{"mtsmfm/iwato"}},
-		"openrouter":  {Base: "iwato-openrouter", Mode: scopeReadOnly},
-		"runpod":      {Base: "iwato-runpod", Mode: scopeReadOnly},
+		"github-work":  {Base: githubProfileID, Mode: scopeRepos, Repos: []string{"mtsmfm/iwato"}},
+		"openrouter":   {Base: "iwato-openrouter", Mode: scopeReadOnly},
+		"runpod":       {Base: "iwato-runpod", Mode: scopeReadOnly},
+		"claude-token": {Base: "iwato-claude", Mode: scopeReadOnly},
 	}
 }
 

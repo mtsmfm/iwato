@@ -19,7 +19,7 @@ They add narrow rules (program, method, path) for the download hosts, which carr
 mise use -g claude
 ```
 
-It installs into `~/.local/share/mise/installs/claude/<version>`; Claude Code's own updates go into `~/.local/share/claude/versions/<version>`. For the API (`api.anthropic.com:443`), attach a provider of type "Claude Code (setup token)" (a token from `claude setup-token`) or approve the proposal.
+It installs into `~/.local/share/mise/installs/claude/<version>`; Claude Code's own updates go into `~/.local/share/claude/versions/<version>`. For the API (`api.anthropic.com:443`), attach a provider of type "Claude Code (sign in with Claude)" ([providers](providers.md)) or approve the proposal.
 
 ## Grok Build
 

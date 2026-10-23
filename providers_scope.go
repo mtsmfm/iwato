@@ -60,6 +60,17 @@ var scopedBases = func() []string {
 	return out
 }()
 
+// retiredBases are scoped bases Iwato no longer ships (iwato-claude:
+// Claude Code's setup token). Their providers keep the profile the gateway
+// holds and show as other providers; Iwato keeps their scope in the
+// configuration and deletes both with the provider.
+var retiredBases = []string{"iwato-claude"}
+
+// retiredScope: the provider's own profile is of a retired base.
+func retiredScope(p ProviderInfo) bool {
+	return slices.ContainsFunc(retiredBases, func(b string) bool { return p.Profile == scopedProfileID(b, p.Name) })
+}
+
 // The scope's modes.
 const (
 	scopeReadOnly = "read-only"
@@ -92,7 +103,7 @@ func validScopeMode(base, mode string) bool {
 
 // ProviderScope is a provider's access scope, as configured.
 type ProviderScope struct {
-	// Base is the built-in profile (iwato-github, iwato-claude, ...).
+	// Base is the built-in profile (iwato-github, iwato-openrouter, ...).
 	Base string `json:"base"`
 	// Mode is read-only, repos (GitHub: write to Repos), tools
 	// (Atlassian: read tools and Tools) or full.
@@ -534,6 +545,9 @@ func scopedProfile(m *pb.ProviderProfile, base string) (providerProfile, error) 
 func registerScopes(scopes map[string]ProviderScope) {
 	for _, name := range slices.Sorted(maps.Keys(scopes)) {
 		sc := scopes[name]
+		if slices.Contains(retiredBases, sc.Base) {
+			continue
+		}
 		m, err := renderScope(name, sc)
 		if err == nil {
 			var p providerProfile
@@ -600,6 +614,9 @@ func validScopes(scopes map[string]ProviderScope) error {
 	for name, sc := range scopes {
 		if !providerNamePattern.MatchString(name) {
 			return fmt.Errorf("provider scope: invalid provider name %q", name)
+		}
+		if slices.Contains(retiredBases, sc.Base) {
+			continue
 		}
 		n, err := sc.normalize()
 		if err != nil {
@@ -691,7 +708,7 @@ func (s *Server) createScopedProvider(ctx context.Context, rt providerRuntime, s
 
 // forgetScope removes a deleted provider's own profile and scope.
 func (s *Server) forgetScope(ctx context.Context, p ProviderInfo) {
-	if scopedBaseOf(p) == "" {
+	if scopedBaseOf(p) == "" && !retiredScope(p) {
 		return
 	}
 	if store, ok := s.rt.(profileStore); ok {

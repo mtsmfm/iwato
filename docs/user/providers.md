@@ -14,8 +14,7 @@ Iwato's provider types:
 
 | Type | Variables | Notes |
 |---|---|---|
-| Claude Code (setup token) | `CLAUDE_CODE_OAUTH_TOKEN` | a token from `claude setup-token`, sent to api.anthropic.com |
-| Claude Code (sign in with Claude) | `CLAUDE_CODE_OAUTH_TOKEN` | sign in with a Claude account (below), sent to api.anthropic.com. The setup-token type above is recommended |
+| Claude Code (sign in with Claude) | `CLAUDE_CODE_OAUTH_TOKEN` | sign in with a Claude account (below), sent to api.anthropic.com |
 | Grok Build (xAI subscription) | `XAI_OAUTH_TOKEN` | sign in with an xAI account (below) |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
 | Atlassian (MCP) | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); only `claude` may send it, to mcp.atlassian.com/v2/mcp |
@@ -70,7 +69,9 @@ Adding an Atlassian (MCP) provider asks for scopes (by default Jira and Confluen
 
 Iwato signs in with Claude Code's own public client id (not one Anthropic issued to Iwato), as `claude auth login` does. On the PC, Sign in with Claude comes back to Iwato by itself; on a phone, use **Sign in on a phone (paste a code)** and paste the code Claude's page shows (`code#…`). The sandbox's `claude` reads `CLAUDE_CODE_OAUTH_TOKEN`; Iwato also sets the token's scopes (`CLAUDE_CODE_OAUTH_SCOPES`, in `~/.config/iwato/env`) so that `/usage` works. Open a new terminal after attaching the provider to a running sandbox. claude.ai connectors stay off: the provider does not allow their host. Check with `claude -p 'hello'`.
 
-`claude setup-token` is what Anthropic documents for non-interactive use, so the "Claude Code (setup token)" type is recommended. Anthropic's terms govern subscription (Free, Pro, Max) OAuth tokens: see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance). Here only Claude Code in the sandbox uses the token, but Iwato signs in with Claude Code's client id. If the gateway's first refresh fails, Iwato says so; use the setup-token type then.
+Anthropic's terms govern subscription (Free, Pro, Max) OAuth tokens: see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance). Here only Claude Code in the sandbox uses the token, but Iwato signs in with Claude Code's client id. If the gateway's first refresh fails, Iwato says so.
+
+Iwato no longer offers the "Claude Code (setup token)" type. A provider made with it keeps working and shows under "Other", where it can still be detached and deleted.
 
 ### xAI subscription for Grok Build
 

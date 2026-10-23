@@ -6,7 +6,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Setup
 
-1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod` (not on later starts)
+1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod` (not on later starts)
 2. Check that the key is on the volume (so values stay readable after the gateway is recreated):
 
        wslc container exec iwato-personal-gateway ls -l /var/lib/openshell/credentials
@@ -16,7 +16,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Profile YAML (profiles/)
 
-Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`), written in OpenShell's format (OpenShell's `providers/*.yaml`, `docs/how-it-works/providers/profiles.mdx`). They are embedded in the exe (go:embed), and `providers_yaml.go` turns them into protos with the same rules as OpenShell's CLI (enum names follow `crates/openshell-providers/src/profiles.rs` and `crates/openshell-policy/src/l7_validate.rs`). OpenShell silently ignores unknown keys; Iwato rejects them (to catch typos). What only the UI uses (display name, category heading, description, value field names, usage hints, experimental, OAuth, hint commands) is not in the YAML but in `providers_profiles.go`.
+Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`), written in OpenShell's format (OpenShell's `providers/*.yaml`, `docs/how-it-works/providers/profiles.mdx`). They are embedded in the exe (go:embed), and `providers_yaml.go` turns them into protos with the same rules as OpenShell's CLI (enum names follow `crates/openshell-providers/src/profiles.rs` and `crates/openshell-policy/src/l7_validate.rs`). OpenShell silently ignores unknown keys; Iwato rejects them (to catch typos). What only the UI uses (display name, category heading, description, value field names, usage hints, experimental, OAuth, hint commands) is not in the YAML but in `providers_profiles.go`.
 
 Checks:
 
@@ -56,10 +56,10 @@ On failure, look at denied requests in the **Policy** tab. `credential_endpoint_
 2. The read-only scope does not allow push (like OpenShell's github.yaml: clone and fetch only). Commit in the clone and `git push`: it stops with 403 and a policy proposal appears (agents such as Claude Code propose on their own). A push goes through the provider's scope, not a hand-added rule (ADR 0006, 0014): approving the proposal adds the repository to the provider's writable repositories, or choose **Write to the listed repositories** under **Change scope** in the providers view. A hand-added rule on github.com cannot carry the token
 3. Wait until **Waiting to apply** clears (about 10 seconds) and retry `git push`. The token arrives without reattaching or restarting
 
-## (c) claude (iwato-claude, experimental)
+## (c) claude (iwato-claude-subscription, experimental)
 
 0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, preset `claude-mise`) (the home `/home/dev` is always a volume, so no reinstall later). The profile's programs cover both (below)
-1. Run `claude setup-token` locally and add a provider with the token (type Claude Code, name `claude`)
+1. Add a provider of type **Claude Code (sign in with Claude)** as in (l)
 2. Attach it to the sandbox and restart (or open a new terminal)
 3. `sh providers-check.sh claude`. `PROVIDER-OK` means Claude Code runs on the placeholder and OpenShell substitutes `Authorization: Bearer` to `api.anthropic.com`
 4. Check interactive `claude` too: `/status` shows `CLAUDE_CODE_OAUTH_TOKEN` as the auth
@@ -68,7 +68,6 @@ To check, and on failure:
 
 - In the Claude Code 2.1.287 binary, `CLAUDE_CODE_OAUTH_TOKEN` is used as the Bearer as is, without checking the format (`sk-ant-oat01-`). A version that checks the format would not work
 - `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, if set, take precedence
-- Some features (Remote Control etc.) do not work with setup-token (inference only)
 - The profile's endpoint is `api.anthropic.com` only. Telemetry and other destinations show up as proposals; approve or reject them
 - The profile's programs are claude's real executables: `/home/dev/.local/share/claude/versions/*` (the installer and auto-update) and `/home/dev/.local/share/mise/installs/claude/*/claude` (mise). Even when installed with mise, the auto-updated versions/ copy may run (`~/.local/bin/claude` points into versions/). Check the running one with `readlink /proc/$(pgrep -n claude)/exe`. A claude elsewhere gets no credential (a proposal `…/claude → api.anthropic.com:443` appears)
 
@@ -225,7 +224,7 @@ On failure:
 
 ## (l) Claude Code with a Claude account sign-in (iwato-claude-subscription, experimental)
 
-An alternative to (c): Iwato.exe signs in with Claude Code's public OAuth client (authorization code with PKCE: a loopback redirect on the PC, or Claude's page showing a code to paste from a phone) and hands the refresh token to the gateway, which refreshes the access token; the sandbox gets the `CLAUDE_CODE_OAUTH_TOKEN` placeholder (ADR 0009). The profile's comment gives the sources; it is not checked against real Anthropic. `TestClaudeFlow` covers the flow with a fake.
+Iwato.exe signs in with Claude Code's public OAuth client (authorization code with PKCE: a loopback redirect on the PC, or Claude's page showing a code to paste from a phone) and hands the refresh token to the gateway, which refreshes the access token; the sandbox gets the `CLAUDE_CODE_OAUTH_TOKEN` placeholder (ADR 0009). The profile's comment gives the sources; it is not checked against real Anthropic. `TestClaudeFlow` covers the flow with a fake.
 
 1. Menu **Providers** → type **Claude Code (sign in with Claude)** → **Sign in to Claude** → **Sign in with Claude** (on a phone: **Sign in on a phone (paste a code)** and paste the code Claude's page shows)
 2. Press **Refresh now** twice; both succeed. If the first refresh fails, the UI says so (the gateway sends a form body; Claude Code sends JSON)

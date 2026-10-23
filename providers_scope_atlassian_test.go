@@ -58,13 +58,13 @@ func TestAtlassianToolScope(t *testing.T) {
 	if v := scopeView(atlassianProfileID, ProviderScope{Base: atlassianProfileID, Mode: scopeReadOnly}, true); v.Mode != scopeFull || !slices.Equal(v.Modes, []string{scopeTools, scopeFull}) {
 		t.Fatalf("legacy view %+v", v)
 	}
-	if err := validScopes(map[string]ProviderScope{"old": {Base: atlassianProfileID, Mode: scopeReadOnly}, "new": {Base: atlassianProfileID, Mode: scopeTools, Tools: []string{"createJiraIssue"}}}); err != nil {
+	if err := validScopes(map[string]ProviderScope{"old": {Base: atlassianProfileID, Mode: scopeReadOnly}, "token": {Base: "iwato-claude", Mode: scopeReadOnly}, "new": {Base: atlassianProfileID, Mode: scopeTools, Tools: []string{"createJiraIssue"}}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, sc := range []ProviderScope{
 		{Base: atlassianProfileID, Mode: scopeTools, Tools: []string{"create*"}},
 		{Base: atlassianProfileID, Mode: scopeTools, Tools: []string{"a b"}},
-		{Base: "iwato-claude", Mode: scopeTools},
+		{Base: "iwato-openrouter", Mode: scopeTools},
 	} {
 		if _, err := sc.normalize(); err == nil {
 			t.Errorf("%+v accepted", sc)

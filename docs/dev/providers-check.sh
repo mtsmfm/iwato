@@ -6,7 +6,7 @@
 #
 #   sh providers-check.sh github            # (a) gh api user
 #   sh providers-check.sh git OWNER/REPO    # (b) clone a private repository (push: see providers.md)
-#   sh providers-check.sh claude            # (c) claude -p with the iwato-claude provider
+#   sh providers-check.sh claude            # (c) claude -p with the iwato-claude-subscription provider
 #   sh providers-check.sh atlassian         # (d) the Atlassian MCP through claude (iwato-atlassian)
 #   sh providers-check.sh openrouter        # (e) list models and one completion
 #   sh providers-check.sh huggingface       # (f) hf auth whoami, a small download
