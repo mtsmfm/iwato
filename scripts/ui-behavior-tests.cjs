@@ -254,13 +254,15 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const proposal = {id: 'a'.repeat(32), digest: 'd'.repeat(64), state: 'pending-approval', summary: '/usr/bin/git → github.com:443 <img src=x onerror=alert(1)>', createdAt: 1791036300};
   const proposalItem = {available: true, pending: [proposal, {id: 'bad', state: 'pending-approval', summary: 'x'}], recent: [{decision: 'rejected', host: 'evil.example', summary: '/usr/bin/curl → evil.example:443 <b>x</b>', at: 1}, {decision: 'approved', host: 'pypi.org', summary: '', at: 2}]};
   const policyRefresh = (env) => env.policy().children[0].children[0].children[1];
+  // The policy as the tab reads it (hidden, it follows the list's pending proposals only).
+  const readPolicy = async (env) => { policyRefresh(env).click(); await flush(); };
   const nodes = (n) => [n, ...n.children.flatMap(nodes)];
   const texts = (n) => nodes(n).map((x) => x.textContent).filter(Boolean).join('\n');
   const find = (n, label) => nodes(n).find((x) => x.tagName === 'button' && (x.textContent === label || x.attributes['aria-label'] === label));
   // The panel: 0 the header (0 the switch and refresh, 1 status, 2 error, 3 done), 1 the lists (0 waiting, 1 the policy, 2 history, 3 rejected), 2 the YAML.
   const pendingItems = (env) => env.policy().children[1].children[0].children.filter((n) => n.className === 'proposal-item');
   const approveFirst = async (env) => { find(pendingItems(env)[0], '承認').click(); await flush(); };
-  const eg = await environment({fake: false}); eg.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response(proposalItem)); await eg.tickPoll();
+  const eg = await environment({fake: false}); eg.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response(proposalItem)); await readPolicy(eg);
   const egRow = () => pendingItems(eg)[0];
   assert.equal(pendingItems(eg).length, 1, 'malformed proposals are dropped'); assert.match(texts(egRow()), /<img/); assert.match(eg.policy().children[0].children[1].textContent, /ポリシーの提案が承認を待って/);
   find(egRow(), '承認').click(); await flush(); assert.equal(mutations(eg).length, 0, 'a cancelled confirmation sends nothing');
@@ -277,7 +279,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const claude = '/sandbox/.claude/downloads/claude-2.1.293-linux-x64';
   const rawProposal = {...proposal, binaries: [claude, 7], endpoints: [{host: 'raw.githubusercontent.com', ports: [443, 'x'], protocol: 'rest'}, 'bad'],
     rules: [{method: 'GET', path: '/anthropics/claude-code/main/install.sh'}, {method: 'GET', path: '/anthropics/claude-code/main/CHANGELOG.md'}, {method: 'HEAD', path: '/anthropics/claude-code/main/install.sh'}]};
-  const approveEnv = async (pending) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response({...proposalItem, pending: [pending]})); await env.tickPoll(); return env; };
+  const approveEnv = async (pending) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response({...proposalItem, pending: [pending]})); await readPolicy(env); return env; };
   const narrow = await approveEnv(rawProposal);
   const pathRows = () => narrow.els['approve-path-rows'].children;
   let shown = null;
@@ -339,7 +341,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // request ID to /scope; one it cannot widen approves as a rule, warned.
   const scoped = {...proposal, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], protocol: 'rest'}], rules: [{method: 'POST', path: '/o/r.git/git-receive-pack'}],
     providerScope: {provider: 'gh-work', label: 'GitHub', repos: ['o/r', 7], mutations: []}};
-  const scopeEnv = await environment({fake: false}); scopeEnv.setProposalHandler((path) => /\/(approve|reject|scope)$/.test(path) ? response({ok: true, closed: false}) : response({...proposalItem, pending: [scoped]})); await scopeEnv.tickPoll();
+  const scopeEnv = await environment({fake: false}); scopeEnv.setProposalHandler((path) => /\/(approve|reject|scope)$/.test(path) ? response({ok: true, closed: false}) : response({...proposalItem, pending: [scoped]})); await readPolicy(scopeEnv);
   const scopeRow = pendingItems(scopeEnv)[0];
   assert.match(texts(scopeRow), /gh-work \(GitHub\) の宛先 · 承認するとプロバイダーの範囲を広げます \(リポジトリ o\/r を追加\)/);
   let scopeForm = null;
@@ -405,7 +407,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // A refusal from the gateway: in Japanese, its own words folded away.
   const refused = await environment({fake: false});
   refused.setProposalHandler((path) => /\/approve$/.test(path) ? response({error: 'OpenShell が拒否しました: api.github.com:443 で …', raw: "network endpoint ambiguity validation failed:; network policies '_provider_github' …"}, 409) : response({...proposalItem, pending: [{...proposal, endpoints: [{host: 'github.com', ports: [22]}]}]}));
-  await refused.tickPoll();
+  await readPolicy(refused);
   refused.setConfirm(true); await approveFirst(refused);
   const errorBox = refused.policy().children[0].children[2];
   assert.equal(errorBox.hidden, false); assert.match(errorBox.textContent, /^OpenShell が拒否しました/);
@@ -475,7 +477,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const gw = await environment({fake: false});
     const item = {...proposal, id: 'b'.repeat(32), state: 'rejected', binaries: ['/**'], endpoints: [{host: 'host.docker.internal', ports: [17600]}]};
     gw.setProposalHandler(() => response({...proposalItem, pending: [], rejected: [item], hostGateways: ['host.docker.internal'], listenPort: 17600}));
-    await gw.tickPoll();
+    await readPolicy(gw);
     let gwShown = null;
     gw.setConfirmHandler(() => { gwShown = [texts(gw.els['approve-risks']), gw.els['confirm-ok'].disabled]; return true; });
     const rejSec = gw.policy().children[1].children[3];
@@ -499,7 +501,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
       }
       return response({...proposalItem, pending: [{...proposal, digest, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443]}]}]});
     });
-    await ch.tickPoll();
+    await readPolicy(ch);
     digest = 'e'.repeat(64);
     let asked = 0;
     ch.setConfirmHandler(() => { asked++; return true; });
@@ -592,7 +594,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
   }
   const internal = {...proposalItem, pending: [{...proposal, allowedIps: [{host: 'ci.tailnet.example', ips: ['100.64.0.0/10', 7]}, {host: '', ips: ['10.0.0.0/8']}, {host: 'x.example', ips: []}, 'bad', {ips: ['1.2.3.4']}]}]};
-  const intEnv = await environment({fake: false}); intEnv.setProposalHandler(() => response(internal)); await intEnv.tickPoll();
+  const intEnv = await environment({fake: false}); intEnv.setProposalHandler(() => response(internal)); await readPolicy(intEnv);
   await approveFirst(intEnv);
   const asked = intEnv.els['approve-head'].children.filter((c) => c.className === 'approve-warn').map((c) => c.textContent).join('\n');
   assert.equal(asked, 'ci.tailnet.example: 解決先 IP を 100.64.0.0/10 に限定 (内部アドレスも許可)\nすべてのホスト: ホストを問わず、解決先 IP が 10.0.0.0/8 なら許可 (内部アドレスも)', 'internal addresses are warned; malformed entries are dropped');
@@ -600,7 +602,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const withPolicy = {...proposalItem, policy: {version: 3, loaded: false, rules: [{name: 'git', binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], inspect: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/o/r.git/**'}, {method: '*', path: '/o/r.git/info/**'}], deny: [{method: 'DELETE', path: '/**'}], allowedIps: ['100.64.0.0/10', 42, '']}]},
     {name: 'api', binaries: ['/usr/bin/curl', '/usr/bin/wget'], endpoints: [{host: 'api.example.com', ports: [443, 8443], inspect: 'rest', enforcement: 'audit', access: 'read-only', rules: []}, {host: 'example.com', ports: [80], inspect: '', rules: []}]}]}};
   const pol = await environment({fake: false, status: 'running'}); pol.setProposalHandler((path) => /\/policy\/[a-z-]+$/.test(path) && !path.endsWith('/history') ? response({ok: true}) : path.endsWith('/history') ? response({revisions: [{version: 3, status: 'pending', createdAt: 9}, {version: 2, status: 'loaded', active: true, createdAt: 8}]}) : path.endsWith('/history/2') ? response({version: 2, loaded: true, rules: [{name: 'old', binaries: ['/usr/bin/ssh'], endpoints: [{host: 'old.example', ports: [22]}]}]}) : response(withPolicy));
-  await pol.tickPoll();
+  await readPolicy(pol);
   const current = pol.policy().children[1].children[1];
   const listed = texts(current);
   for (const want of ['版 3 · サンドボックスへの反映待ち', 'git', '/usr/bin/git', 'github.com:443 · 検査 (遮断)', 'GET /o/r.git/**', 'すべて /o/r.git/info/**', '拒否: DELETE /** (すべて)', '解決先 IP を 100.64.0.0/10 に限定 (内部アドレスも許可)', 'api.example.com:443,8443 · 検査 (監査 · すべて通す)', '読み取りだけ', 'example.com:80 · すべてのメソッドとパス']) assert(listed.split('\n').includes(want), want + ' in\n' + listed);
@@ -661,7 +663,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
       {method: 'POST', path: '/repos/o/r/releases', binary: '/usr/bin/gh', count: 1, last: 1700000000000, reason: 'POST /repos/o/r/releases not permitted by policy'}]}]}]}};
   const den = await environment({fake: false, status: 'running'});
   den.setProposalHandler((path) => /\/policy\/[a-z-]+$/.test(path) ? response({ok: true}) : response(denied));
-  await den.tickPoll();
+  await readPolicy(den);
   const cur = () => den.policy().children[1].children[1];
   const shown = texts(cur());
   for (const want of ['止められたリクエスト:', 'POST /api/builds', '×3 · /usr/bin/curl · ', '許可にないメソッドとパスです', '拒否の規則に当たりました (許可を足しても通りません)', 'プログラム /usr/bin/wget', 'POST /repos/o/r/releases']) assert(shown.includes(want), want + ' in\n' + shown);
@@ -729,7 +731,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const confirmsBefore = eg.confirmations.length; find(egRow(), '却下').click(); await flush();
   assert.equal(eg.confirmations.length, confirmsBefore, 'rejecting needs no confirmation'); assert.equal(mutations(eg).at(-1).path, '/api/sandboxes/api/proposals/reject'); assert.deepEqual(JSON.parse(mutations(eg).at(-1).body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64)});
   ok('rejecting is one click');
-  const staleEg = await environment({fake: false}); staleEg.setConfirm(true); staleEg.setProposalHandler((path) => path.endsWith('/approve') ? response({error: 'この依頼は決定済みです'}, 409) : response(proposalItem)); await staleEg.tickPoll();
+  const staleEg = await environment({fake: false}); staleEg.setConfirm(true); staleEg.setProposalHandler((path) => path.endsWith('/approve') ? response({error: 'この依頼は決定済みです'}, 409) : response(proposalItem)); await readPolicy(staleEg);
   await approveFirst(staleEg);
   assert.equal(mutations(staleEg).length, 1); assert.equal(staleEg.policy().children[0].children[2].hidden, false); assert.match(staleEg.policy().children[0].children[2].textContent, /決定済み/);
   await staleEg.tickPoll(); assert.match(staleEg.policy().children[0].children[2].textContent, /決定済み/, 'the error stays across refreshes'); assert.equal(staleEg.confirmations.length, 1, 'nothing is resent');
@@ -738,15 +740,15 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const guardedBefore = proposalReads(guarded).length; policyRefresh(guarded).click(); policyRefresh(guarded).click(); await guarded.tickPoll(); assert.equal(proposalReads(guarded).length, guardedBefore + 1);
   pendingRead.resolve(response(proposalItem)); await flush(); assert.equal(pendingItems(guarded).length, 1);
   ok('concurrent proposal reads coalesce');
-  const mutationWait = deferred(); const busy = await environment({fake: false}); busy.setConfirm(true); busy.setProposalHandler((path) => path.endsWith('/approve') ? mutationWait.promise : response(proposalItem)); await busy.tickPoll();
+  const mutationWait = deferred(); const busy = await environment({fake: false}); busy.setConfirm(true); busy.setProposalHandler((path) => path.endsWith('/approve') ? mutationWait.promise : response(proposalItem)); await readPolicy(busy);
   await approveFirst(busy); const busyReads = proposalReads(busy).length;
   assert.equal(find(pendingItems(busy)[0], '却下').disabled, true); find(pendingItems(busy)[0], '却下').click(); policyRefresh(busy).click(); await busy.tickPoll();
   assert.equal(proposalReads(busy).length, busyReads, 'no reads while a decision is in flight'); assert.equal(mutations(busy).length, 1);
   mutationWait.resolve(response({ok: true})); await flush(); assert(proposalReads(busy).length > busyReads);
   ok('an in-flight decision blocks repeated decisions and polling reads until it completes');
-  const hidden = await environment({fake: false}); assert.equal(hidden.intervals[0].ms, 10000); const visibleRequests = hidden.requests.length; hidden.document.hidden = true; await hidden.tickPoll(); policyRefresh(hidden).click(); await flush(); assert.equal(hidden.requests.length, visibleRequests); hidden.document.hidden = false; hidden.document.listeners.visibilitychange(); await flush(); assert(proposalReads(hidden).length > 1); assert.equal(mutations(hidden).length, 0);
+  const hidden = await environment({fake: false}); assert.equal(hidden.intervals[0].ms, 10000); const visibleRequests = hidden.requests.length; hidden.document.hidden = true; await hidden.tickPoll(); policyRefresh(hidden).click(); await flush(); assert.equal(hidden.requests.length, visibleRequests); hidden.document.hidden = false; hidden.document.listeners.visibilitychange(); await flush(); assert(hidden.requests.length > visibleRequests); assert.equal(mutations(hidden).length, 0);
   ok('10-second polling and manual status reads pause while hidden; visibility recovery remains read-only');
-  const errors = await environment({fake: false}); errors.setProposalHandler(() => response({error: '<script>bad status</script>'}, 503)); await errors.tickPoll(); const errorNode = errors.policy().children[0].children[2];
+  const errors = await environment({fake: false}); errors.setProposalHandler(() => response({error: '<script>bad status</script>'}, 503)); await readPolicy(errors); const errorNode = errors.policy().children[0].children[2];
   assert(errorNode.textContent.includes('<script>')); const writes = errorNode.textWrites; await errors.tickPoll(); await errors.tickPoll(); assert.equal(errorNode.textWrites, writes); assert.equal(mutations(errors).length, 0);
   ok('repeated status failures remain literal text and are not re-announced');
   const authLost = await environment({fake: false}); authLost.setProposalHandler(() => response({error: 'expired session'}, 401)); policyRefresh(authLost).click(); await flush(); assert.equal(policyRefresh(authLost).disabled, true); assert.equal(authLost.els['server-state'].dataset.state, 'error');
@@ -771,7 +773,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const pairReq = pair.requests.find(r => r.path === '/api/pair'); assert.equal(pairReq.method, 'POST'); assert.equal(pairReq.headers['X-CSRF-Token'], 'csrf123');
   assert.match(pair.els['pair-url'].textContent, /#token=b{64}$/); assert.equal(pair.els['pair-panel'].hidden, false); assert.equal(pair.els['pair-qr'].src, 'data:image/png;base64,iVBORw0KGgo='); assert.equal(pair.els['pair-qr'].hidden, false); pair.els['pair-close'].click(); assert.equal(pair.els['pair-qr'].hidden, true); assert.equal(pair.els['pair-url'].textContent, ''); assert.equal(pair.els['pair-panel'].hidden, true);
   ok('pairing issues a link only through an authenticated CSRF POST and can be dismissed');
-  const tabbed = await environment({fake: false}); tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, id: 'c'.repeat(32), source: 'auto', summary: '/usr/bin/curl → auto.example:443'}, ...proposalItem.pending]})); await tabbed.tickPoll();
+  const tabbed = await environment({fake: false, status: 'stopped'}); tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, id: 'c'.repeat(32), source: 'auto', summary: '/usr/bin/curl → auto.example:443'}, ...proposalItem.pending]})); await readPolicy(tabbed);
   const [termTab, policyTab, , portsTab, viewTab] = tabbed.card().children[2].children[0].children; assert.deepEqual(tabbed.card().children[2].children[0].children.map((t) => t.textContent), ['ターミナル', 'ポリシー', 'エディタ', 'ポート', '']); assert.equal(viewTab.hidden, true);
   { const views = nodes(tabbed.card()).filter((n) => n.dataset?.view); assert.deepEqual(views.map((n) => [n.textContent, n.getAttribute('role'), n.parent.className]), [['リンク', 'menuitem', 'card-menu'], ['テキスト', 'menuitem', 'card-menu'], ['ファイル', 'menuitem', 'card-menu']], 'the rarer views are in the ⋯ menu');
     views[2].click(); assert.equal(tabbed.card().dataset.tab, 'files'); assert.equal(viewTab.hidden, false); assert.equal(viewTab.textContent, 'ファイル', 'the open one shows as the current tab'); assert.equal(views[2].getAttribute('aria-current'), 'true'); assert.equal(termTab.getAttribute('aria-selected'), 'false');
@@ -788,8 +790,14 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(tabbed.intervals.filter((i) => !i.cleared).length, 1, 'the policy tab follows proposals with the sandbox list (every 10 seconds) while nothing waits');
   const readsFollowing = proposalReads(tabbed).length; await tabbed.tickPoll(); assert(proposalReads(tabbed).length > readsFollowing);
   termTab.click(); assert.equal(tabbed.card().dataset.tab, 'terminal');
-  tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, source: 'auto'}]})); await tabbed.tickPoll(); assert.equal(policyTab.children[0].hidden, true); assert.notEqual(tabbed.policy().dataset.state, 'pending-approval', 'only automatic proposals are not the waiting state'); assert.match(tabbed.policy().children[0].children[1].textContent, /自動提案 1 件/);
-  tabbed.setProposalHandler(() => response({...proposalItem, pending: []})); await tabbed.tickPoll(); assert.equal(policyTab.children[0].hidden, true); assert.equal(tabbed.document.title, 'Iwato');
+  tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, source: 'auto'}]})); await readPolicy(tabbed); assert.equal(policyTab.children[0].hidden, true); assert.notEqual(tabbed.policy().dataset.state, 'pending-approval', 'only automatic proposals are not the waiting state'); assert.match(tabbed.policy().children[0].children[1].textContent, /自動提案 1 件/);
+  { // Hidden, the tab follows the list's pending proposals, without reading the whole policy.
+    const listWith = (pending) => () => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: '', pending}]});
+    const bar = tabbed.card().children.find((n) => n.className === 'proposal-bar'); const reads = proposalReads(tabbed).length;
+    tabbed.setSandboxHandler(listWith([...proposalItem.pending, {...proposal, id: 'e'.repeat(32)}, {...proposal, id: 'f'.repeat(32), source: 'auto'}])); await tabbed.tickPoll();
+    assert.equal(policyTab.children[0].textContent, '2'); assert.equal(tabbed.document.title, '(2) Iwato'); assert.equal(bar.hidden, false, 'a new proposal brings the line back'); assert.equal(proposalReads(tabbed).length, reads);
+    tabbed.setSandboxHandler(listWith([])); await tabbed.tickPoll(); assert.equal(policyTab.children[0].hidden, true); assert.equal(tabbed.document.title, 'Iwato');
+    tabbed.setSandboxHandler(() => response({fake: false, sandboxes: [{name: 'api', status: 'stopped', detail: ''}]})); await tabbed.tickPoll(); assert.equal(proposalReads(tabbed).length, reads, 'a stopped sandbox keeps what was read'); }
   ok('proposals live in the card\'s policy tab; its badge and the page title count the agent\'s ones waiting for the owner');
   const side = await environment({fake: false, status: 'running'}); side.sockets.at(-1).open(); const tab = (name) => nodes(side.card()).find((t) => t.dataset?.view && t.textContent.startsWith(name)); tab('リンク').click(); await flush();
   const links = side.side('links-panel'); assert.equal(links.hidden, false); assert.match(links.children[1].textContent, /見つかりません/); assert.equal(links.children[2].children.length, 0);
@@ -1591,7 +1599,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
       {name: '_provider_github_personal', source: 'provider', provider: {name: 'github-personal', profile: 'iwato-github', label: 'GitHub'}, binaries: ['/usr/bin/gh', '/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], path: '/**', inspect: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '**'}]}, {host: 'api.github.com', ports: [443]}]}]}};
   const lists = await environment({fake: false, status: 'running'});
   lists.setProposalHandler((path) => /\/proposals\/[a-z]+$/.test(path) ? response({ok: true}) : response(data));
-  await lists.tickPoll();
+  await readPolicy(lists);
   const [pend, cur, rej] = [0, 1, 3].map((i) => lists.policy().children[1].children[i]);
   const items = pend.children.filter((n) => n.className === 'proposal-item');
   assert.match(texts(pend), /^承認待ち \(2\)/);

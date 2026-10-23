@@ -92,9 +92,14 @@ func (s *Server) scopeTargets(ctx context.Context, sb Sandbox) ([]scopeTarget, e
 	if err != nil {
 		return nil, err
 	}
+	return s.scopeTargetsOf(list, attached[sb.Name]), nil
+}
+
+// scopeTargetsOf is scopeTargets from a providerState read.
+func (s *Server) scopeTargetsOf(list []ProviderInfo, attached []string) []scopeTarget {
 	var out []scopeTarget
 	for _, p := range list {
-		if !slices.Contains(attached[sb.Name], p.Name) {
+		if !slices.Contains(attached, p.Name) {
 			continue
 		}
 		t := scopeTarget{name: p.Name, label: p.Name, base: scopedBaseOf(p), creds: providerScopes(p.Name, p.Profile)}
@@ -119,7 +124,7 @@ func (s *Server) scopeTargets(ctx context.Context, sb Sandbox) ([]scopeTarget, e
 		}
 		out = append(out, t)
 	}
-	return out, nil
+	return out
 }
 
 // reaches says whether one of the rule's endpoints reaches the provider's

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -332,6 +333,24 @@ func fakeLogs() []v1.LogLine {
 }
 
 // fakeGateway answers OpenShell's policy API for the fake, so that the
+// fakePropose adds an agent's pending proposal for HOST:443 (the fake
+// terminal's propose HOST).
+func (d *Fake) fakePropose(sandbox, host string) string {
+	if !regexp.MustCompile(`^[a-z0-9.-]{1,100}$`).MatchString(host) {
+		return "propose: bad host"
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	chunks := d.fakeDraft(sandbox)
+	name := "allow_" + strings.NewReplacer(".", "_", "-", "_").Replace(host) + "_443"
+	id := fmt.Sprintf("fake-propose-%d", len(chunks))
+	now := time.Now()
+	d.drafts[sandbox] = append(chunks, v1.PolicyChunk{ID: id, Status: "pending", RuleName: name, Binary: "/usr/bin/curl", Rationale: "propose " + host,
+		HitCount: 1, FirstSeen: now, LastSeen: now, CreatedAt: now, ReviewToken: "t-" + id,
+		ProposedRule: &v1.NetworkPolicyRule{Name: name, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint(host, 443)}}})
+	return "proposed " + name
+}
+
 // fake runs the same code as the gateway (openshell_proposals.go,
 // openshell_policy_lists.go). Each call takes d.mu.
 type fakeGateway struct {

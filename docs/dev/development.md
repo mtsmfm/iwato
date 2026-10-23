@@ -22,7 +22,7 @@ There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbse
 
 ## Running
 
-- `go run -tags uitest . serve -fake` runs the page against the fake backend the browser checks drive (`fake*.go`): no commands, no sandboxes, on any OS. It exists only in builds with the tag `uitest`; other builds (`scripts/build-exe.sh`, with or without `--debug`) have no `-fake`. Its terminal's `ccscroll` is a full-screen app that the wheel scrolls (to measure scrolling), and `-fake-latency 80ms` adds to the terminals' round trip
+- `go run -tags uitest . serve -fake` runs the page against the fake backend the browser checks drive (`fake*.go`): no commands, no sandboxes, on any OS. It exists only in builds with the tag `uitest`; other builds (`scripts/build-exe.sh`, with or without `--debug`) have no `-fake`. Its terminal's `ccscroll` is a full-screen app that the wheel scrolls (to measure scrolling), `propose HOST` adds an agent's proposal, and `-fake-latency 80ms` adds to the terminals' round trip
 - Everything else needs Windows with WSLc, or on macOS and Linux a Docker-compatible engine such as Colima ([ADR 0002](../adr/0002-macos-docker-compatible-runtime.md))
 
 ## Building the exe

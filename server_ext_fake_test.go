@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"image/png"
@@ -293,5 +294,56 @@ func TestPolicyRoutesEditTheFakePolicy(t *testing.T) {
 	}
 	if c := reviewRequest(s, "GET", "/api/sandboxes/dev/policy/history", "", "", "", s.host, nil, "").Code; c != 401 {
 		t.Fatal("history without session", c)
+	}
+}
+
+// The sandbox list carries a running sandbox's pending agent proposals (the
+// badges while the policy tab is hidden); not a stopped one's, which the
+// page keeps as it last read them.
+func TestListCarriesPendingProposals(t *testing.T) {
+	d := NewFake()
+	c := testConfig()
+	s := newServer(c, d, true, "127.0.0.1:29999")
+	cookie, _ := reviewLogin(t, s)
+	pending := func() *[]PendingProposal {
+		t.Helper()
+		w := reviewRequest(s, "GET", "/api/sandboxes", "", "", "", s.host, cookie, "")
+		var v struct{ Sandboxes []Status }
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &v) != nil || len(v.Sandboxes) != 1 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		return v.Sandboxes[0].Pending
+	}
+	if p := pending(); p != nil {
+		t.Fatal("not created:", *p)
+	}
+	sb := c.Sandboxes[0]
+	if err := d.Start(context.Background(), sb); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(p *[]PendingProposal) (out []string) {
+		if p == nil {
+			t.Fatal("no pending list")
+		}
+		for _, x := range *p {
+			if x.Source != "agent" || x.State != "pending-approval" || x.Digest == "" {
+				t.Fatalf("%+v", x)
+			}
+			out = append(out, x.Summary)
+		}
+		return out
+	}
+	if got := ids(pending()); len(got) != 3 {
+		t.Fatal("the agent's proposals only:", got)
+	}
+	d.fakePropose(sb.Name, "new.example")
+	if got := ids(pending()); len(got) != 4 {
+		t.Fatal("a new proposal:", got)
+	}
+	if err := d.Stop(context.Background(), sb); err != nil {
+		t.Fatal(err)
+	}
+	if p := pending(); p != nil {
+		t.Fatal("stopped:", *p)
 	}
 }
