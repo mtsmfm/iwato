@@ -191,6 +191,26 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       }
     }
     await input.focus();
+    // A URL Claude Code broke inside its scheme (https:/ then /…).
+    await page.keyboard.type('ccwrap');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    {
+      const grid = await layout();
+      const url = 'https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html';
+      const y0 = grid.rows.findLastIndex((r) => r.trimEnd().endsWith('https:/'));
+      const first = grid.rows[y0]?.trimEnd() || '';
+      const cells = Array.from('https:/', (_, k) => [y0, width(first) - 7 + k]);
+      let text = 'https:/';
+      for (let y = y0 + 1; y0 >= 0 && /^  \S/.test(grid.rows[y] || ''); y++) {
+        const piece = grid.rows[y].trim();
+        text += piece;
+        cells.push(...Array.from(piece, (_, k) => [y, 2 + k]));
+      }
+      const missed = await press(grid, cells, url, [0.5]);
+      check(text === url && missed.length === 0, 'every cell of a URL broken inside its scheme opens it' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : ''));
+    }
+    await input.focus();
     // A file path opens in the editor at its line; one that is missing or
     // outside the home is plain text.
     {

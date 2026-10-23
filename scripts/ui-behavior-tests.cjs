@@ -856,6 +856,15 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(fit('| https://a.example/y|z |'), ['https://a.example/y|z']);
   assert.deepEqual(linked([row2('| https://a.example/aaaaaaa |'), row2('| bbb rest                  |')], 29), ['https://a.example/aaaaaaabbb'], 'app-wrapped inside | frames');
   assert.deepEqual(linked([row2('https://x.example/eval?vs=1500|'), row2('0.8 x', true)], 31), ['https://x.example/eval?vs=1500|0.8'], 'a | where the terminal wraps is not a border');
+  { // Claude Code may break a URL inside its scheme, indenting the next row.
+    const cc = wrappedLinks([row2('⏺ 顔の一覧を作り直して、レポートの一番上に並べました: https:/'), row2('  /iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html')], 61, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(cc)), [{url: 'https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html', start: {x: 55, y: 1}, end: {x: 61, y: 2}}]);
+    const u = 'https://a.example/x';
+    for (const at of [1, 4, 6, 8]) assert.deepEqual(linked([row2('see ' + u.slice(0, at)), row2('  ' + u.slice(at) + ' done')], 4 + at), [u], 'broken after ' + u.slice(0, at));
+    assert.deepEqual(linked([row2('│ see https:/ │'), row2('│ /a.example/x │')], 15), [u], 'in a frame');
+    assert.deepEqual(linked([row2('see watch'), row2('  https://b.example/')], 9), ['https://b.example/']);
+    assert.deepEqual(linked([row2('go h'), row2('  ttp is old')], 4), [], 'not glued to unrelated text');
+    assert.deepEqual(linked([row2('docs say http'), row2('  is old, https://b.example/')], 13), ['https://b.example/']); }
   // UTS #58's LinkDetectionTest.txt: the lines with http(s):// links, and the
   // scheme-less links given https://; emails are not detected here.
   { const differs = new Map([
