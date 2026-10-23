@@ -54,8 +54,9 @@
 # Verified:          from Claude Code 2.1.295's native binary (OAuth
 #                    configuration, authorize URL builder, code exchange,
 #                    refresh, CLAUDE_CODE_OAUTH_TOKEN handling). Not run
-#                    against Anthropic; the access token's lifetime is not
-#                    known (the profile caps it at 1 hour).
+#                    against Anthropic. max_lifetime is Claude Code's 8 hours:
+#                    each refresh may revoke the previous access token, which
+#                    sandboxes keep sending until their next poll (about 10 s).
 
 id: iwato-claude-subscription
 display_name: Claude Code sign-in (Iwato)
@@ -73,7 +74,7 @@ credentials:
       token_url: https://platform.claude.com/v1/oauth/token
       scopes: [user:profile, user:inference, user:sessions:claude_code, user:mcp_servers, user:file_upload, user:plugins]
       refresh_before: "300s"
-      max_lifetime: "3600s"
+      max_lifetime: "28800s"
       material:
         - name: client_id
           description: OAuth client ID (Claude Code's public client)

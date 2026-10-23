@@ -116,7 +116,7 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 		state := strings.Trim(safeCode(info.Status)+" "+safeCode(info.FailureCode), " ")
 		warning = coded(g.refreshCode, map[string]any{"state": state}, "接続しましたが、ゲートウェイの最初の更新が失敗しました ("+state+")。今のアクセストークンは期限まで使えますが、その後は使えなくなります。"+g.refreshHint)
 	} else if !info.ExpiresAt.IsZero() && !info.LastRefreshAt.IsZero() {
-		log.Printf("%s: %s: the gateway refreshed it; access token lifetime %s (capped at 1h by the profile), next refresh %s", g.log, name, info.ExpiresAt.Sub(info.LastRefreshAt).Round(time.Second), info.NextRefreshAt.Format(time.RFC3339))
+		log.Printf("%s: %s: the gateway refreshed it; access token lifetime %s (the profile caps it at 8h), next refresh %s", g.log, name, info.ExpiresAt.Sub(info.LastRefreshAt).Round(time.Second), info.NextRefreshAt.Format(time.RFC3339))
 	}
 	message := coded("oauth_connected", map[string]any{"name": name}, name+" として接続しました。")
 	if g.reconnect {
