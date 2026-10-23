@@ -86,48 +86,54 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       return pieces.length >= 2 && pieces.every((e) => e.dataset.url.startsWith('https://example.com/iwato/fake/a-very-long-path-that-wraps-across-terminal-lines?with=query&and=more-parameters&pad=xx') && e.dataset.url === pieces[0].dataset.url) && !pieces.some((e) => e.textContent.includes('│'));
     });
     check(framed, 'a URL an application wrapped inside a frame is one link');
-    await card.locator('.iw-screen .iw-url').last().hover();
-    check(await card.locator('.iw-screen .iw-url-hot').count() >= 2, 'hovering one piece lights up the whole URL');
+    // A touch screen has no hover: a tap lights nothing.
+    await page.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; });
+    if (phone) await card.locator('.iw-screen .iw-url').last().tap();
+    else await card.locator('.iw-screen .iw-url').last().hover();
+    const lit = await card.locator('.iw-screen .iw-url-hot').count();
+    check(phone ? lit === 0 : lit >= 2, phone ? 'a tap lights no URL' : 'hovering one piece lights up the whole URL');
     await input.focus();
-    await page.keyboard.type('x');
-    await page.waitForTimeout(300);
-    check(await card.locator('.iw-screen .iw-url-hot').count() >= 2, 'the whole URL stays lit while the screen redraws');
-    await page.keyboard.press('Backspace');
+    if (!phone) {
+      await page.keyboard.type('x');
+      await page.waitForTimeout(300);
+      check(await card.locator('.iw-screen .iw-url-hot').count() >= 2, 'the whole URL stays lit while the screen redraws');
+      await page.keyboard.press('Backspace');
+    }
     await page.keyboard.type('osc8');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
-    await card.locator('.iw-screen [data-link]').first().hover();
-    const osc8 = await card.locator('.iw-screen [data-link]').evaluateAll((els) => els.length >= 2 && els.every((e) => e.classList.contains('iw-url-hot')));
-    check(osc8, 'an application\'s hyperlink over several rows lights up as one');
-    const underlines = await card.locator('.iw-screen [data-link]').evaluateAll((els) => els.every((e) => { const cs = getComputedStyle(e); return cs.textDecorationLine.includes('underline') && cs.textDecorationColor === cs.color && [...e.querySelectorAll('.iw-url')].every((u) => getComputedStyle(u).textDecorationLine === 'none'); }));
-    check(underlines, 'and every row\'s underline is lit in one color, with no second underline over it');
+    if (!phone) {
+      await card.locator('.iw-screen [data-link]').first().hover();
+      const osc8 = await card.locator('.iw-screen [data-link]').evaluateAll((els) => els.length >= 2 && els.every((e) => e.classList.contains('iw-url-hot')));
+      check(osc8, 'an application\'s hyperlink over several rows lights up as one');
+      const underlines = await card.locator('.iw-screen [data-link]').evaluateAll((els) => els.every((e) => { const cs = getComputedStyle(e); return cs.textDecorationLine.includes('underline') && cs.textDecorationColor === cs.color && [...e.querySelectorAll('.iw-url')].every((u) => getComputedStyle(u).textDecorationLine === 'none'); }));
+      check(underlines, 'and every row\'s underline is lit in one color, with no second underline over it');
+    }
     // Every cell of a URL opens it, as Claude Code prints one: after
     // Japanese, in a frame, in two SGR runs (an OSC 8 hyperlink, then plain
     // text), with the cursor parked on it and a status row redrawn during
     // the press. The cells either side open nothing.
-    await page.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; });
     await page.keyboard.type('cclink');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
-    const grid = await card.locator('.iw-term').evaluate((t) => {
+    const layout = () => card.locator('.iw-term').evaluate((t) => {
       const r = t.querySelector('.iw-screen').getBoundingClientRect();
       return { left: r.left, top: r.top, cw: parseFloat(t.style.getPropertyValue('--iw-cw')), ch: parseFloat(t.style.getPropertyValue('--iw-ch')), rows: [...t.querySelectorAll('.iw-screen .iw-row')].map((e) => e.textContent) };
     });
-    const ccURL = 'https://example.com/iwato/claude';
-    for (const [what, mark] of [['an OSC 8 link', '詳細は '], ['a URL in the text', '参照: ']]) {
-      const y = grid.rows.findIndex((r) => r.includes(mark));
-      const text = grid.rows[y] || '';
-      const col = [...text.slice(0, text.indexOf('https://'))].reduce((n, c) => n + (/[\u3000-\u9fff]/.test(c) ? 2 : 1), 0);
+    const width = (text) => [...text].reduce((n, c) => n + (/[\u3000-\u9fff]/.test(c) ? 2 : 1), 0);
+    // Taps (Ctrl+clicks on a PC) cells [y, x] and returns those that open
+    // anything but want (nothing when want is null).
+    const press = async (grid, cells, want, heights = [0.15, 0.5, 0.85]) => {
       const missed = [];
-      for (let k = -1; k <= ccURL.length; k++) {
-        for (const fy of [0.15, 0.5, 0.85]) {
+      for (const [y, x] of cells) {
+        for (const fy of heights) {
           await page.evaluate(() => { window.__opened = []; });
-          const x = grid.left + (col + k + 0.5) * grid.cw;
+          const px = grid.left + (x + 0.5) * grid.cw;
           const at = grid.top + (y + fy) * grid.ch;
-          if (phone) await page.touchscreen.tap(x, at);
+          if (phone) await page.touchscreen.tap(px, at);
           else {
             await page.keyboard.down('Control');
-            await page.mouse.move(x, at);
+            await page.mouse.move(px, at);
             await page.mouse.down();
             await page.waitForTimeout(60);
             await page.mouse.up();
@@ -135,15 +141,56 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
           }
           await page.waitForTimeout(phone ? 350 : 10);
           const opened = await page.evaluate(() => window.__opened);
-          const inside = k >= 0 && k < ccURL.length;
-          if (inside ? !(opened.length === 1 && opened[0] === ccURL) : opened.length) missed.push(k + '@' + fy);
+          if (want ? !(opened.length === 1 && opened[0] === want) : opened.length) missed.push(y + ':' + x + '@' + fy);
         }
       }
+      return missed;
+    };
+    // The cells of a URL on row y, with the cell either side when edges.
+    const urlCells = (grid, y, url, edges) => {
+      const text = grid.rows[y] || '';
+      const col = width(text.slice(0, text.indexOf(url)));
+      return Array.from({ length: url.length + (edges ? 2 : 0) }, (_, k) => [y, col + k - (edges ? 1 : 0)]);
+    };
+    const grid = await layout();
+    const ccURL = 'https://example.com/iwato/claude';
+    for (const [what, mark] of [['an OSC 8 link', '詳細は '], ['a URL in the text', '参照: ']]) {
+      const y = grid.rows.findIndex((r) => r.includes(mark));
+      const cells = urlCells(grid, y, ccURL, true);
+      const missed = [...await press(grid, cells.slice(1, -1), ccURL), ...await press(grid, [cells[0], cells.at(-1)], null)];
       check(y >= 0 && missed.length === 0, 'every cell of ' + what + ' opens it, and only those' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : ''));
     }
     await input.focus();
     await page.keyboard.press('Control+c');
     await page.waitForTimeout(200);
+    // URLs in bold, as Claude Code prints them.
+    await page.keyboard.type('ccbold');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    {
+      const grid = await layout();
+      const bold = 'https://example.com/iwato/bold';
+      for (const [what, url] of [['a bold URL', bold + '/1'], ['a bold OSC 8 link', bold + '/2']]) {
+        const y = grid.rows.findIndex((r) => r.includes(url));
+        const cells = urlCells(grid, y, url, true);
+        const missed = [...await press(grid, cells.slice(1, -1), url), ...await press(grid, [cells[0], cells.at(-1)], null)];
+        check(y >= 0 && missed.length === 0, 'every cell of ' + what + ' opens it, and only those' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : ''));
+      }
+      // Wrapped inside the frame by the application, then by the terminal.
+      const framed = grid.rows.findIndex((r) => r.includes(bold + '/wrapped-by-the-application'));
+      const inFrame = [];
+      for (let y = framed; y >= 0 && grid.rows[y].startsWith('│'); y++) inFrame.push([y, grid.rows[y].slice(2).replace(/\s*│$/, '')]);
+      const wrapped = grid.rows.findIndex((r) => r.startsWith(bold + '/wrapped-by-the-terminal'));
+      const byTerm = [];
+      for (let y = wrapped; y >= 0 && (y === wrapped || /^b+$/.test(grid.rows[y])); y++) byTerm.push([y, grid.rows[y]]);
+      for (const [what, pieces, x0] of [['a bold URL wrapped in a frame', inFrame, 2], ['a bold URL the terminal wrapped', byTerm, 0]]) {
+        const url = pieces.map(([, t]) => t).join('');
+        const cells = pieces.flatMap(([y, t]) => Array.from(t, (_, k) => [y, x0 + k]));
+        const missed = await press(grid, cells, url, [0.5]);
+        check(pieces.length >= 2 && missed.length === 0, 'every cell of ' + what + ' opens it' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : ''));
+      }
+    }
+    await input.focus();
     // A file path opens in the editor at its line; one that is missing or
     // outside the home is plain text.
     {
@@ -407,6 +454,26 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.waitForTimeout(1000);
     const tabs = () => card.locator('.term-tab').count();
     const opened = await tabs();
+    // Mouse reports count cells from 1 (Claude Code's full screen reads
+    // the mouse).
+    {
+      await input.focus();
+      await page.keyboard.type('mouse');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      const g = await card.locator('.iw-term').evaluateAll((ts) => {
+        const t = ts.find((e) => e.offsetParent);
+        const r = t.querySelector('.iw-screen').getBoundingClientRect();
+        return { left: r.left, top: r.top, cw: parseFloat(t.style.getPropertyValue('--iw-cw')), ch: parseFloat(t.style.getPropertyValue('--iw-ch')), rows: t.querySelectorAll('.iw-screen .iw-row').length };
+      });
+      // Low on the screen: a notice may cover the top on a phone.
+      const at = '5;' + (g.rows - 1);
+      typed = '';
+      const [x, y] = [g.left + 4.5 * g.cw, g.top + (g.rows - 1.5) * g.ch];
+      if (phone) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y);
+      await page.waitForTimeout(300);
+      check(typed.includes('\x1b[<0;' + at + 'M') && typed.includes('\x1b[<0;' + at + 'm'), 'a ' + (phone ? 'tap' : 'click') + ' is reported at its cell, ' + at + ' (' + JSON.stringify(typed) + ')');
+    }
     await input.focus();
     await page.keyboard.press('Control+d');
     await page.waitForTimeout(1500);

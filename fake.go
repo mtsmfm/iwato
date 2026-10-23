@@ -217,7 +217,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, logo, lines, colors, diff, mouse, ccscroll, clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -286,6 +286,26 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 					}
 				}()
 				return len(b), nil
+			case line == "ccbold":
+				// URLs in bold (SGR 1 … 22, as Claude Code prints them): in a
+				// frame, as an OSC 8 hyperlink, wrapped by the application
+				// inside the frame, and wrapped by the terminal.
+				const u = "https://example.com/iwato/bold"
+				bold := func(s string) string { return "\x1b[1m" + s + "\x1b[22m" }
+				width := max(t.cols-4, 20)
+				long := u + "/wrapped-by-the-application?pad=" + strings.Repeat("a", width)
+				var b strings.Builder
+				b.WriteString("╭" + strings.Repeat("─", width+2) + "╮\r\n")
+				fmt.Fprintf(&b, "│ 太字 %s%s │\r\n", bold(u+"/1"), strings.Repeat(" ", max(width-len(u)-7, 0)))
+				fmt.Fprintf(&b, "│ リンク \x1b]8;;%s\x07%s\x1b]8;;\x07%s │\r\n", u+"/2", bold(u+"/2"), strings.Repeat(" ", max(width-len(u)-9, 0)))
+				for rest := long; rest != ""; {
+					n := min(width, len(rest))
+					fmt.Fprintf(&b, "│ %s%s │\r\n", bold(rest[:n]), strings.Repeat(" ", width-n))
+					rest = rest[n:]
+				}
+				b.WriteString("╰" + strings.Repeat("─", width+2) + "╯\r\n")
+				b.WriteString(bold(u + "/wrapped-by-the-terminal?pad=" + strings.Repeat("b", t.cols)))
+				response = b.String()
 			case line == "framed":
 				// A URL that an application wraps itself inside a frame, at
 				// the terminal's edge (as Claude Code does).
