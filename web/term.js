@@ -160,6 +160,7 @@
     // options: theme, fontFamily, fontSize, lineHeight, and callbacks
     // send(bytes) for protocol messages, input(text) for the program
     // (typed text goes through mapInput(text) first), onLink(url, event),
+    // openable(path link): whether it opens (a boolean or its promise),
     // onClipboard(text), onOpen(url), onBell(), onTitle(text), onCursor(),
     // onFiles(files) for files pasted without text or dropped.
     constructor(host, options) {
@@ -204,7 +205,9 @@
       this.preedit = document.createElement('div');
       this.preedit.className = 'iw-preedit';
       this.preedit.hidden = true;
-      this.screen.append(this.cursorEl, this.input, this.preedit);
+      this.hintEl = document.createElement('div');
+      this.hintEl.className = 'iw-hint';
+      this.screen.append(this.cursorEl, this.input, this.preedit, this.hintEl);
       this.root.append(this.more, this.histEl, this.screen);
       this.styleSheet = document.createElement('style');
       this.root.append(this.styleSheet);
@@ -657,7 +660,7 @@
         el.replaceChildren();
         this.renderCells(row.cells, el, true);
       }
-      if (drawn) { this.decorateScreenLinks(this.dirty); if (this.hotGroup) this.lightLink(); }
+      if (drawn) { this.decorateScreenLinks(this.dirty); if (this.hotGroup) this.lightLink(); if (this.hint) this.drawHint(); }
       const histLines = new Set();
       for (const seg of this.urlLines) {
         const line = seg.closest?.('.iw-line') || seg;
@@ -689,19 +692,66 @@
       for (const p of this.root.querySelectorAll('.iw-url')) if (p.dataset.url === url) p.classList.add('iw-url-hot');
     }
 
-    // Underlines the screen's URLs and paths as links.js finds them: across rows the
+    // Rows from..to-1 of the screen as links.js reads them.
+    screenRows(from = 0, to = this.grid.length) {
+      return this.grid.slice(from, to).map((row) => {
+        const cells = [];
+        row.cells.forEach((c, x) => { if (c.w !== 0) for (const ch of (c.t || ' ')) cells.push({ c: ch, x }); });
+        return { cells, wrapped: !!row.cont };
+      });
+    }
+
+    // The file path at a screen cell, over the rows the terminal wrapped.
+    // Paths are found only when asked (a click, a tap, a hover with Ctrl or
+    // ⌘): finding them on every frame slows typing.
+    pathAt(row, col) {
+      if (!window.IwatoLinks || !this.grid[row]) return null;
+      let top = row, bottom = row + 1;
+      while (top > 0 && this.grid[top].cont) top--;
+      while (this.grid[bottom]?.cont) bottom++;
+      const at = (p) => (row - p.y) || (col + 1 - p.x);
+      return window.IwatoLinks.wrappedLinks(this.screenRows(top, bottom), this.cols, top)
+        .find((l) => at(l.start) >= 0 && at(l.end) <= 0 && window.IwatoLinks.pathOf(l.url)) || null;
+    }
+
+    // Underlines the path under the pointer while Ctrl or ⌘ is held, when
+    // options.openable says it opens.
+    drawHint() {
+      clearTimeout(this.hintTimer);
+      const h = this.hint;
+      const link = h && (h.ctrlKey || h.metaKey) ? this.pathAt(h.row, h.col) : null;
+      const show = (ok) => {
+        this.hintShown = ok ? link : null;
+        this.root.classList.toggle('iw-pointer', ok);
+        this.hintEl.replaceChildren();
+        if (!ok) return;
+        for (let y = link.start.y; y <= link.end.y; y++) {
+          const from = y === link.start.y ? link.start.x - 1 : 0;
+          const to = y === link.end.y ? link.end.x : this.cols;
+          const line = document.createElement('div');
+          line.style.transform = 'translate(' + from * this.cellW + 'px,' + y * this.cellH + 'px)';
+          line.style.width = (to - from) * this.cellW + 'px';
+          this.hintEl.append(line);
+        }
+      };
+      const was = this.hintShown;
+      if (link && was && link.url === was.url && link.start.x === was.start.x && link.start.y === was.start.y) { show(true); return; }
+      show(false);
+      if (!link) return;
+      const openable = this.options.openable || (() => true);
+      // Asking may go to the server: not while the pointer only passes by.
+      this.hintTimer = setTimeout(() => Promise.resolve(openable(link.url)).then((ok) => { if (ok && this.hint === h) show(true); }), 150);
+    }
+
+    // Underlines the screen's URLs as links.js finds them: across rows the
     // terminal wrapped and rows an application wrapped itself at the edge
     // (Claude Code), also inside a frame. Every piece of one URL carries it
     // whole and lights up with the others.
     decorateScreenLinks(dirty) {
       if (!window.IwatoLinks || !this.rowEls) return;
-      const rows = this.grid.map((row) => {
-        const cells = [];
-        row.cells.forEach((c, x) => { if (c.w !== 0) for (const ch of (c.t || ' ')) cells.push({ c: ch, x }); });
-        return { cells, wrapped: !!row.cont };
-      });
+      const rows = this.screenRows();
       const pieces = new Map(); // row → [{from, to, url, group}] in cells
-      for (const link of window.IwatoLinks.wrappedLinks(rows, this.cols, 0)) {
+      for (const link of window.IwatoLinks.wrappedLinks(rows, this.cols, 0, false)) {
         // Stable across redraws, so a hovered URL stays lit while the rest
         // of the screen changes.
         const group = link.start.y + ':' + link.start.x;
@@ -1166,6 +1216,21 @@
         this.lightLink();
       };
       this.root.addEventListener('mouseover', (event) => hot(event, true));
+      const hint = (event) => {
+        const next = touchOnly ? null : { ...this.cellAt(event.clientX, event.clientY), ctrlKey: event.ctrlKey, metaKey: event.metaKey };
+        const h = this.hint;
+        if (next?.row === h?.row && next?.col === h?.col && next?.ctrlKey === h?.ctrlKey && next?.metaKey === h?.metaKey) return;
+        this.hint = next && next.col >= 0 ? next : null;
+        this.pointer = event;
+        this.drawHint();
+      };
+      this.root.addEventListener('mousemove', hint);
+      this.root.addEventListener('mouseleave', () => { this.pointer = null; this.hint = null; this.drawHint(); });
+      this.onModifier = (event) => {
+        if (this.pointer && (event.key === 'Control' || event.key === 'Meta')) hint({ clientX: this.pointer.clientX, clientY: this.pointer.clientY, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
+      };
+      window.addEventListener('keydown', this.onModifier);
+      window.addEventListener('keyup', this.onModifier);
       this.root.addEventListener('mouseout', (event) => hot(event, false));
       // Links open on release, when it is on the link pressed: a redraw
       // during the press replaces the elements and the browser then sends
@@ -1178,7 +1243,9 @@
         if (url && event.button === 0 && this.linkAt(event) === url) this.options.onLink?.(url, event);
       });
       this.root.addEventListener('click', (event) => {
-        if (this.linkAt(event)) return;
+        const url = this.linkAt(event);
+        // A path that does not open is plain text.
+        if (url && (!window.IwatoLinks?.pathOf(url) || ((touchOnly || event.ctrlKey || event.metaKey) && this.options.openable?.(url) !== false))) return;
         if (!window.getSelection()?.toString()) this.focus();
       });
       // Selecting text leaves the focus on the terminal itself: focusing the
@@ -1195,19 +1262,27 @@
       });
     }
 
+    // The screen cell at a point: {row, col}, or {row} off the screen's rows.
+    cellAt(x, y) {
+      const rect = this.screen.getBoundingClientRect();
+      const row = Math.floor((y - rect.top) / this.cellH);
+      if (row < 0 || row >= this.rows) return { row: -1 };
+      let col = Math.floor((x - rect.left) / this.cellW);
+      const cells = this.grid[row]?.cells;
+      if (!cells || col < 0 || col >= cells.length) return { row, col: -1 };
+      if (cells[col].w === 0 && col > 0) col--;
+      return { row, col };
+    }
+
     // The link under the pointer: an OSC 8 link, or a URL or path in the text. On
     // the screen, from the cell, whatever element is on top of it.
     linkAt(event) {
-      const rect = this.screen.getBoundingClientRect();
-      const row = Math.floor((event.clientY - rect.top) / this.cellH);
-      if (row >= 0 && row < this.rows) {
-        let col = Math.floor((event.clientX - rect.left) / this.cellW);
-        const cells = this.grid[row]?.cells;
-        if (!cells || col < 0 || col >= cells.length) return null;
-        if (cells[col].w === 0 && col > 0) col--;
-        const link = this.styles.get(cells[col].s)?.link;
+      const { row, col } = this.cellAt(event.clientX, event.clientY);
+      if (row >= 0) {
+        if (col < 0) return null;
+        const link = this.styles.get(this.grid[row].cells[col].s)?.link;
         if (link && this.links.has(link)) return this.links.get(link);
-        return this.screenLinks?.get(row)?.list.find((p) => col >= p.from && col <= p.to)?.url || null;
+        return this.screenLinks?.get(row)?.list.find((p) => col >= p.from && col <= p.to)?.url || this.pathAt(row, col)?.url || null;
       }
       // An application's hyperlink first: its row shows only part of it.
       const linked = event.target.closest?.('[data-link]');
@@ -1254,6 +1329,9 @@
     dispose() {
       if (this.frame !== null) cancelAnimationFrame(this.frame);
       document.removeEventListener('selectionchange', this.onSelection);
+      clearTimeout(this.hintTimer);
+      window.removeEventListener('keydown', this.onModifier);
+      window.removeEventListener('keyup', this.onModifier);
       this.root.remove();
     }
   }
@@ -1283,11 +1361,11 @@
     return 'rgb(' + g + ',' + g + ',' + g + ')';
   }
 
-  // URLs and file paths in the text look like links (a click with Ctrl or
-  // ⌘, or a tap, opens them: see linkAt).
-  const findLinks = (text) => window.IwatoLinks ? window.IwatoLinks.findLinks(text) : [];
+  // URLs in the text look like links; they and file paths open with a click
+  // with Ctrl or ⌘, or a tap (see linkAt).
+  const findLinks = (text, paths) => window.IwatoLinks ? window.IwatoLinks.findLinks(text, paths) : [];
   const touchOnly = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
-  const urlTitle = (target) => touchOnly ? '' : t(window.IwatoLinks?.pathOf(target) ? 'term.pathTitle' : 'term.linkTitle', { key: /Mac/.test(navigator.platform || '') ? '⌘' : 'Ctrl' });
+  const urlTitle = () => touchOnly ? '' : t('term.linkTitle', { key: /Mac/.test(navigator.platform || '') ? '⌘' : 'Ctrl' });
 
   // Wraps text offsets [from, to) of el in link spans (one per text node).
   function wrapText(el, from, to, url, group) {
@@ -1305,13 +1383,13 @@
       link.className = 'iw-url';
       link.dataset.url = url;
       if (group) link.dataset.group = String(group);
-      if (urlTitle(url)) link.title = urlTitle(url);
+      if (urlTitle()) link.title = urlTitle();
       piece.replaceWith(link);
       link.append(piece);
     }
   }
 
-  // Underlines the URLs and paths in elements that hold one logical line (screen
+  // Underlines the URLs in elements that hold one logical line (screen
   // rows joined by wrapping, or a history line's segments), also where a
   // URL crosses from one to the next. Each piece keeps the whole URL.
   function decorateURLs(els) {
@@ -1325,8 +1403,8 @@
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push({ n, at: text.length }); text += n.data; }
     }
-    if (!text.includes('/')) return;
-    const matches = findLinks(text).map((m) => ({ url: m.target, start: m.index, end: m.index + m.length }));
+    if (!text.includes('://')) return;
+    const matches = findLinks(text, false).map((m) => ({ url: m.target, start: m.index, end: m.index + m.length }));
     // Backwards, so that splitting a text node keeps the offsets before it.
     for (const m of matches.reverse()) {
       for (const { n, at } of [...nodes].reverse()) {
@@ -1338,7 +1416,7 @@
         const link = document.createElement('span');
         link.className = 'iw-url';
         link.dataset.url = m.url;
-        if (urlTitle(m.url)) link.title = urlTitle(m.url);
+        if (urlTitle()) link.title = urlTitle();
         piece.replaceWith(link);
         link.append(piece);
       }

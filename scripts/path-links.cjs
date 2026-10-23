@@ -4,16 +4,43 @@
 // a phone).
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-// clickPath prints text with the fake shell's echo and clicks the link of
-// link (the path as printed, :LINE included).
+// pathPoint is the middle of the last place the screen shows text.
+async function pathPoint(card, text) {
+  const handle = await card.locator('.iw-screen').elementHandle();
+  return handle.evaluate((screen, text) => {
+    const row = [...screen.querySelectorAll('.iw-row')].reverse().find((r) => r.textContent.includes(text));
+    const at = row.textContent.lastIndexOf(text);
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let offset = 0;
+    const range = document.createRange();
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (offset <= at && at < offset + n.length) range.setStart(n, at - offset);
+      if (offset < at + text.length && at + text.length <= offset + n.length) { range.setEnd(n, at + text.length - offset); break; }
+      offset += n.length;
+    }
+    const r = range.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, text);
+}
+
+// clickPath prints text with the fake shell's echo and clicks link (the
+// path as printed, :LINE included; paths are not underlined, so it clicks
+// where the text is).
 async function clickPath(page, card, text, link, phone) {
   await card.locator('.iw-input').focus();
   await page.keyboard.type('echo ' + text);
   await page.keyboard.press('Enter');
-  const piece = card.locator(`.iw-screen .iw-url[data-url="iwato-path:${link}"]`).last();
-  await piece.waitFor();
-  if (phone) await piece.tap();
-  else await piece.click({ modifiers: [mod] });
+  await card.locator('.iw-screen').evaluate((s, text) => new Promise((resolve) => {
+    const done = () => [...s.querySelectorAll('.iw-row')].some((r) => r.textContent.trim() === text) ? resolve() : requestAnimationFrame(done);
+    done();
+  }), text);
+  const { x, y } = await pathPoint(card, link);
+  if (phone) await page.touchscreen.tap(x, y);
+  else {
+    await page.keyboard.down(mod);
+    await page.mouse.click(x, y);
+    await page.keyboard.up(mod);
+  }
 }
 
 // editorAt is the editor's text and its cursor (1-based line and column),
@@ -29,4 +56,4 @@ async function editorAt(page) {
   });
 }
 
-module.exports = { clickPath, editorAt };
+module.exports = { clickPath, editorAt, pathPoint, mod };

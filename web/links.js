@@ -118,12 +118,14 @@
     return found;
   }
 
-  // findLinks returns the URLs and file paths in text as [{target, index,
-  // length}], in order; a path's target is pathTarget's.
-  function findLinks(text) {
+  // findLinks returns the URLs and file paths (URLs only without paths) in
+  // text as [{target, index, length}], in order; a path's target is
+  // pathTarget's.
+  function findLinks(text, paths = true) {
     const urls = findURLs(text);
-    const paths = findPaths(text, urls).map((p) => ({target: pathTarget(text.slice(p.index, p.index + p.length)), index: p.index, length: p.length}));
-    return urls.map((u) => ({target: u.url, index: u.index, length: u.url.length})).concat(paths).sort((a, b) => a.index - b.index);
+    if (!paths) return urls.map((u) => ({target: u.url, index: u.index, length: u.url.length}));
+    const found = findPaths(text, urls).map((p) => ({target: pathTarget(text.slice(p.index, p.index + p.length)), index: p.index, length: p.length}));
+    return findLinks(text, false).concat(found).sort((a, b) => a.index - b.index);
   }
 
   // A path link's target: the text as printed, marked so that it is never
@@ -162,9 +164,9 @@
   }
 
   // wrappedLinks returns [{url, start: {x, y}, end: {x, y}}] in 1-based,
-  // inclusive cell coordinates (url is a path's target for a path). rows[0]
-  // is buffer line firstY.
-  function wrappedLinks(rows, cols, firstY) {
+  // inclusive cell coordinates (url is a path's target for a path; URLs
+  // only without paths). rows[0] is buffer line firstY.
+  function wrappedLinks(rows, cols, firstY, paths = true) {
     const links = [];
     let i = 0;
     while (i < rows.length) {
@@ -192,7 +194,7 @@
         push(row, j, k);
         j++;
       }
-      for (const {target, index, length} of findLinks(text)) {
+      for (const {target, index, length} of paths || text.includes('://') ? findLinks(text, paths) : []) {
         const a = pos[index], b = pos[index + length - 1];
         links.push({url: target, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}});
       }

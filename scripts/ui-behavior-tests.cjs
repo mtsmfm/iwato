@@ -795,7 +795,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const links = side.side('links-panel'); assert.equal(links.hidden, false); assert.match(links.children[1].textContent, /見つかりません/); assert.equal(links.children[2].children.length, 0);
   assert.equal(side.card().dataset.tab, 'links', 'a panel takes the place of the terminal'); side.buttons()[6].click(); await flush(); side.sockets.at(-1).open(); assert.equal(side.card().dataset.tab, 'terminal', 'reconnecting shows the terminal'); assert.equal(links.hidden, true);
   side.terminals.at(-1).receive(Buffer.from('old https://example.com/old\r\nsee https://example.com/a javascript:alert(1)\r\nhttps://user:pw@example.com/ https://example.com/old (dup)\r\nline1\r\n<script>x</script>\r\n'));
-  tab('リンク').click(); const anchors = links.children[2].children.map(li => li.children[0]);
+  tab('リンク').click(); await flush(); const anchors = links.children[2].children.map(li => li.children[0]);
   assert.deepEqual(anchors.map(a => a.href), ['https://example.com/old', 'https://example.com/a']); assert.equal(anchors[0].rel, 'noopener noreferrer'); assert.equal(anchors[0].target, '_blank');
   ok('link list comes from the terminal history: newest first, unique, only http(s) without credentials, new tab without opener');
   tab('テキスト').click(); await flush(); assert.equal(links.hidden, true, 'one panel at a time'); const textPanel = side.side('text-panel'); assert.equal(textPanel.hidden, false); assert.match(textPanel.children[2].textContent, /\nline1\n<script>x<\/script>\n$/);
@@ -881,8 +881,9 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(paths('src/Makefile:7: x and ./run, ~/.bashrc, ../up/y.'), [['src/Makefile', 7, 0, 'src/Makefile:7'], ['./run', 0, 0, './run'], ['~/.bashrc', 0, 0, '~/.bashrc'], ['../up/y', 0, 0, '../up/y']]);
     assert.deepEqual(paths('「/home/dev/work/a.go:5」を見て、web/editor.jsを開く'), [['/home/dev/work/a.go', 5, 0, '/home/dev/work/a.go:5'], ['web/editor.js', 0, 0, 'web/editor.js']], 'Japanese around a path');
     assert.deepEqual(paths('and/or 1/2 3.4/5.6 2026/10/23 TCP/IP /tmp v1.2/3 @web/a.js host:a/b.js a//b.js dir/ https://x.example/a/b.js?f=c/d.js'), [], 'no false positives');
-    assert.deepEqual(JSON.parse(JSON.stringify(side.win.IwatoLinks.pathOf(wrappedLinks([row2('see https://a.example/x and web/app.js:2')], 80, 1)[1].url))), {path: 'web/app.js', line: 2, col: 0, index: 0, length: 12}); }
-  ok('file paths: absolute, ~/, relative with a slash, with :LINE[:COL]; not ratios, dates, words or parts of URLs');
+    assert.deepEqual(JSON.parse(JSON.stringify(side.win.IwatoLinks.pathOf(wrappedLinks([row2('see https://a.example/x and web/app.js:2')], 80, 1)[1].url))), {path: 'web/app.js', line: 2, col: 0, index: 0, length: 12});
+    assert.deepEqual(Array.from(wrappedLinks([row2('see https://a.example/x and web/app.js:2'), row2('~/work/a.go')], 80, 1, false), (l) => l.url), ['https://a.example/x'], 'URLs only'); }
+  ok('file paths: absolute, ~/, relative with a slash, with :LINE[:COL]; not ratios, dates, words or parts of URLs; left out on request');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
   const lk = await environment({fake: false, status: 'running'}); lk.buttons()[2].click(); await flush(); lk.sockets.at(-1).open(); const lkTerm = lk.terminals.at(-1);
