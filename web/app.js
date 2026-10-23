@@ -2355,7 +2355,7 @@
   // What the approve dialog may show of a proposal, and what it warns of:
   // the server's limits, the names and addresses that reach the host's
   // loopback, and Iwato's own port (the proposals list sends them).
-  const policyGuard = { limits: { binaries: 8, endpoints: 20, ports: 16, rules: 32, deny: 16, allowedIps: 32 }, gateways: [], listenPort: 0 };
+  const policyGuard = { limits: { binaries: 8, endpoints: 20, ports: 16, rules: 128, deny: 16, allowedIps: 32 }, gateways: [], listenPort: 0 };
   const allowedIPsList = (value) => (Array.isArray(value) ? value.slice(0, policyGuard.limits.allowedIps) : []).filter((x) => typeof x === 'string' && x).map((x) => text(x, 64));
   const formatTime = (seconds) => Number.isFinite(seconds) ? window.IwatoI18n.date(seconds * 1000) : '';
   // Short: the time today, the date before (with the time when asked).

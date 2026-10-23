@@ -148,6 +148,22 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 		c("fake-curl", "rejected", "allow_mise_versions_jdx_dev_443", "/usr/bin/curl", auto("/usr/bin/curl", "mise-versions.jdx.dev", 443), 3, ago(day), ago(25), rule("allow_mise_versions_jdx_dev_443", []string{"/usr/bin/curl"}, l4Endpoint("mise-versions.jdx.dev", 443))),
 		c("fake-gh-auto", "rejected", fakeGHERule, "/usr/bin/gh", auto("/usr/bin/gh", fakeGHE, 443), 1, ago(2*day), ago(2*day), rule(fakeGHERule, []string{"/usr/bin/gh"}, l4Endpoint(fakeGHE, 443))),
 	}
+	if name == "experiment" {
+		// 100 rules over four endpoints: the approve dialog scrolls.
+		var eps []v1.PolicyNetworkEndpoint
+		for e := range 4 {
+			ep := restEndpoint(fmt.Sprintf("api%d.many.example", e+1), 443)
+			for i := range 25 {
+				method := "GET"
+				if i%5 == 4 {
+					method = "POST"
+				}
+				ep.Rules = append(ep.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: method, Path: fmt.Sprintf("/v1/items/%d", e*25+i)}})
+			}
+			eps = append(eps, ep)
+		}
+		chunks = append(chunks, c("fake-many", "pending", "allow_many_example", "/usr/bin/curl", "多数の API を呼ぶ", 100, ago(4), ago(2), rule("allow_many_example", []string{"/usr/bin/curl"}, eps...)))
+	}
 	decided := map[string]time.Time{"fake-gh": ago(2*day + 30), "fake-git-api": ago(day + 60), "fake-npm": ago(60), "fake-mise": ago(3*day - 10), "fake-curl": ago(day - 30), "fake-gh-auto": ago(2 * day)}
 	for i := range chunks {
 		if at, ok := decided[chunks[i].ID]; ok {

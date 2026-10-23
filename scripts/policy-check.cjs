@@ -631,6 +631,25 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await expRejected.getByText('github-work の範囲を広げて閉じました', { exact: false }).waitFor();
     check(!(await exp.locator('.policy-current').innerText()).includes('allow_api_github_com_443'), 'closed after the sandbox applied the scope, with no policy rule');
     await page.screenshot({ path: path.join(dir, 'approve-scope-closed.png'), fullPage: true });
+    // 100 rules over four endpoints: the dialog scrolls, and OK stays
+    // reachable once approved as proposed (the 16-rule narrowing does not).
+    const manyItem = expPending.locator('.proposal-item', { hasText: 'api1.many.example' });
+    await manyItem.getByRole('button', { name: '承認', exact: true }).click();
+    await dialog.waitFor();
+    const body = dialog.locator('.login-body');
+    check(await page.locator('#approve-path-rows .approve-path').count() === 100, 'all 100 rules are path rows');
+    await page.locator('#approve-proposal > summary').click();
+    const lines = await page.locator('#approve-proposal-body .approve-proposal-line').allInnerTexts();
+    check(lines.length === 105 && lines.some((l) => l.includes('/v1/items/99')), 'the details list every rule: ' + lines.length);
+    check(await body.evaluate((el) => el.scrollHeight > el.clientHeight + 200 && el.getBoundingClientRect().bottom <= window.innerHeight + 1 && el.getBoundingClientRect().top >= -1) && await fits(), 'the dialog scrolls within the window');
+    await page.locator('#approve-more > summary').click();
+    await page.check('#approve-access-all');
+    await page.locator('#confirm-ok').scrollIntoViewIfNeeded();
+    check(await page.locator('#confirm-ok').isEnabled() && await inView(page.locator('#confirm-ok')) && await inView(page.locator('#confirm-cancel')), 'OK and Cancel are reachable at the end');
+    await page.screenshot({ path: path.join(dir, 'approve-many.png') });
+    await page.click('#confirm-ok');
+    await exp.locator('.policy-current').getByText('allow_many_example').first().waitFor();
+    check(true, 'the 100-rule proposal is approved');
 
     if (!phone) {
       await page.setViewportSize({ width: 700, height: 860 });
