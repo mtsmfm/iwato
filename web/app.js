@@ -345,11 +345,11 @@
     const rows = approveRows();
     $('approve-seen').textContent = !rows.length && access === 'read' ? t(s.seen.length ? 'approve.seen.empty' : 'approve.seen.none')
       : rows.length && s.seen.length ? t('approve.seen') : '';
-    const built = approveLogic.buildScope({ access, binary, proposed: s.proposed, rows });
+    const built = approveLogic.buildScope({ access, binary, proposed: s.proposed, rows, tips: { suggest: s.suggest, asProposed: !s.blocked.all } });
     // A choice OpenShell would refuse (the radios are disabled; when all are, nothing can be approved).
     if (s.blocked[access]) built.error ||= s.blocked[access].chosen || t('approve.blocked.chosen', { choice: t('ambiguity.choice.' + access) });
     const risk = approveLogic.risks({ access, binary, proposed: s.proposed, endpoints: s.endpoints, listenPort: policyGuard.listenPort, gateways: policyGuard.gateways });
-    showApproveRisks(risk.lines);
+    showApproveRisks([s.unshown, ...risk.lines].filter(Boolean));
     built.error ||= risk.error;
     const args = { access, binary, proposed: s.proposed, endpoints: s.endpoints, rows, seen: s.seen, placeholder: s.placeholder };
     // The writes it allows, spelled out.
@@ -374,7 +374,7 @@
     showApproveHead(item, warnings);
     showApproveProposal(item);
     // What the page cannot show of the proposal: not as proposed.
-    const unshown = item.unshown?.length ? t('approve.unshown', { parts: item.unshown.join(', ') }) : '';
+    const unshown = item.unshown?.length ? window.IwatoRefusals.unshown(item.unshown) : '';
     if (asProposed) {
       // Nothing to narrow: the plain question, with what it allows.
       $('approve-form').hidden = true;
@@ -397,7 +397,8 @@
     const blocked = { ...(item.blocked || {}) };
     if (unshown) blocked.all = { reason: unshown, chosen: unshown };
     const access = approveLogic.pickAccess(approveLogic.defaultAccess(seen, endpoints), blocked);
-    approving = { proposed, endpoints, seen, built: null, blocked, placeholder: item.placeholder === true };
+    const suggest = approveLogic.pathSuggestion(seen.map((r) => r.path));
+    approving = { proposed, endpoints, seen, built: null, blocked, unshown, suggest: Boolean(suggest), placeholder: item.placeholder === true };
     // The candidates, narrow to wide; a path in the proposed folder shows
     // as …/ to keep them short. Versions as "*" by default, so that an
     // update of the program keeps the rule.
@@ -432,7 +433,6 @@
     // for it (the server's placeholder) is no request seen: the list
     // starts empty (all paths), with an example to narrow.
     const hint = seen.length ? '' : approveLogic.pathHint(endpoints);
-    const suggest = approveLogic.pathSuggestion(seen.map((r) => r.path));
     $('approve-path-suggest').replaceChildren(...[suggest && [t('approve.suggest'), suggest, () => setApprovePaths([{ method: access === 'rules' ? '*' : 'GET', path: suggest }])], hint && [t('approve.example'), hint, () => setApprovePaths([{ method: approveAccess() === 'rules' ? '*' : 'GET', path: hint }])], seen.length && ['', t('approve.allPaths'), () => setApprovePaths([])]].filter(Boolean).map(([label, path, act]) => {
       const chip = button('approve-chip', '', act);
       chip.className = 'approve-chip';
@@ -2463,35 +2463,35 @@
     validateProposal(p) {
       const lim = policyGuard.limits;
       const unshown = Array.isArray(p.unshown) ? p.unshown.filter((x) => typeof x === 'string').slice(0, 20).map((x) => text(x, 100)) : [];
-      const list = (value, max) => {
+      const list = (value, max, name) => {
         if (!Array.isArray(value)) return [];
-        if (value.length > max && !unshown.includes('> ' + max)) unshown.push('> ' + max);
+        if (value.length > max && !unshown.some((u) => u.startsWith(name + ' > '))) unshown.push(name + ' > ' + max);
         return value.slice(0, max);
       };
-      const methodPaths = (value, max) => list(value, max).filter((r) => r && typeof r.path === 'string' && typeof r.method === 'string').map((r) => ({ method: text(r.method, 10), path: text(r.path, 512) }));
+      const methodPaths = (value, max, name) => list(value, max, name).filter((r) => r && typeof r.path === 'string' && typeof r.method === 'string').map((r) => ({ method: text(r.method, 10), path: text(r.path, 512) }));
       return { id: p.id, digest: /^[0-9a-f]{64}$/.test(p.digest) ? p.digest : '', unshown, summary: text(p.summary, 600), createdAt: Number(p.createdAt), source: p.source === 'auto' ? 'auto' : 'agent', intent: text(p.intent, 600), notes: text(p.notes, 600), rule: text(p.rule, 200),
         hits: Number(p.hits) || 0, firstSeen: Number(p.firstSeen) || 0, lastSeen: Number(p.lastSeen) || 0,
-        rules: methodPaths(p.rules, lim.rules),
-        allowedIps: list(p.allowedIps, lim.endpoints).filter((x) => x && typeof x.host === 'string').map((x) => ({ host: text(x.host, 253), ips: allowedIPsList(x.ips) })).filter((x) => x.ips.length),
-        binaries: list(p.binaries, lim.binaries + 1).filter((b) => typeof b === 'string' && b).map((b) => text(b, 512)),
-        endpoints: list(p.endpoints, lim.endpoints).filter((e) => e && typeof e.host === 'string').map((e) => ({ host: text(e.host, 253), ports: list(e.ports, lim.ports).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 65536), protocol: text(e.protocol, 20), access: text(e.access, 20), enforcement: text(e.enforcement, 20),
-          tls: text(e.tls, 20), path: text(e.path, 512), rules: methodPaths(e.rules, lim.rules), deny: methodPaths(e.deny, lim.deny), allowedIps: allowedIPsList(e.allowedIps), credential: text(e.credential, 100),
+        rules: methodPaths(p.rules, lim.rules, 'rules'),
+        allowedIps: list(p.allowedIps, lim.endpoints, 'endpoints').filter((x) => x && typeof x.host === 'string').map((x) => ({ host: text(x.host, 253), ips: allowedIPsList(x.ips) })).filter((x) => x.ips.length),
+        binaries: list(p.binaries, lim.binaries + 1, 'binaries').filter((b) => typeof b === 'string' && b).map((b) => text(b, 512)),
+        endpoints: list(p.endpoints, lim.endpoints, 'endpoints').filter((e) => e && typeof e.host === 'string').map((e) => ({ host: text(e.host, 253), ports: list(e.ports, lim.ports, 'ports').map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 65536), protocol: text(e.protocol, 20), access: text(e.access, 20), enforcement: text(e.enforcement, 20),
+          tls: text(e.tls, 20), path: text(e.path, 512), rules: methodPaths(e.rules, lim.rules, 'rules'), deny: methodPaths(e.deny, lim.deny, 'deny_rules'), allowedIps: allowedIPsList(e.allowedIps), credential: text(e.credential, 100),
           allowEncodedSlash: e.allowEncodedSlash === true, websocketCredentialRewrite: e.websocketCredentialRewrite === true, requestBodyCredentialRewrite: e.requestBodyCredentialRewrite === true, allowUninspectedCredentials: e.allowUninspectedCredentials === true })),
         decidedAt: Number(p.decidedAt) || 0, hitsAfter: Number.isInteger(p.hitsAfter) ? p.hitsAfter : -1, seenAfter: p.seenAfter === true,
         auto: ['superseded', 'covered'].includes(p.auto) ? p.auto : '', ruleExists: p.ruleExists === true, placeholder: p.placeholder === true,
         // The approve choices OpenShell would refuse (an endpoint already in
         // the policy, a provider's rule, has other settings), with why.
         blocked: Object.fromEntries(['read', 'rules', 'all', 'audit'].filter((k) => p.blocked && p.blocked[k] && typeof p.blocked[k].reason === 'string').map((k) => {
-          const vs = list(p.blocked[k].ambiguities, 20).filter((a) => a && typeof a.rule === 'string').map(validAmbiguity);
+          const vs = list(p.blocked[k].ambiguities, 20, 'ambiguities').filter((a) => a && typeof a.rule === 'string').map(validAmbiguity);
           return [k, { reason: window.IwatoRefusals.blocked(k, vs, text(p.blocked[k].reason, 1500)) }];
         })),
         // On a provider's host (ADR 0006): approving widens its scope, or
         // (with a reason) adds the rule with the provider's token.
         providerScope: p.providerScope && typeof p.providerScope.provider === 'string' && p.providerScope.provider ? {
           provider: text(p.providerScope.provider, 100), label: text(p.providerScope.label, 100), reason: window.IwatoI18n.serverError(p.providerScope.reasonCode, p.providerScope.reasonParams, text(p.providerScope.reason, 600)), resolving: p.providerScope.resolving === true,
-          repos: list(p.providerScope.repos, 50).filter((r) => typeof r === 'string').map((r) => text(r, 200)),
-          mutations: list(p.providerScope.mutations, 50).filter((m) => typeof m === 'string').map((m) => text(m, 100)),
-          tools: list(p.providerScope.tools, 100).filter((m) => typeof m === 'string').map((m) => text(m, 128)), write: p.providerScope.write === true } : null,
+          repos: list(p.providerScope.repos, 50, 'repos').filter((r) => typeof r === 'string').map((r) => text(r, 200)),
+          mutations: list(p.providerScope.mutations, 50, 'mutations').filter((m) => typeof m === 'string').map((m) => text(m, 100)),
+          tools: list(p.providerScope.tools, 100, 'tools').filter((m) => typeof m === 'string').map((m) => text(m, 128)), write: p.providerScope.write === true } : null,
         scopeProvider: text(p.scopeProvider, 100) };
     }
 

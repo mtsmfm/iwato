@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
@@ -119,6 +120,17 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	}
 	if len(f.approved) != 2 {
 		t.Fatal(f.approved)
+	}
+	// Rejecting one over a count tells the agent how to propose it again.
+	for _, id := range []string{"rules1", "gql"} {
+		if _, err := o.DecideProposal(ctx, w, "reject", requestID(id), testDigest(o, ctx, w, requestID(id)), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range f.chunks {
+		if hint := strings.Contains(c.RejectionReason, "combine paths with * or **"); c.Status == "rejected" && hint != (c.ID == "rules1") {
+			t.Errorf("%s: %q", c.ID, c.RejectionReason)
+		}
 	}
 
 	s := &Server{host: "127.0.0.1:17600"}

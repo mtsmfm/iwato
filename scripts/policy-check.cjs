@@ -631,6 +631,21 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await expRejected.getByText('github-work の範囲を広げて閉じました', { exact: false }).waitFor();
     check(!(await exp.locator('.policy-current').innerText()).includes('allow_api_github_com_443'), 'closed after the sandbox applied the scope, with no policy rule');
     await page.screenshot({ path: path.join(dir, 'approve-scope-closed.png'), fullPage: true });
+    // Over 128 rules: why it cannot be approved as proposed and what to do,
+    // at the top; narrowing says how to get under 16 paths.
+    await expPending.locator('.proposal-item', { hasText: 'api.huge.example' }).getByRole('button', { name: '承認', exact: true }).click();
+    await dialog.waitFor();
+    const hugeRisk = page.locator('#approve-risks');
+    await hugeRisk.scrollIntoViewIfNeeded();
+    const hugeText = await hugeRisk.innerText();
+    check(await inView(hugeRisk) && hugeText.includes('提案どおりには承認できません。許可する条件 (メソッドとパス) が 128 個を超えています') && hugeText.includes('「ポリシー」タブの「YAML」'), 'over 128 rules: what was exceeded and what to do: ' + hugeText);
+    const hugeError = await page.locator('#approve-error').innerText();
+    check(await page.locator('#confirm-ok').isDisabled() && /パスは 16 個までです \(いま 1[23][0-9] 個\)/.test(hugeError) && hugeError.includes('「候補」') && !hugeError.includes('提案どおり'), 'over 16 paths, with as proposed ruled out: ' + hugeError);
+    await page.locator('#approve-path-suggest .approve-chip', { hasText: '/v2/things/**' }).click();
+    check(await page.locator('#confirm-ok').isEnabled() && await fits(), 'the suggestion combines them into one path');
+    await page.screenshot({ path: path.join(dir, 'approve-huge.png') });
+    await page.click('#confirm-cancel');
+    await dialog.waitFor({ state: 'hidden' });
     // 100 rules over four endpoints: the dialog scrolls, and OK stays
     // reachable once approved as proposed (the 16-rule narrowing does not).
     const manyItem = expPending.locator('.proposal-item', { hasText: 'api1.many.example' });
@@ -638,6 +653,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await dialog.waitFor();
     const body = dialog.locator('.login-body');
     check(await page.locator('#approve-path-rows .approve-path').count() === 100, 'all 100 rules are path rows');
+    const manyError = page.locator('#approve-error');
+    await manyError.scrollIntoViewIfNeeded();
+    check(await page.locator('#approve-access-rules').isChecked() && await page.locator('#confirm-ok').isDisabled() && await inView(manyError) && (await manyError.innerText()).startsWith('メソッドとパスは 16 個までです (いま 100 個)。区切りを押して * や ** にし、まとめてください') && (await manyError.innerText()).includes('「詳細」の「提案どおり」で承認できます'), '書き込みも許可 over 16: how to combine them, or approve as proposed: ' + await manyError.innerText());
     await page.locator('#approve-proposal > summary').click();
     const lines = await page.locator('#approve-proposal-body .approve-proposal-line').allInnerTexts();
     check(lines.length === 105 && lines.some((l) => l.includes('/v1/items/99')), 'the details list every rule: ' + lines.length);

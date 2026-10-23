@@ -75,6 +75,22 @@
   // The gateway's ambiguity refusal, from its pairs.
   const gatewayText = (pairs) => pairs.length ? t('ambiguity.gateway', { pairs: sentences(pairs.map(pair)) }) : t('error.gateway_ambiguous');
 
+  // The parts of a proposal the approve dialog cannot show (proposal_guard.go
+  // proposalUnshown: "rules > 128", "host length", "graphql"), and what to
+  // do: a count can be proposed again smaller, the rest only written in YAML.
+  function unshown(parts, lead = 'unshown.asProposed') {
+    let fewer = true;
+    const texts = parts.map((p) => {
+      let m = /^([a-z_]+) > (\d+)$/.exec(p);
+      if (m) return t('unshown.count', { name: has('unshown.count.' + m[1]) ? t('unshown.count.' + m[1]) : m[1], max: m[2] });
+      fewer = false;
+      m = /^([a-z_]+) length$/.exec(p);
+      if (m) return t('unshown.long', { name: has('unshown.long.' + m[1]) ? t('unshown.long.' + m[1]) : m[1] });
+      return t('unshown.setting', { what: has('unshown.setting.' + p) ? t('unshown.setting.' + p) : p });
+    });
+    return t(lead, { parts: sentences(texts), next: t(fewer ? 'unshown.next.fewer' : 'unshown.next.yaml') });
+  }
+
   // The text of a refusal: code and params as the server sent them, with
   // what came with them (ambiguities, conflicts, the gateway's pairs);
   // fallback (the server's text) for what the page cannot word.
@@ -93,6 +109,7 @@
       return [cs.length ? credentialText(true, cs) : '', vs.length ? ambiguityMessage('ambiguous_attach', params, vs) : ''].filter(Boolean).join(' ');
     }
     if (code === 'provider_scope_conflict') return cs.length ? t('error.provider_scope_conflict', { sandbox: plain(params).sandbox || '', message: credentialText(true, cs) }) : fallback;
+    if (code === 'proposal_unshown') return Array.isArray(params?.parts) && params.parts.length ? unshown(params.parts.filter((p) => typeof p === 'string').slice(0, 20), 'unshown.refused') : fallback;
     if (code === 'credential_uninspected') return cs.length ? credentialText(false, cs) : fallback;
     if (code === 'credential_uninspected_presets') return cs.length ? t('error.credential_uninspected_presets', { message: credentialText(false, cs) }) : fallback;
     // What the sandbox is busy with, in the page's language.
@@ -107,5 +124,5 @@
     return t('ambiguity.blocked', { choice: t('ambiguity.choice.' + choice), pairs: sentences(parts) });
   }
 
-  window.IwatoRefusals = Object.freeze({ message, blocked, details });
+  window.IwatoRefusals = Object.freeze({ message, blocked, details, unshown });
 })();

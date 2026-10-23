@@ -163,6 +163,12 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 			eps = append(eps, ep)
 		}
 		chunks = append(chunks, c("fake-many", "pending", "allow_many_example", "/usr/bin/curl", "多数の API を呼ぶ", 100, ago(4), ago(2), rule("allow_many_example", []string{"/usr/bin/curl"}, eps...)))
+		// Over the dialog's rule limit: not approvable as proposed.
+		huge := restEndpoint("api.huge.example", 443)
+		for i := range proposalLimits.Rules + 2 {
+			huge.Rules = append(huge.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: "GET", Path: fmt.Sprintf("/v2/things/%d", i)}})
+		}
+		chunks = append(chunks, c("fake-huge", "pending", "allow_huge_example", "/usr/bin/curl", "さらに多数の API を呼ぶ", 130, ago(3), ago(1), rule("allow_huge_example", []string{"/usr/bin/curl"}, huge)))
 	}
 	decided := map[string]time.Time{"fake-gh": ago(2*day + 30), "fake-git-api": ago(day + 60), "fake-npm": ago(60), "fake-mise": ago(3*day - 10), "fake-curl": ago(day - 30), "fake-gh-auto": ago(2 * day)}
 	for i := range chunks {
@@ -173,7 +179,7 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 	for i := range chunks {
 		switch chunks[i].ID {
 		case "fake-curl":
-			chunks[i].RejectionReason = rejectReason(1)
+			chunks[i].RejectionReason = rejectReason(1, "")
 		case "fake-gh-auto":
 			chunks[i].RejectionReason = "already covered by approved chunk fake-gh (agent_authored or prior auto-approval)"
 		}
