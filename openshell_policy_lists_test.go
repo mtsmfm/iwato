@@ -150,8 +150,8 @@ func TestRejectedProposalsTellWhatCameAfter(t *testing.T) {
 		return v1.PolicyChunk{ID: id, Status: "rejected", RejectionReason: reason, HitCount: hits, DecidedAt: decided, LastSeen: last, Rationale: "Allow curl to connect to x.example:443 (HTTPS)."}
 	}
 	f := &fakePolicy{chunks: []v1.PolicyChunk{
-		r("owner", rejectReason(3), 5, at, at.Add(time.Hour)),
-		r("quiet", rejectReason(3), 3, at.Add(time.Minute), at.Add(time.Minute+time.Second)),
+		r("owner", rejectReason(3, ""), 5, at, at.Add(time.Hour)),
+		r("quiet", rejectReason(3, tooManyReason([]string{"rules > 128"})), 3, at.Add(time.Minute), at.Add(time.Minute+time.Second)),
 		r("old", "no", 2, at.Add(-time.Hour), at),
 		r("covered", "already covered by approved chunk c1 (agent_authored or prior auto-approval)", 1, at.Add(2*time.Minute), at.Add(2*time.Minute)),
 		r("superseded", "superseded by chunk c9", 1, at.Add(3*time.Minute), at.Add(3*time.Minute)),

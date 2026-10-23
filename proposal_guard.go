@@ -32,7 +32,7 @@ type ProposalLimits struct {
 	AllowedIPs int `json:"allowedIps"`
 }
 
-var proposalLimits = ProposalLimits{Binaries: 8, Endpoints: 20, Ports: 16, Rules: 32, Deny: 16, AllowedIPs: 32}
+var proposalLimits = ProposalLimits{Binaries: 8, Endpoints: 20, Ports: 16, Rules: 128, Deny: 16, AllowedIPs: 32}
 
 // The longest strings the page shows whole.
 const (

@@ -136,7 +136,7 @@
   // OPTIONS on each; the server expands it the same way. The program is
   // always sent: the server applies exactly it, never the proposal's (a
   // scope naming only the proposal's own programs approves as proposed).
-  function buildScope({ access, binary, proposed = [], rows = [] }) {
+  function buildScope({ access, binary, proposed = [], rows = [], tips = {} }) {
     const out = { scope: null, rules: [], error: '' };
     const b = String(binary || '').trim();
     const scope = {};
@@ -161,7 +161,8 @@
       if (!scope.rules.length) out.error ||= t('approve.rules.missing');
     }
     const entered = scope.rules?.length || 0;
-    if (entered > 16) out.error ||= t(access === 'read' ? 'approve.tooManyPaths' : 'approve.tooManyRules', { count: entered });
+    // Over 16: how to get under it, or past it as proposed.
+    if (entered > 16) out.error ||= [t(access === 'read' ? 'approve.tooManyPaths' : 'approve.tooManyRules', { count: entered }), tips.suggest && t('approve.tooMany.suggest'), access === 'read' && t('approve.tooMany.allPaths'), tips.asProposed && t('approve.tooMany.asProposed')].filter(Boolean).join(t('ambiguity.sentenceSep'));
     for (const r of scope.rules || []) out.error ||= pathError(r.path);
     if (Object.keys(scope).length) out.scope = scope;
     return out;

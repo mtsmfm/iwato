@@ -232,7 +232,11 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 		// The reason (which the agent reads back through policy.local)
 		// carries the count so far: the rejected list tells the hits
 		// since from OpenShell's own data.
-		return none, pol.RejectDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, rejectReason(chunk.HitCount))
+		note := ""
+		if chunk.ProposedRule != nil {
+			note = tooManyReason(proposalUnshown(*chunk.ProposedRule))
+		}
+		return none, pol.RejectDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, rejectReason(chunk.HitCount, note))
 	}
 	host := ""
 	if chunk.ProposedRule != nil && len(chunk.ProposedRule.Endpoints) > 0 {
@@ -640,10 +644,28 @@ type RejectedProposal struct {
 	ScopeProvider string `json:"scopeProvider,omitempty"`
 }
 
-// rejectReason is the reason Iwato gives a rejection: with the count so far
-// (rejectedHits reads it back).
-func rejectReason(hits int32) string {
-	return fmt.Sprintf("the owner rejected this rule in Iwato (hits: %d)", hits)
+// rejectReason is the reason Iwato gives a rejection: a note for the agent,
+// and the count so far (rejectedHits reads it back).
+func rejectReason(hits int32, note string) string {
+	if note != "" {
+		note = ": " + note
+	}
+	return fmt.Sprintf("the owner rejected this rule in Iwato%s (hits: %d)", note, hits)
+}
+
+// tooManyReason tells the agent how to propose again a rule over the
+// approve dialog's counts (empty when it is not).
+func tooManyReason(unshown []string) string {
+	var over []string
+	for _, p := range unshown {
+		if strings.Contains(p, " > ") {
+			over = append(over, p)
+		}
+	}
+	if len(over) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("too many items for Iwato to show (%s); propose again with fewer, e.g. combine paths with * or **, or split it into several proposals", strings.Join(over, ", "))
 }
 
 var rejectedHits = regexp.MustCompile(`\(hits: (\d+)\)$`)

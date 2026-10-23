@@ -549,6 +549,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(build({access: 'read', rows: [{path: '/a'}, {path: '/**'}]}).scope, {binaries: ['/usr/bin/curl'], readOnly: true}, '/** is every path');
   const many = build({access: 'read', rows: Array.from({length: 17}, (_, i) => ({path: '/p' + i}))});
   assert.match(many.error, /パスは 16 個までです \(いま 17 個\)/); assert.equal(many.rules.length, 51);
+  assert.equal(build({access: 'rules', rows: Array.from({length: 17}, (_, i) => ({method: 'POST', path: '/p' + i})), tips: {suggest: true, asProposed: true}}).error, 'メソッドとパスは 16 個までです (いま 17 個)。区切りを押して * や ** にし、まとめてください。「候補」を押すと一度にまとめられます。提案全体を認めてよいなら、「詳細」の「提案どおり」で承認できます', 'over 16: how to combine them, or approve as proposed');
   assert.match(build({access: 'rules', rows: []}).error, /1 つ以上/); assert.match(build({access: 'rules', rows: [{method: 'GET', path: 'x'}]}).error, /\/ で始まり/);
   assert.deepEqual(build({access: 'all', binary: '/usr/bin/*'}).scope, {binaries: ['/usr/bin/*']}, 'a program alone');
   assert.match(build({access: 'all', binary: ''}).error, /プログラムを入力/);
@@ -2539,7 +2540,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(J.message('provider_scope_conflict', {sandbox: 'dev'}, {conflicts: []}, 'サーバーの文'), 'サーバーの文');
   assert.equal(J.blocked('audit', [a], 'x'), '「監査」は選べません: api.github.com:443 には プロバイダー github (GitHub) の規則 _provider_github があり、設定が食い違います (検査のモード: _provider_github は 遮断 (enforce)、allow_x は 監査 (audit))。OpenShell は同じ宛先の規則どうしで検査のしかたがそろっていることを求めます。');
   assert.deepEqual([...J.details({...a, diffs: []})], ['サーバーの文'], 'no diffs: the server\'s details');
-  ok('refusals.js: ambiguities, the gateway\'s refusal, credential conflicts and blocked choices, in Japanese and English');
+  assert.equal(J.unshown(['rules > 128', 'binaries > 8']), '提案どおりには承認できません。許可する条件 (メソッドとパス) が 128 個を超えています。プログラムが 8 個を超えています。却下すると、項目を減らして (パスを * や ** でまとめる、提案を分けるなど) 提案し直すようエージェントに伝えます。または「ポリシー」タブの「YAML」で規則を書いてください');
+  assert.equal(E.message('proposal_unshown', {parts: ['rules > 128', 'graphql', 'protocol: websocket']}, {}, 'x'), 'This proposal cannot be approved. It has more than 128 allow rules (method and path). It has a setting Iwato cannot show (GraphQL). It has a setting Iwato cannot show (protocol: websocket). Proposing it again will not help: write the rule in YAML on the Policy tab.', 'a setting: YAML only; unknown parts raw');
+  assert.match(J.unshown(['host length', 'odd > 3']), /^提案どおりには承認できません。宛先のホストかパスが長すぎて表示できません。oddが 3 個を超えています。提案し直してもらっても/);
+  ok('refusals.js: ambiguities, the gateway\'s refusal, credential conflicts, blocked choices and unshown proposals, in Japanese and English');
   }
   {
   // The example screens: login in the browser's language, the settings'

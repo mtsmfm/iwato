@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
@@ -73,11 +74,25 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 		endpoints = append(endpoints, v1.PolicyNetworkEndpoint{Host: fmt.Sprintf("h%d.example", i), Port: 443})
 	}
 	wide := &v1.NetworkPolicyRule{Name: "wide", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: endpoints}
+	// Rules count across endpoints: the limit is approvable, one more is not.
+	rules := func(name string, n int) *v1.NetworkPolicyRule {
+		r := &v1.NetworkPolicyRule{Name: name, Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}}
+		for e := range 4 {
+			ep := v1.PolicyNetworkEndpoint{Host: fmt.Sprintf("r%d.example", e), Port: 443, Protocol: "rest"}
+			for i := e; i < n; i += 4 {
+				ep.Rules = append(ep.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: "GET", Path: fmt.Sprintf("/p%d", i)}})
+			}
+			r.Endpoints = append(r.Endpoints, ep)
+		}
+		return r
+	}
 	gql := &v1.NetworkPolicyRule{Name: "gql", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "g.example", Port: 443, Protocol: "rest", GraphqlMaxBodyBytes: 1024}}}
 	f := &fakePolicy{chunks: []v1.PolicyChunk{
 		{ID: "many", RuleName: "many", Status: "pending", ReviewToken: "t", ProposedRule: many},
 		{ID: "wide", RuleName: "wide", Status: "pending", ReviewToken: "t", ProposedRule: wide},
 		{ID: "gql", RuleName: "gql", Status: "pending", ReviewToken: "t", ProposedRule: gql},
+		{ID: "rules", RuleName: "rules", Status: "pending", ReviewToken: "t", ProposedRule: rules("rules", proposalLimits.Rules)},
+		{ID: "rules1", RuleName: "rules1", Status: "pending", ReviewToken: "t", ProposedRule: rules("rules1", proposalLimits.Rules+1)},
 	}}
 	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}, newSandbox("dev"), context.Background()
 	v, _ := o.Proposals(ctx, w)
@@ -85,13 +100,13 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	for _, p := range v.Pending {
 		unshown[p.Rule] = p.Unshown
 	}
-	if !slices.Equal(unshown["many"], []string{"binaries > 8"}) || !slices.Equal(unshown["wide"], []string{"endpoints > 20"}) || !slices.Equal(unshown["gql"], []string{"graphql"}) {
+	if !slices.Equal(unshown["many"], []string{"binaries > 8"}) || !slices.Equal(unshown["wide"], []string{"endpoints > 20"}) || !slices.Equal(unshown["gql"], []string{"graphql"}) || unshown["rules"] != nil || !slices.Equal(unshown["rules1"], []string{"rules > 128"}) {
 		t.Fatal("unshown:", unshown)
 	}
 	for _, c := range []struct {
 		id    string
 		scope *ProposalScope
-	}{{"many", nil}, {"wide", nil}, {"wide", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/curl"}}}, {"gql", &ProposalScope{Audit: true, Binaries: []string{"/usr/bin/curl"}}}} {
+	}{{"many", nil}, {"wide", nil}, {"wide", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/curl"}}}, {"gql", &ProposalScope{Audit: true, Binaries: []string{"/usr/bin/curl"}}}, {"rules1", nil}} {
 		if _, err := o.DecideProposal(ctx, w, "approve", requestID(c.id), testDigest(o, ctx, w, requestID(c.id)), c.scope); codeOf(err) != "proposal_unshown" {
 			t.Errorf("%s %+v: %v", c.id, c.scope, err)
 		}
@@ -100,8 +115,22 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	if _, err := o.DecideProposal(ctx, w, "approve", requestID("many"), testDigest(o, ctx, w, requestID("many")), &ProposalScope{Binaries: []string{"/bin/p0"}}); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.approved) != 1 {
+	if _, err := o.DecideProposal(ctx, w, "approve", requestID("rules"), testDigest(o, ctx, w, requestID("rules")), nil); err != nil {
+		t.Fatal("rules at the limit:", err)
+	}
+	if len(f.approved) != 2 {
 		t.Fatal(f.approved)
+	}
+	// Rejecting one over a count tells the agent how to propose it again.
+	for _, id := range []string{"rules1", "gql"} {
+		if _, err := o.DecideProposal(ctx, w, "reject", requestID(id), testDigest(o, ctx, w, requestID(id)), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range f.chunks {
+		if hint := strings.Contains(c.RejectionReason, "combine paths with * or **"); c.Status == "rejected" && hint != (c.ID == "rules1") {
+			t.Errorf("%s: %q", c.ID, c.RejectionReason)
+		}
 	}
 
 	s := &Server{host: "127.0.0.1:17600"}
