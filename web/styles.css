@@ -83,7 +83,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 /* A terminal whose agent finished or needs input{flex-shrink:0;background:var(--amber);color:#2a1f0b;font-size:10px;font-weight:700;line-height:16px;border-radius:8px;padding:0 6px;white-space:nowrap}
 
 /* The terminal (web/term.js): rows of cells in the DOM. Cells keep the grid: ASCII as text in the monospace font, other characters in boxes of one or two cells. */
-.iw-term{position:relative;height:100%;overflow-y:auto;overflow-x:hidden;line-height:var(--iw-ch);overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a444f transparent;outline:none;font-variant-ligatures:none;-webkit-text-size-adjust:none}
+.iw-term{position:relative;height:100%;overflow-y:auto;overflow-anchor:none;overflow-x:hidden;line-height:var(--iw-ch);overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a444f transparent;outline:none;font-variant-ligatures:none;-webkit-text-size-adjust:none}
 /* While the app reads the mouse, the wheel and swipes belong to it: the browser must not scroll the history on its own (term.js scrolls it for Shift+wheel). */
 .iw-term.iw-mouse{overflow-y:hidden;touch-action:none}
 .iw-more{text-align:center;color:#748597;font-size:11px;line-height:2}

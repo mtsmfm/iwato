@@ -567,6 +567,7 @@
       other.root.classList.remove('selected');
       other.nav.classList.remove('active');
       other.renderTermTabs();
+      other.showTerminal();
     }
     if (!card) return;
     card.root.classList.add('selected');
@@ -4672,6 +4673,8 @@
     // or the editor tab is chosen. The other tabs and views take its place.
     termShown() { return this.root.dataset.tab === 'terminal' || this.root.dataset.split === 'true'; }
 
+    showTerminal() { this.terminal?.setVisible(state.selected === this.sandbox.name && this.termShown()); }
+
     splitShown(key = this.root.dataset.tab) {
       return this.split.on && this.splitFits && this.sandbox.status !== 'not-created' && (key === 'terminal' || key === 'editor');
     }
@@ -4732,6 +4735,7 @@
     layoutTabs(key) {
       const split = this.splitShown(key);
       this.root.dataset.split = String(split);
+      this.showTerminal();
       for (const [name, tab] of Object.entries(this.tabButtons)) tab.setAttribute('aria-selected', String(name === key || (split && (name === 'terminal' || name === 'editor'))));
       if (!this.editor) return split;
       if (split && this.editor.root.hidden) {
@@ -5378,6 +5382,7 @@
         onCursor: () => this.scheduleReveal(),
         onFiles: (files) => this.pasteImages(files)
       });
+      this.showTerminal();
       this.host.addEventListener('pointerdown', () => this.claimSize(), true);
       this.placeholder.hidden = true;
       if (!terminalFont.ready) terminalFont.loading.then(() => {
