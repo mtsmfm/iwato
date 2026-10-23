@@ -146,9 +146,17 @@ func (o *OpenShell) Proposals(ctx context.Context, w Sandbox) (ProposalView, err
 	if perr == nil {
 		// Which approve choices OpenShell would refuse as ambiguous.
 		if p.effective != nil {
+			before, err := indexAmbiguities(ctx, withProviderRules(p.base, p.effective))
+			if err != nil {
+				return v, err
+			}
 			for _, c := range chunks {
 				if c.Status == "pending" && c.ProposedRule != nil {
-					if fit := proposalFit(p.base, p.effective, c.RuleName, *c.ProposedRule); len(fit) > 0 {
+					fit, err := proposalFit(ctx, before, p.base, p.effective, c.RuleName, *c.ProposedRule)
+					if err != nil {
+						return v, err
+					}
+					if len(fit) > 0 {
 						j := slices.IndexFunc(v.Pending, func(x PendingProposal) bool { return x.ID == requestID(c.ID) })
 						v.Pending[j].fit = fit
 					}

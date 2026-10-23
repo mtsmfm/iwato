@@ -325,16 +325,8 @@ func withProviderRules(base, effective map[string]v1.NetworkPolicyRule) map[stri
 
 // newAmbiguities are after's ambiguities that before does not have.
 func newAmbiguities(before, after map[string]v1.NetworkPolicyRule) []EndpointAmbiguity {
-	old := map[string]bool{}
-	for _, a := range findEndpointAmbiguities(before) {
-		old[a.key()] = true
-	}
-	var out []EndpointAmbiguity
-	for _, a := range findEndpointAmbiguities(after) {
-		if !old[a.key()] {
-			out = append(out, a)
-		}
-	}
+	x, _ := indexAmbiguities(context.Background(), before)
+	out, _ := x.newIn(context.Background(), after)
 	return out
 }
 
@@ -374,19 +366,28 @@ var approveChoices = []struct {
 }
 
 // proposalFit says, per approve choice, which ambiguities approving the
-// proposed rule with it would bring.
-func proposalFit(base, effective map[string]v1.NetworkPolicyRule, name string, rule v1.NetworkPolicyRule) map[string][]EndpointAmbiguity {
+// proposed rule with it would bring. before indexes
+// withProviderRules(base, effective).
+func proposalFit(ctx context.Context, before *ambiguityIndex, base, effective map[string]v1.NetworkPolicyRule, name string, rule v1.NetworkPolicyRule) (map[string][]EndpointAmbiguity, error) {
 	out := map[string][]EndpointAmbiguity{}
 	for _, c := range approveChoices {
 		r := rule
 		if c.Scope != nil {
 			r = c.Scope.apply(cloneRule(rule))
 		}
-		if a, err := predictAmbiguities(base, effective, approvalOps(name, r)); err == nil && len(a) > 0 {
+		merged, err := simulateMerge(base, approvalOps(name, r))
+		if err != nil {
+			continue
+		}
+		a, err := before.newIn(ctx, withProviderRules(merged, effective))
+		if err != nil {
+			return nil, err
+		}
+		if len(a) > 0 {
 			out[c.Name] = a
 		}
 	}
-	return out
+	return out, nil
 }
 
 // AmbiguityView is an ambiguity for the owner: the endpoint already in the
@@ -919,7 +920,14 @@ func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rul
 		return nil
 	}
 	views := ambiguityViews(list, []string{name}, nil, s.ruleProviders(ctx, sb))
-	fit := proposalFit(base, effective, name, rule)
+	before, err := indexAmbiguities(ctx, withProviderRules(base, effective))
+	if err != nil {
+		return err
+	}
+	fit, err := proposalFit(ctx, before, base, effective, name, rule)
+	if err != nil {
+		return err
+	}
 	ok2, labels := []string{}, []string{}
 	for _, c := range approveChoices {
 		if _, blocked := fit[c.Name]; !blocked {

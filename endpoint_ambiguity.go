@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 )
@@ -87,12 +90,34 @@ func (a EndpointAmbiguity) key() string {
 // findEndpointAmbiguities is OpenShell's find_endpoint_ambiguities over a
 // policy's rules (the rules in name order, for a stable answer).
 func findEndpointAmbiguities(rules map[string]v1.NetworkPolicyRule) []EndpointAmbiguity {
-	type ref struct {
-		rule  string
-		index int
-		e     v1.PolicyNetworkEndpoint
-	}
-	var eps []ref
+	out, _ := scanAmbiguities(context.Background(), endpointRefs(rules, nil), nil, nil)
+	return out
+}
+
+// endpointRef is an endpoint with what the pair check needs computed once.
+type endpointRef struct {
+	key         string
+	rule        string
+	index       int
+	e           v1.PolicyNetworkEndpoint
+	ports       []uint32
+	host        string
+	plainHost   bool
+	hostTokens  []globToken
+	request     bool
+	specificity int
+	changed     bool
+}
+
+type refID struct {
+	key   string
+	index int
+}
+
+// endpointRefs are the rules' endpoints in key order. An endpoint the same
+// (rule name and all) as in prior is taken from it, not changed.
+func endpointRefs(rules map[string]v1.NetworkPolicyRule, prior map[refID]*endpointRef) []*endpointRef {
+	var out []*endpointRef
 	for _, key := range slices.Sorted(maps.Keys(rules)) {
 		r := rules[key]
 		name := r.Name
@@ -100,30 +125,92 @@ func findEndpointAmbiguities(rules map[string]v1.NetworkPolicyRule) []EndpointAm
 			name = key
 		}
 		for i, e := range r.Endpoints {
-			eps = append(eps, ref{name, i, e})
-		}
-	}
-	var out []EndpointAmbiguity
-	for i := range eps {
-		for j := i + 1; j < len(eps); j++ {
-			l, r := eps[i], eps[j]
-			ports := overlappingPorts(l.e, r.e)
-			if len(ports) == 0 || !hostPatternsOverlap(l.e.Host, r.e.Host) {
+			if p := prior[refID{key, i}]; p != nil && p.rule == name && reflect.DeepEqual(p.e, e) {
+				out = append(out, p)
 				continue
 			}
-			conflicts := connectionConflicts(l.e, r.e)
-			if contributesRequestMetadata(l.e) && contributesRequestMetadata(r.e) &&
-				pathPatternsOverlap(l.e.Path, r.e.Path) && pathSpecificity(l.e.Path) == pathSpecificity(r.e.Path) {
-				conflicts = append(conflicts, requestConflicts(l.e, r.e)...)
-			}
-			if len(conflicts) == 0 {
-				continue
-			}
-			out = append(out, EndpointAmbiguity{LeftRule: l.rule, LeftIndex: l.index, LeftSelector: endpointSelector(l.e),
-				RightRule: r.rule, RightIndex: r.index, RightSelector: endpointSelector(r.e), Ports: ports, Conflicts: conflicts, left: l.e, right: r.e})
+			host := strings.ToLower(e.Host)
+			out = append(out, &endpointRef{key: key, rule: name, index: i, e: e, ports: effectivePorts(e), host: host,
+				plainHost: !strings.Contains(host, "*") && utf8.ValidString(host), hostTokens: hostGlobTokens(host),
+				request: contributesRequestMetadata(e), specificity: pathSpecificity(e.Path), changed: prior != nil})
 		}
 	}
 	return out
+}
+
+// scanAmbiguities checks the pairs in order, only those with a changed
+// endpoint when prior is given (the others were in the policy prior came
+// from), and leaves out the ones whose key is in known.
+func scanAmbiguities(ctx context.Context, eps []*endpointRef, prior map[refID]*endpointRef, known map[string]bool) ([]EndpointAmbiguity, error) {
+	var out []EndpointAmbiguity
+	for i, l := range eps {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		for _, r := range eps[i+1:] {
+			if prior != nil && !l.changed && !r.changed {
+				continue
+			}
+			if a, ok := pairAmbiguity(l, r); ok && !known[a.key()] {
+				out = append(out, a)
+			}
+		}
+	}
+	return out, nil
+}
+
+func pairAmbiguity(l, r *endpointRef) (EndpointAmbiguity, bool) {
+	ports := sharedPorts(l.ports, r.ports)
+	if len(ports) == 0 || !refHostsOverlap(l, r) {
+		return EndpointAmbiguity{}, false
+	}
+	conflicts := connectionConflicts(l.e, r.e)
+	if l.request && r.request && l.specificity == r.specificity && pathPatternsOverlap(l.e.Path, r.e.Path) {
+		conflicts = append(conflicts, requestConflicts(l.e, r.e)...)
+	}
+	if len(conflicts) == 0 {
+		return EndpointAmbiguity{}, false
+	}
+	return EndpointAmbiguity{LeftRule: l.rule, LeftIndex: l.index, LeftSelector: endpointSelector(l.e),
+		RightRule: r.rule, RightIndex: r.index, RightSelector: endpointSelector(r.e), Ports: ports, Conflicts: conflicts, left: l.e, right: r.e}, true
+}
+
+func refHostsOverlap(l, r *endpointRef) bool {
+	switch {
+	case l.e.Host == "" || r.e.Host == "":
+		return true
+	case l.plainHost && r.plainHost:
+		return l.host == r.host
+	}
+	return globTokensOverlap(l.hostTokens, r.hostTokens, '.')
+}
+
+// ambiguityIndex is a policy's endpoints and ambiguities, to find what a
+// changed policy adds (newIn) without checking every pair again.
+type ambiguityIndex struct {
+	refs map[refID]*endpointRef
+	keys map[string]bool
+}
+
+func indexAmbiguities(ctx context.Context, rules map[string]v1.NetworkPolicyRule) (*ambiguityIndex, error) {
+	eps := endpointRefs(rules, nil)
+	list, err := scanAmbiguities(ctx, eps, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	x := &ambiguityIndex{refs: map[refID]*endpointRef{}, keys: map[string]bool{}}
+	for _, e := range eps {
+		x.refs[refID{e.key, e.index}] = e
+	}
+	for _, a := range list {
+		x.keys[a.key()] = true
+	}
+	return x, nil
+}
+
+// newIn are after's ambiguities that the indexed policy does not have.
+func (x *ambiguityIndex) newIn(ctx context.Context, after map[string]v1.NetworkPolicyRule) ([]EndpointAmbiguity, error) {
+	return scanAmbiguities(ctx, endpointRefs(after, x.refs), x.refs, x.keys)
 }
 
 // endpointSelector is host:ports[path] (OpenShell's endpoint_selector).
@@ -154,9 +241,12 @@ func effectivePorts(e v1.PolicyNetworkEndpoint) []uint32 {
 }
 
 func overlappingPorts(l, r v1.PolicyNetworkEndpoint) []uint32 {
-	rp := effectivePorts(r)
+	return sharedPorts(effectivePorts(l), effectivePorts(r))
+}
+
+func sharedPorts(lp, rp []uint32) []uint32 {
 	var out []uint32
-	for _, p := range effectivePorts(l) {
+	for _, p := range lp {
 		if slices.Contains(rp, p) {
 			out = append(out, p)
 		}
