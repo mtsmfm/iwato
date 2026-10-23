@@ -128,12 +128,12 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cl, _ := profileByID("iwato-claude")
-	clCreds, _ := profileCredentials(cl, map[string]string{"oauth_token": "sk-ant-oat01-e2eSECRET"})
+	cl, _ := profileByID(claudeSubscriptionProfileID)
+	clCreds, _ := profileCredentials(cl, map[string]string{"access_token": "sk-ant-oat01-e2eSECRET"})
 	for name, p := range map[string]struct {
 		profile string
 		creds   map[string]string
-	}{"github-e2e": {"iwato-github", ghCreds}, "github-other": {"iwato-github", ghCreds}, "claude-e2e": {"iwato-claude", clCreds}} {
+	}{"github-e2e": {"iwato-github", ghCreds}, "github-other": {"iwato-github", ghCreds}, "claude-e2e": {claudeSubscriptionProfileID, clCreds}} {
 		if err := o.CreateProvider(ctx, name, p.profile, p.creds); err != nil {
 			t.Fatal("create provider", name, ":", err)
 		}

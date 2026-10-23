@@ -15,7 +15,7 @@ import (
 func TestProviderNameBase(t *testing.T) {
 	for profile, want := range map[string]string{
 		"iwato-github":                     "github",
-		"iwato-claude":                     "claude",
+		"iwato-claude-subscription":        "claude-subscription",
 		"iwato-atlassian":                  "atlassian",
 		"Iwato-My_Thing":                   "my-thing",
 		"iwato--a..b--":                    "a-b",

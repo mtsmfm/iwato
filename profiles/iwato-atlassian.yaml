@@ -7,7 +7,7 @@
 #   openshell provider profile lint -f profiles/iwato-atlassian.yaml
 #
 # Client binaries:   Claude Code, which sends the header itself (Bun's
-#                    fetch, no node); the same paths as iwato-claude.yaml.
+#                    fetch, no node); the same paths as iwato-claude-subscription.yaml.
 # Credential scope:  ATLASSIAN_ACCESS_TOKEN, sent as a bearer authorization
 #                    header to the MCP endpoint only.
 # Endpoint access:   https://mcp.atlassian.com/v2/mcp and below (Streamable

@@ -1384,7 +1384,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   {
   // Providers: the global panel, the create form's picker, a card's attach/detach and the restart marks.
   const profiles = [{id: 'iwato-github', label: 'GitHub', group: 'ソース管理', note: 'GH_TOKEN と GITHUB_TOKEN', credentials: [{name: 'token', label: 'トークン'}]},
-    {id: 'iwato-claude', label: 'Claude Code (セットアップトークン)', group: 'エージェント・推論', note: 'メモ: <b>x</b>', credentials: [{name: 'oauth_token', label: 'トークン (claude setup-token)'}]},
+    {id: 'iwato-claude', label: 'Claude Code', group: 'エージェント・推論', note: 'メモ: <b>x</b>', credentials: [{name: 'oauth_token', label: 'トークン'}]},
     {id: 'iwato-huggingface', label: 'Hugging Face', group: 'モデル配布', note: 'HF_TOKEN', hint: 'hf auth whoami <i>', credentials: [{name: 'token', label: 'アクセストークン'}]},
     {id: 'iwato-civitai', label: 'Civitai', group: 'モデル配布', note: 'CIVITAI_TOKEN', credentials: [{name: 'api_key', label: 'API キー'}]},
     {id: 'other-type', label: 'Other', note: '', credentials: []}];
@@ -1426,7 +1426,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // The type selector: the server's groups as optgroups, in its order.
   const kinds = pv.els['provider-profile'].children.map((g) => g.tagName === 'optgroup' ? g.label + ':' + g.children.map((o) => o.value).join('+') : g.value);
   assert.deepEqual(kinds, ['ソース管理:iwato-github', 'エージェント・推論:iwato-claude', 'モデル配布:iwato-huggingface+iwato-civitai', 'other-type']);
-  assert.equal(pv.els['provider-profile'].children[1].children[0].textContent, 'Claude Code (セットアップトークン)');
+  assert.equal(pv.els['provider-profile'].children[1].children[0].textContent, 'Claude Code');
   assert.equal(pv.els['provider-hint'].hidden, true, 'no hint for GitHub');
   pv.els['provider-profile'].value = 'iwato-huggingface'; pv.els['provider-profile'].listeners.change();
   assert.equal(pv.els['provider-hint'].hidden, false); assert.equal(pv.els['provider-hint'].textContent, 'hf auth whoami <i>', 'hints stay literal text');

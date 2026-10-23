@@ -19,7 +19,7 @@
 mise use -g claude
 ```
 
-`~/.local/share/mise/installs/claude/<版>` に入ります。Claude Code 自身の更新は `~/.local/share/claude/versions/<版>` に入ります。API (`api.anthropic.com:443`) は「Claude Code (セットアップトークン)」のプロバイダー (`claude setup-token` で作ったトークン) を付けるか、提案を承認します。
+`~/.local/share/mise/installs/claude/<版>` に入ります。Claude Code 自身の更新は `~/.local/share/claude/versions/<版>` に入ります。API (`api.anthropic.com:443`) は「Claude Code (Claude でログイン)」のプロバイダー ([プロバイダー](providers.md)) を付けるか、提案を承認します。
 
 ## Grok Build
 

@@ -176,17 +176,12 @@ var profileGroups = []string{groupAgent, groupSource, groupModels, groupCloud}
 // profileGroups: TestProfileMetadata).
 var providerProfiles = []providerProfile{
 	{
-		ID: "iwato-claude", Label: "Claude Code (セットアップトークン)", Group: groupAgent, Scoped: true,
-		Note:        "CLAUDE_CODE_OAUTH_TOKEN。`claude setup-token` で作ったトークンを api.anthropic.com に送ります。",
-		Credentials: []profileCredential{{Name: "oauth_token", Label: "トークン (claude setup-token)"}},
-	},
-	{
 		ID: claudeSubscriptionProfileID, Label: "Claude Code (Claude でログイン)", Group: groupAgent, Scoped: true,
 		Note:        "CLAUDE_CODE_OAUTH_TOKEN。Claude のアカウントでログインし、サンドボックスの claude が api.anthropic.com に送ります。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
 		OAuthFlow:   "claude",
-		Hint:        "claude は CLAUDE_CODE_OAUTH_TOKEN があればそれを使います (setup-token と同じく推論だけの扱い)。サンドボックスで /login していたら、その記録より環境変数が優先されます。確かめるには claude -p 'hello'。",
+		Hint:        "claude は CLAUDE_CODE_OAUTH_TOKEN があればそれを使います。サンドボックスで /login していたら、その記録より環境変数が優先されます。確かめるには claude -p 'hello'。",
 	},
 	{
 		ID: grokSubscriptionProfileID, Label: "Grok Build (xAI のサブスクリプション)", Group: groupAgent, Scoped: true,

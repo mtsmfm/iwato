@@ -50,9 +50,9 @@ func TestOpenShellCredentialConflictE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.profilesDone = true
-	cl, _ := profileByID("iwato-claude")
-	creds, _ := profileCredentials(cl, map[string]string{"oauth_token": "sk-ant-oat01-e2eSECRET"})
-	if err := o.CreateProvider(ctx, "claude-conflict", "iwato-claude", creds); err != nil {
+	cl, _ := profileByID(claudeSubscriptionProfileID)
+	creds, _ := profileCredentials(cl, map[string]string{"access_token": "sk-ant-oat01-e2eSECRET"})
+	if err := o.CreateProvider(ctx, "claude-conflict", claudeSubscriptionProfileID, creds); err != nil {
 		t.Fatal(err)
 	}
 	defer o.DeleteProvider(context.Background(), "claude-conflict")

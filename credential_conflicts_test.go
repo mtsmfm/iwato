@@ -11,7 +11,7 @@ import (
 // The match follows OpenShell's: host and port overlap, the provider's
 // path covers the endpoint's, and the endpoint is not inspected.
 func TestCredentialConflicts(t *testing.T) {
-	claude := providerScopes("claude", "iwato-claude")
+	claude := providerScopes("claude", claudeSubscriptionProfileID)
 	atl := providerScopes("atl", atlassianProfileID)
 	gh := providerScopes("gh", "iwato-github")
 	if len(claude) != 1 || claude[0].Host != "api.anthropic.com" || len(gh) != 4 || len(atl) != 1 || atl[0].Path != "/v2/mcp/**" {

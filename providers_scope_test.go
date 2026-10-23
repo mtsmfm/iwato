@@ -163,7 +163,7 @@ func TestScopeRenderingOtherProfiles(t *testing.T) {
 		}
 	}
 	// Only GitHub has repositories and mutations.
-	if sc, err := (ProviderScope{Base: "iwato-claude", Mode: scopeFull, Repos: []string{"o/r"}}).normalize(); err != nil || len(sc.Repos) > 0 {
+	if sc, err := (ProviderScope{Base: "iwato-openrouter", Mode: scopeFull, Repos: []string{"o/r"}}).normalize(); err != nil || len(sc.Repos) > 0 {
 		t.Fatal(sc, err)
 	}
 }
@@ -184,7 +184,8 @@ func TestScopeRepoValidation(t *testing.T) {
 		{Base: githubProfileID, Mode: scopeRepos},
 		{Base: githubProfileID, Mode: "write"},
 		{Base: githubProfileID, Mutations: []string{"create-pr"}},
-		{Base: "iwato-claude", Mode: scopeRepos},
+		{Base: "iwato-openrouter", Mode: scopeRepos},
+		{Base: "iwato-claude"},
 		{Base: "openai"},
 	} {
 		if _, err := sc.normalize(); err == nil {

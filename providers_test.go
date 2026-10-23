@@ -84,11 +84,11 @@ func TestEnsureProfilesIsIdempotent(t *testing.T) {
 		t.Fatal("current profiles were written again:", f.imports, f.updates)
 	}
 	// An older version (another hash) is replaced at its resource version.
-	f.stored["iwato-claude"].Annotations[profileHashKey] = "sha256:old"
+	f.stored[claudeSubscriptionProfileID].Annotations[profileHashKey] = "sha256:old"
 	if err := ensureProfiles(ctx, f); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(f.updates, []string{"iwato-claude"}) || f.stored["iwato-claude"].Annotations[profileHashKey] != profileHash(mustProfile(t, "iwato-claude").proto()) {
+	if !slices.Equal(f.updates, []string{claudeSubscriptionProfileID}) || f.stored[claudeSubscriptionProfileID].Annotations[profileHashKey] != profileHash(mustProfile(t, claudeSubscriptionProfileID).proto()) {
 		t.Fatal(f.updates)
 	}
 	// The gateway's diagnostics are the error.
@@ -121,7 +121,7 @@ func TestProfilesMatchTheImage(t *testing.T) {
 			t.Fatal("github.com allows", r.Allow)
 		}
 	}
-	cl, _ := profileByID("iwato-claude")
+	cl, _ := profileByID(claudeSubscriptionProfileID)
 	c := cl.proto()
 	if len(c.Binaries) != 2 || c.Binaries[0].Path != "/home/dev/.local/share/claude/versions/*" || c.Endpoints[0].Host != "api.anthropic.com" || c.Credentials[0].EnvVars[0] != "CLAUDE_CODE_OAUTH_TOKEN" || c.Credentials[0].AuthStyle != "bearer" {
 		t.Fatal(c)
@@ -134,7 +134,7 @@ func TestProfilesMatchTheImage(t *testing.T) {
 // The claude globs match where its executable really runs from (OpenShell
 // matches /proc/PID/exe with `*` within one path component, as path.Match).
 func TestClaudeBinariesMatchTheRealPaths(t *testing.T) {
-	cl, _ := profileByID("iwato-claude")
+	cl, _ := profileByID(claudeSubscriptionProfileID)
 	match := func(p string) bool {
 		for _, b := range cl.proto().Binaries {
 			if ok, _ := path.Match(b.Path, p); ok {

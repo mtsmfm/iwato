@@ -119,10 +119,17 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check((await yamlBox.locator('.tag-source').innerText()) === 'ゲートウェイから', 'it is marked as rendered from the gateway');
     await yamlBox.scrollIntoViewIfNeeded();
     await shot('profile-yaml-gateway.png');
+    // A provider of the setup-token type Iwato no longer ships.
+    const retired = byName('その他', 'claude-token');
+    check((await retired.innerText()).includes('iwato-claude-for-claude-token · CLAUDE_CODE_OAUTH_TOKEN'), 'a setup-token provider is listed under その他 with its profile');
+    await retired.getByRole('button', { name: '削除' }).click();
+    await page.click('#confirm-ok');
+    await retired.waitFor({ state: 'detached' });
+    check(true, 'it can be deleted');
     // The add form's profile list.
-    await page.selectOption('#provider-profile', 'iwato-claude');
+    await page.selectOption('#provider-profile', 'iwato-openrouter');
     await page.click('#provider-profile-yaml');
-    await page.waitForFunction(() => { const el = document.querySelector('#provider-yaml .provider-yaml-view .cm-editor'); return !!el && window.IwatoCodeMirror.EditorView.findFromDOM(el).state.doc.toString().includes('\nid: iwato-claude\n'); });
+    await page.waitForFunction(() => { const el = document.querySelector('#provider-yaml .provider-yaml-view .cm-editor'); return !!el && window.IwatoCodeMirror.EditorView.findFromDOM(el).state.doc.toString().includes('\nid: iwato-openrouter\n'); });
     check((await yamlBox.locator('.tag-source').innerText()) === 'Iwato 同梱', 'the add form shows the chosen profile as YAML');
     await yamlBox.locator('.cm-content').click();
     await page.keyboard.press('Escape');
@@ -132,7 +139,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // The type selector groups the profiles (agents, source control,
     // model hubs, clouds); a model hub's hint and its fake provider.
     const kinds = await page.locator('#provider-profile optgroup').evaluateAll((gs) => gs.map((g) => g.label + ':' + [...g.querySelectorAll('option')].map((o) => o.value).join('+')));
-    check(kinds.join(' / ') === 'エージェント・推論:iwato-claude+iwato-claude-subscription+iwato-grok-subscription+iwato-openrouter+iwato-atlassian / ソース管理:iwato-github / モデル配布:iwato-huggingface+iwato-civitai / 生成・GPU クラウド:iwato-comfy-cloud+iwato-vastai+iwato-runpod', 'the type selector groups the profiles (' + kinds.join(' / ') + ')');
+    check(kinds.join(' / ') === 'エージェント・推論:iwato-claude-subscription+iwato-grok-subscription+iwato-openrouter+iwato-atlassian / ソース管理:iwato-github / モデル配布:iwato-huggingface+iwato-civitai / 生成・GPU クラウド:iwato-comfy-cloud+iwato-vastai+iwato-runpod', 'the type selector groups the profiles (' + kinds.join(' / ') + ')');
     check(!(await page.isVisible('#provider-hint')), 'GitHub has no usage hint');
     await page.selectOption('#provider-profile', 'iwato-huggingface');
     check((await page.locator('#provider-hint').innerText()).includes('HF_TOKEN') && (await page.locator('#provider-note').innerText()).includes('HUGGING_FACE_HUB_TOKEN'), 'Hugging Face shows its variables and a usage hint');
