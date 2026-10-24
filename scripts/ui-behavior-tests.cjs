@@ -902,6 +902,37 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(JSON.parse(JSON.stringify(side.win.IwatoLinks.pathOf(wrappedLinks([row2('see https://a.example/x and web/app.js:2')], 80, 1)[1].url))), {path: 'web/app.js', line: 2, col: 0, index: 0, length: 12});
     assert.deepEqual(Array.from(wrappedLinks([row2('see https://a.example/x and web/app.js:2'), row2('~/work/a.go')], 80, 1, false), (l) => l.url), ['https://a.example/x'], 'URLs only'); }
   ok('file paths: absolute, ~/, relative with a slash, with :LINE[:COL]; not ratios, dates, words or parts of URLs; left out on request');
+  { // Scanning only the lines with a changed row finds what a full scan finds.
+    const {screenLines} = side.win.IwatoLinks;
+    let seed = 7; const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    const words = ['https://a.example/', 'https:/', 'http', 'h', '/x/y', 'aaaa', 'b?q=1', ' ', '  ', '│ ', ' │', '|', '日本', '、', 'see ', '─'];
+    const randomRow = (cols) => {
+      if (!rand(6)) return row2('');
+      let t = ''; const want = cols - rand(4);
+      while ([...t].length < want) t += words[rand(words.length)];
+      const r = row2(t, !rand(3)); r.cells = r.cells.filter((c) => c.x < cols); return r;
+    };
+    const flat = (lines) => JSON.stringify(Array.from(lines, (l) => Array.from(l.pieces, ([y, list]) => [y, Array.from(list, (p) => ({...p}))])).flat());
+    let joined = 0;
+    for (let screen = 0; screen < 80; screen++) {
+      const cols = 8 + rand(30), n = 3 + rand(20);
+      const rows = Array.from({length: n}, () => randomRow(cols));
+      const row = (y) => rows[y];
+      let lines = screenLines(row, n, cols, null, new Set());
+      for (let frame = 0; frame < 30; frame++) {
+        const dirty = new Set();
+        for (let k = rand(4); k > 0; k--) { const y = rand(n); rows[y] = randomRow(cols); dirty.add(y); }
+        if (!rand(5)) dirty.add(rand(n));
+        lines = screenLines(row, n, cols, lines, dirty);
+        const full = screenLines(row, n, cols, null, new Set());
+        assert.equal(flat(lines), flat(full), `screen ${screen} frame ${frame}`);
+        const groups = Array.from(full, (l) => Array.from(l.pieces, ([, list]) => Array.from(list, (p) => p.group + ' ' + p.url))).flat(2);
+        assert.deepEqual([...new Set(groups)], Array.from(wrappedLinks(rows, cols, 0, false), (l) => l.start.y + ':' + l.start.x + ' ' + l.url));
+        joined += full.filter((l) => l.end - l.start > 1 && l.pieces.length > 1).length;
+      }
+    }
+    assert(joined > 100, 'URLs over several rows: ' + joined); }
+  ok('screenLines rescans only the lines with a changed row and keeps a full scan\'s result');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
   const lk = await environment({fake: false, status: 'running'}); lk.buttons()[2].click(); await flush(); lk.sockets.at(-1).open(); const lkTerm = lk.terminals.at(-1);

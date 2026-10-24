@@ -768,41 +768,39 @@
     // whole and lights up with the others.
     decorateScreenLinks(dirty) {
       if (!window.IwatoLinks || !this.rowEls) return;
-      const rows = this.screenRows();
-      const pieces = new Map(); // row → [{from, to, url, group}] in cells
-      for (const link of window.IwatoLinks.wrappedLinks(rows, this.cols, 0, false)) {
-        // Stable across redraws, so a hovered URL stays lit while the rest
-        // of the screen changes.
-        const group = link.start.y + ':' + link.start.x;
-        for (let y = link.start.y; y <= link.end.y; y++) {
-          const cells = rows[y].cells;
-          let from = y === link.start.y ? link.start.x - 1 : -1;
-          let to = y === link.end.y ? link.end.x - 1 : -1;
-          if (from < 0) { const first = cells.find((c) => c.c !== ' ' && !'│┃║|'.includes(c.c)); if (!first) continue; from = first.x; }
-          if (to < 0) { const last = [...cells].reverse().find((c) => c.c !== ' ' && !'│┃║|'.includes(c.c)); if (!last) continue; to = last.x; }
-          if (!pieces.has(y)) pieces.set(y, []);
-          pieces.get(y).push({ from, to, url: link.url, group });
+      const n = this.grid.length;
+      const rows = [];
+      const row = (y) => y < n ? (rows[y] ??= this.screenRows(y, y + 1)[0]) : undefined;
+      const prev = this.linkLines?.cols === this.cols && this.linkLines.n === n ? this.linkLines.lines : null;
+      const kept = new Set(prev);
+      const lines = window.IwatoLinks.screenLines(row, n, this.cols, prev, dirty);
+      this.linkLines = { n, cols: this.cols, lines };
+      const old = this.screenLinks || new Map();
+      if (!prev) for (const y of old.keys()) if (y >= n) old.delete(y);
+      for (const line of lines) {
+        if (kept.has(line)) continue;
+        const pieces = new Map(line.pieces);
+        for (let y = line.start; y < line.end; y++) {
+          const list = pieces.get(y);
+          const sig = list && JSON.stringify(list);
+          // Rows left as they were keep their elements: replacing the one
+          // under a press would lose the click.
+          const el = this.rowEls[y];
+          if (!dirty.has(y) && sig === old.get(y)?.sig) continue;
+          if (list) old.set(y, { list, sig }); else old.delete(y);
+          if (!el) continue;
+          for (const u of [...el.querySelectorAll('.iw-url')]) u.replaceWith(...u.childNodes);
+          el.normalize();
+          if (!list) continue;
+          // Text offsets of the cells, as renderCells draws them.
+          const offset = [];
+          let at = 0;
+          this.grid[y].cells.forEach((c, x) => { offset[x] = at; if (c.w !== 0) at += (c.t || ' ').length; });
+          offset[this.grid[y].cells.length] = at;
+          for (const p of [...list].reverse()) wrapText(el, offset[p.from], offset[p.to + 1] ?? at, p.url, p.group);
         }
       }
-      // Rows left as they were keep their elements: replacing the one under
-      // a press would lose the click.
-      const sig = new Map([...pieces].map(([y, list]) => [y, JSON.stringify(list)]));
-      const old = this.screenLinks || new Map();
-      for (const y of new Set([...pieces.keys(), ...old.keys()])) {
-        const el = this.rowEls[y];
-        if (!el || (!dirty.has(y) && sig.get(y) === old.get(y)?.sig)) continue;
-        for (const u of [...el.querySelectorAll('.iw-url')]) u.replaceWith(...u.childNodes);
-        el.normalize();
-        const list = pieces.get(y);
-        if (!list) continue;
-        // Text offsets of the cells, as renderCells draws them.
-        const offset = [];
-        let at = 0;
-        this.grid[y].cells.forEach((c, x) => { offset[x] = at; if (c.w !== 0) at += (c.t || ' ').length; });
-        offset[this.grid[y].cells.length] = at;
-        for (const p of list.reverse()) wrapText(el, offset[p.from], offset[p.to + 1] ?? at, p.url, p.group);
-      }
-      this.screenLinks = new Map([...pieces].map(([y, list]) => [y, { list, sig: sig.get(y) }]));
+      this.screenLinks = old;
     }
 
     // Draws cells into parent: runs of a style in a span, ASCII as text,

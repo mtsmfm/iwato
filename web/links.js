@@ -163,51 +163,102 @@
     return i >= 0 && FRAME.includes(row.cells[i].c) && row.cells[i].x >= cols - 3 ? i : -1;
   }
 
+  // The logical line that starts at row i: its links and the row after it.
+  // row(k) is the row k, undefined past the last; the line reads no row
+  // before i and none past the one after it.
+  function lineLinks(row, i, cols, firstY, paths) {
+    // Build one logical line: text plus the cell/row of every code unit.
+    let text = '';
+    const pos = [];
+    // A '|' that is a right border ends a URL, though '|' belongs to URLs elsewhere.
+    const chars = (r, from) => {
+      const border = row(r + 1)?.wrapped ? -1 : rightBorder(row(r), cols);
+      return row(r).cells.slice(from).map((cell, k) => k + from === border ? '│' : cell.c);
+    };
+    const push = (r, from) => {
+      const cells = row(r).cells, cs = chars(r, from);
+      text += cs.join('');
+      for (let k = 0; k < cs.length; k++) pos.push({x: cells[from + k].x, r});
+    };
+    push(i, 0);
+    let j = i + 1;
+    while (row(j)) {
+      const prev = row(j - 1), cur = row(j);
+      if (cur.wrapped) { text = text.replace(/ +$/, ''); pos.length = text.length; push(j, 0); j++; continue; }
+      if (!reachesEdge(prev, cols)) break;
+      // Join only when a URL (or the start of its scheme: the application
+      // may break inside https://) ends at the edge and the next row
+      // continues it into one URL.
+      const before = text.replace(/[ │┃║|]+$/, '');
+      const tail = /https?:\/\/\S*$|(?<![A-Za-z0-9])(?:https?(?::\/?)?|htt?|h)$/.test(before);
+      let k = 0;
+      while (k < cur.cells.length && (cur.cells[k].c === ' ' || FRAME.includes(cur.cells[k].c))) k++;
+      if (!tail || k >= cur.cells.length || linkTerm((cur.cells[k].c + (cur.cells[k + 1]?.c || '')).codePointAt(0)) === HARD) break;
+      const joined = before + chars(j, k).join('');
+      if (!findURLs(joined).some((u) => u.index < before.length && u.index + u.url.length > before.length)) break;
+      text = before; pos.length = before.length;
+      push(j, k);
+      j++;
+    }
+    const links = [];
+    for (const {target, index, length} of paths || text.includes('://') ? findLinks(text, paths) : []) {
+      const a = pos[index], b = pos[index + length - 1];
+      links.push({url: target, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}});
+    }
+    return {end: j, links};
+  }
+
   // wrappedLinks returns [{url, start: {x, y}, end: {x, y}}] in 1-based,
   // inclusive cell coordinates (url is a path's target for a path; URLs
   // only without paths). rows[0] is buffer line firstY.
   function wrappedLinks(rows, cols, firstY, paths = true) {
     const links = [];
-    let i = 0;
-    while (i < rows.length) {
-      // Build one logical line: text plus the cell/row of every code unit.
-      let text = '';
-      const pos = [];
-      // A '|' that is a right border ends a URL, though '|' belongs to URLs elsewhere.
-      const chars = (row, r, from) => {
-        const border = rows[r + 1]?.wrapped ? -1 : rightBorder(row, cols);
-        return row.cells.slice(from).map((cell, k) => k + from === border ? '│' : cell.c);
-      };
-      const push = (row, r, from) => {
-        for (const [k, c] of chars(row, r, from).entries()) { text += c; pos.push({x: row.cells[from + k].x, r}); }
-      };
-      push(rows[i], i, 0);
-      let j = i + 1;
-      while (j < rows.length) {
-        const prev = rows[j - 1], row = rows[j];
-        if (row.wrapped) { text = text.replace(/ +$/, ''); pos.length = text.length; push(row, j, 0); j++; continue; }
-        if (!reachesEdge(prev, cols)) break;
-        // Join only when a URL (or the start of its scheme: the application
-        // may break inside https://) ends at the edge and the next row
-        // continues it into one URL.
-        const before = text.replace(/[ │┃║|]+$/, '');
-        const tail = /https?:\/\/\S*$|(?<![A-Za-z0-9])(?:https?(?::\/?)?|htt?|h)$/.test(before);
-        let k = 0;
-        while (k < row.cells.length && (row.cells[k].c === ' ' || FRAME.includes(row.cells[k].c))) k++;
-        if (!tail || k >= row.cells.length || linkTerm((row.cells[k].c + (row.cells[k + 1]?.c || '')).codePointAt(0)) === HARD) break;
-        const joined = before + chars(row, j, k).join('');
-        if (!findURLs(joined).some((u) => u.index < before.length && u.index + u.url.length > before.length)) break;
-        text = before; pos.length = before.length;
-        push(row, j, k);
-        j++;
-      }
-      for (const {target, index, length} of paths || text.includes('://') ? findLinks(text, paths) : []) {
-        const a = pos[index], b = pos[index + length - 1];
-        links.push({url: target, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}});
-      }
-      i = j;
+    for (let i = 0; i < rows.length;) {
+      const line = lineLinks((k) => rows[k], i, cols, firstY, paths);
+      links.push(...line.links);
+      i = line.end;
     }
     return links;
+  }
+
+  const content = (c) => c.c !== ' ' && !FRAME.includes(c.c);
+
+  // screenLines splits screen rows 0..n-1 (row(y) as for lineLinks) into
+  // logical lines with the pieces of their URLs per row, 0-based cells:
+  // [{start, end, pieces: [[y, [{from, to, url, group}]]]}]. Lines of old
+  // (a previous result for as many rows and cols) are kept when none of
+  // their rows nor the row after them is in dirty.
+  function screenLines(row, n, cols, old, dirty) {
+    const lines = [];
+    let k = 0;
+    for (let i = 0; i < n;) {
+      while (old && k < old.length && old[k].start < i) k++;
+      const o = old?.[k];
+      if (o && o.start === i) {
+        let y = i;
+        while (y <= Math.min(o.end, n - 1) && !dirty.has(y)) y++;
+        if (y > Math.min(o.end, n - 1)) { lines.push(o); i = o.end; continue; }
+      }
+      const {end, links} = lineLinks(row, i, cols, 0, false);
+      const pieces = new Map();
+      for (const link of links) {
+        // Stable across redraws, so a hovered URL stays lit while the rest
+        // of the screen changes.
+        const group = link.start.y + ':' + link.start.x;
+        for (let y = link.start.y; y <= link.end.y; y++) {
+          const cells = row(y).cells;
+          let from = y === link.start.y ? link.start.x - 1 : -1;
+          let to = y === link.end.y ? link.end.x - 1 : -1;
+          if (from < 0) { const first = cells.find(content); if (!first) continue; from = first.x; }
+          if (to < 0) { const last = cells.findLast(content); if (!last) continue; to = last.x; }
+          if (!pieces.has(y)) pieces.set(y, []);
+          pieces.get(y).push({from, to, url: link.url, group});
+        }
+      }
+      lines.push({start: i, end, pieces: [...pieces]});
+      i = end;
+    }
+    return lines;
   }
 
   function safeURL(value) {
@@ -218,5 +269,5 @@
     } catch (_) { return ''; }
   }
 
-  window.IwatoLinks = Object.freeze({findURLs, findPaths, findLinks, pathOf, wrappedLinks, safeURL});
+  window.IwatoLinks = Object.freeze({findURLs, findPaths, findLinks, pathOf, wrappedLinks, screenLines, safeURL});
 })();
