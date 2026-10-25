@@ -279,6 +279,46 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.waitForFunction(() => document.getElementById('server-build').textContent.includes('2222222'), null, { timeout: 10000 }).catch(() => {});
     check(await page.locator('#update-button').isHidden() && (await page.locator('#server-build').textContent()).includes('2222222'), 'after the update the page shows the new build and no 更新');
 
+    // A pull request's build: the list, the confirmation with its head
+    // commit and warnings, the install, then back to edge.
+    await page.evaluate(() => document.getElementById('settings-button').click());
+    const updateAgain = settings.locator('.update-settings');
+    await updateAgain.getByRole('button', { name: 'PR のビルドを試す' }).click();
+    const prs = updateAgain.locator('.update-pr');
+    await prs.first().waitFor();
+    check((await prs.allInnerTexts()).join('\n').includes('#12 Terminal: faster scrolling') && await prs.count() === 2, 'the open pull requests\' builds are listed');
+    check(await noSideScroll(settings.locator('.login-body')), 'the pull request list does not scroll sideways');
+    await shot('update-prs.png');
+    await prs.first().getByRole('button', { name: '入れる' }).click();
+    await updateDialog.waitFor();
+    const prText = await updateDialog.innerText();
+    check(prText.includes('PR #12 のビルドを入れる') && prText.includes('4'.repeat(40)) && prText.includes('マージされていない') && prText.includes('PC での操作'), 'the confirmation shows the head commit and the warnings');
+    check(await noSideScroll(updateDialog.locator('.update-body')), 'the pull request dialog does not scroll sideways');
+    await shot('update-pr-dialog.png');
+    await page.keyboard.press('Escape');
+    check(await updateDialog.isHidden() && await settings.isVisible(), 'Escape closes the pull request dialog');
+    await prs.first().getByRole('button', { name: '入れる' }).click();
+    await updateDialog.waitFor();
+    const toPR = page.waitForEvent('load', { timeout: 30000 });
+    await updateDialog.getByRole('button', { name: '入れる', exact: true }).click();
+    await toPR;
+    await page.locator('.terminal-card.selected').waitFor();
+    await page.waitForFunction(() => document.getElementById('server-build').textContent.includes('PR #12'), null, { timeout: 10000 }).catch(() => {});
+    check((await page.locator('#server-build').textContent()).includes('PR #12 · '), 'the sidebar names the pull request that runs');
+    await page.evaluate(() => document.getElementById('settings-button').click());
+    await updateAgain.getByText('PR #12 をお試し中').waitFor();
+    await shot('update-trying.png');
+    await updateAgain.getByRole('button', { name: 'edge に戻す' }).click();
+    await updateDialog.waitFor();
+    check((await updateDialog.innerText()).includes('→ v') && (await updateDialog.innerText()).includes('2222222'), 'back to edge names the edge build');
+    const toEdge = page.waitForEvent('load', { timeout: 30000 });
+    await updateDialog.getByRole('button', { name: 'edge に戻す', exact: true }).click();
+    await toEdge;
+    await page.locator('.terminal-card.selected').waitFor();
+    await page.waitForFunction(() => !document.getElementById('server-build').textContent.includes('PR #'), null, { timeout: 10000 }).catch(() => {});
+    const backBuild = await page.locator('#server-build').textContent();
+    check(!backBuild.includes('PR #') && backBuild.includes('2222222'), 'back on edge, older than the pull request build');
+
     // Last: 「すべて消す」 at the bottom of the settings.
     await page.evaluate(() => document.getElementById('settings-button').click());
     const resetSection = settings.locator('.reset-settings');

@@ -2719,5 +2719,47 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(reloaded, 1, 'the new server answers: the page reloads');
   ok('update: the button, the gateway dialog with the sandboxes that restart, CSRF, the wait and the reload');
   }
+  {
+  // A pull request's build: trying one from edge (its full head commit and
+  // the warnings), and the way back to edge.
+  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
+  const pr = await environment({status: 'running'});
+  const head = 'abcdef1' + '0'.repeat(33), edge = '2222222' + '0'.repeat(33);
+  const switched = [];
+  pr.setUpdateHandler((path, opt) => {
+    if (path === '/api/update/prs') return response({builds: [{version: '0.3.0', commit: head, pr: 12, title: '<b>Faster</b>', built: '2026-10-20T00:00:00Z'}, {pr: 3, commit: 'bad'}]});
+    if (path === '/api/update/switch') { switched.push({body: JSON.parse(opt.body), csrf: opt.headers['X-CSRF-Token']}); return response({enabled: true, current: {version: '0.3.0', commit: '98cb328'}, phase: 'downloading'}); }
+    return response({enabled: true, channel: 'edge', switch: true, supported: true, current: {version: '0.3.0', commit: '98cb328'}});
+  });
+  pr.document.body = new Element();
+  pr.els['settings-button'].click(); await flush();
+  const section = walk(pr.els['settings-body'], (n) => n.className === 'update-settings')[0];
+  walk(section, (n) => n.tagName === 'button' && n.textContent === 'PR のビルドを試す')[0].click(); await flush();
+  const items = walk(section, (n) => n.className === 'update-pr');
+  assert.equal(items.length, 1, 'builds without a full head commit are left out');
+  assert(walk(items[0], () => true).some((n) => n.textContent === '#12 <b>Faster</b>'), 'the number and the title, as text');
+  walk(items[0], (n) => n.tagName === 'button')[0].click(); await flush();
+  const dialog = walk(pr.document.body, (n) => n.className.includes('update-dialog'))[0];
+  const all = walk(dialog, () => true).map((n) => n.textContent || '').join('\n');
+  assert(all.includes('PR #12 のビルドを入れる') && all.includes('コミット: ' + head) && /マージされていない/.test(all) && /PC での操作/.test(all), 'the head commit and the warnings');
+  walk(dialog, (n) => n.tagName === 'button' && n.textContent === '入れる')[0].click(); await flush();
+  assert.deepEqual(switched, [{body: {tag: 'pr-12', commit: head}, csrf: 'csrf123'}]);
+  const back = await environment({status: 'running'});
+  const current = {version: '0.3.0', commit: 'abcdef1', pr: 12, title: 'Faster'};
+  back.setUpdateHandler((path, opt) => {
+    if (path === '/api/update/switch') { switched.push({body: JSON.parse(opt.body)}); return response({enabled: true, current, phase: 'downloading'}); }
+    return response({enabled: true, channel: 'pr', switch: true, supported: true, current, edge: {version: '0.3.0', commit: edge}});
+  });
+  back.document.body = new Element();
+  back.els['settings-button'].click(); await flush();
+  const again = walk(back.els['settings-body'], (n) => n.className === 'update-settings')[0];
+  assert(walk(again, () => true).some((n) => n.textContent === 'PR #12 をお試し中'), 'the settings say which pull request runs');
+  walk(again, (n) => n.tagName === 'button' && n.textContent === 'edge に戻す')[0].click(); await flush();
+  const edgeDialog = walk(back.document.body, (n) => n.className.includes('update-dialog'))[0];
+  assert(walk(edgeDialog, () => true).some((n) => n.textContent === 'PR #12 · v0.3.0 · abcdef1 → v0.3.0 · 2222222'), 'back to edge names both builds');
+  walk(edgeDialog, (n) => n.tagName === 'button' && n.textContent === 'edge に戻す')[0].click(); await flush();
+  assert.deepEqual(switched.at(-1), {body: {tag: 'edge', commit: edge}});
+  ok('update: a pull request\'s build to try (head commit, warnings, CSRF) and back to edge');
+  }
   console.log('\n' + tests + ' UI behavior tests passed. These are VM unit tests, not rendered-browser validation.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

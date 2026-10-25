@@ -1,6 +1,7 @@
 // Updating Iwato itself (update.go): the settings' section, the sidebar's
-// button, and the dialog that confirms, follows the download and the
-// restart, and reloads the page once the new server answers.
+// button, the pull requests' builds to try and the way back to edge, and
+// the dialog that confirms, follows the download and the restart, and
+// reloads the page once the new server answers.
 (() => {
   'use strict';
 
@@ -9,10 +10,14 @@
   const build = (b) => b && typeof b === 'object' && (/^[0-9A-Za-z.+-]{1,32}$/.test(b.version) || /^[0-9a-f]{7,40}$/.test(b.commit)) ? {
     version: /^[0-9A-Za-z.+-]{1,32}$/.test(b.version) ? b.version : '',
     commit: /^[0-9a-f]{7,40}(-dirty)?$/.test(b.commit) ? b.commit : '',
-    built: text(b.built, 40)
+    built: text(b.built, 40),
+    pr: Number.isInteger(b.pr) && b.pr > 0 ? b.pr : 0,
+    title: text(b.title, 300),
+    gateway: b.gateway === true
   } : null;
-  // label: "v0.1.0 · abc1234".
-  const label = (b) => b ? [b.version && 'v' + b.version, b.commit.slice(0, 7)].filter(Boolean).join(' · ') : '';
+  // label: "v0.1.0 · abc1234", "PR #12 · v0.1.0 · abc1234".
+  const label = (b) => b ? [b.pr && 'PR #' + b.pr, b.version && 'v' + b.version, b.commit.slice(0, 7)].filter(Boolean).join(' · ') : '';
+  const names = (list) => (Array.isArray(list) ? list : []).filter((n) => typeof n === 'string' && /^[a-z0-9-]{1,63}$/.test(n)).slice(0, 100);
   const phases = new Set(['downloading', 'restarting', 'failed']);
   const params = (p) => {
     const out = {};
@@ -22,11 +27,15 @@
   function view(d) {
     return {
       enabled: d?.enabled === true,
-      current: build(d?.current) || { version: '', commit: '', built: '' },
+      channel: ['edge', 'release', 'pr'].includes(d?.channel) ? d.channel : '',
+      current: build(d?.current) || { version: '', commit: '', built: '', pr: 0, title: '' },
       latest: build(d?.latest),
+      edge: build(d?.edge),
+      switch: d?.switch === true,
+      gone: d?.gone === true,
       supported: d?.supported === true,
       gateway: d?.gateway === true,
-      restart: (Array.isArray(d?.restart) ? d.restart : []).filter((n) => typeof n === 'string' && /^[a-z0-9-]{1,63}$/.test(n)).slice(0, 100),
+      restart: names(d?.restart),
       checked: text(d?.checked, 40),
       checkFailed: text(d?.checkFailed, 500),
       phase: phases.has(d?.phase) ? d.phase : '',
@@ -52,7 +61,9 @@
         this.root.append(this.body);
       }
 
-      async open() {
+      // target: another release's build to switch to ({tag, build,
+      // restart}: edge, or pr-N from the list); none: this channel's update.
+      async open(target) {
         if (this.busy) return;
         try {
           this.data = view(await api('/api/update'));
@@ -60,7 +71,8 @@
           authFailed(error);
           return;
         }
-        if (!this.data.latest || !this.data.supported) return;
+        this.target = target || null;
+        if (!(target ? target.build : this.data.latest) || !this.data.supported) return;
         const host = document.body || this.root;
         if (!host.contains(this.root)) host.append(this.root);
         this.render();
@@ -74,19 +86,30 @@
       }
 
       render() {
-        const d = this.data;
-        const restarts = d.gateway && d.restart.length > 0;
-        const nodes = [element('strong', '', t('update.dialog.title')),
-          element('p', 'update-versions', t('update.dialog.versions', { from: label(d.current), to: label(d.latest) }))];
+        const d = this.data, target = this.target;
+        const to = target ? target.build : d.latest;
+        const restart = target ? names(target.restart) : d.restart;
+        const restarts = (target ? to.gateway : d.gateway) && restart.length > 0;
+        const pr = target && target.tag !== 'edge';
+        const title = pr ? t('update.pr.dialogTitle', { pr: to.pr }) : target ? t('update.edge.dialogTitle') : t('update.dialog.title');
+        const nodes = [element('strong', '', title),
+          element('p', 'update-versions', t('update.dialog.versions', { from: label(d.current), to: label(to) }))];
+        if (pr) {
+          // The owner should know exactly which commit runs.
+          if (to.title) nodes.push(element('p', 'update-pr-title', to.title));
+          nodes.push(element('p', 'panel-meta update-commit', t('update.pr.head', { commit: to.commit })));
+          for (const key of ['update.pr.unmerged', 'update.pr.remote']) nodes.push(element('p', 'update-warning', t(key)));
+        }
         if (restarts) {
-          nodes.push(element('p', 'update-warning', t('update.dialog.gateway')));
+          nodes.push(element('p', 'update-warning', t('update.pr.restarts') + ' ' + t('update.dialog.gateway')));
           const ul = element('ul', 'reset-list update-restart');
-          for (const name of d.restart) ul.append(element('li', '', name));
+          for (const name of restart) ul.append(element('li', '', name));
           nodes.push(ul);
         } else nodes.push(element('p', 'panel-meta', t('update.dialog.keep')));
         this.status = element('p', 'panel-meta');
         this.status.setAttribute('role', 'status');
-        this.ok = button(restarts ? 'button-disconnect' : 'button-primary', t('update.apply'), () => this.run());
+        const ok = pr ? t('update.pr.install') : target ? t('update.edge.back') : t('update.apply');
+        this.ok = button(restarts || pr ? 'button-disconnect' : 'button-primary', ok, () => this.run());
         this.cancel = button('button-subtle', t('common.cancel'), () => this.close());
         const row = element('div', 'login-form');
         row.append(this.ok, this.cancel);
@@ -101,7 +124,9 @@
         const before = this.data.current;
         this.status.textContent = t('update.phase.downloading');
         try {
-          await api('/api/update/apply', { method: 'POST', body: JSON.stringify({ commit: this.data.latest.commit }) });
+          const target = this.target;
+          if (target) await api('/api/update/switch', { method: 'POST', body: JSON.stringify({ tag: target.tag, commit: target.build.commit }) });
+          else await api('/api/update/apply', { method: 'POST', body: JSON.stringify({ commit: this.data.latest.commit }) });
         } catch (error) {
           this.fail(error.message);
           authFailed(error);
@@ -160,20 +185,75 @@
         const d = this.data;
         this.root.hidden = !d.enabled;
         if (!d.enabled) return;
+        const pr = d.channel === 'pr' ? d.current.pr : 0;
         const nodes = [bind(element('h4', 'files-head'), 'update.title'), element('p', 'panel-meta', t('update.current', { build: label(d.current) }))];
+        if (pr) {
+          nodes.push(element('p', 'update-warning update-trying', t('update.pr.trying', { pr })));
+          if (d.current.title) nodes.push(element('p', 'panel-meta update-pr-title', d.current.title));
+          if (d.gone) nodes.push(element('p', 'panel-meta', t('update.pr.gone', { pr })));
+        }
         const row = element('div', 'login-form');
         if (d.latest) {
-          nodes.push(element('p', 'panel-meta update-latest', t('update.latest', { build: label(d.latest) })));
+          nodes.push(element('p', 'panel-meta update-latest', pr ? t('update.pr.newer', { pr, build: label(d.latest) }) : t('update.latest', { build: label(d.latest) })));
           if (d.supported) row.append(button('button-primary', t('update.apply'), () => this.dialog.open()));
           else nodes.push(element('p', 'panel-meta', t('update.unsupported')));
-        } else nodes.push(element('p', 'panel-meta', t('update.upToDate')));
+        } else if (!d.gone) nodes.push(element('p', 'panel-meta', t('update.upToDate')));
+        if (pr && d.edge && d.supported) row.append(button('button-subtle', t('update.edge.back'), () => this.dialog.open({ tag: 'edge', build: d.edge, restart: d.restart })));
         const when = Number.isFinite(Date.parse(d.checked)) ? window.IwatoI18n.date(d.checked, { dateStyle: 'short', timeStyle: 'short' }) : '';
         nodes.push(element('p', 'panel-meta', d.checkFailed ? t('update.checkFailed', { message: d.checkFailed }) : when ? t('update.checked', { time: when }) : ''));
         this.checkButton = button('button-subtle', t('update.check'), () => this.check());
         this.checkButton.disabled = !!this.busy;
         row.append(this.checkButton);
+        if (d.switch && d.supported) {
+          this.prsButton = button('button-subtle', t('update.pr.try'), () => this.togglePRs());
+          this.prsButton.setAttribute('aria-expanded', String(!!this.prs));
+          row.append(this.prsButton);
+        }
         nodes.push(row, this.status);
+        if (this.prs && d.switch) nodes.push(this.prs);
         this.root.replaceChildren(...nodes);
+      }
+
+      // The open pull requests' builds (GET /api/update/prs), each with
+      // its head commit, to install one.
+      async togglePRs() {
+        if (this.prs) {
+          this.prs = null;
+          this.render();
+          return;
+        }
+        this.prs = element('div', 'update-prs');
+        this.prs.append(element('p', 'panel-meta', t('update.pr.loading')));
+        this.render();
+        const box = this.prs;
+        let list;
+        try {
+          list = await api('/api/update/prs', { timeoutMs: 45000 });
+        } catch (error) {
+          box.replaceChildren(element('p', 'panel-meta', t('update.pr.listFailed', { message: error.message })));
+          authFailed(error);
+          return;
+        }
+        const builds = (Array.isArray(list?.builds) ? list.builds : []).map(build).filter((b) => b && b.pr && /^[0-9a-f]{40}$/.test(b.commit)).slice(0, 20);
+        const restart = names(list?.restart);
+        if (!builds.length) {
+          box.replaceChildren(element('p', 'panel-meta', t('update.pr.none')));
+          return;
+        }
+        const ul = element('ul', 'update-pr-list');
+        for (const b of builds) {
+          const li = element('li', 'update-pr');
+          const text = element('div', 'update-pr-text');
+          text.append(element('strong', '', '#' + b.pr + ' ' + b.title));
+          const when = Number.isFinite(Date.parse(b.built)) ? window.IwatoI18n.date(b.built, { dateStyle: 'short', timeStyle: 'short' }) : '';
+          text.append(element('span', 'panel-meta', [b.commit.slice(0, 7), when && t('update.pr.built', { time: when })].filter(Boolean).join(' · ')));
+          const running = this.data.current.commit && b.commit.startsWith(this.data.current.commit);
+          const install = button('button-subtle', running ? t('update.pr.running') : t('update.pr.install'), () => this.dialog.open({ tag: 'pr-' + b.pr, build: b, restart }));
+          install.disabled = !!running;
+          li.append(text, install);
+          ul.append(li);
+        }
+        box.replaceChildren(ul);
       }
 
       async check() {

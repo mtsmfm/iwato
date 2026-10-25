@@ -25,31 +25,54 @@ func init() {
 var failStartBuild string
 
 // newFakeUpdate is the fake's update: an edge build whose next commit
-// changes the gateway. Applying it takes a few seconds and then reports
-// the new build as the running one, as a restarted server would.
+// changes the gateway, and two pull requests' builds (pr-12 keeps the
+// gateway). Applying one takes a few seconds and then reports it as the
+// running build, as a restarted server would.
 func newFakeUpdate() *selfUpdate {
-	next := buildMeta{Version: version, Commit: strings.Repeat("2", 40), Built: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339), Channel: "edge",
-		Images: map[string]string{"iwato-gateway": "sha256:" + strings.Repeat("2", 64), "iwato-sandbox": "sha256:" + strings.Repeat("3", 64)},
-		Assets: map[string]string{}}
-	for _, a := range updateAssets {
-		next.Assets[a] = strings.Repeat("a", 64)
+	built := func(h time.Duration) string { return time.Now().UTC().Add(-h).Format(time.RFC3339) }
+	meta := func(channel, commit, gateway string, pr int, title, when string) buildMeta {
+		m := buildMeta{Version: version, Commit: strings.Repeat(commit, 40), Built: when, Channel: channel, PR: pr, Title: title,
+			Images: map[string]string{"iwato-gateway": "sha256:" + strings.Repeat(gateway, 64), "iwato-sandbox": "sha256:" + strings.Repeat("3", 64)},
+			Assets: map[string]string{}}
+		for _, a := range updateAssets {
+			m.Assets[a] = strings.Repeat("a", 64)
+		}
+		return m
 	}
-	u := &selfUpdate{channel: "edge", current: BuildInfo{Version: version, Commit: "1111111", Built: time.Now().UTC().Add(-50 * time.Hour).Format(time.RFC3339)}}
-	u.fetch = func(context.Context) (buildMeta, error) { return next, nil }
-	u.install = func(ctx context.Context, m buildMeta) (string, error) {
+	releases := map[string]buildMeta{
+		"edge":  meta("edge", "2", "2", 0, "", built(time.Hour)),
+		"pr-12": meta("pr", "4", "1", 12, "Terminal: faster scrolling", built(2*time.Hour)),
+		"pr-9":  meta("pr", "5", "2", 9, "Gateway: a newer OpenShell", built(30*time.Hour)),
+	}
+	u := &selfUpdate{channel: "edge", current: BuildInfo{Version: version, Commit: "1111111", Built: built(50 * time.Hour)}}
+	u.fetch = func(_ context.Context, tag string) (buildMeta, error) {
+		m, ok := releases[tag]
+		if !ok {
+			return buildMeta{}, errReleaseGone
+		}
+		return m, nil
+	}
+	u.list = func(context.Context) ([]buildMeta, error) {
+		return []buildMeta{releases["pr-12"], releases["pr-9"]}, nil
+	}
+	var installed buildMeta
+	u.install = func(ctx context.Context, _ string, m buildMeta) (string, error) {
 		select {
 		case <-time.After(1500 * time.Millisecond):
 		case <-ctx.Done():
 			return "", ctx.Err()
 		}
+		installed = m
 		return "", nil
 	}
 	u.restart = func() {
 		time.AfterFunc(time.Second, func() {
 			u.mu.Lock()
-			defer u.mu.Unlock()
-			u.current = BuildInfo{Version: next.Version, Commit: next.Commit[:7], Built: next.Built}
+			u.current = BuildInfo{Version: installed.Version, Commit: installed.Commit[:7], Built: installed.Built, PR: installed.PR}
+			u.channel, u.pr = installed.Channel, installed.PR
 			u.latest, u.phase, u.swapped = nil, "", ""
+			u.mu.Unlock()
+			_ = u.check(context.Background())
 		})
 	}
 	return u
