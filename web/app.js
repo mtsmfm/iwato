@@ -2219,7 +2219,8 @@
     const built = typeof info.built === 'string' ? new Date(info.built) : null;
     const pad = (n) => String(n).padStart(2, '0');
     const when = built && !isNaN(built) ? built.getFullYear() + '-' + pad(built.getMonth() + 1) + '-' + pad(built.getDate()) + ' ' + pad(built.getHours()) + ':' + pad(built.getMinutes()) : '';
-    const head = [version && 'v' + version, commit].filter(Boolean).join(' · ');
+    const pr = Number.isInteger(info.pr) && info.pr > 0 ? 'PR #' + info.pr : '';
+    const head = [pr, version && 'v' + version, commit].filter(Boolean).join(' · ');
     const tail = [when && t('build.built', { when }), info.debug === true && t('build.debug')].filter(Boolean).join(' · ');
     // Two lines in the narrow sidebar, one in the phone menu.
     for (const [id, text] of [['server-build', [head, tail].filter(Boolean).join('\n')], ['menu-build', [head, tail].filter(Boolean).join(' · ')]]) {

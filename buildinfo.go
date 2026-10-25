@@ -64,10 +64,11 @@ type BuildInfo struct {
 	Commit  string `json:"commit,omitempty"`
 	Built   string `json:"built,omitempty"` // RFC 3339, UTC
 	Debug   bool   `json:"debug,omitempty"`
+	PR      int    `json:"pr,omitempty"` // a pull request's build (buildChannel pr-N)
 }
 
 func currentBuild() BuildInfo {
-	b := BuildInfo{Version: version, Commit: buildCommit, Built: buildTime, Debug: debugBuild()}
+	b := BuildInfo{Version: version, Commit: buildCommit, Built: buildTime, Debug: debugBuild(), PR: prOfTag(buildChannel)}
 	if b.Commit != "" {
 		return b
 	}

@@ -3,7 +3,8 @@
 # replace the pre-release `edge` (the edge jobs). The artifact's exes pull
 # the sandbox image's `edge` tag (image.yml) and build the gateway image,
 # as during development (scripts/build-exe.sh without --images); the edge
-# exes pull both images, pinned by digest.
+# exes pull both images, pinned by digest. Pull requests' published exes:
+# pr-build.yml.
 name: build
 on:
   push:

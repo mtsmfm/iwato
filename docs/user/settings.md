@@ -4,7 +4,7 @@
 
 Open **Settings** from the sidebar. They have:
 
-- **Iwato updates**: this build and, when there is one, the new build (published exes only: edge follows the edge pre-release, a release the latest release). See [updating](getting-started.md#updating-iwato)
+- **Iwato updates**: this build and, when there is one, the new build (published exes only: edge follows the edge pre-release, a release the latest release). On edge, **Try a pull request build** lists the open pull requests' builds to install one, and **Back to edge** returns. See [updating](getting-started.md#updating-iwato)
 - **言語 / Language**: automatic (the browser's language: Japanese, otherwise English), 日本語 or English. Remembered per browser. Some messages are still Japanese only
 - **Time zone**: the sandboxes' time zone (`TZ`): this PC's (the default), UTC or a zone from the list. Terminals opened after a change use it
 - **Startup checks**: WSLc or the Docker engine, its settings and the configuration, each OK, a warning or a problem, with how to fix it. Check again runs them again

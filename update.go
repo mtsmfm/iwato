@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,10 +17,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Updating Iwato itself from GitHub Releases (docs/adr/0015). Each
@@ -30,7 +33,8 @@ import (
 
 // buildChannel and buildRepo are set by scripts/build-exe.sh (--channel,
 // --repo) for the published exes: edge follows the release `edge`, release
-// the latest release of buildRepo (OWNER/REPO). Other builds never check.
+// the latest release of buildRepo (OWNER/REPO), pr-N the pre-release pr-N
+// of a pull request (docs/adr/0019). Other builds never check.
 var buildChannel, buildRepo string
 
 // updateBaseOverride replaces https://github.com/OWNER/REPO/releases/ in
@@ -42,6 +46,9 @@ const (
 	updateMetaName   = "iwato-build.json"
 	updateMetaLimit  = 64 << 10
 	updateAssetLimit = 512 << 20
+	updateListLimit  = 8 << 20
+	// updatePRMax: the pull request builds listed at most.
+	updatePRMax = 20
 	// restartListenEnv carries the listener's address to the restarted
 	// exe, which waits for the port instead of picking another.
 	restartListenEnv = "IWATO_RESTART_LISTEN"
@@ -52,12 +59,15 @@ const (
 
 // buildMeta is iwato-build.json.
 type buildMeta struct {
-	Version string            `json:"version"`
-	Commit  string            `json:"commit"`
-	Built   string            `json:"built"`
-	Channel string            `json:"channel"`
-	Images  map[string]string `json:"images"`
-	Assets  map[string]string `json:"assets"`
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Built   string `json:"built"`
+	Channel string `json:"channel"`
+	// PR and Title: a pull request's build (channel pr); Commit is its head.
+	PR     int               `json:"pr,omitempty"`
+	Title  string            `json:"title,omitempty"`
+	Images map[string]string `json:"images"`
+	Assets map[string]string `json:"assets"`
 }
 
 var updateAssets = map[string]string{
@@ -76,11 +86,31 @@ var (
 	commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	hashPattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	repoPattern   = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`)
+	prTagPattern  = regexp.MustCompile(`^pr-([1-9][0-9]{0,8})$`)
 )
 
-func (m buildMeta) check(channel string) error {
-	if !semverPattern.MatchString(m.Version) || !commitPattern.MatchString(m.Commit) || m.Channel != channel {
-		return errors.New("iwato-build.json: bad version, commit or channel")
+// prOfTag is N for the tag pr-N, else 0.
+func prOfTag(tag string) int {
+	m := prTagPattern.FindStringSubmatch(tag)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// check validates m as the metadata of the release tag ("" for the
+// latest release).
+func (m buildMeta) check(tag string) error {
+	channel, pr := tag, prOfTag(tag)
+	switch {
+	case tag == "":
+		channel = "release"
+	case pr > 0:
+		channel = "pr"
+	}
+	if !semverPattern.MatchString(m.Version) || !commitPattern.MatchString(m.Commit) || m.Channel != channel || m.PR != pr || utf8.RuneCountInString(m.Title) > 300 {
+		return errors.New("iwato-build.json: bad version, commit, channel or pull request")
 	}
 	for name, h := range m.Assets {
 		if _, known := assetKnown(name); !known || !hashPattern.MatchString(h) {
@@ -134,7 +164,7 @@ func newerVersion(a, b string) bool {
 
 // newerBuild reports whether m is an update for the running build cur.
 func newerBuild(channel string, m buildMeta, cur BuildInfo) bool {
-	if channel == "edge" {
+	if channel != "release" {
 		c := strings.TrimSuffix(cur.Commit, "-dirty")
 		return c == "" || !strings.HasPrefix(m.Commit, c)
 	}
@@ -146,14 +176,28 @@ type UpdateBuild struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit,omitempty"`
 	Built   string `json:"built,omitempty"`
+	PR      int    `json:"pr,omitempty"`
+	Title   string `json:"title,omitempty"`
+	// Gateway: installing it changes the gateway's image (lists only).
+	Gateway bool `json:"gateway,omitempty"`
+}
+
+func updateBuildOf(m buildMeta) UpdateBuild {
+	return UpdateBuild{Version: m.Version, Commit: m.Commit, Built: m.Built, PR: m.PR, Title: m.Title}
 }
 
 // UpdateView answers GET /api/update.
 type UpdateView struct {
 	Enabled bool         `json:"enabled"`
-	Channel string       `json:"channel,omitempty"`
+	Channel string       `json:"channel,omitempty"` // edge, release or pr
 	Current UpdateBuild  `json:"current"`
 	Latest  *UpdateBuild `json:"latest,omitempty"` // an update, when there is one
+	// Switch: pull request builds can be installed (edge and pr).
+	Switch bool `json:"switch,omitempty"`
+	// Edge: the edge build a pull request's build can go back to; Gone:
+	// that pull request's release is no longer published.
+	Edge *UpdateBuild `json:"edge,omitempty"`
+	Gone bool         `json:"gone,omitempty"`
 	// Supported: the release has a binary for this OS and architecture.
 	Supported bool `json:"supported"`
 	// Gateway: the update changes the gateway's image, so OpenShell
@@ -172,20 +216,28 @@ type UpdateView struct {
 
 // selfUpdate checks the channel and applies an update.
 type selfUpdate struct {
-	channel string
+	channel string // edge, release or pr
+	pr      int    // channel pr: the pull request
 	base    string // .../OWNER/REPO/releases/
+	api     string // the releases' list in GitHub's API
 	client  *http.Client
 	// exe is the executable to replace (tests); empty: os.Executable.
 	exe string
 	// restart ends the server, which then starts the swapped exe (serve).
 	restart func()
-	// fetch and install are the network and the swap (the fake replaces them).
-	fetch   func(ctx context.Context) (buildMeta, error)
-	install func(ctx context.Context, m buildMeta) (string, error)
+	// fetch, list and install are the network and the swap (the fake
+	// replaces them). tag is the release: edge, pr-N, or "" for the latest
+	// release.
+	fetch   func(ctx context.Context, tag string) (buildMeta, error)
+	list    func(ctx context.Context) ([]buildMeta, error)
+	install func(ctx context.Context, tag string, m buildMeta) (string, error)
 
 	mu          sync.Mutex
 	current     BuildInfo
 	latest      *buildMeta
+	edge        *buildMeta // channel pr: the build to go back to
+	gone        bool       // channel pr: its release is deleted
+	title       string     // channel pr: the pull request's title
 	checked     time.Time
 	checkFailed string
 	phase       string
@@ -195,14 +247,18 @@ type selfUpdate struct {
 
 // newSelfUpdate is nil for builds without a channel.
 func newSelfUpdate() *selfUpdate {
-	if (buildChannel != "edge" && buildChannel != "release") || !repoPattern.MatchString(buildRepo) {
+	channel, pr := buildChannel, prOfTag(buildChannel)
+	if pr > 0 {
+		channel = "pr"
+	}
+	if (channel != "edge" && channel != "release" && channel != "pr") || !repoPattern.MatchString(buildRepo) {
 		return nil
 	}
-	base := "https://github.com/" + buildRepo + "/releases/"
+	base, api := "https://github.com/"+buildRepo+"/releases/", "https://api.github.com/repos/"+buildRepo+"/releases?per_page=100"
 	if updateBaseOverride != "" {
-		base = updateBaseOverride
+		base, api = updateBaseOverride, updateBaseOverride+"list"
 	}
-	u := &selfUpdate{channel: buildChannel, base: base, current: currentBuild()}
+	u := &selfUpdate{channel: channel, pr: pr, base: base, api: api, current: currentBuild()}
 	u.client = &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("too many redirects")
@@ -213,8 +269,20 @@ func newSelfUpdate() *selfUpdate {
 		return nil
 	}}
 	u.fetch = u.fetchMeta
+	u.list = u.listPRs
 	u.install = u.download
 	return u
+}
+
+// tag is the release this build follows ("" for the latest release).
+func (u *selfUpdate) tag() string {
+	switch u.channel {
+	case "edge":
+		return "edge"
+	case "pr":
+		return "pr-" + strconv.Itoa(u.pr)
+	}
+	return ""
 }
 
 // allowed: only https from GitHub (or the test server).
@@ -224,22 +292,26 @@ func (u *selfUpdate) allowed(target *url.URL) bool {
 		return err == nil && b.Scheme == target.Scheme && b.Host == target.Host
 	}
 	h := target.Hostname()
-	return target.Scheme == "https" && (h == "github.com" || strings.HasSuffix(h, ".githubusercontent.com"))
+	return target.Scheme == "https" && (h == "github.com" || h == "api.github.com" || strings.HasSuffix(h, ".githubusercontent.com"))
 }
 
-func (u *selfUpdate) metaURL() string {
-	if u.channel == "edge" {
-		return u.base + "download/edge/" + updateMetaName
+func (u *selfUpdate) metaURL(tag string) string {
+	if tag == "" {
+		return u.base + "latest/download/" + updateMetaName
 	}
-	return u.base + "latest/download/" + updateMetaName
+	return u.base + "download/" + tag + "/" + updateMetaName
 }
 
-func (u *selfUpdate) assetURL(m buildMeta, asset string) string {
-	if u.channel == "edge" {
-		return u.base + "download/edge/" + asset
+func (u *selfUpdate) assetURL(tag string, m buildMeta, asset string) string {
+	if tag == "" {
+		tag = "v" + m.Version
 	}
-	return u.base + "download/v" + m.Version + "/" + asset
+	return u.base + "download/" + tag + "/" + asset
 }
+
+// errReleaseGone: the release has no such file (a pull request's release
+// is deleted when it is closed).
+var errReleaseGone = errors.New("not published")
 
 // get fetches target into w, at most limit bytes.
 func (u *selfUpdate) get(ctx context.Context, target string, w io.Writer, limit int64) error {
@@ -256,6 +328,9 @@ func (u *selfUpdate) get(ctx context.Context, target string, w io.Writer, limit 
 		return err
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("GET %s: %w", target, errReleaseGone)
+	}
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: %s", target, res.Status)
 	}
@@ -269,32 +344,98 @@ func (u *selfUpdate) get(ctx context.Context, target string, w io.Writer, limit 
 	return err
 }
 
-func (u *selfUpdate) fetchMeta(ctx context.Context) (buildMeta, error) {
+func (u *selfUpdate) fetchMeta(ctx context.Context, tag string) (buildMeta, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var b strings.Builder
-	if err := u.get(ctx, u.metaURL(), &b, updateMetaLimit); err != nil {
+	if err := u.get(ctx, u.metaURL(tag), &b, updateMetaLimit); err != nil {
 		return buildMeta{}, err
 	}
 	var m buildMeta
 	if err := json.Unmarshal([]byte(b.String()), &m); err != nil {
 		return buildMeta{}, fmt.Errorf("iwato-build.json: %w", err)
 	}
-	return m, m.check(u.channel)
+	return m, m.check(tag)
 }
 
-// check fetches the channel's metadata now.
+// listPRs fetches the metadata of the pull requests' pre-releases pr-N,
+// newest pull request first.
+func (u *selfUpdate) listPRs(ctx context.Context) ([]buildMeta, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var b strings.Builder
+	if err := u.get(ctx, u.api, &b, updateListLimit); err != nil {
+		return nil, err
+	}
+	type asset struct {
+		Name string `json:"name"`
+	}
+	var releases []struct {
+		Tag        string  `json:"tag_name"`
+		Draft      bool    `json:"draft"`
+		Prerelease bool    `json:"prerelease"`
+		Assets     []asset `json:"assets"`
+	}
+	if err := json.Unmarshal([]byte(b.String()), &releases); err != nil {
+		return nil, fmt.Errorf("releases: %w", err)
+	}
+	var tags []string
+	for _, r := range releases {
+		if prOfTag(r.Tag) > 0 && r.Prerelease && !r.Draft && slices.Contains(r.Assets, asset{updateMetaName}) {
+			tags = append(tags, r.Tag)
+		}
+	}
+	slices.SortFunc(tags, func(a, b string) int { return cmp.Compare(prOfTag(b), prOfTag(a)) })
+	tags = tags[:min(len(tags), updatePRMax)]
+	metas := make([]*buildMeta, len(tags))
+	var wg sync.WaitGroup
+	for i, tag := range tags {
+		wg.Go(func() {
+			m, err := u.fetchMeta(ctx, tag)
+			if err != nil {
+				log.Printf("pull request builds: %s: %v", tag, err)
+				return
+			}
+			metas[i] = &m
+		})
+	}
+	wg.Wait()
+	var out []buildMeta
+	for _, m := range metas {
+		if m != nil {
+			out = append(out, *m)
+		}
+	}
+	return out, nil
+}
+
+// check fetches the channel's metadata now (a pull request's build:
+// edge's too, to go back to).
 func (u *selfUpdate) check(ctx context.Context) error {
-	m, err := u.fetch(ctx)
+	m, err := u.fetch(ctx, u.tag())
+	var edge *buildMeta
+	if u.channel == "pr" {
+		if e, eerr := u.fetch(ctx, "edge"); eerr == nil {
+			edge = &e
+		}
+	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.checked = time.Now().UTC()
+	u.edge, u.gone = edge, false
+	if u.channel == "pr" && errors.Is(err, errReleaseGone) {
+		u.gone, u.latest, u.checkFailed = true, nil, ""
+		return nil
+	}
 	if err != nil {
 		u.checkFailed = err.Error()
 		log.Printf("update check: %v", err)
 		return err
 	}
 	u.checkFailed = ""
+	if u.channel == "pr" {
+		u.title = m.Title
+	}
 	if newerBuild(u.channel, m, u.current) {
 		if u.latest == nil || u.latest.Commit != m.Commit {
 			log.Printf("update available: %s %s", m.Version, m.Commit)
@@ -338,13 +479,19 @@ func (u *selfUpdate) currentBuild() BuildInfo {
 func (u *selfUpdate) view() UpdateView {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	v := UpdateView{Enabled: true, Channel: u.channel, Current: UpdateBuild{Version: u.current.Version, Commit: u.current.Commit, Built: u.current.Built},
-		Supported: assetName(runtime.GOOS, runtime.GOARCH) != "", CheckFailed: u.checkFailed, Phase: u.phase}
+	v := UpdateView{Enabled: true, Channel: u.channel, Current: UpdateBuild{Version: u.current.Version, Commit: u.current.Commit, Built: u.current.Built, PR: u.pr, Title: u.title},
+		Supported: assetName(runtime.GOOS, runtime.GOARCH) != "", CheckFailed: u.checkFailed, Phase: u.phase,
+		Switch: u.channel != "release", Gone: u.gone}
 	if !u.checked.IsZero() {
 		v.Checked = u.checked.Format(time.RFC3339)
 	}
 	if m := u.latest; m != nil {
-		v.Latest = &UpdateBuild{Version: m.Version, Commit: m.Commit, Built: m.Built}
+		b := updateBuildOf(*m)
+		v.Latest = &b
+	}
+	if m := u.edge; m != nil {
+		b := updateBuildOf(*m)
+		v.Edge = &b
 	}
 	if u.failure != nil {
 		v.Message = u.failure.Error()
@@ -371,35 +518,57 @@ func (u *selfUpdate) start(ctx context.Context, commit string) error {
 		return errCode("update_unsupported", nil, "この OS 向けの更新はありません")
 	}
 	u.phase, u.failure = "downloading", nil
-	go u.apply(ctx, commit)
+	go u.apply(ctx, u.tag(), commit)
 	return nil
 }
 
-func (u *selfUpdate) apply(ctx context.Context, commit string) {
+// switchTo installs the build of another release (edge or pr-N) that the
+// owner confirmed, newer or not. Release builds stay on releases.
+func (u *selfUpdate) switchTo(ctx context.Context, tag, commit string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	switch {
+	case u.channel == "release":
+		return errCode("update_switch_unavailable", nil, "リリース版は他のビルドに切り替えられません")
+	case tag != "edge" && prOfTag(tag) == 0, !commitPattern.MatchString(commit):
+		return errCode("update_switch_bad", nil, "切り替え先のビルドが正しくありません")
+	case u.phase == "downloading" || u.phase == "restarting":
+		return errCode("update_busy", nil, "更新しています")
+	case assetName(runtime.GOOS, runtime.GOARCH) == "":
+		return errCode("update_unsupported", nil, "この OS 向けの更新はありません")
+	}
+	u.phase, u.failure = "downloading", nil
+	go u.apply(ctx, tag, commit)
+	return nil
+}
+
+func (u *selfUpdate) apply(ctx context.Context, tag, commit string) {
 	fail := func(err error) {
 		log.Printf("update failed: %v", english(err))
 		u.mu.Lock()
 		u.phase, u.failure = "failed", err
 		u.mu.Unlock()
 	}
-	// The release may have moved since the owner confirmed (edge).
-	m, err := u.fetch(ctx)
+	// The release may have moved since the owner confirmed (edge, pr-N).
+	m, err := u.fetch(ctx, tag)
 	if err != nil {
 		fail(errCode("update_download", map[string]any{"detail": err.Error()}, "ダウンロードできませんでした: "+err.Error()))
 		return
 	}
 	if m.Commit != commit {
-		u.mu.Lock()
-		if newerBuild(u.channel, m, u.current) {
-			u.latest = &m
-		} else {
-			u.latest = nil
+		if tag == u.tag() {
+			u.mu.Lock()
+			if newerBuild(u.channel, m, u.current) {
+				u.latest = &m
+			} else {
+				u.latest = nil
+			}
+			u.mu.Unlock()
 		}
-		u.mu.Unlock()
 		fail(errCode("update_changed", nil, "新しい版が変わりました。確認し直してください"))
 		return
 	}
-	exe, err := u.install(ctx, m)
+	exe, err := u.install(ctx, tag, m)
 	if err != nil {
 		fail(err)
 		return
@@ -426,7 +595,7 @@ func (u *selfUpdate) swappedExe() string {
 // download fetches this OS's binary from m's release next to the
 // executable, checks its hash and that it runs, and swaps it in. A failure
 // before the swap changes nothing.
-func (u *selfUpdate) download(ctx context.Context, m buildMeta) (string, error) {
+func (u *selfUpdate) download(ctx context.Context, tag string, m buildMeta) (string, error) {
 	asset := assetName(runtime.GOOS, runtime.GOARCH)
 	want := m.Assets[asset]
 	if want == "" {
@@ -453,7 +622,7 @@ func (u *selfUpdate) download(ctx context.Context, m buildMeta) (string, error) 
 	dctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	h := sha256.New()
-	if err := u.get(dctx, u.assetURL(m, asset), io.MultiWriter(tmp, h), updateAssetLimit); err != nil {
+	if err := u.get(dctx, u.assetURL(tag, m, asset), io.MultiWriter(tmp, h), updateAssetLimit); err != nil {
 		return "", errCode("update_download", map[string]any{"detail": err.Error()}, "ダウンロードできませんでした: "+err.Error())
 	}
 	if err := tmp.Close(); err != nil {
@@ -589,19 +758,21 @@ func removeOldExe() {
 	}
 }
 
-// handleUpdate answers GET /api/update, POST /api/update/check and POST
-// /api/update/apply.
+// handleUpdate answers GET /api/update and /api/update/prs (the pull
+// requests' builds), and POST /api/update/check, /api/update/apply and
+// /api/update/switch (to edge or a pull request's build).
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/api/update")
+	get := action == "" || action == "/prs"
 	switch {
-	case action == "" && r.Method != http.MethodGet, action != "" && r.Method != http.MethodPost:
-		fail(w, 405, "method not allowed")
-		return
-	case action != "" && action != "/check" && action != "/apply":
+	case !get && action != "/check" && action != "/apply" && action != "/switch":
 		fail(w, 404, "not found")
 		return
+	case get && r.Method != http.MethodGet, !get && r.Method != http.MethodPost:
+		fail(w, 405, "method not allowed")
+		return
 	}
-	if !s.require(w, r, action != "") {
+	if !s.require(w, r, !get) {
 		return
 	}
 	u := s.update
@@ -615,32 +786,93 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch action {
+	case "/prs":
+		s.handleUpdatePRs(w, r, u)
+		return
 	case "/check":
 		ctx, cancel := timeout(r.Context(), 40*time.Second)
 		defer cancel()
 		_ = u.check(ctx)
-	case "/apply":
+	case "/apply", "/switch":
 		var body struct {
+			Tag    string `json:"tag"`
 			Commit string `json:"commit"`
 		}
 		if decode(w, r, &body) != nil {
 			fail(w, 400, "invalid request")
 			return
 		}
-		if err := u.start(s.ctx, body.Commit); err != nil {
+		var err error
+		if action == "/switch" {
+			err = u.switchTo(s.ctx, body.Tag, body.Commit)
+		} else {
+			err = u.start(s.ctx, body.Commit)
+		}
+		if err != nil {
 			failErr(w, 409, err)
 			return
 		}
 	}
 	v := u.view()
-	if m := u.available(); m != nil && v.Phase == "" {
+	m, e := u.available(), u.edgeBuild()
+	if v.Phase == "" && (m != nil || e != nil) {
 		ctx, cancel := timeout(r.Context(), 15*time.Second)
 		defer cancel()
-		if v.Gateway = s.gatewayChanges(ctx, *m); v.Gateway {
+		now := s.gatewayNow(ctx)
+		if m != nil {
+			v.Gateway = gatewayChanges(now, *m)
+		}
+		if e != nil && v.Edge != nil {
+			v.Edge.Gateway = gatewayChanges(now, *e)
+		}
+		if v.Gateway || (v.Edge != nil && v.Edge.Gateway) {
 			v.Restart = s.runningSandboxes(ctx)
 		}
 	}
 	jsonResponse(w, 200, v)
+}
+
+// UpdatePRs answers GET /api/update/prs.
+type UpdatePRs struct {
+	Builds  []UpdateBuild `json:"builds"`
+	Restart []string      `json:"restart,omitempty"`
+}
+
+func (s *Server) handleUpdatePRs(w http.ResponseWriter, r *http.Request, u *selfUpdate) {
+	if u.channel == "release" {
+		failCode(w, 409, "update_switch_unavailable", nil, "リリース版は他のビルドに切り替えられません")
+		return
+	}
+	ctx, cancel := timeout(r.Context(), 40*time.Second)
+	defer cancel()
+	metas, err := u.list(ctx)
+	if err != nil {
+		failCode(w, 502, "update_list", map[string]any{"detail": err.Error()}, "PR のビルドを取得できませんでした: "+err.Error())
+		return
+	}
+	now := s.gatewayNow(ctx)
+	out := UpdatePRs{Builds: []UpdateBuild{}}
+	gateway := false
+	for _, m := range metas {
+		b := updateBuildOf(m)
+		b.Gateway = gatewayChanges(now, m)
+		gateway = gateway || b.Gateway
+		out.Builds = append(out.Builds, b)
+	}
+	if gateway {
+		out.Restart = s.runningSandboxes(ctx)
+	}
+	jsonResponse(w, 200, out)
+}
+
+func (u *selfUpdate) edgeBuild() *buildMeta {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.edge == nil {
+		return nil
+	}
+	m := *u.edge
+	return &m
 }
 
 // gatewayImager is a runtime that can tell the gateway container's image.
@@ -648,10 +880,9 @@ type gatewayImager interface {
 	GatewayImage(ctx context.Context) string
 }
 
-// gatewayChanges reports whether m's gateway image differs from the one
-// the gateway container runs (or, when that is unknown, this exe's).
-// OpenShell restarts the running sandboxes when the gateway is recreated.
-func (s *Server) gatewayChanges(ctx context.Context, m buildMeta) bool {
+// gatewayNow is the digest of the gateway container's image (or, when
+// that is unknown, this exe's), "" when unknown.
+func (s *Server) gatewayNow(ctx context.Context) string {
 	now := ""
 	if g, ok := s.rt.(gatewayImager); ok {
 		now = imageDigest(g.GatewayImage(ctx))
@@ -659,6 +890,13 @@ func (s *Server) gatewayChanges(ctx context.Context, m buildMeta) bool {
 	if now == "" && pullsGatewayImage() {
 		now = imageDigest(imageRef("iwato-gateway"))
 	}
+	return now
+}
+
+// gatewayChanges reports whether m's gateway image differs from now
+// (gatewayNow). OpenShell restarts the running sandboxes when the gateway
+// is recreated.
+func gatewayChanges(now string, m buildMeta) bool {
 	next := m.Images["iwato-gateway"]
 	return now == "" || next == "" || now != next
 }

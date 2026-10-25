@@ -57,6 +57,8 @@ The exes and binaries from GitHub Releases check for a new build when they start
 
 Sandboxes and their terminals keep running, unless the update brings a new gateway: then OpenShell restarts the running sandboxes, which ends their processes and terminals (files are kept). The confirmation lists them first. Builds you made yourself do not check.
 
+To try a change before it is merged, the edge build's **Settings** has **Try a pull request build**: the open pull requests' builds, each with its commit. Installing one works like an update (the same checks; the confirmation shows the full commit). That build offers only its own pull request's newer pushes, and **Back to edge** returns, even to an older build. An unmerged build may break things: if it breaks remote access, getting back may need the PC.
+
 ## Command line
 
 ```

@@ -1,0 +1,139 @@
+# A pull request from a branch of this repository gets the pre-release
+# `pr-<N>`: the exes of its head commit, pinned like the edge exes to the
+# images of their own sources (src-<hash>, which image.yml publishes for
+# these pull requests too), and iwato-build.json with the pull request's
+# number and title. Every push replaces it; closing or merging the pull
+# request deletes it and its tag. The settings install it (update.go,
+# docs/adr/0019). Forks and Dependabot get nothing: their token is read-only.
+name: pr-build
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+permissions:
+  contents: read
+# A newer push, or closing, cancels a build still running, so a closed pull
+# request's release is not published again.
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  exes:
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: go-env
+        run: |
+          echo "cache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-env.outputs.cache }}
+            ${{ steps.go-env.outputs.modcache }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-${{ runner.os }}-${{ runner.arch }}-
+      - run: python3 scripts/fetch-vendor.py
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          digests=""
+          for name in iwato-gateway iwato-sandbox; do
+            ref=$REGISTRY/$name:src-$(scripts/image-sources.sh "${name#iwato-}")
+            until d=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | jq -r .digest); echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}'; do
+              echo "waiting for $ref (image.yml)"
+              sleep 60
+            done
+            digests="$digests${digests:+,}$name=$d"
+          done
+          echo "pinning $digests"
+          scripts/build-exe.sh --images "$REGISTRY" --image-tag "pr-$PR" --image-digests "$digests" --channel "pr-$PR" --repo "$GITHUB_REPOSITORY"
+          scripts/build-meta.sh "pr-$PR" "$digests"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: iwato-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            dist/windows-*/iwato.exe
+            dist/darwin-arm64/iwato
+            dist/linux-*/iwato
+            dist/iwato-build.json
+          if-no-files-found: error
+          retention-days: 1
+  release:
+    needs: exes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: iwato-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: dist
+      - name: Publish the pull request's pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -e
+          tag=pr-$PR
+          for a in amd64 arm64; do cp dist/windows-$a/iwato.exe iwato-windows-$a.exe; done
+          cp dist/darwin-arm64/iwato iwato-darwin-arm64
+          for a in amd64 arm64; do cp dist/linux-$a/iwato iwato-linux-$a; done
+          if gh api "repos/$GH_REPO/git/refs/tags/$tag" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$HEAD_SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$HEAD_SHA" >/dev/null
+          fi
+          notes="Unmerged build of pull request #$PR at $HEAD_SHA ($(date -u +%Y-%m-%dT%H:%MZ)), to try it before merging. Replaced on every push; deleted when the pull request is closed."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --prerelease --title "PR #$PR: $PR_TITLE" --notes "$notes"
+          else
+            gh release create "$tag" --prerelease --latest=false --verify-tag --title "PR #$PR: $PR_TITLE" --notes "$notes"
+          fi
+          gh release upload "$tag" iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64 --clobber
+          # Last: until it is replaced, the old metadata's hashes refuse the new binaries.
+          gh release upload "$tag" dist/iwato-build.json --clobber
+  # The images' pr-<N> tags stay: in ghcr.io a tag goes only with its
+  # version, which src-<hash> (and maybe edge) share.
+  cleanup:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Delete the pull request's pre-release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if gh release view "pr-$PR" >/dev/null 2>&1; then
+            gh release delete "pr-$PR" --cleanup-tag --yes
+          fi
+          if gh api "repos/$GH_REPO/git/refs/tags/pr-$PR" >/dev/null 2>&1; then
+            gh api -X DELETE "repos/$GH_REPO/git/refs/tags/pr-$PR"
+          fi
