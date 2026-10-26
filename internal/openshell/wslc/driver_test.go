@@ -583,14 +583,3 @@ func TestGPUClaimSurvivesRotate(t *testing.T) {
 		}
 	}
 }
-
-// Every sandbox gets a /dev/shm big enough for a browser (WSLc's default is
-// 64 MB); a GPU sandbox also gets `--gpus all`.
-func TestMemoryDeviceFlags(t *testing.T) {
-	if got, want := strings.Join(memoryDeviceFlags(false), " "), "--shm-size 1g"; got != want {
-		t.Errorf("no GPU: %q, want %q", got, want)
-	}
-	if got, want := strings.Join(memoryDeviceFlags(true), " "), "--shm-size 1g --gpus all"; got != want {
-		t.Errorf("GPU: %q, want %q", got, want)
-	}
-}

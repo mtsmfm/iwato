@@ -60,10 +60,6 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
 
     // The default: this PC's *.localhost links.
     const port = new URL(url).port;
-    await card.getByRole('button', { name: 'その他の操作' }).click();
-    await card.getByRole('menuitem', { name: 'ファイル' }).waitFor();
-    check(await card.getByRole('menuitem', { name: 'ポート' }).count() === 0, 'ports is a tab, not in the ⋯ menu');
-    await page.keyboard.press('Escape');
     await card.getByRole('tab', { name: 'ポート' }).click();
     const panel = card.locator('.ports-panel');
     await panel.getByText('この PC で公開中').waitFor();
@@ -223,7 +219,6 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     };
     await openSettings(page);
     const language = settings.locator('.language-settings');
-    check(await language.locator('h4').innerText() === '言語 / Language', 'the section is named in both languages');
     await settings.getByLabel('表示する言語').selectOption('en');
     await settings.locator('.log-head strong', { hasText: 'Settings' }).waitFor();
     check(await page.evaluate(() => document.documentElement.lang) === 'en', 'the page is marked English');

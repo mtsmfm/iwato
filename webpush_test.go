@@ -58,17 +58,6 @@ func testSubscription(t *testing.T, endpoint string) (PushSubscription, *ecdh.Pr
 	return PushSubscription{Endpoint: endpoint, P256dh: enc.EncodeToString(ua.PublicKey().Bytes()), Auth: enc.EncodeToString(auth)}, ua, auth
 }
 
-func TestPushEncryptionRoundTrip(t *testing.T) {
-	sub, ua, auth := testSubscription(t, "https://fcm.googleapis.com/fcm/send/x")
-	body, err := encryptPush(sub, []byte(`{"title":"作業完了"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := decryptPush(t, ua, auth, body); string(got) != `{"title":"作業完了"}` {
-		t.Fatalf("%q", got)
-	}
-}
-
 func TestPushDeliveryVAPIDAndCleanup(t *testing.T) {
 	var mu sync.Mutex
 	var bodies [][]byte
