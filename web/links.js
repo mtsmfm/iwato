@@ -163,10 +163,71 @@
     return i >= 0 && FRAME.includes(row.cells[i].c) && row.cells[i].x >= cols - 3 ? i : -1;
   }
 
+  // Whether next, the text after a row an application wrapped at the edge,
+  // continues the URL (or the start of its scheme: the application may
+  // break inside https://) that before ends with, into one URL.
+  function continues(before, next) {
+    if (!next || linkTerm(next.codePointAt(0)) === HARD) return false;
+    if (!/https?:\/\/\S*$|(?<![A-Za-z0-9])(?:https?(?::\/?)?|htt?|h)$/.test(before)) return false;
+    return findURLs(before + next).some((u) => u.index < before.length && u.index + u.url.length > before.length);
+  }
+
+  // The links of text whose code units sit at pos ({x, r}), with each
+  // row's cells of a link as spans [y, from, to] (0-based x).
+  function textLinks(text, pos, firstY, paths) {
+    const links = [];
+    for (const {target, index, length} of paths || text.includes('://') ? findLinks(text, paths) : []) {
+      const a = pos[index], b = pos[index + length - 1];
+      const spans = [];
+      for (let k = index; k < index + length; k++) {
+        const {x, r} = pos[k], last = spans.at(-1);
+        if (last && last[0] === firstY + r) last[2] = x; else spans.push([firstY + r, x, x]);
+      }
+      links.push({url: target, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}, spans});
+    }
+    return links;
+  }
+
+  const borders = (r) => r.cells.filter((c) => FRAME.includes(c.c)).map((c) => c.x).join();
+
+  // Rows with the same three or more column borders at the same cells are a
+  // table (Claude Code wraps a long cell inside its column): each column is
+  // its own text, and a URL that reaches its cell's right edge (one padding
+  // cell) continues in the same column of the next row.
+  function tableLinks(row, i, cols, firstY, paths) {
+    const xs = borders(row(i));
+    let end = i + 1;
+    while (row(end) && !row(end).wrapped && borders(row(end)) === xs) end++;
+    const edges = [-1, ...xs.split(',').map(Number), cols];
+    const links = [];
+    for (let c = 0; c + 1 < edges.length; c++) {
+      let text = '', pos = [], reaches = false;
+      for (let r = i; r < end; r++) {
+        const cells = row(r).cells.filter((cell) => cell.x > edges[c] && cell.x < edges[c + 1]);
+        let from = 0;
+        while (from < cells.length && cells[from].c === ' ') from++;
+        const before = text.replace(/ +$/, '');
+        if (reaches && continues(before, cells.slice(from).map((cell) => cell.c).join(''))) {
+          text = before; pos.length = before.length;
+        } else {
+          links.push(...textLinks(text, pos, firstY, paths));
+          text = ''; pos = []; from = 0;
+        }
+        for (const cell of cells.slice(from)) { text += cell.c; pos.push({x: cell.x, r}); }
+        const last = cells.findLast((cell) => cell.c !== ' ');
+        reaches = !!last && last.x >= edges[c + 1] - 2;
+      }
+      links.push(...textLinks(text, pos, firstY, paths));
+    }
+    return {end, links: links.sort((a, b) => a.start.y - b.start.y || a.start.x - b.start.x)};
+  }
+
   // The logical line that starts at row i: its links and the row after it.
   // row(k) is the row k, undefined past the last; the line reads no row
   // before i and none past the one after it.
   function lineLinks(row, i, cols, firstY, paths) {
+    const next = row(i + 1);
+    if (next && !next.wrapped && borders(next) === borders(row(i)) && borders(next).split(',').length >= 3) return tableLinks(row, i, cols, firstY, paths);
     // Build one logical line: text plus the cell/row of every code unit.
     let text = '';
     const pos = [];
@@ -186,26 +247,15 @@
       const prev = row(j - 1), cur = row(j);
       if (cur.wrapped) { text = text.replace(/ +$/, ''); pos.length = text.length; push(j, 0); j++; continue; }
       if (!reachesEdge(prev, cols)) break;
-      // Join only when a URL (or the start of its scheme: the application
-      // may break inside https://) ends at the edge and the next row
-      // continues it into one URL.
       const before = text.replace(/[ │┃║|]+$/, '');
-      const tail = /https?:\/\/\S*$|(?<![A-Za-z0-9])(?:https?(?::\/?)?|htt?|h)$/.test(before);
       let k = 0;
       while (k < cur.cells.length && (cur.cells[k].c === ' ' || FRAME.includes(cur.cells[k].c))) k++;
-      if (!tail || k >= cur.cells.length || linkTerm((cur.cells[k].c + (cur.cells[k + 1]?.c || '')).codePointAt(0)) === HARD) break;
-      const joined = before + chars(j, k).join('');
-      if (!findURLs(joined).some((u) => u.index < before.length && u.index + u.url.length > before.length)) break;
+      if (!continues(before, chars(j, k).join(''))) break;
       text = before; pos.length = before.length;
       push(j, k);
       j++;
     }
-    const links = [];
-    for (const {target, index, length} of paths || text.includes('://') ? findLinks(text, paths) : []) {
-      const a = pos[index], b = pos[index + length - 1];
-      links.push({url: target, start: {x: a.x + 1, y: firstY + a.r}, end: {x: b.x + 1, y: firstY + b.r}});
-    }
-    return {end: j, links};
+    return {end: j, links: textLinks(text, pos, firstY, paths)};
   }
 
   // wrappedLinks returns [{url, start: {x, y}, end: {x, y}}] in 1-based,
@@ -215,13 +265,11 @@
     const links = [];
     for (let i = 0; i < rows.length;) {
       const line = lineLinks((k) => rows[k], i, cols, firstY, paths);
-      links.push(...line.links);
+      for (const {url, start, end} of line.links) links.push({url, start, end});
       i = line.end;
     }
     return links;
   }
-
-  const content = (c) => c.c !== ' ' && !FRAME.includes(c.c);
 
   // screenLines splits screen rows 0..n-1 (row(y) as for lineLinks) into
   // logical lines with the pieces of their URLs per row, 0-based cells:
@@ -245,16 +293,12 @@
         // Stable across redraws, so a hovered URL stays lit while the rest
         // of the screen changes.
         const group = link.start.y + ':' + link.start.x;
-        for (let y = link.start.y; y <= link.end.y; y++) {
-          const cells = row(y).cells;
-          let from = y === link.start.y ? link.start.x - 1 : -1;
-          let to = y === link.end.y ? link.end.x - 1 : -1;
-          if (from < 0) { const first = cells.find(content); if (!first) continue; from = first.x; }
-          if (to < 0) { const last = cells.findLast(content); if (!last) continue; to = last.x; }
+        for (const [y, from, to] of link.spans) {
           if (!pieces.has(y)) pieces.set(y, []);
           pieces.get(y).push({from, to, url: link.url, group});
         }
       }
+      for (const list of pieces.values()) list.sort((a, b) => a.from - b.from);
       lines.push({start: i, end, pieces: [...pieces]});
       i = end;
     }

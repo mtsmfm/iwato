@@ -224,7 +224,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, logo, lines, colors, diff, mouse, ccscroll, tui MS [LINES], clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, cctable [N], logo, lines, colors, diff, mouse, ccscroll, tui MS [LINES], clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -332,6 +332,11 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 					rest = rest[n:]
 				}
 				response = b.String()
+			case line == "cctable" || strings.HasPrefix(line, "cctable "):
+				// Claude Code's Markdown tables at a narrow width: cells
+				// hard-wrapped inside their column, padded by one, centred
+				// vertically, ├┼┤ between rows. "cctable N" prints table N.
+				response = fakeTables(t.cols, strings.TrimSpace(strings.TrimPrefix(line, "cctable")))
 			case line == "framed":
 				// A URL that an application wraps itself inside a frame, at
 				// the terminal's edge (as Claude Code does).
@@ -668,4 +673,102 @@ func (t *fakeTerm) startTUI(period time.Duration, lines int) {
 			t.output(b.String())
 		}
 	}()
+}
+
+// fakeTables draws the cctable tables as Claude Code does: hard-wrapped
+// cells padded by one, centred vertically, ├┼┤ between body rows.
+func fakeTables(cols int, which string) string {
+	wide := func(r rune) int {
+		if r >= 0x3000 {
+			return 2
+		}
+		return 1
+	}
+	width := func(s string) (n int) {
+		for _, r := range s {
+			n += wide(r)
+		}
+		return n
+	}
+	wrap := func(s string, w int) []string {
+		var lines []string
+		line, n := "", 0
+		for _, r := range s {
+			if n+wide(r) > w {
+				lines, line, n = append(lines, line), "", 0
+			}
+			line, n = line+string(r), n+wide(r)
+		}
+		return append(lines, line)
+	}
+	rule := func(ws []int, l, m, r string) string {
+		s := "  " + l
+		for i, w := range ws {
+			s += strings.Repeat("─", w+2)
+			if i < len(ws)-1 {
+				s += m
+			} else {
+				s += r
+			}
+		}
+		return s + "\r\n"
+	}
+	row := func(ws []int, cells []string, center bool) string {
+		wrapped := make([][]string, len(cells))
+		h := 1
+		for i, c := range cells {
+			wrapped[i] = wrap(c, ws[i])
+			h = max(h, len(wrapped[i]))
+		}
+		var b strings.Builder
+		for y := range h {
+			b.WriteString("  │")
+			for i, lines := range wrapped {
+				text := ""
+				if k := y - (h-len(lines))/2; k >= 0 && k < len(lines) {
+					text = lines[k]
+				}
+				pad := ws[i] - width(text)
+				left := 0
+				if center {
+					left = pad / 2
+				}
+				b.WriteString(" " + strings.Repeat(" ", left) + text + strings.Repeat(" ", pad-left) + " │")
+			}
+			b.WriteString("\r\n")
+		}
+		return b.String()
+	}
+	table := func(ws []int, header []string, body ...[]string) string {
+		s := rule(ws, "┌", "┬", "┐") + row(ws, header, true)
+		for _, r := range body {
+			s += rule(ws, "├", "┼", "┤") + row(ws, r, false)
+		}
+		return s + rule(ws, "└", "┴", "┘")
+	}
+	const u = "https://example.com/iwato/table/"
+	tables := []string{
+		table([]int{6, min(max(cols-15, 20), 28)}, []string{"Name", "URL"},
+			[]string{"report", "https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html"},
+			[]string{"docs", u + "docs"}),
+		table([]int{3, min(max(cols-23, 16), 24), 8}, []string{"#", "URL", "メモ"},
+			[]string{"1", u + "middle-column", "中央の列"}),
+		table([]int{4, 12}, []string{"件", "説明"},
+			[]string{"表", "開く " + u + "scheme"}),
+		table([]int{min(max((cols-9)/2, 16), 20), min(max((cols-9)/2, 16), 20)}, []string{"左", "右"},
+			[]string{u + "left", u + "right"}),
+		// The same rows pasted into a code block of an assistant message.
+		"⏺ コードブロックの表:\r\n\r\n" +
+			"  │ report │ https://iwato-afp-2.tail9610 │\r\n" +
+			"  │        │ ad.ts.net:8150/report/faces/ │\r\n" +
+			"  │        │ index.html                   │\r\n",
+	}
+	var b strings.Builder
+	b.WriteString("⏺ 表の URL:\r\n")
+	for i, t := range tables {
+		if which == "" || which == fmt.Sprint(i+1) {
+			b.WriteString("\r\n" + t)
+		}
+	}
+	return strings.TrimSuffix(b.String(), "\r\n")
 }

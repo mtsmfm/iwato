@@ -210,6 +210,56 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       const missed = await press(grid, cells, url, [0.5]);
       check(text === url && missed.length === 0, 'every cell of a URL broken inside its scheme opens it' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : ''));
     }
+    // URLs wrapped inside the columns of Claude Code's tables.
+    {
+      // The cells of the last URL on the screen that starts in a column and
+      // continues in the same column of the rows below, and the cell after
+      // its first piece.
+      const cellsOf = (row) => {
+        const parts = [];
+        let x = 0;
+        for (const part of row.split('│')) {
+          const lead = part.length - part.trimStart().length;
+          parts.push({ text: part.trim(), x: x + lead });
+          x += width(part) + 1;
+        }
+        return parts;
+      };
+      const tableURL = (grid, url) => {
+        for (let y0 = grid.rows.length - 1; y0 >= 0; y0--) {
+          const parts = cellsOf(grid.rows[y0]);
+          for (let c = 0; c < parts.length; c++) {
+            const at = parts[c].text.indexOf('http');
+            if (at < 0) continue;
+            let text = parts[c].text.slice(at);
+            const x0 = parts[c].x + width(parts[c].text.slice(0, at));
+            const cells = Array.from(text, (_, k) => [y0, x0 + k]);
+            const after = [y0, x0 + text.length + 1];
+            for (let y = y0 + 1; text.length < url.length && y < grid.rows.length; y++) {
+              const p = cellsOf(grid.rows[y])[c];
+              if (!p?.text) break;
+              text += p.text;
+              cells.push(...Array.from(p.text, (_, k) => [y, p.x + k]));
+            }
+            if (text === url) return { cells, after };
+          }
+        }
+        return null;
+      };
+      const u = 'https://example.com/iwato/table/';
+      for (const [n, urls] of [['1', ['https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html', u + 'docs']], ['2', [u + 'middle-column']], ['3', [u + 'scheme']], ['4', [u + 'left', u + 'right']], ['5', ['https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html']]]) {
+        await input.focus();
+        await page.keyboard.type('cctable ' + n);
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(400);
+        const grid = await layout();
+        for (const url of urls) {
+          const found = tableURL(grid, url);
+          const missed = found ? [...await press(grid, found.cells, url, [0.5]), ...await press(grid, [found.after], null, [0.5])] : [];
+          check(found && missed.length === 0, 'table ' + n + ': every cell of ' + url + ' opens it' + (missed.length ? ' (wrong: ' + missed.join(' ') + ')' : found ? '' : ' (not on the screen)'));
+        }
+      }
+    }
     await input.focus();
     // A file path opens in the editor at its line; one that is missing or
     // outside the home is plain text.

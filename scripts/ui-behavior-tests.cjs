@@ -875,6 +875,22 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(linked([row2('see watch'), row2('  https://b.example/')], 9), ['https://b.example/']);
     assert.deepEqual(linked([row2('go h'), row2('  ttp is old')], 4), [], 'not glued to unrelated text');
     assert.deepEqual(linked([row2('docs say http'), row2('  is old, https://b.example/')], 13), ['https://b.example/']); }
+  { // Claude Code's tables: a cell wraps inside its column.
+    const table = (...rows) => linked(rows.map((r) => row2(r)), 60);
+    const afp = 'https://iwato-afp-2.tail9610ad.ts.net:8150/report/faces/index.html';
+    const rows = ['│        │ https://iwato-afp-2.tail9610 │', '│ report │ ad.ts.net:8150/report/faces/ │', '│        │ index.html                   │'];
+    assert.deepEqual(table(...rows), [afp], 'three rows in the last column');
+    assert.deepEqual(JSON.parse(JSON.stringify(side.win.IwatoLinks.screenLines((y) => rows[y] && row2(rows[y]), 3, 60, null, new Set()))), [{start: 0, end: 3, pieces: [0, 1, 2].map((y) => [y, [{from: 11, to: y === 2 ? 20 : 38, url: afp, group: '0:12'}]])}], 'only the column\'s cells');
+    assert.deepEqual(table('⏺ コードブロックの表:', '', '  │ report │ https://iwato-afp-2.tail9610 │', '  │        │ ad.ts.net:8150/report/faces/ │', '  │        │ index.html                   │', '', '> '), [afp], 'rows in a code block, indented by the message');
+    assert.deepEqual(table('│ 1 │ https://a.example/iw │ 中央 │', '│   │ ato/middle           │      │'), ['https://a.example/iwato/middle'], 'a middle column');
+    assert.deepEqual(table('│ 表 │ 開く https:/ │', '│    │ /a.example/x │', '│    │ /scheme      │'), ['https://a.example/x/scheme'], 'broken inside the scheme');
+    assert.deepEqual(table('│ https://a.example/ │ https://b.example/ │', '│ left               │ right              │'), ['https://a.example/left', 'https://b.example/right'], 'two columns');
+    assert.deepEqual(table('│ https://a.example/aaaa │ x   │', '│                        │ bbb │'), ['https://a.example/aaaa'], 'not glued to another column');
+    assert.deepEqual(table('│ https://a.example/x   │ x │', '│ see more              │ y │'), ['https://a.example/x'], 'not glued when short of the edge');
+    assert.deepEqual(table('│ https://a.example/xyz │ x │', '│ 、次                  │ y │'), ['https://a.example/xyz'], 'not glued to what ends a URL');
+    assert.deepEqual(table('│ https://a.example/xyz │ x │', '├───────────────────────┼───┤', '│ more                  │ y │'), ['https://a.example/xyz'], 'not across a rule');
+    assert.deepEqual(table('| https://a.example/ | x |', '| ascii              | y |'), ['https://a.example/ascii'], 'ASCII borders'); }
+  ok('a URL wrapped inside a table column is one link; other columns, short rows and rules are not joined');
   // UTS #58's LinkDetectionTest.txt: the lines with http(s):// links, and the
   // scheme-less links given https://; emails are not detected here.
   { const differs = new Map([
@@ -907,16 +923,30 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const {screenLines} = side.win.IwatoLinks;
     let seed = 7; const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
     const words = ['https://a.example/', 'https:/', 'http', 'h', '/x/y', 'aaaa', 'b?q=1', ' ', '  ', '│ ', ' │', '|', '日本', '、', 'see ', '─'];
+    // A table row: the screen's borders, each column filled with words.
+    let xs = [];
+    const tableRow = (cols) => {
+      let t = '';
+      for (const x of xs) {
+        let cell = rand(3) ? '' : ' https://a.example/';
+        if (rand(3)) while ([...cell].length < x - [...t].length) cell += words[rand(7)];
+        t += [...cell].slice(0, x - [...t].length).join('').padEnd(x - [...t].length) + '│';
+      }
+      return row2(t);
+    };
     const randomRow = (cols) => {
+      if (xs.length && rand(7) < 4) return tableRow(cols);
       if (!rand(6)) return row2('');
       let t = ''; const want = cols - rand(4);
       while ([...t].length < want) t += words[rand(words.length)];
       const r = row2(t, !rand(3)); r.cells = r.cells.filter((c) => c.x < cols); return r;
     };
     const flat = (lines) => JSON.stringify(Array.from(lines, (l) => Array.from(l.pieces, ([y, list]) => [y, Array.from(list, (p) => ({...p}))])).flat());
-    let joined = 0;
+    let joined = 0, tables = 0;
     for (let screen = 0; screen < 80; screen++) {
       const cols = 8 + rand(30), n = 3 + rand(20);
+      xs = [];
+      if (rand(7) < 4) for (let x = rand(3); x < cols; x += 4 + rand(16)) xs.push(x);
       const rows = Array.from({length: n}, () => randomRow(cols));
       const row = (y) => rows[y];
       let lines = screenLines(row, n, cols, null, new Set());
@@ -930,9 +960,11 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
         const groups = Array.from(full, (l) => Array.from(l.pieces, ([, list]) => Array.from(list, (p) => p.group + ' ' + p.url))).flat(2);
         assert.deepEqual([...new Set(groups)], Array.from(wrappedLinks(rows, cols, 0, false), (l) => l.start.y + ':' + l.start.x + ' ' + l.url));
         joined += full.filter((l) => l.end - l.start > 1 && l.pieces.length > 1).length;
+        tables += full.filter((l) => l.pieces.some(([y, list]) => list.some((p) => p.to < cols - 3 && l.pieces.some(([y2, l2]) => y2 > y && l2.some((q) => q.group === p.group))))).length;
       }
     }
-    assert(joined > 100, 'URLs over several rows: ' + joined); }
+    assert(joined > 100, 'URLs over several rows: ' + joined);
+    assert(tables > 20, 'URLs over rows of a table column: ' + tables); }
   ok('screenLines rescans only the lines with a changed row and keeps a full scan\'s result');
   assert.equal(safeURL('javascript:alert(1)'), ''); assert.equal(safeURL('https://u:p@x.example/'), ''); assert.equal(safeURL('https://x.example/a b'), '');
   ok('wrapped link detection maps wide characters and app-wrapped rows to cell ranges');
