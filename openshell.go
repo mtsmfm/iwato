@@ -111,6 +111,8 @@ type OpenShell struct {
 	// termEnded is told when a terminal session Iwato holds ends
 	// (autostop.go).
 	termEnded atomic.Pointer[func(sandbox string)]
+	// runtime: sandboxes made with older runtime images (WSLc).
+	runtime runtimeCheck
 	// engineErr refuses at once while the engine is unusable (serve waits
 	// for it before Prepare: checks.go); nil in tests.
 	engineErr func() error
@@ -229,6 +231,8 @@ func (o *OpenShell) prepare(ctx context.Context) error {
 			return errCode("driver_port_in_use", map[string]any{"port": driverPort, "detail": err.Error()},
 				fmt.Sprintf("the WSLc driver cannot listen on port %d (is another process or a WSLc container's published port using it?): %v", driverPort, err))
 		}
+		refs := runtimeImages{wslc.DefaultSupervisorImage, wslc.DefaultSandboxImage}
+		o.runtime.setRefs(refs)
 		dctx, dstop := context.WithCancel(base)
 		o.mu.Lock()
 		o.stopDriver = func() { dstop(); ln.Close() }
@@ -236,7 +240,7 @@ func (o *OpenShell) prepare(ctx context.Context) error {
 		go func() {
 			err := wslc.Serve(dctx, wslc.Config{
 				Endpoint: g.Endpoint, Network: g.Network, Namespace: c.Namespace,
-				SupervisorImage: wslc.DefaultSupervisorImage, SandboxImage: wslc.DefaultSandboxImage,
+				SupervisorImage: refs.Supervisor, SandboxImage: refs.Sandbox,
 				DefaultImage: sandboxImage, StateDir: filepath.Join(o.dir, "sandboxes"), LogLevel: "info",
 				PullPolicy: "if-not-present", GuestTLSCA: g.CA, LegacyTerm: termbin.Binary(),
 			}, o.e.exe, ln)
@@ -676,6 +680,9 @@ func (o *OpenShell) Status(ctx context.Context, w Sandbox) Status {
 			}
 		default:
 			s.State, s.Detail = "stopped", string(sb.Status.Phase)+"…"
+		}
+		if s.State == "running" || s.State == "stopped" {
+			s.RecreateToUpdate = o.recreateToUpdate(ctx, sb.ID)
 		}
 	}
 	return s

@@ -55,7 +55,7 @@ The console shows only the startup lines, the sign-in URL, a one-line notice whe
 
 The exes and binaries from GitHub Releases check for a new build when they start and every 6 hours: the edge pre-release for a new commit, a release for a newer release. When there is one, **Update** shows in the sidebar and in **Settings**. Iwato then downloads its new program from the same release, checks it against the release's SHA-256, replaces itself and restarts on the same URL; the page reconnects by itself and you stay signed in.
 
-Sandboxes and their terminals keep running, unless the update brings a new gateway: then OpenShell restarts the running sandboxes, which ends their processes and terminals (files are kept). The confirmation lists them first. Builds you made yourself do not check.
+Sandboxes and their terminals keep running, unless the update brings a new gateway: then OpenShell restarts the running sandboxes, which ends their processes and terminals (files are kept). The confirmation lists them first. On Windows, if the new gateway also brings a new OpenShell supervisor, existing sandboxes keep the old one until recreated (**Recreate to update**). Builds you made yourself do not check.
 
 To try a change before it is merged, the edge build's **Settings** has **Try a pull request build**: the open pull requests' builds, each with its commit. Installing one works like an update (the same checks; the confirmation shows the full commit). That build offers only its own pull request's newer pushes, and **Back to edge** returns, even to an older build. An unmerged build may break things: if it breaks remote access, getting back may need the PC.
 

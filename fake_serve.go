@@ -48,6 +48,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 		c.ProviderScopes = fakeProviderScopes()
 		d := NewFake()
 		d.latency = *latency
+		d.oldRuntime = map[string]bool{"dev": true}
 		d.seedVolumes(c)
 		d.seedProviders()
 		return &fakeRun{config: c, rt: d, setup: func(s *Server) {

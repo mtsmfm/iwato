@@ -57,6 +57,9 @@ type Fake struct {
 	latency time.Duration
 	// noGPU: the engine offers no GPU.
 	noGPU bool
+	// oldRuntime: sandboxes created with older runtime images, until
+	// deleted (RecreateToUpdate).
+	oldRuntime map[string]bool
 }
 
 func NewFake() *Fake {
@@ -72,8 +75,11 @@ func (d *Fake) Status(_ context.Context, w Sandbox) Status {
 	} else if d.stopped[w.Name] {
 		s = "stopped"
 	}
-	return Status{Name: w.Name, State: s}
+	return Status{Name: w.Name, State: s, RecreateToUpdate: s != "not-created" && d.oldRuntime[w.Name]}
 }
+
+// PinsRuntime: as the WSLc driver.
+func (d *Fake) PinsRuntime() bool { return true }
 func (d *Fake) Start(_ context.Context, w Sandbox) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -525,6 +531,7 @@ func (d *Fake) Delete(_ context.Context, w Sandbox, purge bool) error {
 	d.openShell().forgetDraft(w.Name)
 	delete(d.prov.attached, w.Name)
 	delete(d.files, w.Name)
+	delete(d.oldRuntime, w.Name)
 	if purge {
 		delete(d.history, w.Name)
 		for _, p := range w.volumePaths() {

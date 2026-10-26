@@ -36,6 +36,7 @@
       supported: d?.supported === true,
       gateway: d?.gateway === true,
       restart: names(d?.restart),
+      recreate: d?.recreate === true,
       checked: text(d?.checked, 40),
       checkFailed: text(d?.checkFailed, 500),
       phase: phases.has(d?.phase) ? d.phase : '',
@@ -89,7 +90,8 @@
         const d = this.data, target = this.target;
         const to = target ? target.build : d.latest;
         const restart = target ? names(target.restart) : d.restart;
-        const restarts = (target ? to.gateway : d.gateway) && restart.length > 0;
+        const gateway = target ? to.gateway : d.gateway;
+        const restarts = gateway && restart.length > 0;
         const pr = target && target.tag !== 'edge';
         const title = pr ? t('update.pr.dialogTitle', { pr: to.pr }) : target ? t('update.edge.dialogTitle') : t('update.dialog.title');
         const nodes = [element('strong', '', title),
@@ -106,6 +108,7 @@
           for (const name of restart) ul.append(element('li', '', name));
           nodes.push(ul);
         } else nodes.push(element('p', 'panel-meta', t('update.dialog.keep')));
+        if (gateway && (target ? target.recreate === true : d.recreate)) nodes.push(element('p', 'update-warning update-recreate', t('update.dialog.recreate')));
         this.status = element('p', 'panel-meta');
         this.status.setAttribute('role', 'status');
         const ok = pr ? t('update.pr.install') : target ? t('update.edge.back') : t('update.apply');
@@ -198,7 +201,7 @@
           if (d.supported) row.append(button('button-primary', t('update.apply'), () => this.dialog.open()));
           else nodes.push(element('p', 'panel-meta', t('update.unsupported')));
         } else if (!d.gone) nodes.push(element('p', 'panel-meta', t('update.upToDate')));
-        if (pr && d.edge && d.supported) row.append(button('button-subtle', t('update.edge.back'), () => this.dialog.open({ tag: 'edge', build: d.edge, restart: d.restart })));
+        if (pr && d.edge && d.supported) row.append(button('button-subtle', t('update.edge.back'), () => this.dialog.open({ tag: 'edge', build: d.edge, restart: d.restart, recreate: d.recreate })));
         const when = Number.isFinite(Date.parse(d.checked)) ? window.IwatoI18n.date(d.checked, { dateStyle: 'short', timeStyle: 'short' }) : '';
         nodes.push(element('p', 'panel-meta', d.checkFailed ? t('update.checkFailed', { message: d.checkFailed }) : when ? t('update.checked', { time: when }) : ''));
         this.checkButton = button('button-subtle', t('update.check'), () => this.check());
@@ -235,7 +238,7 @@
           return;
         }
         const builds = (Array.isArray(list?.builds) ? list.builds : []).map(build).filter((b) => b && b.pr && /^[0-9a-f]{40}$/.test(b.commit)).slice(0, 20);
-        const restart = names(list?.restart);
+        const restart = names(list?.restart), recreate = list?.recreate === true;
         if (!builds.length) {
           box.replaceChildren(element('p', 'panel-meta', t('update.pr.none')));
           return;
@@ -248,7 +251,7 @@
           const when = Number.isFinite(Date.parse(b.built)) ? window.IwatoI18n.date(b.built, { dateStyle: 'short', timeStyle: 'short' }) : '';
           text.append(element('span', 'panel-meta', [b.commit.slice(0, 7), when && t('update.pr.built', { time: when })].filter(Boolean).join(' · ')));
           const running = this.data.current.commit && b.commit.startsWith(this.data.current.commit);
-          const install = button('button-subtle', running ? t('update.pr.running') : t('update.pr.install'), () => this.dialog.open({ tag: 'pr-' + b.pr, build: b, restart }));
+          const install = button('button-subtle', running ? t('update.pr.running') : t('update.pr.install'), () => this.dialog.open({ tag: 'pr-' + b.pr, build: b, restart, recreate }));
           install.disabled = !!running;
           li.append(text, install);
           ul.append(li);

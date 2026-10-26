@@ -13,6 +13,9 @@ type Status struct {
 	// RestartPending: a provider changed while the sandbox ran; restarting
 	// it gives every terminal the change.
 	RestartPending bool `json:"restartPending,omitempty"`
+	// RecreateToUpdate: it runs older runtime images (the supervisor) than
+	// new sandboxes get, until recreated (openshell_runtime.go).
+	RecreateToUpdate bool `json:"recreateToUpdate,omitempty"`
 	// GPU: the sandbox is configured with a GPU (the card shows a marker).
 	GPU bool `json:"gpu,omitempty"`
 	// Stopped: the terminals that stopped changing (notifier.go), by name,

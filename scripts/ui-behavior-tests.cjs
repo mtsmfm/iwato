@@ -28,6 +28,7 @@ class Element {
   set textContent(value) { this.text = value; this.textWrites++; }
   append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
   replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
+  after(...nodes) { const list = this.parent.children; for (const node of nodes) node.parent = this.parent; list.splice(list.indexOf(this) + 1, 0, ...nodes); }
   // As in a browser, placeholder and title reflect their attributes.
   setAttribute(key, value) { this.attributes[key] = String(value); if (key === 'placeholder' || key === 'title') this[key] = String(value); }
   getAttribute(key) { return this.attributes[key] ?? null; }
