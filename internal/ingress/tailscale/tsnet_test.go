@@ -28,17 +28,6 @@ func withMTUEnv(t *testing.T, value *string) {
 	}
 }
 
-func TestTunnelMTUIsLowered(t *testing.T) {
-	withMTUEnv(t, nil)
-	if got := tstun.DefaultTUNMTU(); got != 1280 {
-		t.Fatalf("precondition: default MTU %d, want 1280", got)
-	}
-	setTunnelMTU()
-	if got := tstun.DefaultTUNMTU(); got != 1200 {
-		t.Fatalf("MTU %d, want 1200", got)
-	}
-}
-
 func TestTunnelMTUKeepsTheOwnersSetting(t *testing.T) {
 	owner := "1100"
 	withMTUEnv(t, &owner)

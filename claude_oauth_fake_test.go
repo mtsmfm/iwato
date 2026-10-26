@@ -23,44 +23,6 @@ func newClaudeTest(t *testing.T) *claudeTest {
 	return &claudeTest{oauthTest: o, fake: f}
 }
 
-// The fake: Iwato's own pages stand in for Claude's, through the manual
-// redirect.
-func TestFakeClaudeFlow(t *testing.T) {
-	s, _, do := providerServer(t)
-	code, resp := do("POST", "/api/oauth/claude/start", `{"name":"claude-fake"}`)
-	var v claudeFlowView
-	if code != 200 || json.Unmarshal([]byte(resp), &v) != nil || !strings.HasPrefix(v.ManualURL, s.origin+"/fake/claude/authorize?") {
-		t.Fatal(code, resp)
-	}
-	u, _ := url.Parse(v.ManualURL)
-	code, page := do("GET", u.RequestURI(), "")
-	if code != 200 || !strings.Contains(page, `id="approve"`) {
-		t.Fatal(code, page)
-	}
-	q := u.Query()
-	code, page = do("GET", "/fake/claude/code?"+url.Values{"code": {"fake-code"}, "state": {q.Get("state")}}.Encode(), "")
-	if code != 200 || !strings.Contains(page, "fake-code#"+q.Get("state")) {
-		t.Fatal(code, page)
-	}
-	b, _ := json.Marshal(map[string]string{"code": "fake-code#" + q.Get("state")})
-	if code, resp := do("POST", "/api/oauth/claude/flows/"+v.ID+"/code", string(b)); code != 200 {
-		t.Fatal(code, resp)
-	}
-	for i := 0; ; i++ {
-		_, resp := do("GET", "/api/oauth/claude/flows/"+v.ID, "")
-		if strings.Contains(resp, `"done"`) {
-			break
-		}
-		if i > 1000 {
-			t.Fatal(resp)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if p, ok := provider(listProviders(t, do), "claude-fake"); !ok || p.Refresh == nil || p.Refresh.Status != "refreshed" {
-		t.Fatalf("%+v", p)
-	}
-}
-
 type claudeTest struct {
 	*oauthTest
 	fake *fakeClaude

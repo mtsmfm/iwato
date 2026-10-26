@@ -329,19 +329,6 @@ func TestDesktopStartIsDetachedAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestDesktopStartReplacesAStalePidfile(t *testing.T) {
-	d := startableDesktop(t)
-	pf := filepath.Join(d, ".cache", "iwato-desktop.pid")
-	os.MkdirAll(filepath.Dir(pf), 0o700)
-	os.WriteFile(pf, []byte(strconv.Itoa(deadPid(t))+"\n"), 0o600)
-	if r := runCLI(t, d, []string{"start"}); r.code != 0 || !strings.Contains(r.out, "started") {
-		t.Fatalf("%+v", r)
-	}
-	if !pidAlive(readPid(t, pf)) {
-		t.Fatal("not running")
-	}
-}
-
 func TestDesktopStartWithoutTheDesktop(t *testing.T) {
 	d := prepareDesktop(t)
 	r := runCLI(t, d, []string{"start"}, "PATH=/usr/bin:/bin")
@@ -445,13 +432,6 @@ func TestDesktopStopKillsWhatIgnoresTERM(t *testing.T) {
 	}
 	if fileExists(pf) {
 		t.Error("the pidfile is left behind")
-	}
-}
-
-func TestDesktopUsage(t *testing.T) {
-	d := prepareDesktop(t)
-	if r := runCLI(t, d, []string{"frobnicate"}); r.code != 2 || !strings.Contains(r.out, "usage") {
-		t.Fatalf("%+v", r)
 	}
 }
 

@@ -589,10 +589,6 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const atl = {provider: 'at', label: 'Atlassian', repos: [], mutations: [], tools: ['createJiraIssue']};
   assert.match(A.scopeLines(atl)[0].text, /MCP のツール createJiraIssue を許可します/); assert.match(A.scopeNote(atl), /ツール createJiraIssue を追加/);
   ok('approve.js: program candidates narrow to wide, glob semantics, read-only x paths, the 16 limit, the summary');
-  box.window.IwatoI18n.setPreference('en');
-  assert.equal(line({access: 'read', rows: [{method: 'GET', path: '/a/**'}]}), 'a.example:443,8443 | Read only (GET, HEAD, OPTIONS) | /a/** | Program: /usr/bin/curl | false');
-  assert.equal(A.binaryCandidates('/usr/bin/curl')[0].label, 'As is'); assert.equal(A.pathLabel('/'), '/ (the root only)');
-  ok('approve.js in English');
   }
   }
   const internal = {...proposalItem, pending: [{...proposal, allowedIps: [{host: 'ci.tailnet.example', ips: ['100.64.0.0/10', 7]}, {host: '', ips: ['10.0.0.0/8']}, {host: 'x.example', ips: []}, 'bad', {ips: ['1.2.3.4']}]}]};

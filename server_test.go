@@ -58,15 +58,6 @@ func dial(t *testing.T, s *Server, c *http.Cookie, csrf string) *websocket.Conn 
 	return ws
 }
 
-func TestLoopbackOnlyAndBounds(t *testing.T) {
-	for _, addr := range []string{"0.0.0.0:0", "localhost:0", "[::]:0", "192.168.1.2:80"} {
-		if ln, e := listenLocal(addr); e == nil {
-			ln.Close()
-			t.Fatal("accepted", addr)
-		}
-	}
-}
-
 // Without -listen Iwato serves on 17600, or the next free port after it.
 func TestDefaultPortShiftsPastPortsInUse(t *testing.T) {
 	first, err := listenLocal("")

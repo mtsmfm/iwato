@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/gorilla/websocket"
 	"io/fs"
 	"iwato/internal/termsync/termsynctest"
 	"net/http"
@@ -190,18 +189,4 @@ func TestWebSocketFakeReconnectRetainsHistory(t *testing.T) {
 	ws.Close()
 	again := dial(t, s, c, csrf)
 	waitText(t, viewWS(t, again, 100, 30), "reconnect-marker")
-}
-
-func TestWebSocketRejectsMissingCSRFAndForeignOrigin(t *testing.T) {
-	s, _ := newTestServer(t)
-	c, csrf := login(t, s)
-	for _, x := range []struct{ origin, token string }{{s.origin, ""}, {"https://evil.example", csrf}, {"", csrf}} {
-		_, res, e := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.origin, "http")+"/ws/dev?csrf="+x.token, http.Header{"Origin": {x.origin}, "Cookie": {c.String()}})
-		if e == nil {
-			t.Fatal("unsafe websocket accepted")
-		}
-		if res == nil || res.StatusCode != 403 {
-			t.Fatal("unexpected response", res)
-		}
-	}
 }

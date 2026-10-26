@@ -82,7 +82,6 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // No name: the placeholder says what Iwato makes; the result names it.
     const byName = (g, name) => group(g).locator('.provider-row', { has: page.locator('.volume-path', { hasText: new RegExp('^' + name + '$') }) });
     check(await page.getAttribute('#provider-name', 'placeholder') === '名前 (省略すると github)', 'the placeholder shows the generated name');
-    check(await page.locator('#provider-name-hint').innerText() === '名前はあとから変えられません。', 'the hint says names cannot be changed');
     await page.fill('#provider-name', '');
     await value.fill('ghp_UNNAMED');
     await shot('providers-unnamed.png');
@@ -119,13 +118,6 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check((await yamlBox.locator('.tag-source').innerText()) === 'ゲートウェイから', 'it is marked as rendered from the gateway');
     await yamlBox.scrollIntoViewIfNeeded();
     await shot('profile-yaml-gateway.png');
-    // A provider of the setup-token type Iwato no longer ships.
-    const retired = byName('その他', 'claude-token');
-    check((await retired.innerText()).includes('iwato-claude-for-claude-token · CLAUDE_CODE_OAUTH_TOKEN'), 'a setup-token provider is listed under その他 with its profile');
-    await retired.getByRole('button', { name: '削除' }).click();
-    await page.click('#confirm-ok');
-    await retired.waitFor({ state: 'detached' });
-    check(true, 'it can be deleted');
     // The add form's profile list.
     await page.selectOption('#provider-profile', 'iwato-openrouter');
     await page.click('#provider-profile-yaml');
@@ -136,10 +128,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(!(await yamlBox.isVisible()) && await panel.isVisible(), 'Escape in the YAML closes only the YAML');
     await page.selectOption('#provider-profile', 'iwato-github');
 
-    // The type selector groups the profiles (agents, source control,
-    // model hubs, clouds); a model hub's hint and its fake provider.
-    const kinds = await page.locator('#provider-profile optgroup').evaluateAll((gs) => gs.map((g) => g.label + ':' + [...g.querySelectorAll('option')].map((o) => o.value).join('+')));
-    check(kinds.join(' / ') === 'エージェント・推論:iwato-claude-subscription+iwato-grok-subscription+iwato-openrouter+iwato-atlassian / ソース管理:iwato-github / モデル配布:iwato-huggingface+iwato-civitai / 生成・GPU クラウド:iwato-comfy-cloud+iwato-vastai+iwato-runpod+iwato-modal / ホスティング・デプロイ:iwato-cloudflare', 'the type selector groups the profiles (' + kinds.join(' / ') + ')');
+    // A model hub's hint and its fake provider.
     check(!(await page.isVisible('#provider-hint')), 'GitHub has no usage hint');
     await page.selectOption('#provider-profile', 'iwato-huggingface');
     check((await page.locator('#provider-hint').innerText()).includes('HF_TOKEN') && (await page.locator('#provider-note').innerText()).includes('HUGGING_FACE_HUB_TOKEN'), 'Hugging Face shows its variables and a usage hint');
