@@ -6,7 +6,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Setup
 
-1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-cloudflare` (not on later starts)
+1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
 2. Check that the key is on the volume (so values stay readable after the gateway is recreated):
 
        wslc container exec iwato-personal-gateway ls -l /var/lib/openshell/credentials
@@ -16,7 +16,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Profile YAML (profiles/)
 
-Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-cloudflare`), written in OpenShell's format (OpenShell's `providers/*.yaml`, `docs/how-it-works/providers/profiles.mdx`). They are embedded in the exe (go:embed), and `providers_yaml.go` turns them into protos with the same rules as OpenShell's CLI (enum names follow `crates/openshell-providers/src/profiles.rs` and `crates/openshell-policy/src/l7_validate.rs`). OpenShell silently ignores unknown keys; Iwato rejects them (to catch typos). What only the UI uses (display name, category heading, description, value field names, usage hints, experimental, OAuth, hint commands) is not in the YAML but in `providers_profiles.go`.
+Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare`), written in OpenShell's format (OpenShell's `providers/*.yaml`, `docs/how-it-works/providers/profiles.mdx`). They are embedded in the exe (go:embed), and `providers_yaml.go` turns them into protos with the same rules as OpenShell's CLI (enum names follow `crates/openshell-providers/src/profiles.rs` and `crates/openshell-policy/src/l7_validate.rs`). OpenShell silently ignores unknown keys; Iwato rejects them (to catch typos). What only the UI uses (display name, category heading, description, value field names, usage hints, experimental, OAuth, hint commands) is not in the YAML but in `providers_profiles.go`.
 
 Checks:
 
@@ -120,7 +120,7 @@ On failure:
 
 ## Model hubs, generation, GPU clouds and hosting (common)
 
-`iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod` and `iwato-cloudflare` are not checked against real OpenShell (substitution). The comment at the top of each YAML gives the sources (official code and docs) and what could not be checked.
+`iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal` and `iwato-cloudflare` are not checked against real OpenShell (substitution). The comment at the top of each YAML gives the sources (official code and docs) and what could not be checked.
 
 - **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). It is replaced with the real value in HTTP headers (Bearer, Basic, any header), the path and the query (`?token=` etc.) of requests to the profile's endpoints (host, port, path). `auth_style` / `header_name` are display metadata and do not decide where substitution happens. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
 - **Programs**: these tools run on python (`hf`, `vastai`, `comfy`, ComfyUI, SDKs), node or curl. OpenShell matches the executable (or an ancestor process), not the script, so allowing python lets any python program reach the endpoint with the value. It cannot be narrower, so the profiles list the standard image's `/usr/bin/python3*`, mise's `/home/dev/.local/share/mise/installs/python/*/bin/python3*`, uv's `/home/dev/.local/share/uv/python/*/bin/python3*` (venv pythons link to these), mise's node, curl and wget (not in the standard image). Python elsewhere (pyenv, conda, …) gets proposals

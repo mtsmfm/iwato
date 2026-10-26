@@ -242,6 +242,12 @@ var providerProfiles = []providerProfile{
 		Hint:        "runpodctl (mise use -g github:runpod/runpodctl) と runpod の Python SDK は RUNPOD_API_KEY を読みます (runpodctl doctor は不要)。確かめるには runpodctl user。",
 	},
 	{
+		ID: "iwato-modal", Label: "Modal", Group: groupCloud, Scoped: true,
+		Note:        "MODAL_TOKEN_ID と MODAL_TOKEN_SECRET。api.modal.com と api.modal2.com の gRPC (HTTP/2) に送ります。アプリの実行 (費用がかかる) もできます。注意: このプロバイダーを付けたサンドボックスは Modal でコードを実行できます。Modal からはインターネットに自由に出られるので、データの行き先はサンドボックスのネットワークポリシーで制限できなくなります。そのコードはワークスペースの Modal Secrets も読めます。",
+		Credentials: []profileCredential{{Name: "token_id", Label: "トークン ID (ak-...)"}, {Name: "token_secret", Label: "トークンシークレット (as-...)"}},
+		Hint:        "modal (uv tool install modal) は MODAL_TOKEN_ID と MODAL_TOKEN_SECRET を読みます (modal token new は不要)。grpclib は certifi の証明書しか信頼しないので、先に modal の Python で ln -sf \"$SSL_CERT_FILE\" \"$(python -m certifi)\" します。確かめるには modal token info か小さな modal run。ファイルのアップロード (署名付き URL) や *.modal.run はポリシーの提案で許可します。modal run や modal deploy で送ったコードは Modal で動き、サンドボックスのネットワークポリシーの外でインターネットに出られ、Modal Secrets も読めます。",
+	},
+	{
 		ID: "iwato-cloudflare", Label: "Cloudflare", Group: groupHosting, Scoped: true,
 		Note:        "CLOUDFLARE_API_TOKEN。api.cloudflare.com/client/v4 に送ります。読み取りだけで、デプロイや DNS の変更はポリシーの提案か、範囲の「書き込みも許可」で許可します。",
 		Credentials: []profileCredential{{Name: "api_token", Label: "API トークン"}},

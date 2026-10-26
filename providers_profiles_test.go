@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +18,22 @@ func mustProfile(t *testing.T, id string) providerProfile {
 		t.Fatal("no profile", id)
 	}
 	return p
+}
+
+// The supervisor offers HTTP/2 to exactly iwato-modal's endpoints.
+func TestHTTP2EndpointsAreModals(t *testing.T) {
+	b, err := os.ReadFile("internal/openshell/gateway/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := regexp.MustCompile(`OPENSHELL_HTTP2_ENDPOINTS=(\S+)`).FindAllSubmatch(b, -1)
+	var want []string
+	for _, e := range mustProfile(t, "iwato-modal").proto().Endpoints {
+		want = append(want, fmt.Sprintf("%s:%d", e.Host, e.Port))
+	}
+	if len(got) != 1 || string(got[0][1]) != strings.Join(want, ",") {
+		t.Errorf("OPENSHELL_HTTP2_ENDPOINTS in the Dockerfile: %q, want %q", got, strings.Join(want, ","))
+	}
 }
 
 // The page's metadata agrees with the YAML: the note names every variable
@@ -165,6 +184,23 @@ func TestServiceProfiles(t *testing.T) {
 		if (e.Protocol == "websocket") != (e.Path == "/ws") {
 			t.Error("comfy protocol", e.Host+e.Path, e.Protocol)
 		}
+	}
+	// Modal: two headers; every endpoint inspected REST without SigV4 or
+	// body rewriting, which the patched supervisor needs to offer h2.
+	m := mustProfile(t, "iwato-modal").proto()
+	if len(m.Credentials) != 2 || m.Credentials[0].HeaderName != "x-modal-token-id" || !slices.Equal(m.Credentials[0].EnvVars, []string{"MODAL_TOKEN_ID"}) ||
+		m.Credentials[1].HeaderName != "x-modal-token-secret" || !slices.Equal(m.Credentials[1].EnvVars, []string{"MODAL_TOKEN_SECRET"}) {
+		t.Error("modal credentials", m.Credentials)
+	}
+	var modalHosts []string
+	for _, e := range m.Endpoints {
+		modalHosts = append(modalHosts, e.Host)
+		if e.Protocol != "rest" || e.Port != 443 || e.CredentialSigning != "" || e.RequestBodyCredentialRewrite || len(e.Rules) != 1 || e.Rules[0].Allow.Method != "POST" || e.Rules[0].Allow.Path != "/modal.client.ModalClient/*" {
+			t.Error("modal", e.Host, e.Protocol, e.Rules)
+		}
+	}
+	if !slices.Equal(modalHosts, []string{"api.modal.com", "api.modal2.com"}) {
+		t.Error("modal hosts", modalHosts)
 	}
 	// OpenRouter: inference is POST.
 	if e := mustProfile(t, "iwato-openrouter").proto(); e.Endpoints[0].Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_WRITE || !e.InferenceCapable {
