@@ -201,6 +201,7 @@
       this.input.autocomplete = 'off';
       this.input.spellcheck = false;
       this.input.setAttribute('autocorrect', 'off');
+      window.IwatoAutofill?.mark(this.input);
       // The text being composed (IME), drawn at the cursor. The input
       // itself stays invisible: it may still hold committed text.
       this.preedit = document.createElement('div');
