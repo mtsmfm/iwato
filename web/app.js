@@ -878,7 +878,8 @@
   async function loadVolumes() {
     const data = await api('/api/volumes');
     volumeView.list = (Array.isArray(data.volumes) ? data.volumes : []).filter((v) => v && typeof v.name === 'string').slice(0, 500).map((v) => ({
-      name: text(v.name, 255), sandbox: text(v.sandbox, 64), path: text(v.path, 4096), usedBy: text(v.usedBy, 64), createdAt: text(v.createdAt, 64)
+      name: text(v.name, 255), sandbox: text(v.sandbox, 64), path: text(v.path, 4096), usedBy: text(v.usedBy, 64), createdAt: text(v.createdAt, 64),
+      size: Number.isFinite(v.size?.total) && Number.isFinite(v.size?.at) ? { total: v.size.total, at: v.size.at } : null
     }));
     return text(data.error, 500);
   }
@@ -915,7 +916,9 @@
         const created = Date.parse(v.createdAt);
         info.append(element('span', 'volume-path' + (v.path ? '' : ' volume-unknown'), v.path || t('volumes.unknownPath')),
           element('span', 'panel-meta', v.name + (Number.isFinite(created) ? ' · ' + t('volumes.created', { time: window.IwatoI18n.date(created, { dateStyle: 'short', timeStyle: 'short' }) }) : '')));
-        row.append(info, v.usedBy ? element('span', 'volume-used', t('volumes.usedBy', { sandbox: v.usedBy })) : button('button-disconnect', t('common.delete'), () => removeVolume(v)));
+        const size = element('span', 'volume-size', v.size ? (v.size.total / 1024 ** 3).toFixed(1) + ' GB' : '—');
+        size.title = v.size ? t('res.home.measured', { when: window.IwatoResources.measured(v.size.at) }) : t('volumes.sizeUnknown');
+        row.append(info, v.usedBy ? element('span', 'volume-used', t('volumes.usedBy', { sandbox: v.usedBy })) : button('button-disconnect', t('common.delete'), () => removeVolume(v)), size);
         group.append(row);
       }
       nodes.push(group);
@@ -2277,6 +2280,8 @@
         const navEmpty = $('sandbox-nav').querySelector('.nav-empty');
         if (navEmpty) navEmpty.remove();
         summary();
+        renderResources();
+        if (!resStore.loaded) refreshResources();
         clearNotice();
         $('refresh-button').hidden = true;
         serverStatus(state.fake ? 'server.fake' : 'server.connected', 'ready');
@@ -3870,6 +3875,34 @@
 
   // Port exposure: the settings and the Ports tab (web/ingress.js).
   const ingressUI = window.IwatoIngress.make({ element, button, panelHeader, api, askConfirm });
+  // The sandboxes' resources (web/resources.js): read every 4 seconds while
+  // the page shows and something runs; the server reads the shown sandbox
+  // more often than the others.
+  const resUI = window.IwatoResources.make({ element, button, panelHeader, api, onAuth: () => invalidateSession() });
+  const resStore = new window.IwatoResources.Store();
+  const resTotals = new resUI.Totals($('res-totals'));
+  let resourceSettings = null;
+  const resPoll = { busy: false, at: 0 };
+  async function refreshResources(force = false) {
+    if (!state.authorized || state.disposed || document.hidden || resPoll.busy || !cards.size) return;
+    const running = [...cards.values()].some((card) => card.sandbox.status === 'running');
+    // Hidden, or nothing running: only now and then (the settings, the homes).
+    if (!force && resStore.loaded && (resStore.settings.hide || !running) && Date.now() - resPoll.at < 60000) return;
+    resPoll.busy = true;
+    resPoll.at = Date.now();
+    try {
+      resStore.update(await api('/api/resources' + (state.selected ? '?focus=' + encodeURIComponent(state.selected) : '')));
+      renderResources();
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) invalidateSession();
+    } finally {
+      resPoll.busy = false;
+    }
+  }
+  function renderResources() {
+    for (const card of cards.values()) card.renderResources();
+    resTotals.update(resStore, [...cards.values()].filter((card) => card.sandbox.status === 'running').map((card) => card.sandbox.name));
+  }
   let settingsPanel = null;
   let resetSection = null;
   let imageSettings = null;
@@ -3883,7 +3916,8 @@
       checkSettings = new CheckSettings();
       updateSettings = new updateUI.UpdateSection(updateDialog);
       timezoneSettings = new TimezoneSettings();
-      $('settings-body').append(window.IwatoI18n.languageSection(element), timezoneSettings.root, updateSettings.root, checkSettings.root, imageSettings.root);
+      resourceSettings = new resUI.Settings((s) => { resStore.settings = { ...resStore.settings, ...s }; renderResources(); refreshResources(true); });
+      $('settings-body').append(window.IwatoI18n.languageSection(element), timezoneSettings.root, resourceSettings.root, updateSettings.root, checkSettings.root, imageSettings.root);
       settingsPanel = new ingressUI.SettingsPanel($('settings-body'));
       settingsPanel.onAuth = invalidateSession;
       settingsPanel.onChange = () => { for (const card of cards.values()) if (card.root.dataset.tab === 'ports') card.ports.refresh(); };
@@ -3896,6 +3930,7 @@
     $('settings-panel').hidden = false;
     updateSettings.refresh();
     timezoneSettings.refresh();
+    resourceSettings.refresh();
     checkSettings.refresh();
     imageSettings.refresh();
     settingsPanel.refresh();
@@ -4445,10 +4480,9 @@
       this.restartBadge = bind(element('span', 'badge badge-restart'), 'card.restartPending');
       bindAttribute(this.restartBadge, 'title', 'card.restartPending.title');
       this.restartBadge.hidden = true;
-      this.gpuBadge = element('span', 'badge badge-gpu', 'GPU');
-      bindAttribute(this.gpuBadge, 'title', 'card.gpu.title');
-      this.gpuBadge.hidden = true;
-      header.append(titleWrap, this.badge, this.restartBadge, this.gpuBadge);
+      // CPU, memory and the GPU (the home when stopped); opens the Resources tab.
+      this.resRow = new resUI.Row(() => this.chooseTab('resources'));
+      header.append(titleWrap, this.badge, this.restartBadge, this.resRow.root);
       this.detail = element('p', 'card-detail');
       const toolbar = element('div', 'card-toolbar');
       // Made with an older supervisor than new sandboxes get: recreating updates it.
@@ -4480,7 +4514,7 @@
       // The rarer views open from the menu, first; the open one is marked
       // there and shows as the current tab.
       this.viewItems = {};
-      for (const key of ['links', 'text', 'files']) {
+      for (const key of ['links', 'text', 'files', 'resources']) {
         const view = bind(button('button-subtle card-menu-item card-menu-view', '', () => {
           this.closeActionMenu();
           this.selectTab(key);
@@ -4624,10 +4658,11 @@
       this.files = new FilesPanel(this.sandbox);
       this.editor = new EditorPanel(this.sandbox, () => state.selected === this.sandbox.name);
       this.ports = new ingressUI.PortsPanel(this.sandbox, openSettings);
-      for (const panel of [this.links, this.text, this.files, this.editor, this.ports]) panel.onClose = () => this.selectTab('terminal');
+      this.resources = new resUI.Panel(this.sandbox, resStore);
+      for (const panel of [this.links, this.text, this.files, this.editor, this.ports, this.resources]) panel.onClose = () => this.selectTab('terminal');
       // Closing the editor side by side leaves the terminal alone.
       this.editor.onClose = () => { if (this.root.dataset.split === 'true') this.toggleSplit(false, 'terminal'); else this.selectTab('terminal'); };
-      this.root.append(this.policy.root, this.links.root, this.deletion.root, this.text.root, this.providers.root, this.files.root, this.editor.root, this.ports.root, this.recreation.root);
+      this.root.append(this.policy.root, this.links.root, this.deletion.root, this.text.root, this.providers.root, this.files.root, this.editor.root, this.ports.root, this.recreation.root, this.resources.root);
       grid.append(this.root);
       this.nav = button('nav-sandbox', '', () => {
         selectCard(this);
@@ -4784,7 +4819,7 @@
       this.viewTab.hidden = !this.viewItems[key];
       if (this.viewItems[key]) this.viewTab.textContent = t('tab.' + key);
       if (this.proposalBar) this.renderProposalBar();
-      const panels = { links: this.links, text: this.text, files: this.files, editor: this.editor, ports: this.ports };
+      const panels = { links: this.links, text: this.text, files: this.files, editor: this.editor, ports: this.ports, resources: this.resources };
       for (const [name, panel] of Object.entries(panels)) if (name !== key && !(split && name === 'editor') && panel && !panel.root.hidden) panel.hide();
       if (split && key === 'editor') {
         // The terminal stays; the editor gets the keyboard (as its tab does).
@@ -5175,6 +5210,7 @@
       this.files.sandbox = sandbox;
       this.editor.sandbox = sandbox;
       this.ports.sandbox = sandbox;
+      this.resources.sandbox = sandbox;
       this.title.textContent = sandbox.name;
       this.title.title = sandbox.name;
       this.navTitle.textContent = sandbox.name;
@@ -5189,7 +5225,7 @@
       if (this.editor && String(this.splitShown()) !== this.root.dataset.split) this.layoutTabs(this.root.dataset.tab);
       // The files tab stays too: a stopped sandbox's drive and credentials;
       // and the ports tab: its node stays; and the editor: its unsaved text.
-      if (sandbox.status !== 'running' && (sandbox.status === 'not-created' || !['policy', 'files', 'editor', 'ports'].includes(this.root.dataset.tab)) && this.root.dataset.tab !== 'terminal') this.selectTab('terminal');
+      if (sandbox.status !== 'running' && (sandbox.status === 'not-created' || !['policy', 'files', 'editor', 'ports', 'resources'].includes(this.root.dataset.tab)) && this.root.dataset.tab !== 'terminal') this.selectTab('terminal');
       if (this.root.dataset.tab === 'files' && this.filesShown !== sandbox.status) this.files.refresh();
       if (this.root.dataset.tab === 'ports' && this.filesShown !== sandbox.status) this.ports.refresh();
       if (!this.editor.root.hidden && this.filesShown !== sandbox.status) this.editor.render();
@@ -5200,7 +5236,7 @@
       const pending = sandbox.status === 'running' && sandbox.restartPending === true;
       if (pending !== !this.restartBadge.hidden && sandbox.status === 'running') this.termsLoaded = false;
       this.restartBadge.hidden = !pending;
-      this.gpuBadge.hidden = sandbox.gpu !== true;
+      this.renderResources();
       if (!pending) this.providerOutdated = [];
       this.navDot.style.background = sandbox.status === 'running' ? '#8ddeba' : sandbox.status === 'error' ? '#f39b9b' : '#778497';
       // The terminals ended: when it stops, unless one opens.
@@ -5229,6 +5265,15 @@
         this.placeholderText.textContent = t(key + '.text');
       }
       this.updateButtons();
+    }
+
+    renderResources() {
+      const u = resStore.get(this.sandbox.name);
+      // The list is newer than the last numbers when it just stopped or started.
+      const shown = u && u.running === (this.sandbox.status === 'running') ? u : null;
+      this.resRow.update(shown, resStore.settings);
+      this.viewItems.resources.hidden = resStore.settings.hide;
+      if (this.root.dataset.tab === 'resources') this.resources.render();
     }
 
     updateButtons() {
@@ -5905,6 +5950,7 @@
   });
   window.addEventListener('blur', () => { for (const card of cards.values()) card.releaseSize(); });
   const poll = setInterval(() => { if (!document.hidden) refreshSandboxes(); }, 10000);
+  setInterval(() => refreshResources(), 4000);
   // Ctrl+W cannot be intercepted in a normal tab; ask before leaving while a
   // terminal is connected so an accidental close can be cancelled.
   window.addEventListener('beforeunload', (event) => {

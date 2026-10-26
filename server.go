@@ -93,10 +93,11 @@ type Server struct {
 	notifier                 *notifier // nil without Web Push (main.go)
 	files                    *dav.Pool // the sandboxes' files over WebDAV (files.go)
 	davKeys                  *davKeys
-	editorLists              editorLists     // the editor's quick open lists (editor.go)
-	ingress                  *ingressManager // sandbox ports exposed (ingress.go)
-	resets                   resetJob        // 「すべて消す」 (reset.go)
-	autoStop                 autoStops       // stopping once the terminals end (autostop.go)
+	editorLists              editorLists      // the editor's quick open lists (editor.go)
+	ingress                  *ingressManager  // sandbox ports exposed (ingress.go)
+	resets                   resetJob         // 「すべて消す」 (reset.go)
+	autoStop                 autoStops        // stopping once the terminals end (autostop.go)
+	resources                *resourceMonitor // CPU, memory, GPU and home sizes (resources.go)
 
 	// flowCtx is the OAuth flows' life until a reset (oauthLife).
 	flowCtx context.Context
@@ -107,6 +108,7 @@ func newServer(c Config, rt Runtime, fake bool, host string) *Server {
 	s := &Server{config: c, rt: rt, fake: fake && fakeHooks != nil, host: host, origin: "http://" + host, bootstrap: randomHex(32), bootstrapUntil: time.Now().Add(10 * time.Minute), cookieName: "iwato_" + randomHex(8), sessions: map[string]authSession{}, ops: map[string]*sandboxOp{}, connections: map[string]int{}, ctx: context.Background(), sessionTTL: 8 * time.Hour, davKeys: &davKeys{}}
 	s.files = s.newFilesPool()
 	s.ingress = newIngressManager(s, "")
+	s.resources = newResourceMonitor(s, "")
 	s.watchTerminalEnds()
 	return s
 }
@@ -209,6 +211,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/presence", s.handlePresence)
 	mux.HandleFunc("/api/reset", s.handleReset)
 	mux.HandleFunc("/api/timezone", s.handleTimezone)
+	mux.HandleFunc("/api/resources", s.handleResources)
+	mux.HandleFunc("/api/resources/", s.handleResources)
 	mux.HandleFunc("/ws/", s.handleWS)
 	// Turns on the page's debug option (?font) in debug builds only.
 	mux.HandleFunc("/debug.js", func(w http.ResponseWriter, r *http.Request) {
@@ -377,6 +381,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 	s.ingress.observe(list)
+	s.resources.observe(list)
 	images, _ := s.imagesReady()
 	body := map[string]any{"fake": s.fake, "sandboxes": list, "images": images, "server": currentBuild()}
 	if s.update != nil {

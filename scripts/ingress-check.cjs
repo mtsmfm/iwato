@@ -208,7 +208,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await recreate.getByText(/最新のイメージを取得しています/).waitFor();
     await card.locator('.badge[data-state=running]').waitFor({ timeout: 20000 });
     check(await recreate.isHidden(), 'the recreate finished after the pull');
-    await card.locator('.badge-gpu:not([hidden])').waitFor({ timeout: 10000 });
+    await card.locator('.res-row .res-gpu').waitFor({ timeout: 15000 });
     check(await recreateBadge.isHidden() && await page.locator('#sandbox-nav .recreate-mark:not([hidden])').count() === 0, 'the recreated sandbox is not marked');
 
     // The language (web/i18n.js): English at once, remembered, then automatic (ja-JP here).

@@ -44,6 +44,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 		// widen its scope (proposal_scope.go).
 		exp := newSandbox("experiment")
 		exp.Providers = []string{"github-work"}
+		exp.GPU = true // the resources show its GPU (fake_resources.go)
 		c.Sandboxes = []Sandbox{dev, exp}
 		c.ProviderScopes = fakeProviderScopes()
 		d := NewFake()

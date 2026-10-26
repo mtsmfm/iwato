@@ -15,6 +15,7 @@ const resetSource = fs.readFileSync(root + 'reset.js', 'utf8');
 const sessionsSource = fs.readFileSync(root + 'sessions.js', 'utf8');
 const updateSource = fs.readFileSync(root + 'update.js', 'utf8');
 const refusalsSource = fs.readFileSync(root + 'refusals.js', 'utf8');
+const resourcesSource = fs.readFileSync(root + 'resources.js', 'utf8');
 class Element {
   constructor(tag = 'div') {
     Object.assign(this, {tagName: tag, children: [], hidden: false, disabled: false, className: '', dataset: {}, style: {setProperty(key, value) { this[key] = value; }}, attributes: {}, listeners: {}, textWrites: 0, clientWidth: 520, clientHeight: 320, offsetHeight: 60});
@@ -51,14 +52,14 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
     'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-binaries', 'policy-any', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
-    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button'];
+    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button', 'res-totals'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
   for (const id of ids) { const m = id.match(/^approve-(?:scope|access)-(\w+)$/); if (m) els[id].value = m[1]; }
   els['terminal-grid'].append(els['empty-state']); els.notice.hidden = true; els['fake-banner'].hidden = true;
   for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button']) els[id].hidden = true;
   const shared = []; let shareFailure = null;
   const requests = [], sockets = [], terminals = [], timeouts = new Map(), intervals = [], confirmations = [];
-  let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null; const created = []; const copied = []; const swListeners = {};
+  let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null, resourcesHandler = null; const created = []; const copied = []; const swListeners = {};
   // The page asks in its own confirmation panel; answer it as the owner would.
   let confirmShown = false;
   Object.defineProperty(els['confirm-panel'], 'hidden', {get: () => !confirmShown, set: value => {
@@ -132,6 +133,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       if (path === '/api/push') return response(push ? {available: true, publicKey: 'B'.repeat(87)} : {available: false});
       if (path === '/api/push/subscribe') return response({ok: true});
       if (path === '/api/presence') return response({ok: true});
+      if (path.startsWith('/api/resources')) return resourcesHandler ? resourcesHandler(path, opt) : response({sandboxes: {}, host: {cpus: 16, memory: 32 * 2 ** 30}, settings: {warn: 80, crit: 95}});
       if (path === '/api/pair') return response({url: 'http://127.0.0.1:8765/#token=' + 'b'.repeat(64), qr: 'data:image/png;base64,iVBORw0KGgo='});
       if (path.includes('/terminals')) return termHandler ? termHandler(path, opt) : response({terminals: ['main'], multi: false});
       if (path.startsWith('/api/update')) return updateHandler ? updateHandler(path, opt) : response({enabled: false, current: {version: '0.3.0'}});
@@ -150,14 +152,14 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       throw Error('unexpected API ' + path);
     }
   });
-  vm.runInContext(bootstrap, context); assert.equal(location.hash, ''); vm.runInContext(linksSource, context); vm.runInContext(approveSource, context); vm.runInContext(refusalsSource, context); vm.runInContext(filesSource, context); vm.runInContext(editorSource, context); vm.runInContext(ingressSource, context); vm.runInContext(resetSource, context); vm.runInContext(sessionsSource, context); vm.runInContext(updateSource, context); vm.runInContext(i18nSource, context); vm.runInContext(source, context); await flush();
+  vm.runInContext(bootstrap, context); assert.equal(location.hash, ''); vm.runInContext(linksSource, context); vm.runInContext(approveSource, context); vm.runInContext(refusalsSource, context); vm.runInContext(filesSource, context); vm.runInContext(editorSource, context); vm.runInContext(ingressSource, context); vm.runInContext(resetSource, context); vm.runInContext(sessionsSource, context); vm.runInContext(updateSource, context); vm.runInContext(resourcesSource, context); vm.runInContext(i18nSource, context); vm.runInContext(source, context); await flush();
   const card = () => els['terminal-grid'].children.find(node => node.className.split(' ').includes('terminal-card'));
   return {
     shared, els, requests, sockets, stored, swListeners, terminals, timeouts, intervals, confirmations, sandbox, context, win, location, document, card, copied,
     // The card's actions in a fixed order, wherever they sit (the rare ones are in the ⋯ menu).
     buttons: () => { const found = {}; const walk = (n) => { if (n.dataset?.action) found[n.dataset.action] = n; n.children.forEach(walk); }; walk(card()); return ['start', 'stop', 'connect', 'disconnect', 'delete', 'update', 'reconnect', 'recreate'].map((k) => found[k]); },
     setShareFailure: value => { shareFailure = value; }, setFailStart: value => { failStart = value; }, setTermHandler: handler => { termHandler = handler; }, setConfirm: value => { confirmResult = value; }, setConfirmHandler: handler => { confirmHandler = handler; },
-    setSandboxHandler: handler => { sandboxHandler = handler; }, setPasteHandler: handler => { pasteHandler = handler; }, setVolumeHandler: handler => { volumeHandler = handler; }, setProviderHandler: handler => { providerHandler = handler; }, setFilesHandler: handler => { filesHandler = handler; }, setIngressHandler: handler => { ingressHandler = handler; }, setImagesHandler: handler => { imagesHandler = handler; }, setResetHandler: handler => { resetHandler = handler; }, setUpdateHandler: handler => { updateHandler = handler; },
+    setSandboxHandler: handler => { sandboxHandler = handler; }, setPasteHandler: handler => { pasteHandler = handler; }, setVolumeHandler: handler => { volumeHandler = handler; }, setProviderHandler: handler => { providerHandler = handler; }, setFilesHandler: handler => { filesHandler = handler; }, setIngressHandler: handler => { ingressHandler = handler; }, setImagesHandler: handler => { imagesHandler = handler; }, setResetHandler: handler => { resetHandler = handler; }, setUpdateHandler: handler => { updateHandler = handler; }, setResourcesHandler: handler => { resourcesHandler = handler; },
     setProposalHandler: handler => { proposalHandler = handler; }, setStartHandler: handler => { startHandler = handler; }, setStopHandler: handler => { stopHandler = handler; }, setUnauthorized: value => { unauthorized = value; },
     policy: () => card().children.find(node => node.className === 'info-panel policy-panel'),
     card: () => card(),
@@ -773,7 +775,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   ok('pairing issues a link only through an authenticated CSRF POST and can be dismissed');
   const tabbed = await environment({fake: false, status: 'stopped'}); tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, id: 'c'.repeat(32), source: 'auto', summary: '/usr/bin/curl → auto.example:443'}, ...proposalItem.pending]})); await readPolicy(tabbed);
   const [termTab, policyTab, , portsTab, viewTab] = tabbed.card().children[2].children[0].children; assert.deepEqual(tabbed.card().children[2].children[0].children.map((t) => t.textContent), ['ターミナル', 'ポリシー', 'エディタ', 'ポート', '']); assert.equal(viewTab.hidden, true);
-  { const views = nodes(tabbed.card()).filter((n) => n.dataset?.view); assert.deepEqual(views.map((n) => [n.textContent, n.getAttribute('role'), n.parent.className]), [['リンク', 'menuitem', 'card-menu'], ['テキスト', 'menuitem', 'card-menu'], ['ファイル', 'menuitem', 'card-menu']], 'the rarer views are in the ⋯ menu');
+  { const views = nodes(tabbed.card()).filter((n) => n.dataset?.view); assert.deepEqual(views.map((n) => [n.textContent, n.getAttribute('role'), n.parent.className]), [['リンク', 'menuitem', 'card-menu'], ['テキスト', 'menuitem', 'card-menu'], ['ファイル', 'menuitem', 'card-menu'], ['リソース', 'menuitem', 'card-menu']], 'the rarer views are in the ⋯ menu');
     views[2].click(); assert.equal(tabbed.card().dataset.tab, 'files'); assert.equal(viewTab.hidden, false); assert.equal(viewTab.textContent, 'ファイル', 'the open one shows as the current tab'); assert.equal(views[2].getAttribute('aria-current'), 'true'); assert.equal(termTab.getAttribute('aria-selected'), 'false');
     termTab.click(); assert.equal(viewTab.hidden, true); assert.equal(views[2].getAttribute('aria-current'), null);
     portsTab.click(); assert.equal(tabbed.card().dataset.tab, 'ports'); assert.equal(portsTab.getAttribute('aria-selected'), 'true'); assert.equal(viewTab.hidden, true, 'a tab of the row is not repeated as the view tab');
@@ -785,7 +787,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(policyTab.children[0].hidden, false); assert.equal(policyTab.children[0].textContent, '1', 'OpenShell\'s automatic proposals are not counted'); assert.equal(tabbed.document.title, '(1) Iwato');
   assert.deepEqual(tabbed.policy().children[1].children[0].children.map((n) => n.className), ['policy-sec-title', 'proposal-item', 'policy-sub-title', 'proposal-item'], 'the agent\'s proposals first, then OpenShell\'s under their own heading'); assert.match(texts(pendingItems(tabbed)[1]), /auto\.example/);
   const readsBeforeTab = proposalReads(tabbed).length; policyTab.click(); await flush(); assert.equal(tabbed.card().dataset.tab, 'policy'); assert.equal(policyTab.getAttribute('aria-selected'), 'true'); assert.equal(termTab.getAttribute('aria-selected'), 'false'); assert(proposalReads(tabbed).length > readsBeforeTab);
-  assert.equal(tabbed.intervals.filter((i) => !i.cleared).length, 1, 'the policy tab follows proposals with the sandbox list (every 10 seconds) while nothing waits');
+  assert.equal(tabbed.intervals.filter((i) => !i.cleared && i.ms !== 4000).length, 1, 'the policy tab follows proposals with the sandbox list (every 10 seconds) while nothing waits');
   const readsFollowing = proposalReads(tabbed).length; await tabbed.tickPoll(); assert(proposalReads(tabbed).length > readsFollowing);
   termTab.click(); assert.equal(tabbed.card().dataset.tab, 'terminal');
   tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, source: 'auto'}]})); await readPolicy(tabbed); assert.equal(policyTab.children[0].hidden, true); assert.notEqual(tabbed.policy().dataset.state, 'pending-approval', 'only automatic proposals are not the waiting state'); assert.match(tabbed.policy().children[0].children[1].textContent, /自動提案 1 件/);
@@ -2789,6 +2791,45 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   walk(edgeDialog, (n) => n.tagName === 'button' && n.textContent === 'edge に戻す')[0].click(); await flush();
   assert.deepEqual(switched.at(-1), {body: {tag: 'edge', commit: edge}});
   ok('update: a pull request\'s build to try (head commit, warnings, CSRF) and back to edge');
+  }
+  {
+  // web/resources.js: the header's values (long and short), the levels, the totals.
+  const box = {window: {}, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box); vm.runInNewContext(resourcesSource, box); const R = box.window.IwatoResources;
+  const G = 2 ** 30; const store = new R.Store(); const plain = (v) => JSON.parse(JSON.stringify(v)); const all = (n, test) => [...(test(n) ? [n] : []), ...n.children.flatMap((c) => all(c, test))];
+  const data = (over = {}) => ({host: {cpus: 16, memory: 32 * G}, settings: {warn: 80, crit: 95},
+    sandboxes: {comfy: {running: true, at: 1000, cpu: 62.4, cores: 4.99, cpuLimit: 8, memory: {used: 15.3 * G, current: 15.5 * G, cache: 3 * G, limit: 16 * G}, gpu: {used: 13.6 * G, total: 16 * G, noPerProcess: true}},
+      dev: {running: true, at: 1000, cpu: 9, cores: 0.36, cpuLimit: 4, memory: {used: 3 * G, current: 3.5 * G, cache: G, limit: 8 * G}},
+      old: {running: false, disk: {total: 9.8 * G, at: 100, top: []}}, ...over}});
+  store.update(data(), 1000);
+  const m = R.headerMetrics(store.get('comfy'), store.settings);
+  assert.deepEqual(plain(m.map((x) => [x.key, x.value, x.short, x.level])), [['cpu', '62%', '62%', ''], ['memory', '15.3/16.0 GB', '15.3G', 'crit'], ['gpu', '13.6/16.0 GB', '13.6G', 'warn']]);
+  assert.deepEqual(plain(R.headerMetrics(store.get('old'), store.settings).map((x) => [x.key, x.value])), [['home', '9.8 GB']], 'a stopped sandbox shows only its home');
+  assert.equal(R.headerMetrics({running: true, cpu: null, memory: null}, store.settings).length, 0, 'nothing before the first sample');
+  assert.equal(R.level(0.79, store.settings), ''); assert.equal(R.level(0.8, store.settings), 'warn'); assert.equal(R.level(0.95, store.settings), 'crit');
+  assert.equal(R.level(0.8, R.settingsView({warn: 85, crit: 90})), '', 'the levels follow the settings');
+  const sum = R.totals(store, ['comfy', 'dev']);
+  assert.equal(sum.count, 2); assert.equal(sum.cpu.used.toFixed(2), '5.35'); assert.equal(sum.cpu.total, 16); assert.equal(sum.memory.used, 18.3 * G); assert.equal(sum.memory.total, 32 * G);
+  assert.deepEqual(plain([sum.gpu.used, sum.gpu.total, sum.gpu.level]), [13.6 * G, 16 * G, 'warn'], 'the GPU is counted once (nvidia-smi gives the whole GPU)');
+  store.update(data({comfy: {running: true, at: 5000, cpu: 50, cores: 4, memory: {used: G, current: G, cache: 0, limit: 16 * G}}}), 5000);
+  assert.equal(store.history.get('comfy').length, 2, 'the history grows per new sample');
+  store.update(data({comfy: {running: true, at: 5000 + 11 * 60000, cpu: 50, memory: {used: G, current: G, cache: 0, limit: 16 * G}}}), 5000 + 11 * 60000);
+  assert.equal(store.history.get('comfy').length, 1, 'and keeps 10 minutes');
+  ok('resources: header values and short values, levels, totals, history');
+
+  // In the page: the header row, the sidebar line and totals; the row opens the tab.
+  const env = await environment({status: 'running'}); env.setResourcesHandler(() => response(data({api: {running: true, at: 1, cpu: 97, cores: 3.9, cpuLimit: 4, memory: {used: 2 * G, current: 2 * G, cache: 0, limit: 8 * G}}})));
+  await env.intervals.find((i) => i.ms === 4000).fn(); await flush();
+  const row = env.card().children[0].children.find((n) => n.className === 'res-row');
+  assert.equal(row.className, 'res-row'); assert.equal(row.hidden, false);
+  assert.deepEqual(row.children.map((n) => n.className), ['res-metric res-cpu crit', 'res-metric res-memory']);
+  assert.deepEqual(row.children[1].children[1].children.map((n) => [n.className, n.textContent]), [['res-long', '2.0/8.0 GB'], ['res-short', '2.0G']], 'both values; the narrow header shows the short one (CSS)');
+  const nav = env.els['sandbox-nav'].children.find((n) => n.className.includes('nav-sandbox'));
+  assert.ok(!nav.children.some((n) => n.className === 'nav-res'), 'no resource line under the name');
+  const totals = env.els['res-totals']; assert.equal(totals.hidden, false); assert.equal(totals.children[0].textContent, '合計（動作中 1 台）'); assert.equal(totals.children[1].children[2].textContent, '3.9 / 16 コア'); assert.equal(totals.children[2].children[2].textContent, '2.0 / 32.0 GB');
+  row.click(); assert.equal(env.card().dataset.tab, 'resources'); const panel = env.side('res-panel'); assert.equal(panel.hidden, false);
+  assert.deepEqual(all(panel, (n) => n.className === 'res-head').map((n) => n.textContent), ['CPU', 'メモリ', 'ホーム']);
+  assert(env.requests.some((r) => r.path === '/api/resources?focus=api'), 'the shown sandbox is the focus');
+  ok('resources: the header row, the sidebar totals, the Resources tab');
   }
   console.log('\n' + tests + ' UI behavior tests passed. These are VM unit tests, not rendered-browser validation.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -50,6 +50,8 @@ type Config struct {
 	TermTrace bool `json:"termTrace,omitempty"`
 	// Timezone is the sandboxes' time zone (timezone.go): "" the host's.
 	Timezone string `json:"timezone,omitempty"`
+	// Resources is how the page shows the sandboxes' resources (resources.go).
+	Resources *ResourceSettings `json:"resources,omitempty"`
 	// ProviderScopes are the access scopes of the providers with their own
 	// profile, by provider name (providers_scope.go).
 	ProviderScopes map[string]ProviderScope `json:"providerScopes,omitempty"`
@@ -193,6 +195,9 @@ func (c Config) Validate() error {
 	}
 	if _, ok := normalTimezone(c.Timezone); c.Timezone != "" && !ok {
 		return errors.New("invalid timezone")
+	}
+	if e := c.Resources.Validate(); e != nil {
+		return e
 	}
 	if e := validScopes(c.ProviderScopes); e != nil {
 		return e

@@ -29,7 +29,7 @@ func (s *Server) lookupSandbox(name string) (Sandbox, bool) {
 }
 
 // updateConfig changes the configuration as updateSandboxes does (the
-// ingress settings, the provider scopes and the time zone).
+// ingress settings, the provider scopes, the time zone and the resource view).
 func (s *Server) updateConfig(change func(*Config) error) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
@@ -52,6 +52,7 @@ func (s *Server) updateConfig(change func(*Config) error) error {
 	s.config.Ingress = next.Ingress
 	s.config.ProviderScopes = next.ProviderScopes
 	s.config.Timezone = next.Timezone
+	s.config.Resources = next.Resources
 	s.mu.Unlock()
 	return nil
 }
