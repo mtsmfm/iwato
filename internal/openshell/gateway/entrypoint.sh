@@ -30,6 +30,12 @@ if [ "${COMPUTE_DRIVER:-wslc}" = docker ]; then
   export XDG_STATE_HOME=/var/lib/openshell/state
   case "${SANDBOX_LABEL:-}" in ''|*[!a-z0-9-]*) echo "invalid SANDBOX_LABEL" >&2; exit 1 ;; esac
   sed "s/SANDBOX_LABEL/$SANDBOX_LABEL/" /etc/openshell/gateway-docker.toml >$config
+  # The supervisor image, when Iwato names one: this image, whose
+  # supervisor is built with a patch (gateway.PatchedSupervisor).
+  if [ -n "${SUPERVISOR_IMAGE:-}" ]; then
+    case "$SUPERVISOR_IMAGE" in *[!A-Za-z0-9._/:@-]*) echo "invalid SUPERVISOR_IMAGE" >&2; exit 1 ;; esac
+    sed -i "s|^supervisor_image .*|supervisor_image      = \"$SUPERVISOR_IMAGE\"|" $config
+  fi
 else
   d=/etc/openshell/driver-tls
   rm -f /run/openshell/wslc.sock

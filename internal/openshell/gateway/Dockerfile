@@ -8,7 +8,14 @@
 # build of main. For dev the sandbox and supervisor images are built here
 # too (--target sandbox / supervisor), as the official images of main are
 # not tagged.
+#
+# OPENSHELL_PATCH picks the supervisor: release (the release's binary), or
+# h2-l7 (v0.1.5's source with h2-l7.patch, which adds HTTP/2 for opted-in
+# endpoints, built here with Rust; only for v0.1.5). The gateway image
+# carries the same supervisor at /openshell-supervisor, so it serves as the
+# sandboxes' supervisor image too (gateway.PatchedSupervisor).
 ARG OPENSHELL_TAG=v0.1.5
+ARG OPENSHELL_PATCH=h2-l7
 
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS base
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl socat openssh-client \
@@ -48,6 +55,47 @@ RUN set -e; base=https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHE
       tar xzf "$f.tar.gz" -C /out; done; \
     cd /; rm -rf /dl; /out/openshell-gateway --version; /out/openshell --version
 
+FROM fetch AS supervisor-release
+
+# v0.1.5's source (the tag's commit) with the patch applied, built as the
+# release builds openshell-supervisor (crates' version set to the release's,
+# default features, glibc) with the repository's toolchain, 1.95.0. rustup-init
+# is pinned by SHA-256 per architecture; rustup checks the toolchain itself.
+FROM base AS supervisor-h2-l7
+ARG OPENSHELL_TAG
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential clang cmake pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+RUN set -e; [ "$OPENSHELL_TAG" = v0.1.5 ] || { echo "h2-l7.patch is for OpenShell v0.1.5, not $OPENSHELL_TAG" >&2; exit 1; }; \
+    a=$(uname -m); case "$a" in \
+      x86_64) want=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71 ;; \
+      aarch64) want=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433 ;; \
+      *) echo "unsupported architecture $a" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/1.29.1/$a-unknown-linux-gnu/rustup-init"; \
+    echo "$want  /tmp/rustup-init" | sha256sum --check --strict -; \
+    chmod +x /tmp/rustup-init; /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain 1.95.0; rm /tmp/rustup-init
+ENV PATH=/root/.cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.95.0
+WORKDIR /src
+# The version is set in Cargo.lock too (only the workspace's crates are at
+# 0.0.0), so --locked holds.
+RUN git init -q . && git fetch -q --depth 1 https://github.com/NVIDIA/OpenShell.git bdb956f2cd65a635f1294fccf1d138d263bf650f \
+    && git checkout -q FETCH_HEAD \
+    && sed -i 's/^version = "0\.0\.0"$/version = "0.1.5"/' Cargo.toml Cargo.lock \
+    && cargo fetch --locked
+# The unpatched build, in a layer the patch does not invalidate: a change to
+# the patch rebuilds only the crates it touches and those depending on them.
+RUN cargo build --release --locked --offline -p openshell-supervisor --bin openshell-supervisor
+COPY h2-l7.patch /tmp/
+# OPENSHELL_HTTP2_ENDPOINTS: the destinations offered HTTP/2, iwato-modal's
+# endpoints (TestHTTP2EndpointsAreModals).
+RUN git apply /tmp/h2-l7.patch \
+    && OPENSHELL_HTTP2_ENDPOINTS=api.modal.com:443,api.modal2.com:443 \
+       cargo build --release --locked --offline -p openshell-supervisor --bin openshell-supervisor \
+    && mkdir /out && cp target/release/openshell-supervisor /out/ \
+    && rm -rf target && /out/openshell-supervisor --version
+
+FROM supervisor-${OPENSHELL_PATCH} AS supervisor-bin
+
 # As deploy/docker/Dockerfile.sandbox and Dockerfile.supervisor upstream.
 FROM scratch AS sandbox
 COPY --from=fetch --chmod=0555 /out/openshell-sandbox /openshell-sandbox
@@ -55,11 +103,12 @@ USER 65532:65532
 ENTRYPOINT ["/openshell-sandbox"]
 
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS supervisor
-COPY --from=fetch --chmod=0555 /out/openshell-supervisor /openshell-supervisor
+COPY --from=supervisor-bin --chmod=0555 /out/openshell-supervisor /openshell-supervisor
 ENTRYPOINT ["/openshell-supervisor"]
 
 FROM base AS gateway
 COPY --from=fetch /out/openshell-gateway /out/openshell /usr/local/bin/
+COPY --from=supervisor-bin --chmod=0555 /out/openshell-supervisor /openshell-supervisor
 COPY gateway.toml gateway-docker.toml entrypoint.sh /etc/openshell/
 RUN chmod 0755 /etc/openshell/entrypoint.sh
 # The CLI inside this container (wslc container exec ... openshell ...)

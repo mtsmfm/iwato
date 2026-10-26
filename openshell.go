@@ -231,7 +231,16 @@ func (o *OpenShell) prepare(ctx context.Context) error {
 			return errCode("driver_port_in_use", map[string]any{"port": driverPort, "detail": err.Error()},
 				fmt.Sprintf("the WSLc driver cannot listen on port %d (is another process or a WSLc container's published port using it?): %v", driverPort, err))
 		}
-		refs := runtimeImages{wslc.DefaultSupervisorImage, wslc.DefaultSandboxImage}
+		// The gateway image carries a patched supervisor and serves as the
+		// supervisor image (gateway.PatchedSupervisor).
+		supImage := wslc.DefaultSupervisorImage
+		if gateway.PatchedSupervisor {
+			if supImage, err = gateway.ImageRef(o.gatewayOptions(base)); err != nil {
+				ln.Close()
+				return err
+			}
+		}
+		refs := runtimeImages{supImage, wslc.DefaultSandboxImage}
 		o.runtime.setRefs(refs)
 		dctx, dstop := context.WithCancel(base)
 		o.mu.Lock()

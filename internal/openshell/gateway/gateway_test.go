@@ -94,7 +94,7 @@ func TestEnsureContainerOnDocker(t *testing.T) {
 		"container inspect --format json p-gateway",
 		"container remove --force p-gateway",
 		"container create --name p-gateway --label iwato.gateway.image=img:1 --label iwato.gateway.engine=docker /var/run/docker.sock personal" +
-			" --publish 127.0.0.1:17670:17670 --env COMPUTE_DRIVER=docker --env SANDBOX_LABEL=personal --env GATEWAY_HOST=p-gateway" +
+			" --publish 127.0.0.1:17670:17670 --env COMPUTE_DRIVER=docker --env SANDBOX_LABEL=personal --env GATEWAY_HOST=p-gateway --env SUPERVISOR_IMAGE=img:1" +
 			" --mount type=volume,source=p-state,target=/var/lib/openshell --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock img:1",
 		"container start p-gateway",
 	}
@@ -250,7 +250,7 @@ func TestDockerfilePinsOpenShell(t *testing.T) {
 		t.Errorf("%d tarballs pinned for %s, want 4 per architecture", got, tag)
 	}
 	for _, from := range regexp.MustCompile(`(?m)^FROM (\S+)`).FindAllStringSubmatch(text, -1) {
-		if from[1] != "base" && from[1] != "scratch" && !regexp.MustCompile(`^ubuntu:24\.04@sha256:[0-9a-f]{64}$`).MatchString(from[1]) {
+		if from[1] != "base" && from[1] != "fetch" && from[1] != "scratch" && from[1] != "supervisor-${OPENSHELL_PATCH}" && !regexp.MustCompile(`^ubuntu:24\.04@sha256:[0-9a-f]{64}$`).MatchString(from[1]) {
 			t.Errorf("FROM %s is not pinned by digest", from[1])
 		}
 	}
