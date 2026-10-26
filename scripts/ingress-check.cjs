@@ -283,6 +283,11 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     // A pull request's build: the list, the confirmation with its head
     // commit and warnings, the install, then back to edge.
     await page.evaluate(() => document.getElementById('settings-button').click());
+    const autofill = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('input:not([type=hidden]), textarea, [contenteditable=""], [contenteditable=true]')];
+      return { open: all.filter((e) => e.type !== 'password' && !e.hasAttribute('data-1p-ignore')).map((e) => e.id || e.className), passwords: all.filter((e) => e.type === 'password' && e.hasAttribute('data-1p-ignore')).length, total: all.length };
+    });
+    check(autofill.total > 0 && autofill.open.length === 0 && autofill.passwords === 0, 'password managers skip every field but passwords (' + autofill.open.join(',') + ')');
     const updateAgain = settings.locator('.update-settings');
     await updateAgain.getByRole('button', { name: 'PR のビルドを試す' }).click();
     const prs = updateAgain.locator('.update-pr');
