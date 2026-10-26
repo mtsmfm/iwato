@@ -2567,46 +2567,59 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   ok('a stopped terminal is marked on the sidebar and its tab until viewed');
   }
   {
-  // Ctrl+1–9 and Ctrl+Tab, as the window's capture listener gets them (before the terminal).
-  const press = (env, code, {shift = false, composing = false, keyCode = 0} = {}) => {
-    const event = {type: 'keydown', code, ctrlKey: true, shiftKey: shift, altKey: false, metaKey: false, isComposing: composing, keyCode, defaultPrevented: false, stopped: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }};
+  // Ctrl+1–9 and Ctrl+Tab, as the window's capture listeners get them (before the terminal).
+  const press = (env, code, {key = code, ctrl = true, shift = false, composing = false, keyCode = 0} = {}) => {
+    const event = {type: 'keydown', code, key, ctrlKey: ctrl, shiftKey: shift, altKey: false, metaKey: false, isComposing: composing, keyCode, defaultPrevented: false, stopped: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }};
     env.win.listeners.keydown(event); return event;
   };
-  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
-  const sc = await environment({fake: false, status: 'running', terms: ['main', '2', '3']});
-  sc.setSandboxHandler(() => response({fake: false, sandboxes: ['api', 'web'].map((id) => ({name: id, status: 'running', detail: ''}))})); await sc.tickPoll();
+  const release = (env) => env.win.listeners.keyup({type: 'keyup', key: 'Control', code: 'ControlLeft', ctrlKey: false});
+  const sc = await environment({fake: false, status: 'running', terms: ['main', '2']});
+  let names = ['api', 'db', 'web'];
+  sc.setSandboxHandler(() => response({fake: false, sandboxes: names.map((id) => ({name: id, status: 'running', detail: ''}))})); await sc.tickPoll();
   const scCards = () => sc.els['terminal-grid'].children.filter((n) => n.className.split(' ').includes('terminal-card'));
-  const shownCard = () => scCards().find((n) => n.className.split(' ').includes('selected'));
+  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
+  const shown = () => walk(sc.els['sandbox-nav'].children.find((n) => n.className.split(' ').includes('active')), (n) => n.className === 'nav-name')[0].textContent;
   const navs = sc.els['sandbox-nav'].children.filter((n) => n.className.includes('nav-sandbox'));
-  assert.deepEqual(navs.map((n) => n.title), ['Ctrl+1', 'Ctrl+2'], 'the sidebar entries name their keys');
+  assert.deepEqual(navs.map((n) => n.title), ['Ctrl+1', 'Ctrl+2', 'Ctrl+3'], 'the sidebar entries name their keys');
   sc.els['log-panel'].hidden = true;
+  const toast = sc.els['shortcut-toast'];
+  const listed = () => toast.children.map((n) => (n.className.includes('current') ? '*' : '') + n.textContent);
   const sentInput = () => sc.sockets.flatMap((s) => s.sent).filter((m) => m.type === 'input').length;
   const inputBefore = sentInput();
   let event = press(sc, 'Digit2'); await flush();
   assert(event.defaultPrevented && event.stopped, 'taken before the terminal');
-  assert.equal(shownCard(), scCards()[1], 'Ctrl+2 shows the second sandbox');
-  const web = sc.terminals.at(-1); assert(web.focusCount > 0, 'its terminal gets the keyboard');
-  assert.equal(sc.els['shortcut-toast'].hidden, false); assert.equal(sc.els['shortcut-toast'].textContent, 'web › ターミナル 1');
-  assert(walk(shownCard(), (n) => n.className === 'term-select').every((n) => n.title.endsWith('(Ctrl+Tab)')));
-  const termOf = () => new URL(sc.sockets.at(-1).url).searchParams.get('term');
-  const focusBefore = web.focusCount;
-  press(sc, 'Tab'); await flush(); assert.equal(termOf(), '2');
-  press(sc, 'Tab'); press(sc, 'Tab'); await flush(); assert.equal(termOf(), 'main', 'Ctrl+Tab wraps');
-  event = press(sc, 'Tab', {shift: true}); await flush(); assert.equal(termOf(), '3', 'Ctrl+Shift+Tab goes back and wraps'); assert(event.stopped);
-  assert.equal(sc.els['shortcut-toast'].textContent, 'web › ターミナル 3'); assert(web.focusCount > focusBefore + 3);
-  walk(shownCard(), (n) => n.className.split(' ').includes('card-tab') && n.textContent === 'ポリシー')[0].click(); await flush();
-  press(sc, 'Tab'); await flush(); assert.equal(shownCard().dataset.tab, 'terminal', 'from another view Ctrl+Tab shows the terminal'); assert.equal(termOf(), 'main');
+  assert.equal(shown(), 'db', 'Ctrl+2 shows the second sandbox');
+  const db = sc.terminals.at(-1); assert(db.focusCount > 0, 'its terminal gets the keyboard');
+  assert.equal(toast.hidden, false); assert.equal(toast.textContent, 'db › ターミナル 1');
+  press(sc, 'Digit3'); await flush(); assert.equal(shown(), 'web');
+  event = press(sc, 'Tab'); assert(event.defaultPrevented && event.stopped); assert.equal(shown(), 'web', 'nothing switches while Ctrl is held');
+  assert.deepEqual(listed(), ['web', '*db', 'api'], 'the toast lists the recent order');
+  release(sc); await flush(); assert.equal(shown(), 'db', 'Ctrl+Tab: the previous sandbox');
+  assert.equal(toast.textContent, 'db › ターミナル 1'); assert(!toast.className.includes('shortcut-list'));
+  press(sc, 'Tab'); release(sc); await flush(); assert.equal(shown(), 'web', 'again: back, a toggle');
+  press(sc, 'Tab'); press(sc, 'Tab'); assert.equal(shown(), 'web'); assert.deepEqual(listed(), ['web', 'db', '*api']);
+  release(sc); await flush(); assert.equal(shown(), 'api', 'two Tabs with Ctrl held: two back');
+  event = press(sc, 'Tab', {shift: true}); assert(event.stopped); assert.deepEqual(listed(), ['api', 'web', '*db'], 'Shift steps the other way');
+  press(sc, 'Tab'); press(sc, 'Tab', {shift: true}); release(sc); await flush(); assert.equal(shown(), 'db');
+  press(sc, 'Tab'); press(sc, 'ShiftLeft', {key: 'Shift', shift: true}); event = press(sc, 'Escape'); assert(event.defaultPrevented);
+  assert.equal(toast.hidden, true); release(sc); await flush(); assert.equal(shown(), 'db', 'Esc cancels');
+  press(sc, 'Tab'); sc.win.listeners.blur(); release(sc); await flush(); assert.equal(shown(), 'db', 'blur cancels'); assert.equal(toast.hidden, true);
+  press(sc, 'Tab'); event = press(sc, 'KeyA', {key: 'a', ctrl: false}); await flush();
+  assert(event.defaultPrevented && event.stopped); assert.equal(shown(), 'api', 'a key without Ctrl after a missed keyup commits');
+  event = press(sc, 'KeyA', {key: 'a', ctrl: false}); assert.equal(event.defaultPrevented, false, 'then keys go on as before');
   assert.equal(sentInput(), inputBefore, 'nothing typed into a terminal');
-  event = press(sc, 'Digit1', {composing: true}); assert.equal(event.defaultPrevented, false); assert.equal(shownCard(), scCards()[1], 'left alone while composing');
-  event = press(sc, 'Digit1', {keyCode: 229}); assert.equal(event.defaultPrevented, false);
+  names = ['api', 'web']; await sc.tickPoll();
+  press(sc, 'Tab'); assert.deepEqual(listed(), ['api', '*web'], 'a deleted sandbox leaves the order'); release(sc); await flush(); assert.equal(shown(), 'web');
+  event = press(sc, 'Tab', {composing: true}); assert.equal(event.defaultPrevented, false);
+  event = press(sc, 'Digit1', {keyCode: 229}); assert.equal(event.defaultPrevented, false); assert.equal(shown(), 'web', 'left alone while composing');
   sc.els['create-panel'].hidden = false;
-  event = press(sc, 'Digit1'); assert.equal(event.defaultPrevented, false); event = press(sc, 'Tab'); assert.equal(event.defaultPrevented, false); assert.equal(shownCard(), scCards()[1], 'left alone with a dialog open');
+  event = press(sc, 'Digit1'); assert.equal(event.defaultPrevented, false); event = press(sc, 'Tab'); assert.equal(event.defaultPrevented, false);
+  release(sc); await flush(); assert.equal(shown(), 'web', 'left alone with a dialog open');
   sc.els['create-panel'].hidden = true;
-  event = press(sc, 'Digit9'); assert(event.defaultPrevented); assert.equal(shownCard(), scCards()[1], 'no ninth sandbox: nothing');
-  press(sc, 'Digit1'); assert.equal(shownCard(), scCards()[0]);
+  event = press(sc, 'Digit9'); assert(event.defaultPrevented); assert.equal(shown(), 'web', 'no ninth sandbox: nothing');
   const one = await environment({status: 'running'}); await flush(); one.els['log-panel'].hidden = true; const before = one.sockets.length;
-  event = press(one, 'Tab'); await flush(); assert(event.defaultPrevented); assert.equal(one.sockets.length, before, 'one terminal: nothing'); assert.equal(one.els['shortcut-toast'].hidden, true);
-  ok('Ctrl+1–9 shows a sandbox, Ctrl+Tab cycles its terminals; the terminal gets neither, composing and dialogs leave them alone');
+  event = press(one, 'Tab'); release(one); await flush(); assert(event.defaultPrevented); assert.equal(one.sockets.length, before, 'one sandbox: nothing'); assert.equal(one.els['shortcut-toast'].hidden, true);
+  ok('Ctrl+1–9 shows a sandbox, Ctrl+Tab the recently shown ones; the terminal gets neither, composing and dialogs leave them alone');
   }
   {
   // web/i18n.js on its own: t(), the fallback to Japanese, language detection.

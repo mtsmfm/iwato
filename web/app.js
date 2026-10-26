@@ -561,8 +561,11 @@
     $('server-state').dataset.state = kind;
   }
   // One sandbox is shown at a time; the sidebar (a chip row on phones) switches.
+  // Ctrl+Tab goes back through `recent`, the most recently shown first.
+  let recent = [];
   function selectCard(card) {
     state.selected = card ? card.sandbox.name : '';
+    if (card) recent = [state.selected, ...recent.filter((name) => name !== state.selected)];
     for (const other of cards.values()) {
       other.root.classList.remove('selected');
       other.nav.classList.remove('active');
@@ -2264,6 +2267,7 @@
         for (const [name, card] of cards) {
           if (!names.has(name)) { card.dispose(); cards.delete(name); }
         }
+        recent = recent.filter((name) => cards.has(name));
         for (const item of sandboxes) {
           if (!cards.has(item.name)) cards.set(item.name, new SandboxCard(item));
           else { cards.get(item.name).update(item); cards.get(item.name).autoConnect(); }
@@ -4904,7 +4908,6 @@
           select.append(element('span', 'stopped-mark'));
           select.title += t('term.stopped.title');
         }
-        if (names.length > 1) select.title += ' (Ctrl+Tab)';
         const close = button('term-close', '×', () => this.killTerm(name));
         close.title = t('term.close', { name: label });
         close.setAttribute('aria-label', close.title);
@@ -4959,15 +4962,6 @@
       }
       if (this.root.dataset.tab !== 'terminal') this.selectTab('terminal');
       else this.focusUnlessTouch();
-    }
-
-    // Ctrl+Tab: the next (step 1) or previous terminal, from any view.
-    cycleTerm(step) {
-      const names = this.termNames.includes(this.termName) ? this.termNames : [...this.termNames, this.termName];
-      if (!this.termMulti || this.sandbox.status !== 'running' || names.length < 2) return false;
-      this.switchTerm(names[(names.indexOf(this.termName) + step + names.length) % names.length]);
-      this.terminal?.focus();
-      return true;
     }
 
     // Shows a session and attaches it (a notification click asked for it).
@@ -5917,8 +5911,8 @@
     const open = panels.filter(([node]) => shown(node));
     return open.find(([node]) => at && node.contains(at)) || open[0] || null;
   }
-  // What Esc would close, less the card's views (links, text): those are
-  // left by Ctrl+Tab like any other view.
+  // What Esc would close, less the card's views (links, text): the
+  // shortcuts leave them like any other view.
   function dialogOpen() {
     const card = cards.get(state.selected);
     const [node] = escapeTarget(null) || [];
@@ -5936,10 +5930,21 @@
     if (at && node.contains(at)) at.blur?.();
     close();
   });
-  // Ctrl+1–9: the Nth sandbox of the sidebar; Ctrl+Tab (Shift: back): the
-  // next terminal. Ctrl on a Mac too (⌘ digits are the browser's). On the
-  // window in the capture phase, so the terminal never gets them.
+  // Ctrl+1–9: the Nth sandbox of the sidebar. Ctrl+Tab: the previously shown
+  // one; with Ctrl held, more Tabs (Shift: back) step through `recent` and
+  // releasing Ctrl shows the choice, so the sandboxes on the way are not
+  // attached. Ctrl on a Mac too (⌘ digits are the browser's). On the window
+  // in the capture phase, so the terminal never gets them.
+  let switcher = null;
   window.addEventListener('keydown', (event) => {
+    if (switcher && (event.key === 'Control' || event.key === 'Shift')) return;
+    if (switcher && (event.code !== 'Tab' || !event.ctrlKey)) {
+      // Esc cancels; another key without Ctrl means its keyup was missed.
+      event.preventDefault();
+      event.stopPropagation();
+      endSwitch(event.key !== 'Escape' && !event.ctrlKey);
+      return;
+    }
     if (!event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
     const digit = /^Digit([1-9])$/.exec(event.code || '');
     if (!(digit && !event.shiftKey) && event.code !== 'Tab') return;
@@ -5947,16 +5952,37 @@
     event.preventDefault();
     event.stopPropagation();
     reportPresence(true);
-    let card = cards.get(state.selected);
     if (digit) {
       const nav = [...$('sandbox-nav').children].filter((node) => node !== navSeparator)[digit[1] - 1];
-      card = [...cards.values()].find((c) => c.nav === nav);
-      if (!card) return;
-      card.open(true);
-    } else if (!card?.cycleTerm(event.shiftKey ? -1 : 1)) return;
+      const card = [...cards.values()].find((c) => c.nav === nav);
+      if (card) showCard(card);
+      return;
+    }
+    if (!switcher) {
+      if (cards.size < 2) return;
+      switcher = { names: [...new Set([...recent, ...cards.keys()])], at: 0 };
+    }
+    const count = switcher.names.length;
+    switcher.at = (switcher.at + (event.shiftKey ? count - 1 : 1)) % count;
+    const toast = $('shortcut-toast');
+    clearTimeout(toastTimer);
+    toast.replaceChildren(...switcher.names.map((name, i) => element('div', i === switcher.at ? 'shortcut-item current' : 'shortcut-item', name)));
+    toast.classList.add('shortcut-list');
+    toast.hidden = false;
+  }, true);
+  window.addEventListener('keyup', (event) => { if (switcher && event.key === 'Control') endSwitch(true); }, true);
+  function endSwitch(commit) {
+    const card = commit && cards.get(switcher.names[switcher.at]);
+    switcher = null;
+    $('shortcut-toast').classList.remove('shortcut-list');
+    $('shortcut-toast').hidden = true;
+    if (card) showCard(card);
+  }
+  function showCard(card) {
+    card.open(true);
     const name = card.sandbox.name;
     showToast(card.sandbox.status === 'running' ? t('shortcut.toast', { sandbox: name, terminal: termLabel(card.termName) }) : name);
-  }, true);
+  }
   let toastTimer = 0;
   function showToast(text) {
     const toast = $('shortcut-toast');
@@ -6001,7 +6027,10 @@
     if (card && card.surface.contains(target)) typingCard = card;
     else if (!card) typingCard = null;
   });
-  window.addEventListener('blur', () => { for (const card of cards.values()) card.releaseSize(); });
+  window.addEventListener('blur', () => {
+    if (switcher) endSwitch(false);
+    for (const card of cards.values()) card.releaseSize();
+  });
   const poll = setInterval(() => { if (!document.hidden) refreshSandboxes(); }, 10000);
   setInterval(() => refreshResources(), 4000);
   // Ctrl+W cannot be intercepted in a normal tab; ask before leaving while a

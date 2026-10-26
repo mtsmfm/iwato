@@ -17,9 +17,9 @@ On a phone, the on-screen keyboard does not change the terminal's rows (so lines
 ## Keyboard shortcuts
 
 - Ctrl+1 … Ctrl+9: show the Nth sandbox of the sidebar
-- Ctrl+Tab / Ctrl+Shift+Tab: the next or previous terminal of the shown sandbox (from another tab, back to the terminal)
+- Ctrl+Tab: back to the previously shown sandbox; press it again to return. Hold Ctrl and press Tab more times to go further back through the recently shown sandboxes (Ctrl+Shift+Tab: the other way, Esc: cancel); releasing Ctrl shows the highlighted one
 
-They use Ctrl on a Mac too, and the terminal gets the keyboard. In a regular browser tab the browser takes these keys for its own tabs; they are meant for Iwato installed as an app, in its own window.
+They use Ctrl on a Mac too, and the terminal of the sandbox they show gets the keyboard. In a regular browser tab the browser takes these keys for its own tabs; they are meant for Iwato installed as an app, in its own window.
 
 ## Links and text
 
