@@ -2,6 +2,7 @@ package wslc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -57,6 +58,27 @@ func DefaultStateDir() string {
 		return filepath.Join(dir, "iwato", "openshell-wslc")
 	}
 	return filepath.Join(os.TempDir(), "iwato-openshell-wslc")
+}
+
+// CreatedImages are the IDs of the supervisor and sandbox runtime images
+// the sandbox id was created with (the driver keeps both until it is
+// recreated), "" for one not recorded.
+func CreatedImages(stateDir, namespace, id string) (supervisor, sandbox string) {
+	dir := (&driver{cfg: Config{StateDir: stateDir, Namespace: namespace}}).stateDir(id)
+	read := func(name string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, name))
+		return strings.TrimSpace(string(b))
+	}
+	return read("supervisor-image"), read("sandbox-image")
+}
+
+// ImageID is the ID of the local image ref, "" when there is none.
+func ImageID(ctx context.Context, r Runner, ref string) (string, error) {
+	img, err := (wslc{r}).image(ctx, ref)
+	if errors.Is(err, errNotFound) {
+		return "", nil
+	}
+	return img.ID, err
 }
 
 // Runner runs one wslc command, optionally feeding stdin.

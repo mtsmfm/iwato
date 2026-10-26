@@ -142,6 +142,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const updateDialog = page.locator('.update-dialog');
     await updateDialog.waitFor();
     check((await updateDialog.innerText()).includes('ファイルは残ります') && (await updateDialog.locator('li').allInnerTexts()).join(',') === 'dev', 'a gateway change names the running sandboxes that restart');
+    check(await updateDialog.locator('.update-recreate').isVisible(), 'a gateway change says sandboxes keep their supervisor until recreated');
     check(await noSideScroll(updateDialog.locator('.update-body')), 'the update dialog does not scroll sideways');
     await shot('update-dialog.png');
     await updateDialog.getByRole('button', { name: 'キャンセル' }).click();
@@ -190,9 +191,13 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(await panel.locator('.ingress-state').innerText().then((t) => t.includes('接続中')), 'the node stays connected while stopped');
     await shot('ports-stopped.png');
 
+    // The fake's dev runs an older supervisor: its badge opens the recreate panel.
+    const recreateBadge = card.locator('.badge-recreate');
+    check(await recreateBadge.isVisible() && (await recreateBadge.innerText()) === '作り直しで更新', 'a sandbox with an older supervisor shows 作り直しで更新');
+    check(await page.locator('#sandbox-nav .recreate-mark:not([hidden])').count() === 1, 'the sidebar marks it too');
+    await shot('recreate-to-update.png');
     // Recreate, pulling the latest image first.
-    await card.getByRole('button', { name: 'その他の操作' }).click();
-    await card.getByRole('menuitem', { name: '作り直す' }).click();
+    await recreateBadge.click();
     const recreate = card.locator('.recreate-panel');
     const pull = recreate.getByLabel('最新のイメージを取得してから作り直す');
     await pull.waitFor();
@@ -208,6 +213,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await card.locator('.badge[data-state=running]').waitFor({ timeout: 20000 });
     check(await recreate.isHidden(), 'the recreate finished after the pull');
     await card.locator('.badge-gpu:not([hidden])').waitFor({ timeout: 10000 });
+    check(await recreateBadge.isHidden() && await page.locator('#sandbox-nav .recreate-mark:not([hidden])').count() === 0, 'the recreated sandbox is not marked');
 
     // The language (web/i18n.js): English at once, remembered, then automatic (ja-JP here).
     const openSettings = async (p) => {
@@ -293,6 +299,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await updateDialog.waitFor();
     const prText = await updateDialog.innerText();
     check(prText.includes('PR #12 のビルドを入れる') && prText.includes('4'.repeat(40)) && prText.includes('マージされていない') && prText.includes('PC での操作'), 'the confirmation shows the head commit and the warnings');
+    check(await updateDialog.locator('.update-recreate').count() === 0, 'a build that keeps the gateway says nothing about recreating');
     check(await noSideScroll(updateDialog.locator('.update-body')), 'the pull request dialog does not scroll sideways');
     await shot('update-pr-dialog.png');
     await page.keyboard.press('Escape');

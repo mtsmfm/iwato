@@ -2161,6 +2161,7 @@
         status: typeof item.status === 'string' ? item.status : 'error',
         detail: typeof item.detail === 'string' ? item.detail : '',
         restartPending: item.restartPending === true,
+        recreateToUpdate: item.recreateToUpdate === true,
         gpu: item.gpu === true,
         // When it stops after its terminals ended (autostop.go).
         autoStopAt: Number.isFinite(item.autoStopAt) ? item.autoStopAt : 0,
@@ -4450,6 +4451,11 @@
       header.append(titleWrap, this.badge, this.restartBadge, this.gpuBadge);
       this.detail = element('p', 'card-detail');
       const toolbar = element('div', 'card-toolbar');
+      // Made with an older supervisor than new sandboxes get: recreating updates it.
+      this.recreateBadge = bind(button('badge badge-recreate', '', () => { if (this.recreation.root.hidden) this.recreation.toggle(); }), 'card.recreateToUpdate');
+      bindAttribute(this.recreateBadge, 'title', 'card.recreateToUpdate.title');
+      this.recreateBadge.hidden = true;
+      this.restartBadge.after(this.recreateBadge);
       // Only the step the sandbox needs next stays in view; the rarer views
       // and actions sit in the ⋯ menu at the end of the tab row.
       const actions = element('div', 'card-actions');
@@ -4643,6 +4649,10 @@
       this.navStop.hidden = true;
       this.nav.append(this.navDot, this.navTitle, this.navStop, arrow);
       $('sandbox-nav').append(this.nav);
+      this.navRecreate = element('span', 'recreate-mark', '↻');
+      bindAttribute(this.navRecreate, 'title', 'card.recreateToUpdate.title');
+      this.navRecreate.hidden = true;
+      this.navStop.after(this.navRecreate);
     }
 
     openActionMenu() {
@@ -5186,6 +5196,7 @@
       this.filesShown = sandbox.status;
       this.badge.textContent = statusKeys[currentStatus] ? t(statusKeys[currentStatus]) : currentStatus;
       this.badge.dataset.state = currentStatus;
+      this.recreateBadge.hidden = this.navRecreate.hidden = sandbox.recreateToUpdate !== true;
       const pending = sandbox.status === 'running' && sandbox.restartPending === true;
       if (pending !== !this.restartBadge.hidden && sandbox.status === 'running') this.termsLoaded = false;
       this.restartBadge.hidden = !pending;

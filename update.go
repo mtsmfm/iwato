@@ -204,7 +204,10 @@ type UpdateView struct {
 	// restarts the running sandboxes (Restart).
 	Gateway bool     `json:"gateway,omitempty"`
 	Restart []string `json:"restart,omitempty"`
-	Checked string   `json:"checked,omitempty"`
+	// Recreate: with a new gateway image, sandboxes keep their supervisor
+	// until recreated (WSLc; runtimePinner).
+	Recreate bool   `json:"recreate,omitempty"`
+	Checked  string `json:"checked,omitempty"`
 	// CheckFailed is the last check's failure (English, as logged).
 	CheckFailed string `json:"checkFailed,omitempty"`
 	// Phase: downloading, restarting or failed (Code, Params, Message).
@@ -827,6 +830,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if v.Gateway || (v.Edge != nil && v.Edge.Gateway) {
 			v.Restart = s.runningSandboxes(ctx)
+			v.Recreate = s.pinsRuntime()
 		}
 	}
 	jsonResponse(w, 200, v)
@@ -834,8 +838,9 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePRs answers GET /api/update/prs.
 type UpdatePRs struct {
-	Builds  []UpdateBuild `json:"builds"`
-	Restart []string      `json:"restart,omitempty"`
+	Builds   []UpdateBuild `json:"builds"`
+	Restart  []string      `json:"restart,omitempty"`
+	Recreate bool          `json:"recreate,omitempty"`
 }
 
 func (s *Server) handleUpdatePRs(w http.ResponseWriter, r *http.Request, u *selfUpdate) {
@@ -861,6 +866,7 @@ func (s *Server) handleUpdatePRs(w http.ResponseWriter, r *http.Request, u *self
 	}
 	if gateway {
 		out.Restart = s.runningSandboxes(ctx)
+		out.Recreate = s.pinsRuntime()
 	}
 	jsonResponse(w, 200, out)
 }
@@ -878,6 +884,17 @@ func (u *selfUpdate) edgeBuild() *buildMeta {
 // gatewayImager is a runtime that can tell the gateway container's image.
 type gatewayImager interface {
 	GatewayImage(ctx context.Context) string
+}
+
+// runtimePinner is a runtime whose sandboxes keep the supervisor and
+// sandbox runtime images they were created with (openshell_runtime.go).
+type runtimePinner interface {
+	PinsRuntime() bool
+}
+
+func (s *Server) pinsRuntime() bool {
+	p, ok := s.rt.(runtimePinner)
+	return ok && p.PinsRuntime()
 }
 
 // gatewayNow is the digest of the gateway container's image (or, when

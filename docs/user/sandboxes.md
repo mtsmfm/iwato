@@ -44,6 +44,7 @@ A sandbox keeps the image it was created from. To move it to a newer image (for 
 - Rules OpenShell no longer accepts are not restored; Iwato tells you which
 - "Use the GPU" turns the GPU on or off for the new sandbox (shown where a GPU is available, or while the sandbox has one)
 - Tick "Pull the latest image first" to fetch a newer standard image before recreating (development builds, see below)
+- On Windows a sandbox also keeps the OpenShell supervisor (its network checks) it was created with. When Iwato brings a new one, the card shows **Recreate to update** (↻ in the sidebar); click it to open Recreate
 
 ## The standard image
 

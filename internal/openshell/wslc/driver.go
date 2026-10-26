@@ -164,6 +164,7 @@ type driver struct {
 	cancels    map[string]context.CancelFunc // provisioning in progress
 	deleting   map[string]bool               // deleted while provisioning
 	binary     []byte                        // openshell-sandbox, extracted once
+	binaryFrom string                        // the ID of the image it came from
 	accounts   map[string][2][]byte          // image ID -> /etc/passwd, /etc/group
 }
 
@@ -785,7 +786,7 @@ func (d *driver) provisionSteps(ctx context.Context, sb *computev1.DriverSandbox
 	if err != nil {
 		return "IdentityResolutionFailed", err
 	}
-	binary, err := d.sandboxBinary(ctx)
+	binary, binaryFrom, err := d.sandboxBinary(ctx)
 	if err != nil {
 		return "SandboxRuntimeUnavailable", err
 	}
@@ -876,6 +877,7 @@ func (d *driver) provisionSteps(ctx context.Context, sb *computev1.DriverSandbox
 		"boundary-server.key": []byte(files.TLS.KeyPEM), "runtime-descriptor.json": files.Descriptor,
 		"supervisor-auth.json": files.SupervisorAuth, "workspace-root": []byte(workspace),
 		"main-process.json": mainProcessSpec(spec), "supervisor-image": []byte(supImg.ID),
+		"sandbox-image":  []byte(binaryFrom),
 		"identity":       []byte(fmt.Sprintf("%d:%d", id.UID, id.GID)),
 		"log-level":      []byte(firstNonEmpty(spec.GetLogLevel(), d.cfg.LogLevel)),
 		"volume-targets": []byte(strings.Join(writableVolumeTargets(dcfg), "\n")),
@@ -1022,36 +1024,36 @@ func (d *driver) identity(ctx context.Context, sb *computev1.DriverSandbox, imag
 }
 
 // sandboxBinary extracts /openshell-sandbox from the sandbox runtime image
-// once per driver process.
-func (d *driver) sandboxBinary(ctx context.Context) ([]byte, error) {
+// once per driver process, and gives that image's ID.
+func (d *driver) sandboxBinary(ctx context.Context) ([]byte, string, error) {
 	d.mu.Lock()
-	b := d.binary
+	b, from := d.binary, d.binaryFrom
 	d.mu.Unlock()
 	if b != nil {
-		return b, nil
+		return b, from, nil
 	}
 	img, err := d.ensureRuntimeImage(ctx, d.cfg.SandboxImage)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	name := fmt.Sprintf("openshell-wslc-extract-%d", time.Now().UnixNano())
 	cid, err := d.w.create(ctx, []string{"--name", name, "--label", labelManagedBy + "=openshell", "--label", labelRole + "=staging",
 		"--label", labelNamespace + "=" + d.cfg.Namespace, "--network", "none", "--pull", "never", "--entrypoint", "/openshell-sandbox"}, img.ID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer d.w.remove(context.Background(), cid)
 	b, err = d.w.copyOut(ctx, cid, "/openshell-sandbox")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(b) < 4 || string(b[:4]) != "\x7fELF" {
-		return nil, errors.New("sandbox runtime image did not yield an ELF /openshell-sandbox")
+		return nil, "", errors.New("sandbox runtime image did not yield an ELF /openshell-sandbox")
 	}
 	d.mu.Lock()
-	d.binary = b
+	d.binary, d.binaryFrom = b, img.ID
 	d.mu.Unlock()
-	return b, nil
+	return b, img.ID, nil
 }
 
 // stageWorkload copies the runtime binary (root, 0555) and the boundary
