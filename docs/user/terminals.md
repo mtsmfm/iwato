@@ -14,6 +14,13 @@ Iwato itself keeps each terminal's screen and scrollback, so you can close the b
 
 On a phone, the on-screen keyboard does not change the terminal's rows (so lines are not duplicated in the history). The key row adds Esc, Tab, ⇧Tab, Ctrl, the arrow keys, ^C, ^B, **Paste**, **Image**, `|`, `/`, `~` and `-`.
 
+## Keyboard shortcuts
+
+- Ctrl+1 … Ctrl+9: show the Nth sandbox of the sidebar
+- Ctrl+Tab / Ctrl+Shift+Tab: the next or previous terminal of the shown sandbox (from another tab, back to the terminal)
+
+They use Ctrl on a Mac too, and the terminal gets the keyboard. In a regular browser tab the browser takes these keys for its own tabs; they are meant for Iwato installed as an app, in its own window.
+
 ## Links and text
 
 - URLs and file paths printed in the terminal open with Ctrl+click (⌘+click on a Mac) or a tap on a phone. URLs are underlined; a path is underlined only while you hold Ctrl (⌘) over it, and only when it is a file the editor can open. A URL opens in a new tab; a file path (`/home/dev/…`, `~/…`, or a relative one with a slash such as `web/app.js`, optionally with `:LINE` or `:LINE:COL`) opens in the editor at that line, beside the terminal when they are side by side. A relative path is taken from the working directory of the program running in the terminal (in a sandbox made before this, from the directory the shell reports with OSC 7, else `~/work`). Only paths in ASCII are found, and only files under the editor's folder (the home) open; any other path is plain text

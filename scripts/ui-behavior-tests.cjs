@@ -52,11 +52,11 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
     'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-binaries', 'policy-any', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
-    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button', 'res-totals'];
+    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button', 'res-totals', 'shortcut-toast'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
   for (const id of ids) { const m = id.match(/^approve-(?:scope|access)-(\w+)$/); if (m) els[id].value = m[1]; }
   els['terminal-grid'].append(els['empty-state']); els.notice.hidden = true; els['fake-banner'].hidden = true;
-  for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button']) els[id].hidden = true;
+  for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button', 'shortcut-toast']) els[id].hidden = true;
   const shared = []; let shareFailure = null;
   const requests = [], sockets = [], terminals = [], timeouts = new Map(), intervals = [], confirmations = [];
   let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null, resourcesHandler = null; const created = []; const copied = []; const swListeners = {};
@@ -2565,6 +2565,48 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   walk(st.card(), (n) => n.className.split(' ').includes('card-tab') && n.textContent === 'ターミナル')[0].click(); await flush();
   assert(!navMarked(), 'back on the terminal');
   ok('a stopped terminal is marked on the sidebar and its tab until viewed');
+  }
+  {
+  // Ctrl+1–9 and Ctrl+Tab, as the window's capture listener gets them (before the terminal).
+  const press = (env, code, {shift = false, composing = false, keyCode = 0} = {}) => {
+    const event = {type: 'keydown', code, ctrlKey: true, shiftKey: shift, altKey: false, metaKey: false, isComposing: composing, keyCode, defaultPrevented: false, stopped: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }};
+    env.win.listeners.keydown(event); return event;
+  };
+  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
+  const sc = await environment({fake: false, status: 'running', terms: ['main', '2', '3']});
+  sc.setSandboxHandler(() => response({fake: false, sandboxes: ['api', 'web'].map((id) => ({name: id, status: 'running', detail: ''}))})); await sc.tickPoll();
+  const scCards = () => sc.els['terminal-grid'].children.filter((n) => n.className.split(' ').includes('terminal-card'));
+  const shownCard = () => scCards().find((n) => n.className.split(' ').includes('selected'));
+  const navs = sc.els['sandbox-nav'].children.filter((n) => n.className.includes('nav-sandbox'));
+  assert.deepEqual(navs.map((n) => n.title), ['Ctrl+1', 'Ctrl+2'], 'the sidebar entries name their keys');
+  sc.els['log-panel'].hidden = true;
+  const sentInput = () => sc.sockets.flatMap((s) => s.sent).filter((m) => m.type === 'input').length;
+  const inputBefore = sentInput();
+  let event = press(sc, 'Digit2'); await flush();
+  assert(event.defaultPrevented && event.stopped, 'taken before the terminal');
+  assert.equal(shownCard(), scCards()[1], 'Ctrl+2 shows the second sandbox');
+  const web = sc.terminals.at(-1); assert(web.focusCount > 0, 'its terminal gets the keyboard');
+  assert.equal(sc.els['shortcut-toast'].hidden, false); assert.equal(sc.els['shortcut-toast'].textContent, 'web › ターミナル 1');
+  assert(walk(shownCard(), (n) => n.className === 'term-select').every((n) => n.title.endsWith('(Ctrl+Tab)')));
+  const termOf = () => new URL(sc.sockets.at(-1).url).searchParams.get('term');
+  const focusBefore = web.focusCount;
+  press(sc, 'Tab'); await flush(); assert.equal(termOf(), '2');
+  press(sc, 'Tab'); press(sc, 'Tab'); await flush(); assert.equal(termOf(), 'main', 'Ctrl+Tab wraps');
+  event = press(sc, 'Tab', {shift: true}); await flush(); assert.equal(termOf(), '3', 'Ctrl+Shift+Tab goes back and wraps'); assert(event.stopped);
+  assert.equal(sc.els['shortcut-toast'].textContent, 'web › ターミナル 3'); assert(web.focusCount > focusBefore + 3);
+  walk(shownCard(), (n) => n.className.split(' ').includes('card-tab') && n.textContent === 'ポリシー')[0].click(); await flush();
+  press(sc, 'Tab'); await flush(); assert.equal(shownCard().dataset.tab, 'terminal', 'from another view Ctrl+Tab shows the terminal'); assert.equal(termOf(), 'main');
+  assert.equal(sentInput(), inputBefore, 'nothing typed into a terminal');
+  event = press(sc, 'Digit1', {composing: true}); assert.equal(event.defaultPrevented, false); assert.equal(shownCard(), scCards()[1], 'left alone while composing');
+  event = press(sc, 'Digit1', {keyCode: 229}); assert.equal(event.defaultPrevented, false);
+  sc.els['create-panel'].hidden = false;
+  event = press(sc, 'Digit1'); assert.equal(event.defaultPrevented, false); event = press(sc, 'Tab'); assert.equal(event.defaultPrevented, false); assert.equal(shownCard(), scCards()[1], 'left alone with a dialog open');
+  sc.els['create-panel'].hidden = true;
+  event = press(sc, 'Digit9'); assert(event.defaultPrevented); assert.equal(shownCard(), scCards()[1], 'no ninth sandbox: nothing');
+  press(sc, 'Digit1'); assert.equal(shownCard(), scCards()[0]);
+  const one = await environment({status: 'running'}); await flush(); one.els['log-panel'].hidden = true; const before = one.sockets.length;
+  event = press(one, 'Tab'); await flush(); assert(event.defaultPrevented); assert.equal(one.sockets.length, before, 'one terminal: nothing'); assert.equal(one.els['shortcut-toast'].hidden, true);
+  ok('Ctrl+1–9 shows a sandbox, Ctrl+Tab cycles its terminals; the terminal gets neither, composing and dialogs leave them alone');
   }
   {
   // web/i18n.js on its own: t(), the fallback to Japanese, language detection.

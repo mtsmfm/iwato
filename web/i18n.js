@@ -271,6 +271,7 @@
     'proposalBar.later': 'あとで',
     // Terminals and their connection.
     'term.name': 'ターミナル {name}',
+    'shortcut.toast': '{sandbox} › ターミナル {terminal}',
     'term.outdated': '更新',
     'term.outdated.title': ' (古いバージョンで動いています。再起動すると更新されます)',
     'term.providerOutdated.title': ' (プロバイダーの変更前に開いたため、変更が反映されていません)',
@@ -1947,6 +1948,7 @@
     'proposalBar.review': 'Review',
     'proposalBar.later': 'Later',
     'term.name': 'Terminal {name}',
+    'shortcut.toast': '{sandbox} › Terminal {terminal}',
     'term.outdated': 'Update',
     'term.outdated.title': ' (runs an older version; restarting updates it)',
     'term.providerOutdated.title': ' (opened before a provider change, so it lacks the change)',

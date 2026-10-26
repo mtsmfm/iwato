@@ -556,6 +556,29 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.waitForTimeout(1000);
     const tabs = () => card.locator('.term-tab').count();
     const opened = await tabs();
+    // Ctrl+Tab / Ctrl+Shift+Tab and Ctrl+1–9 (a hardware keyboard on a phone too); nothing is typed.
+    {
+      const tab = () => card.locator('.term-tab').evaluateAll((ts) => ts.findIndex((t) => t.getAttribute('aria-selected') === 'true'));
+      const onShown = () => page.evaluate(() => !!document.activeElement?.matches('.terminal-card.selected .iw-input'));
+      const was = await tab();
+      typed = '';
+      await page.keyboard.press('Control+Tab');
+      await page.waitForTimeout(600);
+      const next = await tab();
+      check(next >= 0 && next !== was && await onShown(), 'Ctrl+Tab shows the other terminal (' + was + ' → ' + next + ') with the keyboard');
+      await page.keyboard.press('Control+Shift+Tab');
+      await page.waitForTimeout(600);
+      check(await tab() === was && await onShown(), 'Ctrl+Shift+Tab goes back');
+      const shown = () => page.locator('#sandbox-nav .nav-sandbox.active .nav-name').innerText();
+      const names = await page.locator('#sandbox-nav .nav-sandbox .nav-name').allInnerTexts();
+      await page.keyboard.press('Control+2');
+      await page.waitForTimeout(400);
+      check(await shown() === names[1], 'Ctrl+2 shows ' + names[1]);
+      await page.keyboard.press('Control+1');
+      await page.waitForTimeout(400);
+      check(await shown() === names[0] && await tab() === was && await onShown(), 'Ctrl+1 shows ' + names[0] + ' again with the keyboard');
+      check(typed === '', 'the shortcuts typed nothing (' + JSON.stringify(typed) + ')');
+    }
     // Mouse reports count cells from 1 (Claude Code's full screen reads
     // the mouse).
     {
