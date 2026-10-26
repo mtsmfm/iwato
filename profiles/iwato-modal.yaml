@@ -1,0 +1,86 @@
+# Iwato's Modal profile: the control plane the `modal` CLI and Python client
+# use, gRPC (grpclib) over HTTP/2 only. It works only with Iwato's patched
+# supervisor (internal/openshell/gateway/h2-l7.patch), which offers h2 to
+# these endpoints alone (OPENSHELL_HTTP2_ENDPOINTS in the gateway's
+# Dockerfile). Iwato imports it into the gateway (platform scope) when it
+# prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-modal.yaml
+#
+# Risk:              a sandbox with this provider can run code on Modal,
+#                    which has open internet access: the sandbox's network
+#                    policy no longer limits where data can go. That code
+#                    can also read the workspace's Modal Secrets.
+#
+# Client binaries:   python3 (the image's, mise's and uv's interpreters: the
+#                    `modal` CLI is a Python script, so the interpreter is
+#                    what matches and any Python program may use the token).
+#                    OpenShell matches the resolved executable, and the
+#                    python of a venv or `uv tool install modal`
+#                    (~/.local/share/uv/tools/modal/bin/python) is a symlink
+#                    to one of these, so that path alone would never match;
+#                    only a venv made with copies (`python -m venv --copies`)
+#                    would, which neither uv nor the docs set up.
+#                    grpclib trusts only certifi's bundle, not SSL_CERT_FILE:
+#                    point it at the sandbox's bundle (`ln -sf "$SSL_CERT_FILE"
+#                    "$(python -m certifi)"` with modal's interpreter).
+# Credential scope:  MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (client.py
+#                    _Client.from_env, otherwise ~/.modal.toml), sent as gRPC
+#                    metadata x-modal-token-id and x-modal-token-secret
+#                    (client.py _get_metadata) to api.modal.com, with
+#                    api.modal2.com as the fallback (config.py
+#                    DEFAULT_SERVER_URL).
+# Endpoint access:   every RPC of modal.client.ModalClient (POST), reads and
+#                    writes alike: apps, functions, image builds and logs are
+#                    RPCs there; running apps costs money. The Secret RPCs
+#                    stay allowed: Secret.from_name and from_dict load
+#                    through SecretGetOrCreate when an app is run or
+#                    deployed, and none of them returns values (names and
+#                    keys only); values reach only code running on Modal.
+#                    Not listed (proposals, without the token): blob uploads
+#                    and downloads (presigned S3 and R2 URLs, blob_utils.py),
+#                    web endpoints (*.modal.run), tunnels, the URLs the
+#                    server hands out for input-plane functions and sandbox
+#                    commands (gRPC with a short-lived JWT), and modal.com
+#                    (`modal skills`).
+# Verified:          from modal-labs/modal-client (main, 890fea5ff81c,
+#                    2026-10-23) and vmagamedov/grpclib 0.4.9, via GitHub.
+#                    Not verified against Modal's servers.
+
+id: iwato-modal
+display_name: Modal (Iwato)
+description: Modal control plane (gRPC over HTTP/2) for Iwato's sandbox image
+category: other
+credentials:
+  - name: token_id
+    description: Modal token ID
+    env_vars: [MODAL_TOKEN_ID]
+    required: true
+    auth_style: header
+    header_name: x-modal-token-id
+  - name: token_secret
+    description: Modal token secret
+    env_vars: [MODAL_TOKEN_SECRET]
+    required: true
+    auth_style: header
+    header_name: x-modal-token-secret
+discovery:
+  credentials: [token_id, token_secret]
+endpoints:
+  - host: api.modal.com
+    port: 443
+    path: /modal.client.ModalClient/**
+    protocol: rest
+    enforcement: enforce
+    rules:
+      - allow: { method: POST, path: "/modal.client.ModalClient/*" }
+  - host: api.modal2.com
+    port: 443
+    path: /modal.client.ModalClient/**
+    protocol: rest
+    enforcement: enforce
+    rules:
+      - allow: { method: POST, path: "/modal.client.ModalClient/*" }
+binaries:
+  - /usr/bin/python3*
+  - /home/dev/.local/share/mise/installs/python/*/bin/python3*
+  - /home/dev/.local/share/uv/python/*/bin/python3*

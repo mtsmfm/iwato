@@ -139,7 +139,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // The type selector groups the profiles (agents, source control,
     // model hubs, clouds); a model hub's hint and its fake provider.
     const kinds = await page.locator('#provider-profile optgroup').evaluateAll((gs) => gs.map((g) => g.label + ':' + [...g.querySelectorAll('option')].map((o) => o.value).join('+')));
-    check(kinds.join(' / ') === 'エージェント・推論:iwato-claude-subscription+iwato-grok-subscription+iwato-openrouter+iwato-atlassian / ソース管理:iwato-github / モデル配布:iwato-huggingface+iwato-civitai / 生成・GPU クラウド:iwato-comfy-cloud+iwato-vastai+iwato-runpod / ホスティング・デプロイ:iwato-cloudflare', 'the type selector groups the profiles (' + kinds.join(' / ') + ')');
+    check(kinds.join(' / ') === 'エージェント・推論:iwato-claude-subscription+iwato-grok-subscription+iwato-openrouter+iwato-atlassian / ソース管理:iwato-github / モデル配布:iwato-huggingface+iwato-civitai / 生成・GPU クラウド:iwato-comfy-cloud+iwato-vastai+iwato-runpod+iwato-modal / ホスティング・デプロイ:iwato-cloudflare', 'the type selector groups the profiles (' + kinds.join(' / ') + ')');
     check(!(await page.isVisible('#provider-hint')), 'GitHub has no usage hint');
     await page.selectOption('#provider-profile', 'iwato-huggingface');
     check((await page.locator('#provider-hint').innerText()).includes('HF_TOKEN') && (await page.locator('#provider-note').innerText()).includes('HUGGING_FACE_HUB_TOKEN'), 'Hugging Face shows its variables and a usage hint');

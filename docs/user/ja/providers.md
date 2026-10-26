@@ -24,6 +24,7 @@ Iwato のプロバイダーの種類:
 | Comfy Cloud | `COMFY_CLOUD_API_KEY`、`COMFY_API_KEY` | ワークフローの実行 (クレジットを使う) もできます |
 | Vast.ai | `VAST_API_KEY` | 読み取りとオファーの検索だけ。インスタンスの作成は提案の承認で |
 | RunPod | `RUNPOD_API_KEY` | 読み取りだけ (api.runpod.io、rest.runpod.io、api.runpod.ai、hapi.runpod.net)。Pod の作成・起動とサーバーレスの実行は提案の承認で |
+| Modal | `MODAL_TOKEN_ID`、`MODAL_TOKEN_SECRET` | `modal` CLI と Python クライアント (api.modal.com と api.modal2.com への HTTP/2 の gRPC)。アプリの実行やデプロイ (費用がかかる) もできます。**注意:** これを付けたサンドボックスは Modal でコードを実行できます。Modal からはインターネットに自由に出られるので、データの行き先はサンドボックスのネットワークポリシーで制限できなくなり、そのコードはワークスペースの Modal Secrets も読めます |
 | Cloudflare | `CLOUDFLARE_API_TOKEN` | 読み取りだけ (api.cloudflare.com/client/v4)。デプロイや DNS の変更は提案の承認か **書き込みも許可** で。`CLOUDFLARE_ACCOUNT_ID` は秘密ではないので自分で設定 |
 
 実機で確かめたのは今のところ GitHub と「Atlassian (MCP)」だけです。プロファイルは、mise とエージェント自身の更新機能が置く場所のエージェントの実行ファイルを指しています (例: Claude Code は `/home/dev/.local/share/claude/versions/*` と、mise の `/home/dev/.local/share/mise/installs/claude/*/claude`)。

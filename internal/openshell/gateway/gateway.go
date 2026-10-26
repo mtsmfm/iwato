@@ -33,11 +33,17 @@ import (
 	"iwato/internal/openshell/wslc"
 )
 
-//go:embed Dockerfile entrypoint.sh gateway.toml gateway-docker.toml
+//go:embed Dockerfile entrypoint.sh gateway.toml gateway-docker.toml h2-l7.patch
 var buildContext embed.FS
 
 // contextFiles are the image's build context.
-var contextFiles = []string{"Dockerfile", "entrypoint.sh", "gateway.toml", "gateway-docker.toml"}
+var contextFiles = []string{"Dockerfile", "entrypoint.sh", "gateway.toml", "gateway-docker.toml", "h2-l7.patch"}
+
+// PatchedSupervisor: the image's supervisor is built from source with
+// h2-l7.patch (the Dockerfile's OPENSHELL_PATCH), and the gateway image,
+// which carries it at /openshell-supervisor, is the sandboxes' supervisor
+// image (ImageRef) in place of the release's.
+const PatchedSupervisor = true
 
 const (
 	// containerPort is where the gateway listens inside its container.
@@ -177,11 +183,17 @@ func imageTag(o Options) (string, error) {
 	return fmt.Sprintf("%s-gateway:%s-%s", o.Prefix, wslc.OpenShellVersion, hex.EncodeToString(h.Sum(nil))[:12]), nil
 }
 
-func ensureImage(ctx context.Context, run wslc.Runner, o Options) (string, error) {
-	tag, err := imageTag(o)
+// ImageRef is the gateway image Ensure runs: the published one, or the
+// one built from this directory.
+func ImageRef(o Options) (string, error) {
 	if o.Image != "" {
-		tag, err = o.Image, nil
+		return o.Image, nil
 	}
+	return imageTag(o)
+}
+
+func ensureImage(ctx context.Context, run wslc.Runner, o Options) (string, error) {
+	tag, err := ImageRef(o)
 	if err != nil {
 		return "", err
 	}
@@ -256,11 +268,15 @@ func ensureContainer(ctx context.Context, run wslc.Runner, o Options, image stri
 	if o.DockerSocket != "" {
 		// The engine's socket gives the gateway the engine (as root in the
 		// engine's VM on macOS), as upstream's deploy/docker does.
-		_, err := run.Run(ctx, nil, "container", "create", "--name", name, "--label", labelImage+"="+image, "--label", labelEngine+"="+o.engineLabel(),
-			"--publish", fmt.Sprintf("127.0.0.1:%d:%d", o.Port, containerPort),
-			"--env", "COMPUTE_DRIVER=docker", "--env", "SANDBOX_LABEL="+o.SandboxLabel, "--env", "GATEWAY_HOST="+name,
+		env := []string{"--env", "COMPUTE_DRIVER=docker", "--env", "SANDBOX_LABEL=" + o.SandboxLabel, "--env", "GATEWAY_HOST=" + name}
+		if PatchedSupervisor {
+			env = append(env, "--env", "SUPERVISOR_IMAGE="+image)
+		}
+		args := append([]string{"container", "create", "--name", name, "--label", labelImage + "=" + image, "--label", labelEngine + "=" + o.engineLabel(),
+			"--publish", fmt.Sprintf("127.0.0.1:%d:%d", o.Port, containerPort)}, env...)
+		_, err := run.Run(ctx, nil, append(args,
 			"--mount", "type=volume,source="+o.volume()+",target=/var/lib/openshell",
-			"--mount", "type=bind,source="+o.DockerSocket+",target=/var/run/docker.sock", image)
+			"--mount", "type=bind,source="+o.DockerSocket+",target=/var/run/docker.sock", image)...)
 		if err != nil {
 			return err
 		}

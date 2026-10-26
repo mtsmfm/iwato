@@ -175,7 +175,7 @@ func TestOpenShellAtlassianE2E(t *testing.T) {
 	tokens.mu.Unlock()
 	code, body := do("GET", "/api/providers", "")
 	var l providerList
-	if code != 200 || json.Unmarshal([]byte(body), &l) != nil || strings.Contains(body, "SECRET") {
+	if code != 200 || json.Unmarshal([]byte(body), &l) != nil || strings.Contains(body, "-SECRET") {
 		t.Fatal(code, body)
 	}
 	if p, ok := provider(l, "atlassian-e2e"); !ok || p.Refresh == nil || p.Refresh.Status != "refreshed" || p.Profile != testProfile {

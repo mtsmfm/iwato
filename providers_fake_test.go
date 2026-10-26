@@ -169,7 +169,7 @@ func TestProviderAPIValidation(t *testing.T) {
 		t.Fatal(code, body)
 	}
 	code, body := do("GET", "/api/providers", "")
-	if code != 200 || strings.Contains(body, "SECRET") {
+	if code != 200 || strings.Contains(body, "ghp_SECRET") {
 		t.Fatal("the list carries a value:", body)
 	}
 	p, ok := provider(listProviders(t, do), "github-new")
