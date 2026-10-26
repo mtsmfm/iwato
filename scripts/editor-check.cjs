@@ -143,6 +143,7 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     if (!phone) {
       // Search: Ctrl+F opens CodeMirror's panel (in the page's language),
       // Escape closes it and leaves a panel of the page (the log) open.
+      await page.click('#settings-button');
       await page.click('#log-button');
       await page.evaluate((sel) => __editorFocus(sel), textSel);
       await page.keyboard.press(mod + '+F');
