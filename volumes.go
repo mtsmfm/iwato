@@ -25,6 +25,8 @@ type Volume struct {
 	Path      string `json:"path"`
 	CreatedAt string `json:"createdAt,omitempty"`
 	UsedBy    string `json:"usedBy,omitempty"`
+	// Size is a home volume's size as last measured (resources.go).
+	Size *DiskUsage `json:"size,omitempty"`
 }
 
 // volumeRuntime lists and removes the persisted paths' volumes. OpenShell
@@ -120,7 +122,16 @@ func (s *Server) handleVolumes(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		c := s.config
 		s.mu.Unlock()
-		jsonResponse(w, 200, map[string]any{"volumes": describeVolumes(c, c.Sandboxes, list)})
+		list = describeVolumes(c, c.Sandboxes, list)
+		for i, v := range list {
+			if v.Path == homeDir && v.Sandbox != "" {
+				if u := s.resources.disk.get(v.Sandbox); u != nil && u.At > 0 {
+					u.Top = nil
+					list[i].Size = u
+				}
+			}
+		}
+		jsonResponse(w, 200, map[string]any{"volumes": list})
 		return
 	}
 	name, ok := strings.CutSuffix(rest, "/delete")

@@ -36,6 +36,7 @@ type notifier struct {
 	held     []PushMessage                    // new messages not pushed yet (poll only)
 	sent     time.Time                        // when the last push went out (poll only)
 	terms    map[string]map[string]*termWatch // sandbox → terminal
+	queued   []PushMessage                    // from elsewhere (queue), for the next poll
 }
 
 func newNotifier(s *Server) *notifier {
@@ -63,6 +64,9 @@ func (n *notifier) run(ctx context.Context) {
 					n.watchTerms(w)
 				}
 				n.forget(list)
+				n.mu.Lock()
+				n.queued = nil
+				n.mu.Unlock()
 			}
 		}
 	}
@@ -81,7 +85,20 @@ func (n *notifier) poll(ctx context.Context, proposals bool) {
 		}
 		n.forget(list)
 	}
+	n.mu.Lock()
+	messages = append(messages, n.queued...)
+	n.queued = nil
+	n.mu.Unlock()
 	n.push(ctx, list, n.batch(messages))
+}
+
+// queue hands a message to the next poll, which batches it with the rest.
+func (n *notifier) queue(m PushMessage) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if len(n.queued) < 16 {
+		n.queued = append(n.queued, m)
+	}
 }
 
 // batch adds the new messages to those held and returns what to push now:
@@ -129,18 +146,24 @@ func merge(messages []PushMessage) PushMessage {
 		lines = append(lines[:5], fmt.Sprintf("…ほか %d 件", len(lines)-5))
 	}
 	m := PushMessage{Body: truncate(strings.Join(lines, "\n"), 300), Tag: first.Tag, Path: first.Path, sandbox: first.sandbox}
-	idle := 0
+	idle, memory := 0, 0
 	for _, m := range messages {
 		if m.idle {
 			idle++
 		}
+		if m.memory {
+			memory++
+		}
 	}
 	var counts []string
-	if n := len(messages) - idle; n > 0 {
+	if n := len(messages) - idle - memory; n > 0 {
 		counts = append(counts, fmt.Sprintf("承認待ち %d 件", n))
 	}
 	if idle > 0 {
 		counts = append(counts, fmt.Sprintf("止まったターミナル %d 件", idle))
+	}
+	if memory > 0 {
+		counts = append(counts, fmt.Sprintf("メモリ %d 件", memory))
 	}
 	m.Title = strings.Join(counts, "、")
 	if len(sandboxes) == 1 {

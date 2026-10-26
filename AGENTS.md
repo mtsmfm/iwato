@@ -40,7 +40,7 @@ Inside an Iwato sandbox this needs network proposals (GET only; the list is in [
 Run locally only what you touched and what is related; leave the rest to CI (which runs `go test ./...` and `go test -tags uitest ./...`, and the exe build on every push, the e2e when Go code or the images change, but not the UI tests or browser checks).
 
 - Go: `go test ./<pkg>` or `-run` for the touched and related packages. Tests that use the fake backend (`*_fake_test.go`) need `-tags uitest`
-- UI: `node scripts/ui-behavior-tests.cjs`, plus the browser checks of the touched screens, at PC width and `--phone`. They build Iwato with `-tags uitest` and drive `serve -fake`, the fake backend made for them. Terminal → `term-check`, `focus-check`, `keyboard-rows-check`; policy → `policy-check`; providers → `providers-check`; files → `files-check`; editor → `editor-check`; editor and terminal side by side → `split-check`; volumes → `volumes-check`; publishing, settings, images, language, reset → `ingress-check`. Run them with:
+- UI: `node scripts/ui-behavior-tests.cjs`, plus the browser checks of the touched screens, at PC width and `--phone`. They build Iwato with `-tags uitest` and drive `serve -fake`, the fake backend made for them. Terminal → `term-check`, `focus-check`, `keyboard-rows-check`; policy → `policy-check`; providers → `providers-check`; files → `files-check`; editor → `editor-check`; editor and terminal side by side → `split-check`; volumes → `volumes-check`; resources (the header, the sidebar's totals) → `resources-check`; publishing, settings, images, language, reset → `ingress-check`. Run them with:
 
       cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/CHECK.cjs [--phone]
 

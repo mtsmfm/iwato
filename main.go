@@ -233,6 +233,10 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		setUserPresetDir(filepath.Join(filepath.Dir(opts.configPath), "presets"))
 	}
 	go s.ingress.loop(ctx)
+	if opts.configPath != "" {
+		s.resources.disk.file = filepath.Join(filepath.Dir(opts.configPath), "resources.json")
+	}
+	go s.resources.loop(ctx)
 	if fake == nil && opts.configPath != "" {
 		if s.update = newSelfUpdate(); s.update != nil {
 			s.update.restart = quit

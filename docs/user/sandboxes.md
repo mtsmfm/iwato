@@ -16,7 +16,11 @@ Create a sandbox with **Create a sandbox** in the sidebar:
 
 A new sandbox starts and connects its terminal. The sandbox's card has **Start** and a menu (⋯) with **Stop**, **Delete**, **Recreate** and **Providers**.
 
-The card's tabs are **Terminal**, **Policy**, **Editor** and **Ports**, with the ⋯ menu at the end of the row. The menu opens the other views, **Links**, **Text** and **Files**, followed by the actions; the open view shows as a tab. While the agent's proposals wait, a line above the view shows them, with **Review** (the approval, or the policy tab when several wait) and **Later** (hidden until a new one arrives). See [terminals](terminals.md), [network policy](network-policy.md), [files and editor](files-and-editor.md) and [publishing](publishing.md).
+The card's tabs are **Terminal**, **Policy**, **Editor** and **Ports**, with the ⋯ menu at the end of the row. The menu opens the other views, **Links**, **Text**, **Files** and **Resources**, followed by the actions; the open view shows as a tab. While the agent's proposals wait, a line above the view shows them, with **Review** (the approval, or the policy tab when several wait) and **Later** (hidden until a new one arrives). See [terminals](terminals.md), [network policy](network-policy.md), [files and editor](files-and-editor.md) and [publishing](publishing.md).
+
+## Resources
+
+The card's header shows the sandbox's CPU (a percentage of its limit, or of the PC's cores without one), its memory against its limit and, with a GPU, the GPU's memory; a stopped sandbox shows its home's size as last measured. Values turn amber and red at the percentages in the settings. Clicking them opens **Resources**: CPU and memory over the last 10 minutes (only while the page is open), the memory's used, cache and free parts, the home's largest folders (measured every 10 minutes while the sandbox runs, or with **Measure again**) and the GPU's memory. On WSL the GPU's numbers are the whole GPU's, other sandboxes and Windows apps included. The sidebar shows the running sandboxes' total against the PC; **Volumes** shows each home's size.
 
 ## Stopping when the terminals end
 

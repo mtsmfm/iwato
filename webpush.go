@@ -184,8 +184,9 @@ type PushMessage struct {
 	sandbox string
 	// summary is the message in one line, for a merged message; not sent.
 	summary string
-	// idle marks a message about a terminal that stopped; not sent.
-	idle bool
+	// idle marks a message about a terminal that stopped, memory one
+	// about memory in the red (resources.go); not sent.
+	idle, memory bool
 }
 
 // Send delivers to every subscription; gone subscriptions (404/410) are removed.
