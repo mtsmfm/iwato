@@ -591,6 +591,7 @@
     const running = all.filter((card) => card.sandbox.status === 'running').map((card) => card.nav);
     const rest = all.filter((card) => card.sandbox.status !== 'running').map((card) => card.nav);
     navSeparator.hidden = !running.length || !rest.length;
+    [...running, ...rest].forEach((node, i) => { node.title = i < 9 ? 'Ctrl+' + (i + 1) : ''; });
     const order = [...running, navSeparator, ...rest];
     const nav = $('sandbox-nav');
     if (nav.children.length !== order.length || order.some((node, i) => nav.children[i] !== node)) nav.replaceChildren(...order);
@@ -4664,15 +4665,7 @@
       this.editor.onClose = () => { if (this.root.dataset.split === 'true') this.toggleSplit(false, 'terminal'); else this.selectTab('terminal'); };
       this.root.append(this.policy.root, this.links.root, this.deletion.root, this.text.root, this.providers.root, this.files.root, this.editor.root, this.ports.root, this.recreation.root, this.resources.root);
       grid.append(this.root);
-      this.nav = button('nav-sandbox', '', () => {
-        selectCard(this);
-        this.loadTerms();
-        this.selectTab('terminal');
-        closeMenu();
-        if (touchScreen()) return;
-        if (this.terminal) this.terminal.focus();
-        else this.connectButton.disabled ? this.startButton.focus() : this.connectButton.focus();
-      });
+      this.nav = button('nav-sandbox', '', () => this.open(!touchScreen()));
       this.nav.className = 'nav-sandbox';
       this.navDot = element('span', 'small-dot');
       this.navDot.setAttribute('aria-hidden', 'true');
@@ -4688,6 +4681,17 @@
       bindAttribute(this.navRecreate, 'title', 'card.recreateToUpdate.title');
       this.navRecreate.hidden = true;
       this.navStop.after(this.navRecreate);
+    }
+
+    // From the sidebar, or Ctrl+1–9 (a key: a keyboard, so focus on phones too).
+    open(focus) {
+      selectCard(this);
+      this.loadTerms();
+      this.selectTab('terminal');
+      closeMenu();
+      if (!focus) return;
+      if (this.terminal) this.terminal.focus();
+      else this.connectButton.disabled ? this.startButton.focus() : this.connectButton.focus();
     }
 
     openActionMenu() {
@@ -4900,6 +4904,7 @@
           select.append(element('span', 'stopped-mark'));
           select.title += t('term.stopped.title');
         }
+        if (names.length > 1) select.title += ' (Ctrl+Tab)';
         const close = button('term-close', '×', () => this.killTerm(name));
         close.title = t('term.close', { name: label });
         close.setAttribute('aria-label', close.title);
@@ -4954,6 +4959,15 @@
       }
       if (this.root.dataset.tab !== 'terminal') this.selectTab('terminal');
       else this.focusUnlessTouch();
+    }
+
+    // Ctrl+Tab: the next (step 1) or previous terminal, from any view.
+    cycleTerm(step) {
+      const names = this.termNames.includes(this.termName) ? this.termNames : [...this.termNames, this.termName];
+      if (!this.termMulti || this.sandbox.status !== 'running' || names.length < 2) return false;
+      this.switchTerm(names[(names.indexOf(this.termName) + step + names.length) % names.length]);
+      this.terminal?.focus();
+      return true;
     }
 
     // Shows a session and attaches it (a notification click asked for it).
@@ -5883,8 +5897,9 @@
   // when the keyboard is not in a terminal or the editor (their programs
   // use Esc), the one holding the focus first. Keys the focused element
   // took (a terminal, CodeMirror's search, the quick open) are left alone.
+  const shown = (node) => node && !node.hidden && node.isConnected !== false && node.checkVisibility?.() !== false;
+  const pagePanels = ['create', 'pair', 'log', 'volume', 'provider', 'settings'];
   function escapeTarget(at) {
-    const shown = (node) => node && !node.hidden && node.isConnected !== false && node.checkVisibility?.() !== false;
     const card = cards.get(state.selected);
     const first = [
       [$('confirm-panel'), () => answerConfirm(false)],
@@ -5898,9 +5913,18 @@
     if (at && [...cards.values()].some((c) => c.surface.contains(at) || c.editor.root.contains(at))) return null;
     const panels = [[$('provider-yaml'), closeProfileYAML], [$('provider-oauth'), endOAuth]];
     if (card) for (const panel of [card.deletion, card.recreation, card.providers, card.links, card.text]) panels.push([panel.root, () => panel.closeButton.click()]);
-    for (const id of ['create', 'pair', 'log', 'volume', 'provider', 'settings']) panels.push([$(id + '-panel'), () => $(id + '-close').click()]);
+    for (const id of pagePanels) panels.push([$(id + '-panel'), () => $(id + '-close').click()]);
     const open = panels.filter(([node]) => shown(node));
     return open.find(([node]) => at && node.contains(at)) || open[0] || null;
+  }
+  // What Esc would close, less the card's views (links, text): those are
+  // left by Ctrl+Tab like any other view.
+  function dialogOpen() {
+    const card = cards.get(state.selected);
+    const [node] = escapeTarget(null) || [];
+    if (!node) return false;
+    if (!card || (node !== card.links.root && node !== card.text.root)) return true;
+    return pagePanels.some((id) => shown($(id + '-panel')));
   }
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return;
@@ -5912,6 +5936,35 @@
     if (at && node.contains(at)) at.blur?.();
     close();
   });
+  // Ctrl+1–9: the Nth sandbox of the sidebar; Ctrl+Tab (Shift: back): the
+  // next terminal. Ctrl on a Mac too (⌘ digits are the browser's). On the
+  // window in the capture phase, so the terminal never gets them.
+  window.addEventListener('keydown', (event) => {
+    if (!event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
+    const digit = /^Digit([1-9])$/.exec(event.code || '');
+    if (!(digit && !event.shiftKey) && event.code !== 'Tab') return;
+    if (dialogOpen()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    reportPresence(true);
+    let card = cards.get(state.selected);
+    if (digit) {
+      const nav = [...$('sandbox-nav').children].filter((node) => node !== navSeparator)[digit[1] - 1];
+      card = [...cards.values()].find((c) => c.nav === nav);
+      if (!card) return;
+      card.open(true);
+    } else if (!card?.cycleTerm(event.shiftKey ? -1 : 1)) return;
+    const name = card.sandbox.name;
+    showToast(card.sandbox.status === 'running' ? t('shortcut.toast', { sandbox: name, terminal: termLabel(card.termName) }) : name);
+  }, true);
+  let toastTimer = 0;
+  function showToast(text) {
+    const toast = $('shortcut-toast');
+    toast.textContent = text;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 1200);
+  }
   // Pushes go out only while no page is open and in use (presence.go): the
   // page tells the server when the owner touches it (at most every 30 s),
   // when it is shown and when it is hidden or closed.

@@ -173,6 +173,48 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.waitForTimeout(300);
     check(await onTerminal(), 'after a reconnect the terminal has the keyboard');
 
+    // Ctrl+1–9 and Ctrl+Tab give the keyboard to the terminal they show; nothing is typed.
+    {
+      const nav = page.locator('#sandbox-nav .nav-sandbox');
+      const shown = () => page.locator('#sandbox-nav .nav-sandbox.active .nav-name').innerText();
+      const onShown = () => page.evaluate(() => !!document.activeElement?.matches('.terminal-card.selected .iw-input'));
+      const home = await shown();
+      await nav.filter({ hasNotText: home }).first().click();
+      if (await start.isVisible() && await start.isEnabled()) await start.click();
+      await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached', timeout: 10000 });
+      await nav.filter({ hasText: home }).first().click();
+      await page.waitForTimeout(300);
+      const names = await nav.locator('.nav-name').allInnerTexts();
+      typed = '';
+      await page.keyboard.press('Control+2');
+      await page.waitForTimeout(500);
+      check(await shown() === names[1] && await onShown(), 'Ctrl+2 shows ' + names[1] + ' and its terminal has the keyboard');
+      check(await page.locator('#shortcut-toast').isVisible(), 'a toast names it');
+      await page.keyboard.press('Control+1');
+      await page.waitForTimeout(500);
+      check(await shown() === names[0] && await onShown(), 'Ctrl+1 goes back, the terminal has the keyboard');
+      await card.getByRole('button', { name: '新しいターミナル' }).click();
+      await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached' });
+      await page.waitForTimeout(500);
+      const tab = () => card.locator('.term-tab').evaluateAll((ts) => ts.findIndex((t) => t.getAttribute('aria-selected') === 'true'));
+      const first = await tab();
+      typed = '';
+      await page.keyboard.press('Control+Tab');
+      await page.waitForTimeout(500);
+      const second = await tab();
+      check(second !== first && await onShown(), 'Ctrl+Tab shows the other terminal (' + first + ' → ' + second + ') with the keyboard');
+      await card.getByRole('tab', { name: /ポリシー/ }).click();
+      await page.keyboard.press('Control+Tab');
+      await page.waitForTimeout(500);
+      check(await tab() === first && await card.evaluate((c) => c.dataset.tab) === 'terminal' && await onShown(), 'Ctrl+Tab from the policy tab shows the next terminal with the keyboard');
+      await page.locator('#create-button').click();
+      await page.keyboard.press('Control+2');
+      await page.waitForTimeout(300);
+      check(await shown() === names[0] && await page.locator('#create-panel').isVisible(), 'Ctrl+2 with the create panel open does nothing');
+      await page.locator('#create-close').click();
+      check(typed === '', 'the shortcuts typed nothing into the terminals (' + JSON.stringify(typed) + ')');
+    }
+
     if (failures.length) console.log((await page.evaluate(() => window.focusLog)).join('\n'));
   } finally {
     await browser.close();
