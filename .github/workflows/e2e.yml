@@ -1,11 +1,30 @@
 # Runs the driver's end-to-end check (internal/openshell/wslc/e2e.sh,
 # MODE=tls: the released OpenShell gateway, CLI, sandbox and supervisor with
-# the fake wslc, and Iwato's Go e2e tests) on every push (and by hand).
+# the fake wslc, and Iwato's Go e2e tests) and TestDockerE2E, on pushes
+# that touch what they build or read (and by hand).
 # The script expects a disposable Linux dev container with passwordless
 # sudo; the runner is made to look like one first (see the steps).
 name: e2e
 on:
   push:
+    # The root package (its test binary runs the Go e2e tests, and embeds
+    # the profiles, presets and sandbox image), every internal package (all
+    # are its dependencies; internal/openshell also holds e2e.sh, its probes
+    # and the gateway's pins), the binaries e2e.sh builds, and what the
+    # steps run. Not web/ (no e2e test reads it), docs/ or the other scripts.
+    paths:
+      - "*.go"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "cmd/openshell-driver-wslc/**"
+      - "cmd/iwato-entrypoint/**"
+      - "sandboximage/**"
+      - "profiles/**"
+      - "presets/**"
+      - "scripts/fetch-vendor.py"
+      - "web/vendor/manifest.json"
+      - ".github/workflows/e2e.yml"
   workflow_dispatch:
 permissions:
   contents: read
