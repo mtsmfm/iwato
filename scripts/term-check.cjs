@@ -556,27 +556,44 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.waitForTimeout(1000);
     const tabs = () => card.locator('.term-tab').count();
     const opened = await tabs();
-    // Ctrl+Tab / Ctrl+Shift+Tab and Ctrl+1–9 (a hardware keyboard on a phone too); nothing is typed.
+    // Ctrl+1–9 and Ctrl+Tab (a hardware keyboard on a phone too); nothing is typed.
     {
       const tab = () => card.locator('.term-tab').evaluateAll((ts) => ts.findIndex((t) => t.getAttribute('aria-selected') === 'true'));
       const onShown = () => page.evaluate(() => !!document.activeElement?.matches('.terminal-card.selected .iw-input'));
-      const was = await tab();
-      typed = '';
-      await page.keyboard.press('Control+Tab');
-      await page.waitForTimeout(600);
-      const next = await tab();
-      check(next >= 0 && next !== was && await onShown(), 'Ctrl+Tab shows the other terminal (' + was + ' → ' + next + ') with the keyboard');
-      await page.keyboard.press('Control+Shift+Tab');
-      await page.waitForTimeout(600);
-      check(await tab() === was && await onShown(), 'Ctrl+Shift+Tab goes back');
       const shown = () => page.locator('#sandbox-nav .nav-sandbox.active .nav-name').innerText();
       const names = await page.locator('#sandbox-nav .nav-sandbox .nav-name').allInnerTexts();
+      const toast = page.locator('#shortcut-toast');
+      const was = await tab();
+      typed = '';
       await page.keyboard.press('Control+2');
       await page.waitForTimeout(400);
       check(await shown() === names[1], 'Ctrl+2 shows ' + names[1]);
       await page.keyboard.press('Control+1');
       await page.waitForTimeout(400);
       check(await shown() === names[0] && await tab() === was && await onShown(), 'Ctrl+1 shows ' + names[0] + ' again with the keyboard');
+      await page.keyboard.press('Control+Tab');
+      await page.waitForTimeout(400);
+      check(await shown() === names[1], 'Ctrl+Tab shows the previous sandbox, ' + names[1]);
+      await page.keyboard.down('Control');
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(200);
+      check(await shown() === names[1] && await toast.locator('.shortcut-item.current').innerText() === names[0], 'with Ctrl held the toast chooses ' + names[0] + ', nothing switched yet');
+      await page.screenshot({ path: path.join(dir, 'ctrl-tab.png') });
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(400);
+      check(await shown() === names[0] && await tab() === was && await onShown(), 'releasing Ctrl goes back to ' + names[0] + ' with the keyboard');
+      await page.keyboard.down('Control');
+      await page.keyboard.press('Shift+Tab');
+      await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(300);
+      check(await shown() === names[0] && await toast.isHidden(), 'the window losing focus while Ctrl is held cancels');
+      await page.keyboard.down('Control');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(300);
+      check(await shown() === names[0] && await onShown(), 'two Tabs with two sandboxes wrap back to ' + names[0]);
       check(typed === '', 'the shortcuts typed nothing (' + JSON.stringify(typed) + ')');
     }
     // Mouse reports count cells from 1 (Claude Code's full screen reads
