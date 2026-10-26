@@ -4,6 +4,7 @@
 
 Open **Settings** from the sidebar. They have:
 
+- **Devices and log**, at the top: **Sign in on another device** (a one-time link and QR code, see [getting started](getting-started.md)) and **Show the log**. Each closes the settings
 - **Iwato updates**: this build and, when there is one, the new build (published exes only: edge follows the edge pre-release, a release the latest release). On edge, **Try a pull request build** lists the open pull requests' builds to install one, and **Back to edge** returns. See [updating](getting-started.md#updating-iwato)
 - **言語 / Language**: automatic (the browser's language: Japanese, otherwise English), 日本語 or English. Remembered per browser. Some messages are still Japanese only
 - **Resources**: show or hide the sandboxes' CPU, memory, GPU and home size on the cards and the sidebar, the percentages that turn them amber and red (80 and 95 by default), and a notification when a sandbox's memory turns red (sent like the others: to devices with notifications on, while Iwato is not in use). See [sandboxes](sandboxes.md#resources)

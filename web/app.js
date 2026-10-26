@@ -5848,8 +5848,9 @@
     if (!token) { showNotice(t('login.failed'), t('login.badFormat')); return; }
     authenticate(token);
   });
-  $('pair-button').addEventListener('click', pairDevice);
-  $('log-button').addEventListener('click', () => $('log-panel').hidden ? openLog() : closeLog());
+  // From the settings: the settings close, so Esc then closes the panel.
+  $('pair-button').addEventListener('click', () => { $('settings-panel').hidden = true; pairDevice(); });
+  $('log-button').addEventListener('click', () => { $('settings-panel').hidden = true; openLog(); });
   $('images-log').addEventListener('click', openLog);
   $('log-close').addEventListener('click', closeLog);
   $('images-retry').addEventListener('click', retryImages);

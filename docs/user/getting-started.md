@@ -42,14 +42,14 @@ Then:
 ## Signing in and other devices
 
 - A browser that has signed in stays signed in for the session lifetime (8 hours by default; `-session-hours 1`–`720`), also across restarts of Iwato
-- To sign in another browser or device, use Sign in on another device in the sidebar: it shows a one-time link and a QR code, valid for 10 minutes. On the other device, open the link or paste it into "Sign in"
+- To sign in another browser or device, use Sign in on another device in the settings: it shows a one-time link and a QR code, valid for 10 minutes. On the other device, open the link or paste it into "Sign in"
 - Using Iwato from a phone needs Tailscale: see [phone access](publishing.md#use-iwato-from-your-phone)
 - Turn on push notifications with **Turn on notifications** in the sidebar; see [terminals](terminals.md#notifications)
 - The page can be installed as an app (PWA) from the browser's menu
 
 ## The console and the log
 
-The console shows only the startup lines, the sign-in URL, a one-line notice when a startup check fails (the page has the details), and warnings and errors that need you (a failed preparation, a stopped driver, port problems). Everything else (the gateway and driver output, image builds, requests) goes to `iwato.log` in the config folder (moved to `iwato.log.1` at 10 MB) and to **Log** in the sidebar. `.\iwato.exe serve -verbose` also prints it on the console.
+The console shows only the startup lines, the sign-in URL, a one-line notice when a startup check fails (the page has the details), and warnings and errors that need you (a failed preparation, a stopped driver, port problems). Everything else (the gateway and driver output, image builds, requests) goes to `iwato.log` in the config folder (moved to `iwato.log.1` at 10 MB) and to **Show the log** in the settings. `.\iwato.exe serve -verbose` also prints it on the console.
 
 ## Updating Iwato
 

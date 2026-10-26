@@ -769,7 +769,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(manual.length, 1); assert.equal(JSON.parse(manual[0].body).token, 'c'.repeat(64)); assert.equal(login.els['login-panel'].hidden, true); assert.equal(login.els['login-input'].value, '');
   login.els['login-input'].value = 'not a token'; login.els['login-form'].listeners.submit({preventDefault() {}}); await flush(); assert.equal(login.requests.filter(r => r.path === '/api/session' && r.method === 'POST').length, 1);
   ok('phone login accepts a pasted pairing URL and rejects malformed tokens without a request');
-  const pair = await environment(); assert.equal(pair.els['pair-button'].hidden, false); pair.els['pair-button'].click(); await flush();
+  const pair = await environment(); assert.equal(pair.els['pair-button'].hidden, false); pair.els['settings-panel'].hidden = false; pair.els['pair-button'].click(); await flush(); assert.equal(pair.els['settings-panel'].hidden, true, 'opening it from the settings closes them');
   const pairReq = pair.requests.find(r => r.path === '/api/pair'); assert.equal(pairReq.method, 'POST'); assert.equal(pairReq.headers['X-CSRF-Token'], 'csrf123');
   assert.match(pair.els['pair-url'].textContent, /#token=b{64}$/); assert.equal(pair.els['pair-panel'].hidden, false); assert.equal(pair.els['pair-qr'].src, 'data:image/png;base64,iVBORw0KGgo='); assert.equal(pair.els['pair-qr'].hidden, false); pair.els['pair-close'].click(); assert.equal(pair.els['pair-qr'].hidden, true); assert.equal(pair.els['pair-url'].textContent, ''); assert.equal(pair.els['pair-panel'].hidden, true);
   ok('pairing issues a link only through an authenticated CSRF POST and can be dismissed');
@@ -1217,7 +1217,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(navItems(), ['web', '|', 'api'], 'running sandboxes first, the stopped one below a separator');
   two.setSandboxHandler(() => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: ''}]})); await two.tickPoll(); assert.deepEqual(twoCards().map(isSelected), [true], 'a removed selection falls back to the first');
   two.els['menu-button'].click(); assert(two.els.sidebar.className.includes('menu-open')); assert.equal(two.els['menu-button'].getAttribute('aria-expanded'), 'true');
-  two.els['sidebar-actions'].listeners.click({target: two.els['pair-button']}); assert(!two.els.sidebar.className.includes('menu-open'), 'choosing an action closes the menu');
+  two.els['sidebar-actions'].listeners.click({target: two.els['volume-button']}); assert(!two.els.sidebar.className.includes('menu-open'), 'choosing an action closes the menu');
   ok('one sandbox at a time: the sidebar switches, a removed one falls back, and the phone menu closes after an action');
   const auto = await environment({fake: false, status: 'running'});
   auto.setSandboxHandler(() => response({fake: false, sandboxes: ['api', 'web'].map((id) => ({name: id, status: 'running', detail: ''}))})); await auto.tickPoll();

@@ -2,7 +2,7 @@
 
 [日本語](ja/troubleshooting.md)
 
-Start with the settings' Startup checks (WSLc or the engine, and the configuration, each with how to fix it) and the log: **Log** in the sidebar, or `iwato.log` in the config folder. `serve -verbose` prints the whole log on the console.
+Start with the settings' Startup checks (WSLc or the engine, and the configuration, each with how to fix it) and the log: **Show the log** in the settings, or `iwato.log` in the config folder. `serve -verbose` prints the whole log on the console.
 
 ## Iwato does not start
 
