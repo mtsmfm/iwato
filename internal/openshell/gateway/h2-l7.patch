@@ -1,6 +1,6 @@
-From 44cd0fbb7ab1edd1d025e21b652ce6ba79895b36 Mon Sep 17 00:00:00 2001
+From f5aa4cf6629d09648b9be8c6eba1a8a3e5aef490 Mon Sep 17 00:00:00 2001
 From: Fumiaki MATSUSHIMA <mtsmfm@gmail.com>
-Date: Sat, 24 Oct 2026 18:25:02 +0900
+Date: Wed, 28 Oct 2026 00:40:49 +0900
 Subject: [PATCH] feat(supervisor-network): HTTP/2 relay for opted-in inspected
  REST endpoints
 
@@ -17,9 +17,14 @@ get 403 and a :path that is not origin-form gets 400, without affecting
 other streams. Bodies and trailers stream through; a placeholder in a
 request body or trailer resets the stream.
 
+The supervisor's gateway client also accepts responses up to 64 MiB:
+draft policy listings include decided chunks, which the gateway keeps,
+and outgrow tonic's 4 MiB default.
+
 Signed-off-by: Fumiaki MATSUSHIMA <mtsmfm@gmail.com>
 ---
  Cargo.lock                                    |    1 +
+ crates/openshell-core/src/grpc_client.rs      |    7 +-
  .../openshell-supervisor-network/Cargo.toml   |    1 +
  .../src/l7/http2.rs                           | 1240 +++++++++++++++++
  .../src/l7/mod.rs                             |    1 +
@@ -28,7 +33,7 @@ Signed-off-by: Fumiaki MATSUSHIMA <mtsmfm@gmail.com>
  .../src/l7/tls.rs                             |   63 +-
  .../openshell-supervisor-network/src/proxy.rs |   24 +-
  .../src/proxy/relay.rs                        |   57 +
- 9 files changed, 1396 insertions(+), 9 deletions(-)
+ 10 files changed, 1402 insertions(+), 10 deletions(-)
  create mode 100644 crates/openshell-supervisor-network/src/l7/http2.rs
 
 diff --git a/Cargo.lock b/Cargo.lock
@@ -43,6 +48,31 @@ index f2fb8077..19873ab9 100644
   "hex",
   "hickory-proto",
   "http 1.4.0",
+diff --git a/crates/openshell-core/src/grpc_client.rs b/crates/openshell-core/src/grpc_client.rs
+index a97deab7..ec049e40 100644
+--- a/crates/openshell-core/src/grpc_client.rs
++++ b/crates/openshell-core/src/grpc_client.rs
+@@ -61,6 +61,11 @@ pub type AuthedChannel = InterceptedService<Channel, AuthInterceptor>;
+ /// stream. The gateway keeps configuration updates below it.
+ pub const MAX_SUPERVISOR_STREAM_MESSAGE_BYTES: usize = 9 * 1024 * 1024;
+ 
++/// Largest unary gateway response the supervisor's client accepts. Draft
++/// policy listings include decided chunks, which the gateway keeps, so they
++/// outgrow tonic's 4 MiB default.
++pub const MAX_GATEWAY_RESPONSE_BYTES: usize = 64 << 20;
++
+ /// Shared, refreshable Bearer header. All [`AuthInterceptor`] clones read
+ /// the same slot, so the renewal task can replace the token in place without
+ /// rebuilding the channel.
+@@ -909,7 +914,7 @@ mod workspace_tests {
+ /// Connect to the `OpenShell` server.
+ async fn connect(endpoint: &str) -> Result<OpenShellClient<AuthedChannel>> {
+     let channel = connect_channel(endpoint).await?;
+-    Ok(OpenShellClient::new(channel))
++    Ok(OpenShellClient::new(channel).max_decoding_message_size(MAX_GATEWAY_RESPONSE_BYTES))
+ }
+ 
+ /// Fetch sandbox policy from `OpenShell` server via gRPC.
 diff --git a/crates/openshell-supervisor-network/Cargo.toml b/crates/openshell-supervisor-network/Cargo.toml
 index 6ac12395..87290511 100644
 --- a/crates/openshell-supervisor-network/Cargo.toml
