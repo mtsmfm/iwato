@@ -2596,11 +2596,15 @@
         // Shown green for a few seconds after this page saw it loaded, fading.
         this.appliedSeen = this.appliedSeen || new Map();
         if (!this.appliedSeen.has(change.version)) this.appliedSeen.set(change.version, Date.now());
-        const age = Date.now() - this.appliedSeen.get(change.version);
-        if (age > 9000) return null;
-        badge.style.opacity = String(Math.max(0.3, 1 - age / 9000));
+        if (Date.now() - this.appliedSeen.get(change.version) > 9000) return null;
+        badge.style.opacity = this.appliedOpacity(change.version);
+        this.fading.push([badge, change.version]);
       }
       return badge;
+    }
+
+    appliedOpacity(version) {
+      return String(Math.max(0.3, 1 - (Date.now() - (this.appliedSeen?.get(version) ?? Date.now())) / 9000));
     }
 
     render() {
@@ -2769,6 +2773,22 @@
     }
 
     renderPolicy(policy) {
+      // A large policy takes long to build, and the tab re-reads it every
+      // few seconds: rebuilt only when what it shows changed.
+      const changes = this.snapshot?.changes || [];
+      const shown = changes.map((c) => {
+        const st = this.changeState(c, policy);
+        const seen = this.appliedSeen?.get(c.version);
+        return st === 'applied' ? (seen === undefined || Date.now() - seen <= 9000 ? 'fading' : 'gone') : st;
+      });
+      const key = policy ? JSON.stringify([policy, changes, shown, this.snapshot?.unlinked, this.mutating, state.authorized, [...this.opened],
+        this.history.hidden, this.presets.hidden, this.sandbox.status, window.IwatoI18n.language(), formatTime(0)]) : '';
+      if (key === this.policyKey) {
+        for (const [b, version] of this.fading) b.style.opacity = this.appliedOpacity(version);
+        return;
+      }
+      this.policyKey = key;
+      this.fading = [];
       this.current.replaceChildren();
       if (!policy) return;
       const loadState = policy.loadError ? t('policy.load.failed', { error: policy.loadError }) : policy.loaded ? t('policy.load.loaded') : this.sandbox.status === 'running' ? t('policy.load.waiting') : t('policy.load.onStart');

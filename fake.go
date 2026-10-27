@@ -55,6 +55,13 @@ type Fake struct {
 	termEnded func(sandbox string)
 	// latency is added to each terminal connection's round trip.
 	latency time.Duration
+	// seedPolicy replaces dev's current rules (-fake-policy).
+	seedPolicy map[string]v1.NetworkPolicyRule
+	// gatewayLatency is added to each gateway call; calls counts them
+	// (gatewayCall).
+	gatewayLatency time.Duration
+	callsMu        sync.Mutex
+	calls          map[string]int
 	// noGPU: the engine offers no GPU.
 	noGPU bool
 	// oldRuntime: sandboxes created with older runtime images, until

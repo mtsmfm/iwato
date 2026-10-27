@@ -80,6 +80,9 @@ func (d *Fake) fakePolicy(name string) []fakeRevision {
 		// Added before a provider: not inspected, so attaching the
 		// Claude provider conflicts (credential_conflicts.go).
 		second["allow_api_anthropic_com_443"] = v1.NetworkPolicyRule{Name: "allow_api_anthropic_com_443", Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint("api.anthropic.com", 443)}}
+		if name == "dev" && d.seedPolicy != nil {
+			second = cloneRules(d.seedPolicy)
+		}
 		now := time.Now()
 		d.policies[name] = []fakeRevision{{at: now.Add(-2 * time.Hour), rules: first}, {at: now.Add(-time.Hour), rules: second}}
 	}
@@ -258,18 +261,8 @@ func (d *Fake) fakeStatus(name string, version int) (*v1.PolicyStatusResult, err
 	return &v1.PolicyStatusResult{ActiveVersion: uint32(active), Revision: v1.SandboxPolicyRevision{Version: uint32(version), Status: status, CreatedAt: rev.at, Policy: policy}}, nil
 }
 
-func (d *Fake) EditPolicy(_ context.Context, w Sandbox, edit PolicyEdit) (PolicyChange, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	revs := d.fakePolicy(w.Name)
-	ops, err := edit.operations(revs[len(revs)-1].rules)
-	if err != nil {
-		return PolicyChange{}, err
-	}
-	if err := d.fakeMerge(w.Name, ops); err != nil {
-		return PolicyChange{}, err
-	}
-	return PolicyChange{Version: uint32(len(d.policies[w.Name])), Kind: "edit", Rule: opsRule(ops), Host: edit.Host, At: time.Now().Unix()}, nil
+func (d *Fake) EditPolicy(ctx context.Context, w Sandbox, edit PolicyEdit) (PolicyChange, error) {
+	return d.openShell().EditPolicy(ctx, w, edit)
 }
 
 func (d *Fake) PolicyHistory(_ context.Context, w Sandbox) ([]PolicyRevision, error) {
@@ -293,10 +286,34 @@ func (d *Fake) PolicyAt(_ context.Context, w Sandbox, version uint32) (*CurrentP
 	return policyView(st, st.Revision.Policy.NetworkPolicies), nil
 }
 
+// gatewayCall stands for one call to the gateway: it waits
+// gatewayLatency and counts the call. The caller does not hold d.mu.
+func (d *Fake) gatewayCall(name string) {
+	d.callsMu.Lock()
+	if d.calls == nil {
+		d.calls = map[string]int{}
+	}
+	d.calls[name]++
+	d.callsMu.Unlock()
+	time.Sleep(d.gatewayLatency)
+}
+
+// gatewayCalls are the calls counted since the last time it was read.
+func (d *Fake) gatewayCalls() map[string]int {
+	d.callsMu.Lock()
+	defer d.callsMu.Unlock()
+	c := d.calls
+	d.calls = nil
+	return c
+}
+
+// fakeLogsAt is when the fake's log ends: the same lines on every read.
+var fakeLogsAt = time.Now()
+
 // fakeLogs are the sandbox's L7 log lines: the audited fake endpoint's
 // requests, and denials.
 func fakeLogs() []v1.LogLine {
-	now := time.Now()
+	now := fakeLogsAt
 	var lines []v1.LogLine
 	for i, r := range []string{"GET /api/v3/repos/mtsmfm/iwato", "GET /api/v3/repos/mtsmfm/iwato/pulls", "GET /api/v3/repos/mtsmfm/iwato/pulls", "POST /api/v3/repos/mtsmfm/iwato/pulls", "GET /api/v3/user"} {
 		method, path, _ := strings.Cut(r, " ")
@@ -372,6 +389,7 @@ func (g fakeGateway) chunk(sandbox, id string) (*v1.PolicyChunk, error) {
 // and, as the gateway, the draft version over all of them: the fake drafts
 // its proposals once, so it stays 1.
 func (g fakeGateway) GetDraft(_ context.Context, _, sandbox string, opts ...v1.GetDraftOption) (*v1.DraftPolicy, error) {
+	g.d.gatewayCall("GetDraft")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
 	status := draftStatusFilter(opts)
@@ -390,6 +408,7 @@ func (g fakeGateway) GetDraft(_ context.Context, _, sandbox string, opts ...v1.G
 }
 
 func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, _ ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {
+	g.d.gatewayCall("GetStatus")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
 	return g.d.fakeStatus(sandbox, 0)
@@ -398,6 +417,7 @@ func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, _ ...v1.Get
 // ApproveDraftChunk merges the chunk's rule (AddRule under its rule name),
 // pending or rejected, as the gateway does.
 func (g fakeGateway) ApproveDraftChunk(_ context.Context, _, sandbox, id, _ string) (*v1.ApproveResult, error) {
+	g.d.gatewayCall("ApproveDraftChunk")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
 	c, err := g.chunk(sandbox, id)
@@ -418,6 +438,7 @@ func (g fakeGateway) ApproveDraftChunk(_ context.Context, _, sandbox, id, _ stri
 }
 
 func (g fakeGateway) RejectDraftChunk(_ context.Context, _, sandbox, id, reason string) error {
+	g.d.gatewayCall("RejectDraftChunk")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
 	c, err := g.chunk(sandbox, id)
@@ -434,6 +455,7 @@ func (g fakeGateway) RejectDraftChunk(_ context.Context, _, sandbox, id, reason 
 }
 
 func (g fakeGateway) EditDraftChunk(_ context.Context, _, sandbox, id string, rule *v1.NetworkPolicyRule) error {
+	g.d.gatewayCall("EditDraftChunk")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
 	c, err := g.chunk(sandbox, id)
@@ -450,6 +472,7 @@ func (g fakeGateway) EditDraftChunk(_ context.Context, _, sandbox, id string, ru
 // UndoDraftChunk takes the chunk's program out of its rule and puts it back
 // to pending, as the gateway does.
 func (g fakeGateway) UndoDraftChunk(_ context.Context, _, sandbox, id string) (*v1.UndoResult, error) {
+	g.d.gatewayCall("UndoDraftChunk")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
 	c, err := g.chunk(sandbox, id)
@@ -469,6 +492,7 @@ func (g fakeGateway) UndoDraftChunk(_ context.Context, _, sandbox, id string) (*
 // fakeConfig is the effective policy (GetSandboxConfig): the latest
 // revision with the attached providers' rules, composed as OpenShell does.
 func (d *Fake) fakeConfig(_ context.Context, w Sandbox) (*v1.SandboxConfig, error) {
+	d.gatewayCall("GetSandboxConfig")
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	revs := d.fakePolicy(w.Name)
@@ -485,8 +509,9 @@ func (d *Fake) openShell() *OpenShell {
 
 func (d *Fake) newOpenShell() *OpenShell {
 	return &OpenShell{pol: fakeGateway{d: d}, sandboxConfig: d.fakeConfig,
-		logs: func(context.Context, Sandbox) ([]v1.LogLine, error) { return fakeLogs(), nil },
+		logs: func(context.Context, Sandbox) ([]v1.LogLine, error) { d.gatewayCall("GetLogs"); return fakeLogs(), nil },
 		updateConfig: func(_ context.Context, u *v1.ConfigUpdate) (*v1.ConfigUpdateResult, error) {
+			d.gatewayCall("UpdateConfig")
 			d.mu.Lock()
 			defer d.mu.Unlock()
 			if u.Policy != nil {
