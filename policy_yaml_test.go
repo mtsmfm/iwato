@@ -2,6 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
+	"math/rand"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -179,4 +183,70 @@ func TestLockPolicyOrder(t *testing.T) {
 	}
 	<-done
 	<-done
+}
+
+// sameYAMLRule's shortcut agrees with the full comparison, on the YAML's
+// round trip and on changes it ignores or not.
+func TestSameYAMLRuleShortcut(t *testing.T) {
+	rnd := rand.New(rand.NewSource(2))
+	rules := syntheticPolicy(2, 60)
+	doc, err := policyRulesYAML(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parsePolicyYAML([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 20 {
+		maps.Copy(rules, randomPolicy(rnd))
+	}
+	same := 0
+	for _, name := range slices.Sorted(maps.Keys(rules)) {
+		a := rules[name]
+		variants := []v1.NetworkPolicyRule{cloneRule(a)}
+		if p, ok := parsed[name]; ok {
+			variants = append(variants, p)
+			if !reflect.DeepEqual(yamlNorm(a), yamlNorm(p)) {
+				t.Errorf("%s: the YAML's round trip misses the shortcut", name)
+			}
+		}
+		for k := range 8 {
+			b := cloneRule(a)
+			e := &b.Endpoints[rnd.Intn(len(b.Endpoints))]
+			switch k {
+			case 0:
+				e.Ports, e.Port = append(e.Ports, e.Port), 0
+			case 1:
+				b.Binaries = append(b.Binaries, a.Binaries...)
+				slices.Reverse(b.Binaries)
+			case 2:
+				e.AdvisorProposed, e.ProviderCredentialed = true, true
+			case 3:
+				e.CredentialBinding = &types.NetworkCredentialBinding{Provider: "github"}
+			case 4:
+				slices.Reverse(e.Rules)
+			case 5:
+				e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: "DELETE", Path: "/x"}})
+			case 6:
+				e.Mcp = &types.McpOptions{}
+			case 7:
+				e.Rules = append(e.Rules[:0:0], e.Rules...)
+				e.AllowedIPs = []string{}
+			}
+			variants = append(variants, b)
+		}
+		for i, b := range variants {
+			got, want := sameYAMLRule(a, b), sameYAMLRuleJSON(a, b)
+			if got != want {
+				t.Fatalf("%s variant %d: %v, want %v", name, i, got, want)
+			}
+			if got {
+				same++
+			}
+		}
+	}
+	if same == 0 {
+		t.Fatal("no variant read the same")
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -373,6 +374,11 @@ func canonEndpoint(e v1.PolicyNetworkEndpoint) string {
 // sameYAMLRule: the rule reads the same in the editor (samePresetRule,
 // with the endpoints compared as canonEndpoint does too).
 func sameYAMLRule(a, b v1.NetworkPolicyRule) bool {
+	// sameYAMLRuleJSON is slow over a whole policy.
+	return reflect.DeepEqual(yamlNorm(a), yamlNorm(b)) || sameYAMLRuleJSON(a, b)
+}
+
+func sameYAMLRuleJSON(a, b v1.NetworkPolicyRule) bool {
 	canon := func(r v1.NetworkPolicyRule) []string {
 		var out []string
 		for _, e := range r.Endpoints {
@@ -389,6 +395,21 @@ func sameYAMLRule(a, b v1.NetworkPolicyRule) bool {
 		return r
 	}
 	return samePresetRule(strip(a), strip(b)) && slices.Equal(canon(a), canon(b))
+}
+
+// yamlNorm takes out of a rule what sameYAMLRule ignores, in the same way,
+// but keeps the order: rules equal after it read the same.
+func yamlNorm(r v1.NetworkPolicyRule) v1.NetworkPolicyRule {
+	r = cloneRule(r)
+	r.Name = ""
+	slices.SortFunc(r.Binaries, func(x, y v1.PolicyNetworkBinary) int { return strings.Compare(x.Path, y.Path) })
+	r.Binaries = slices.CompactFunc(r.Binaries, func(x, y v1.PolicyNetworkBinary) bool { return x.Path == y.Path })
+	for i := range r.Endpoints {
+		e := &r.Endpoints[i]
+		e.Ports, e.Port = effectivePorts(*e), 0
+		e.AdvisorProposed, e.ProviderCredentialed, e.CredentialBinding = false, false, nil
+	}
+	return r
 }
 
 // policyYAMLPlan is the policy a save makes from the YAML's rules: the
@@ -607,6 +628,7 @@ func (o *OpenShell) LatestPolicy(ctx context.Context, w Sandbox) (*v1.PolicyStat
 }
 
 func (o *OpenShell) ReplacePolicyRules(ctx context.Context, w Sandbox, version uint32, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {
+	forgetPolicy(ctx, w.Name)
 	st, err := o.latestPolicy(ctx, w)
 	if err != nil {
 		return PolicyChange{}, err
@@ -619,6 +641,7 @@ func (o *OpenShell) ReplacePolicyRules(ctx context.Context, w Sandbox, version u
 		p = *st.Revision.Policy
 	}
 	p.NetworkPolicies = rules
+	defer forgetPolicy(ctx, w.Name)
 	if p.NetworkPolicies == nil {
 		p.NetworkPolicies = map[string]v1.NetworkPolicyRule{}
 	}
@@ -705,6 +728,7 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 	defer s.lockPolicy(sb.Name)()
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
+	ctx = withGatewayReads(ctx)
 	st, err := rt.LatestPolicy(ctx, sb)
 	if err != nil {
 		fail(w, 409, safeCLIError(err))

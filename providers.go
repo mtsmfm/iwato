@@ -300,11 +300,26 @@ func sandboxProviders(sandboxes []Sandbox, inOpenShell map[string][]string) map[
 }
 
 func (s *Server) providerState(ctx context.Context, rt providerRuntime) ([]ProviderInfo, map[string][]string, error) {
+	r := readsOf(ctx)
+	if r != nil {
+		r.mu.Lock()
+		read, list, attached := r.provRead, r.provList, r.attached
+		r.mu.Unlock()
+		if read {
+			return list, attached, nil
+		}
+	}
 	list, inOpenShell, err := rt.ListProviders(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return list, sandboxProviders(s.sandboxList(), inOpenShell), nil
+	attached := sandboxProviders(s.sandboxList(), inOpenShell)
+	if r != nil {
+		r.mu.Lock()
+		r.provRead, r.provList, r.attached = true, list, attached
+		r.mu.Unlock()
+	}
+	return list, attached, nil
 }
 
 // handleProviders serves GET /api/providers (the profiles and the

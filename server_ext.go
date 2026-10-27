@@ -430,6 +430,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []st
 	}
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
+	ctx = withGatewayReads(ctx)
 	defer s.lockPolicy(sb.Name)()
 	// A rule by hand without inspection, to where an attached provider's
 	// credential goes: OpenShell refuses it.

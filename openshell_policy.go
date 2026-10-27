@@ -88,11 +88,17 @@ var accessNames = map[v1.NetworkAccessPreset]string{v1.NetworkAccessPresetReadOn
 
 // latestPolicy reads the sandbox's latest policy revision.
 func (o *OpenShell) latestPolicy(ctx context.Context, w Sandbox, opts ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {
-	pol, err := o.policy(ctx)
-	if err != nil {
-		return nil, err
+	read := func() (*v1.PolicyStatusResult, error) {
+		pol, err := o.policy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return pol.GetStatus(ctx, openshellWorkspace, w.Name, opts...)
 	}
-	return pol.GetStatus(ctx, openshellWorkspace, w.Name, opts...)
+	if len(opts) > 0 {
+		return read()
+	}
+	return readOnce(ctx, func(r *gatewayReads) map[string]*v1.PolicyStatusResult { return r.status }, w.Name, read)
 }
 
 // effectivePolicy reads the policy the sandbox gets: GetSandboxConfig,
@@ -100,14 +106,16 @@ func (o *OpenShell) latestPolicy(ctx context.Context, w Sandbox, opts ...v1.GetS
 // (openshell-server grpc/policy.rs load_sandbox_config,
 // compose_effective_policy).
 func (o *OpenShell) effectivePolicy(ctx context.Context, w Sandbox) (*v1.SandboxConfig, error) {
-	if o.sandboxConfig != nil {
-		return o.sandboxConfig(ctx, w)
-	}
-	sdk, _, err := o.clients(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return sdk.Config().GetSandbox(ctx, openshellWorkspace, w.Name)
+	return readOnce(ctx, func(r *gatewayReads) map[string]*v1.SandboxConfig { return r.config }, w.Name, func() (*v1.SandboxConfig, error) {
+		if o.sandboxConfig != nil {
+			return o.sandboxConfig(ctx, w)
+		}
+		sdk, _, err := o.clients(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return sdk.Config().GetSandbox(ctx, openshellWorkspace, w.Name)
+	})
 }
 
 // currentPolicy reads the sandbox's latest policy revision (its version and

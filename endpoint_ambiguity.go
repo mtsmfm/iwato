@@ -142,12 +142,38 @@ func endpointRefs(rules map[string]v1.NetworkPolicyRule, prior map[refID]*endpoi
 // endpoint when prior is given (the others were in the policy prior came
 // from), and leaves out the ones whose key is in known.
 func scanAmbiguities(ctx context.Context, eps []*endpointRef, prior map[refID]*endpointRef, known map[string]bool) ([]EndpointAmbiguity, error) {
+	// Two plain hosts overlap only when equal: a plain host is paired with
+	// the same host and with the globs (and empty hosts) only.
+	byHost := map[string][]int{}
+	var wild []int
+	for i, e := range eps {
+		if e.e.Host != "" && e.plainHost {
+			byHost[e.host] = append(byHost[e.host], i)
+		} else {
+			wild = append(wild, i)
+		}
+	}
 	var out []EndpointAmbiguity
+	var with []int
 	for i, l := range eps {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		for _, r := range eps[i+1:] {
+		with = with[:0]
+		if l.e.Host != "" && l.plainHost {
+			with = append(with, byHost[l.host]...)
+			with = append(with, wild...)
+			slices.Sort(with)
+		} else {
+			for j := i + 1; j < len(eps); j++ {
+				with = append(with, j)
+			}
+		}
+		for _, j := range with {
+			if j <= i {
+				continue
+			}
+			r := eps[j]
 			if prior != nil && !l.changed && !r.changed {
 				continue
 			}

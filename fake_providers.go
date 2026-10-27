@@ -110,6 +110,9 @@ func (d *Fake) RefreshStatus(_ context.Context, provider, _ string) (RefreshInfo
 }
 
 func (d *Fake) ListProviders(context.Context) ([]ProviderInfo, map[string][]string, error) {
+	// ListProviders and the sandboxes' ListAll.
+	d.gatewayCall("ListProviders")
+	d.gatewayCall("ListSandboxes")
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var list []ProviderInfo
@@ -266,6 +269,7 @@ binaries: [/usr/bin/curl, /usr/local/bin/curl]
 // ProviderProfile is the fake gateway's profile: Iwato's (as imported)
 // and the CLI-imported openai.
 func (d *Fake) ProviderProfile(_ context.Context, id string) (*pb.ProviderProfile, error) {
+	d.gatewayCall("GetProviderProfile")
 	if p, ok := profileByID(id); ok {
 		return importedProfile(p), nil
 	}

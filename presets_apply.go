@@ -96,6 +96,7 @@ func (s *Server) handleSandboxPresets(w http.ResponseWriter, r *http.Request, pa
 	}
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
+	ctx = withGatewayReads(ctx)
 	defer s.lockPolicy(sb.Name)()
 	if parts[2] == "apply" {
 		s.applyPreset(ctx, w, rt, sb, ref)
@@ -374,10 +375,21 @@ func samePresetRule(a, b v1.NetworkPolicyRule) bool {
 	return reflect.DeepEqual(canon(a), canon(b))
 }
 
-// sortJSON sorts a list by its elements' JSON and drops repeats.
+// sortJSON sorts a list by its elements' JSON.
 func sortJSON[T any](list []T) {
-	key := func(x T) string { b, _ := json.Marshal(prunedJSON(x)); return string(b) }
-	slices.SortFunc(list, func(x, y T) int { return strings.Compare(key(x), key(y)) })
+	type keyed struct {
+		key string
+		x   T
+	}
+	ks := make([]keyed, len(list))
+	for i, x := range list {
+		b, _ := json.Marshal(prunedJSON(x))
+		ks[i] = keyed{string(b), x}
+	}
+	slices.SortStableFunc(ks, func(a, b keyed) int { return strings.Compare(a.key, b.key) })
+	for i := range ks {
+		list[i] = ks[i].x
+	}
 }
 
 // presetsAmbiguities are what a new sandbox's presets and providers would

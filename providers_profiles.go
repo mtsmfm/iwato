@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
 	"google.golang.org/protobuf/proto"
@@ -72,11 +73,31 @@ type providerProfile struct {
 // proto is the profile as Iwato imports it (without its hash). The
 // embedded files are checked when Iwato starts (init below).
 func (p providerProfile) proto() *pb.ProviderProfile {
+	parsedProfiles.Lock()
+	m, ok := parsedProfiles.m[string(p.yaml)]
+	parsedProfiles.Unlock()
+	if ok {
+		return proto.Clone(m).(*pb.ProviderProfile)
+	}
 	m, err := parseProfileYAML(p.yaml)
 	if err != nil {
 		panic(fmt.Sprintf("profiles/%s.yaml: %v", p.ID, err))
 	}
+	parsedProfiles.Lock()
+	// Scoped profiles are rendered anew for each scope: kept few.
+	if parsedProfiles.m == nil || len(parsedProfiles.m) >= 64 {
+		parsedProfiles.m = map[string]*pb.ProviderProfile{}
+	}
+	parsedProfiles.m[string(p.yaml)] = proto.Clone(m).(*pb.ProviderProfile)
+	parsedProfiles.Unlock()
 	return m
+}
+
+// parsedProfiles are the profiles' YAML parsed, by the YAML: the checks of
+// one edit read every profile several times.
+var parsedProfiles struct {
+	sync.Mutex
+	m map[string]*pb.ProviderProfile
 }
 
 // profileCredential is a value the owner enters, by the name of the

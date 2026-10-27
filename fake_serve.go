@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"net/http"
+	"os"
 )
 
 func init() {
@@ -29,6 +30,8 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 	fake := f.Bool("fake", false, "fake UI backend for the browser checks: does not run commands or sandboxes")
 	engineDown := f.Bool("fake-engine-down", false, "with -fake: the engine check fails until the page checks again")
 	latency := f.Duration("fake-latency", 0, "with -fake: added to the terminals' round trip")
+	policy := f.String("fake-policy", "", "with -fake: a YAML file with network_policies, dev's current rules")
+	gatewayLatency := f.Duration("fake-gateway-latency", 0, "with -fake: added to each gateway call")
 	return func() (*fakeRun, error) {
 		if *engineDown && !*fake {
 			return nil, errors.New("-fake-engine-down needs -fake")
@@ -49,6 +52,16 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 		c.ProviderScopes = fakeProviderScopes()
 		d := NewFake()
 		d.latency = *latency
+		d.gatewayLatency = *gatewayLatency
+		if *policy != "" {
+			b, err := os.ReadFile(*policy)
+			if err != nil {
+				return nil, err
+			}
+			if d.seedPolicy, err = parsePolicyYAML(b); err != nil {
+				return nil, err
+			}
+		}
 		d.oldRuntime = map[string]bool{"dev": true}
 		d.seedVolumes(c)
 		d.seedProviders()

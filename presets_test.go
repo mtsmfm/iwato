@@ -71,7 +71,7 @@ network_policies:
 
 // withUserPresets puts files into a folder of the owner's presets for the
 // test.
-func withUserPresets(t *testing.T, files map[string]string) string {
+func withUserPresets(t testing.TB, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, body := range files {

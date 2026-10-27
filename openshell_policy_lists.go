@@ -297,6 +297,7 @@ func (o *OpenShell) revisionRules(ctx context.Context, w Sandbox) (map[string]v1
 
 // applyOps sends merge operations as `openshell policy update` does.
 func (o *OpenShell) applyOps(ctx context.Context, w Sandbox, ops []v1.PolicyMergeOperation) (*v1.ConfigUpdateResult, error) {
+	defer forgetPolicy(ctx, w.Name)
 	update := &v1.ConfigUpdate{Name: w.Name, MergeOperations: ops}
 	if o.updateConfig != nil {
 		return o.updateConfig(ctx, update)
