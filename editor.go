@@ -833,14 +833,13 @@ func (s *Server) editorMedia(w http.ResponseWriter, r *http.Request, sb Sandbox)
 func (s *Server) editorSave(w http.ResponseWriter, r *http.Request, sb Sandbox) {
 	// A phone's upload may take longer than the server's ReadTimeout.
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(5 * time.Minute))
-	r.Body = http.MaxBytesReader(w, r.Body, 6*maxEditorBytes+4096) // JSON escapes
 	var body struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
 		Base    string `json:"base"`
 		Force   bool   `json:"force"`
 	}
-	if decode(w, r, &body) != nil {
+	if decodeLimit(w, r, &body, 6*maxEditorBytes+4096) != nil { // JSON escapes
 		failCode(w, 400, "editor_bad_body", nil, "保存する内容を受け取れませんでした")
 		return
 	}
