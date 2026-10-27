@@ -275,3 +275,17 @@ func TestEditorResolve(t *testing.T) {
 		t.Errorf("after a cd: %q", got)
 	}
 }
+
+func TestEditorSavesLargeFiles(t *testing.T) {
+	s, c, csrf := newFilesServer(t)
+	content := strings.Repeat("rule: value\r\n", 8000) // ~100 KB, over the 16 KB default body limit
+	body, _ := json.Marshal(map[string]any{"path": "big.yaml", "content": content, "force": true})
+	res, b := request(t, s, "/api/sandboxes/dev/editor/file", "POST", string(body), c, csrf)
+	if res.StatusCode != 200 {
+		t.Fatalf("save: %d %s", res.StatusCode, b)
+	}
+	res, b = request(t, s, "/api/sandboxes/dev/editor/file?path=big.yaml", "GET", "", c, "")
+	if res.StatusCode != 200 || !strings.Contains(string(b), strings.Repeat(`rule: value\r\n`, 3)) {
+		t.Fatalf("read back: %d %.200s", res.StatusCode, b)
+	}
+}
