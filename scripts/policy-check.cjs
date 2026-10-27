@@ -615,6 +615,20 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const expPending = exp.locator('.policy-pending');
     const prItem = expPending.locator('.proposal-item', { hasText: 'octo-org/octo-repo' });
     await prItem.waitFor();
+    // The draft's history: a line, read when the tab opens, and its breakdown.
+    const statsLine = exp.locator('.policy-stats-line');
+    await statsLine.waitFor();
+    check(/^提案の履歴: [\d,]+ 件 · [\d.]+ (KB|MB)/.test(await statsLine.innerText()), 'the history line shows the count and size: ' + await statsLine.innerText());
+    await statsLine.getByRole('button', { name: '詳しく' }).click();
+    const statsPanel = exp.locator('.policy-stats-panel');
+    await statsPanel.waitFor();
+    const statsText = await statsPanel.innerText();
+    check(['承認待ち', '承認', '却下', '30 日超', '大きい提案 (上位 10 件)', 'allow_api_example_com_443', 'プログラム 301', 'allow_mise_versions_jdx_dev_443'].every((s) => statsText.includes(s)) && !statsText.includes('example.test') && !statsText.includes('/usr/'), 'the breakdown lists the statuses, the ages and the largest, with no hosts or programs');
+    check(await exp.locator('.policy-panel').evaluate((el) => el.scrollWidth <= el.clientWidth + 1) && await statsPanel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the breakdown does not scroll sideways');
+    await statsPanel.screenshot({ path: path.join(dir, 'proposal-stats.png') });
+    await page.keyboard.press('Escape');
+    await statsPanel.waitFor({ state: 'hidden' });
+    check(await statsLine.isVisible(), 'Esc closes the breakdown, the line stays');
     check((await prItem.locator('.proposal-provider[data-kind=scope]').innerText()).includes('github-work (GitHub) の宛先 · 承認するとプロバイダーの範囲を広げます (リポジトリ octo-org/octo-repo を追加)'), 'a proposal on a scoped provider\'s host offers to widen the scope');
     check((await expPending.locator('.proposal-item', { hasText: 'iwato リポジトリにブランチを push する' }).locator('.proposal-provider').innerText()).includes('もう範囲内'), 'a push the scope allows already says so');
     await prItem.getByRole('button', { name: 'プロバイダーの範囲を広げて承認' }).click();

@@ -173,6 +173,7 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 			huge.Rules = append(huge.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: "GET", Path: fmt.Sprintf("/v2/things/%d", i)}})
 		}
 		chunks = append(chunks, c("fake-huge", "pending", "allow_huge_example", "/usr/bin/curl", "さらに多数の API を呼ぶ", 130, ago(3), ago(1), rule("allow_huge_example", []string{"/usr/bin/curl"}, huge)))
+		chunks = append(chunks, fakeHistory(now)...)
 	}
 	decided := map[string]time.Time{"fake-gh": ago(2*day + 30), "fake-git-api": ago(day + 60), "fake-npm": ago(60), "fake-mise": ago(3*day - 10), "fake-curl": ago(day - 30), "fake-gh-auto": ago(2 * day)}
 	for i := range chunks {
@@ -545,6 +546,13 @@ func (d *Fake) Proposals(ctx context.Context, w Sandbox) (ProposalView, error) {
 	return d.openShell().Proposals(ctx, w)
 }
 
+func (d *Fake) ProposalStats(ctx context.Context, w Sandbox) (ProposalStats, error) {
+	if !d.created(w) {
+		return ProposalStats{}, errors.New("サンドボックスがありません")
+	}
+	return d.openShell().ProposalStats(ctx, w)
+}
+
 func (d *Fake) PendingProposals(ctx context.Context, w Sandbox) ([]PendingProposal, error) {
 	if !d.created(w) {
 		return nil, errors.New("サンドボックスがありません")
@@ -632,4 +640,46 @@ func seedFakePresets() {
 	}
 	_ = os.WriteFile(filepath.Join(dir, "mirror.yaml"), []byte(fakePreset), 0o644)
 	setUserPresetDir(dir)
+}
+
+// fakeHistory is a long draft history for the proposal statistics: decided
+// chunks of varying size and age, approved into allow_api_example_com_443
+// (its curl) or rejected, and one carrying a merged rule with 300 programs.
+func fakeHistory(now time.Time) []v1.PolicyChunk {
+	var out []v1.PolicyChunk
+	const ruleName = "allow_api_example_com_443"
+	for i := range 36 {
+		days := []float64{0.3, 2, 5, 12, 20, 45, 90}[i%7]
+		at := now.Add(-time.Duration(days*24*float64(time.Hour)) - time.Duration(i)*time.Minute)
+		ep := restEndpoint(fmt.Sprintf("h%d.example.test", i%5), 443)
+		for j := range (i % 6) * 12 {
+			ep.Rules = append(ep.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: "GET", Path: fmt.Sprintf("/history/%d/%d", i, j)}})
+		}
+		c := v1.PolicyChunk{ID: fmt.Sprintf("fake-history-%d", i), Status: "approved", RuleName: ruleName, Binary: "/usr/bin/curl", Stage: "initial",
+			Rationale: fmt.Sprintf("Allow curl to connect to h%d.example.test:443 (HTTPS).", i%5), CreatedAt: at.Add(-time.Hour), DecidedAt: at, FirstSeen: at.Add(-time.Hour), LastSeen: at,
+			ProposedRule: &v1.NetworkPolicyRule{Name: ruleName, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{ep}}}
+		for j := range i % 4 * 5 {
+			c.DenialSummaryIDs = append(c.DenialSummaryIDs, fmt.Sprintf("denial-%d-%d", i, j))
+		}
+		if i%3 == 0 {
+			c.Stage, c.Rationale = "refined", "履歴の例: example.test の API を読む"
+		}
+		if i%4 == 3 {
+			c.Status, c.RuleName, c.ProposedRule.Name = "rejected", "allow_history_example_test_443", "allow_history_example_test_443"
+		}
+		out = append(out, c)
+	}
+	var bins []string
+	for i := range 300 {
+		bins = append(bins, fmt.Sprintf("/opt/example.test/bin/tool-%03d", i))
+	}
+	var eps []v1.PolicyNetworkEndpoint
+	for i := range 40 {
+		eps = append(eps, l4Endpoint(fmt.Sprintf("m%d.example.test", i), 443))
+	}
+	at := now.Add(-10 * 24 * time.Hour)
+	out = append(out, v1.PolicyChunk{ID: "fake-history-merged", Status: "approved", RuleName: ruleName, Binary: "/usr/bin/curl", Stage: "initial",
+		Rationale: "Allow curl to connect to m0.example.test:443 (HTTPS).", CreatedAt: at, DecidedAt: at, FirstSeen: at, LastSeen: at,
+		ProposedRule: &v1.NetworkPolicyRule{Name: ruleName, Binaries: policyBinaries(append([]string{"/usr/bin/curl"}, bins...)...), Endpoints: eps}})
+	return out
 }

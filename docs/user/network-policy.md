@@ -18,6 +18,8 @@ The switch at the top of the tab, which stays in place while you scroll, chooses
 
 The tab also has: **Add a rule**, adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, **History** (provider rules are not in it), and **Presets**.
 
+At the bottom, **Proposal history** shows how many proposals OpenShell keeps and their size (it never deletes decided ones). **Details** breaks them down by status, source, stage and age, lists the largest and the rule names proposed most often, and compares them with the policy. It shows no hosts, paths or programs.
+
 Decisions made elsewhere (for example with the `openshell` CLI) show up within a minute.
 
 ### Editing the policy as YAML

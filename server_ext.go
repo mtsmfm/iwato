@@ -115,6 +115,10 @@ func (s *Server) handleSandbox(w http.ResponseWriter, r *http.Request) {
 // one (POST approve|reject with its request ID).
 func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts []string) {
 	rt, hasRT := s.rt.(proposalRuntime)
+	if r.Method == http.MethodGet && len(parts) == 3 && parts[2] == "stats" {
+		s.handleProposalStats(w, r, parts)
+		return
+	}
 	if r.Method == http.MethodGet && len(parts) == 2 {
 		sb, ok := s.sandboxFor(w, parts, 2)
 		if !ok || !s.require(w, r, false) {

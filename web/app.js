@@ -2373,6 +2373,7 @@
   // loopback, and Iwato's own port (the proposals list sends them).
   const policyGuard = { limits: { binaries: 8, endpoints: 20, ports: 16, rules: 128, deny: 16, allowedIps: 32 }, gateways: [], listenPort: 0 };
   const allowedIPsList = (value) => (Array.isArray(value) ? value.slice(0, policyGuard.limits.allowedIps) : []).filter((x) => typeof x === 'string' && x).map((x) => text(x, 64));
+  const byteSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
   const formatTime = (seconds) => Number.isFinite(seconds) ? window.IwatoI18n.date(seconds * 1000) : '';
   // Short: the time today, the date before (with the time when asked).
   const clockTime = (seconds, withDate = false) => {
@@ -2447,10 +2448,16 @@
       this.yamlBox = element('div', 'policy-yaml');
       this.yamlEd = null;
       this.rejected = element('section', 'policy-sec policy-rejected');
+      // The size of OpenShell's draft (every proposal ever, decided ones
+      // too), read when the tab opens: a line, and its breakdown on demand.
+      this.stats = null;
+      this.statsBox = element('div', 'policy-stats');
+      this.statsPanel = element('div', 'policy-stats-panel');
+      this.statsPanel.hidden = true;
       // The views, 一覧 (the lists) and YAML, switched in the header that
       // stays at the top while the lists scroll.
       this.list = element('div', 'policy-list');
-      this.list.append(this.pending, this.current, this.history, this.rejected);
+      this.list.append(this.pending, this.current, this.history, this.rejected, this.statsBox);
       const seg = (key) => {
         const b = button('policy-view-seg', '', () => this.showView(key));
         b.dataset.seg = key;
@@ -2610,6 +2617,7 @@
     render() {
       const data = this.snapshot;
       this.onChange?.();
+      this.renderStats();
       let label = t('policy.status.check');
       // The waiting state (and its colour) is for the agent's proposals,
       // as the badges (agentPending); OpenShell's automatic ones are noted.
@@ -3457,6 +3465,96 @@
         this.renderYAML();
         this.renderSegments();
       }
+    }
+
+    async loadStats() {
+      const epoch = this.generation;
+      try {
+        const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/stats');
+        if (this.disposed || epoch !== this.generation) return;
+        this.stats = this.validateStats(data);
+      } catch (_) {
+        if (this.disposed) return;
+        this.stats = null;
+      }
+      this.renderStats();
+    }
+
+    validateStats(d) {
+      if (!d || typeof d !== 'object') return null;
+      const n = (v) => Number.isFinite(v) && v >= 0 ? v : 0;
+      const groups = (v, keys) => (Array.isArray(v) ? v : []).filter((g) => g && keys.includes(g.key)).map((g) => ({ key: g.key, chunks: n(g.chunks), bytes: n(g.bytes) }));
+      const parts = (p) => ({ rule: n(p?.rule), text: n(p?.text), denials: n(p?.denials), effectivePolicy: n(p?.effectivePolicy) });
+      return { chunks: n(d.chunks), bytes: n(d.bytes), parts: parts(d.parts),
+        byStatus: groups(d.byStatus, ['pending', 'approved', 'rejected', 'other']), bySource: groups(d.bySource, ['auto', 'agent']),
+        byStage: groups(d.byStage, ['initial', 'refined', 'none', 'other']), decidedAge: groups(d.decidedAge, ['lt1d', '1to7d', '7to30d', 'gt30d']),
+        size: { median: n(d.size?.median), p90: n(d.size?.p90), max: n(d.size?.max) },
+        largest: (Array.isArray(d.largest) ? d.largest.slice(0, 10) : []).filter((c) => c && typeof c === 'object').map((c) => ({ ...parts(c),
+          status: text(c.status, 20), source: c.source === 'auto' ? 'auto' : 'agent', stage: text(c.stage, 20), name: text(c.ruleName, 128),
+          createdAt: n(c.createdAt), decidedAt: n(c.decidedAt), bytes: n(c.bytes), endpoints: n(c.endpoints), binaries: n(c.binaries), allowRules: n(c.allowRules), denyRules: n(c.denyRules), denialIds: n(c.denialIds) })),
+        ruleNames: { distinct: n(d.ruleNames?.distinct), repeated: n(d.ruleNames?.repeated),
+          top: (Array.isArray(d.ruleNames?.top) ? d.ruleNames.top.slice(0, 10) : []).filter((g) => g && typeof g.key === 'string').map((g) => ({ key: text(g.key, 128), chunks: n(g.chunks), bytes: n(g.bytes) })) },
+        policy: d.policy && typeof d.policy === 'object' ? { rules: n(d.policy.rules), endpoints: n(d.policy.endpoints), binaries: n(d.policy.binaries), bytes: n(d.policy.bytes) } : null };
+    }
+
+    toggleStats() {
+      this.statsPanel.hidden = !this.statsPanel.hidden;
+      this.renderStats();
+      if (!this.statsPanel.hidden) this.statsPanel.querySelector('.policy-stats-close')?.focus();
+    }
+
+    closeStats() {
+      this.statsPanel.hidden = true;
+      this.renderStats();
+      this.statsBox.querySelector('.policy-stats-toggle')?.focus();
+    }
+
+    renderStats() {
+      const st = this.stats;
+      const key = JSON.stringify([st, this.statsPanel.hidden, window.IwatoI18n.language()]);
+      if (key === this.statsKey) return;
+      this.statsKey = key;
+      this.statsBox.replaceChildren();
+      this.statsPanel.replaceChildren();
+      if (!st) return;
+      const num = (v) => v.toLocaleString(window.IwatoI18n.locale());
+      const line = element('p', 'panel-meta policy-stats-line', t('policy.stats.line', { count: num(st.chunks), size: byteSize(st.bytes) }) + ' ');
+      const more = button('button-subtle policy-stats-toggle', this.statsPanel.hidden ? t('policy.stats.more') : t('common.close'), () => this.toggleStats());
+      more.setAttribute('aria-expanded', String(!this.statsPanel.hidden));
+      line.append(more);
+      this.statsBox.append(line, this.statsPanel);
+      if (this.statsPanel.hidden) return;
+      const head = element('div', 'policy-current-head');
+      head.append(element('h5', 'policy-sub-title', t('policy.stats.title')), button('button-subtle policy-stats-close', t('common.close'), () => this.closeStats()));
+      this.statsPanel.append(head, element('p', 'panel-meta', t('policy.stats.note')));
+      const word = (prefix) => (k) => window.IwatoI18n.has(prefix + k) ? t(prefix + k) : k;
+      const table = (title, rows, label = (k) => k || '—') => {
+        const tbl = element('table', 'policy-stats-table');
+        if (title) tbl.append(element('caption', '', title));
+        for (const r of rows) {
+          const tr = element('tr');
+          tr.append(element('th', '', label(r.key)), element('td', '', t('policy.stats.count', { count: num(r.chunks) })), element('td', '', byteSize(r.bytes)));
+          tbl.append(tr);
+        }
+        return tbl;
+      };
+      this.statsPanel.append(element('p', 'panel-meta', t('policy.stats.parts', { rule: byteSize(st.parts.rule), text: byteSize(st.parts.text), denials: byteSize(st.parts.denials), effective: byteSize(st.parts.effectivePolicy) })),
+        element('p', 'panel-meta', t('policy.stats.size', { median: byteSize(st.size.median), p90: byteSize(st.size.p90), max: byteSize(st.size.max) })));
+      if (st.policy) this.statsPanel.append(element('p', 'panel-meta', t('policy.stats.policy', { rules: num(st.policy.rules), endpoints: num(st.policy.endpoints), binaries: num(st.policy.binaries), size: byteSize(st.policy.bytes) })));
+      const tables = element('div', 'policy-stats-tables');
+      tables.append(table(t('policy.stats.byStatus'), st.byStatus, word('policy.stats.status.')), table(t('policy.stats.bySource'), st.bySource, word('policy.stats.source.')),
+        table(t('policy.stats.byStage'), st.byStage, word('policy.stats.stage.')), table(t('policy.stats.decidedAge'), st.decidedAge, word('policy.stats.age.')));
+      this.statsPanel.append(tables, element('h5', 'policy-sub-title', t('policy.stats.largest')));
+      const day = (s) => s ? window.IwatoI18n.date(s * 1000, { year: 'numeric', month: 'numeric', day: 'numeric' }) : '—';
+      const list = element('ol', 'policy-stats-largest');
+      for (const c of st.largest) {
+        const item = element('li', 'panel-meta');
+        item.append(element('b', '', c.name || '—'), ' ' + [word('policy.stats.status.')(c.status), word('policy.stats.source.')(c.source), word('policy.stats.stage.')(c.stage), day(c.createdAt) + ' → ' + day(c.decidedAt), byteSize(c.bytes)].join(' · '),
+          element('br'), t('policy.stats.chunk', { rule: byteSize(c.rule), endpoints: num(c.endpoints), binaries: num(c.binaries), allow: num(c.allowRules), deny: num(c.denyRules), denials: num(c.denialIds), text: byteSize(c.text), effective: byteSize(c.effectivePolicy) }));
+        list.append(item);
+      }
+      this.statsPanel.append(list, element('h5', 'policy-sub-title', t('policy.stats.rules', { distinct: num(st.ruleNames.distinct), repeated: num(st.ruleNames.repeated) })));
+      if (st.ruleNames.top.length) this.statsPanel.append(table('', st.ruleNames.top));
     }
 
     toggleHistory() {
@@ -4863,6 +4961,7 @@
         panels[key].show();
       } else if (changed) {
         this.policy.refresh();
+        this.policy.loadStats();
       }
       this.policyShown = key === 'policy';
       this.followPolicy();
@@ -5928,6 +6027,7 @@
     if (at && [...cards.values()].some((c) => c.surface.contains(at) || c.editor.root.contains(at))) return null;
     const panels = [[$('provider-yaml'), closeProfileYAML], [$('provider-oauth'), endOAuth]];
     if (card) for (const panel of [card.deletion, card.recreation, card.providers, card.links, card.text]) panels.push([panel.root, () => panel.closeButton.click()]);
+    if (card) panels.push([card.policy.statsPanel, () => card.policy.closeStats()]);
     for (const id of pagePanels) panels.push([$(id + '-panel'), () => $(id + '-close').click()]);
     const open = panels.filter(([node]) => shown(node));
     return open.find(([node]) => at && node.contains(at)) || open[0] || null;
