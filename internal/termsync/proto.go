@@ -16,11 +16,14 @@
 //	'r' resize: uvarint cols, rows
 //	'a' ack: uvarint frame number, once the client has applied it
 //	'g' history: uvarint before, count: up to count lines older than id before
+//	'p' ping: up to 8 bytes, answered at once by a pong with the same bytes
+//	    (iwato answers it, not the session; it finds a connection that died)
 //
 // Server to client:
 //
 //	'F' frame: uvarint number, then operations
 //	'P' page: operations (styles, links and one OpLines)
+//	'Q' pong: the ping's bytes
 //
 // Operations are a code byte and uvarint fields; rows are AppendRow's
 // encoding, preceded by its uvarint byte length:
@@ -66,8 +69,10 @@ const (
 	KindResize  byte = 'r'
 	KindAck     byte = 'a'
 	KindHistory byte = 'g'
+	KindPing    byte = 'p'
 	KindFrame   byte = 'F'
 	KindPage    byte = 'P'
+	KindPong    byte = 'Q'
 )
 
 // Operation codes.

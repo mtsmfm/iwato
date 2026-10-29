@@ -727,6 +727,8 @@ func (s *Server) serveTerm(conn *websocket.Conn, name string, expires time.Time,
 	_ = conn.SetReadDeadline(time.Now().Add(70 * time.Second))
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(70 * time.Second)) })
 	readErr := make(chan error, 1)
+	// Pongs go out from the loop below (one writer), ahead of the session.
+	pongs := make(chan []byte, 1)
 	go func() {
 		for {
 			kind, p, e := conn.ReadMessage()
@@ -740,6 +742,16 @@ func (s *Server) serveTerm(conn *websocket.Conn, name string, expires time.Time,
 			}
 			switch p[0] {
 			case termsync.KindInput, termsync.KindResize, termsync.KindAck, termsync.KindHistory:
+			case termsync.KindPing:
+				if len(p) > 9 {
+					readErr <- errBadMessage
+					return
+				}
+				select {
+				case pongs <- append([]byte{termsync.KindPong}, p[1:]...):
+				default:
+				}
+				continue
 			default:
 				readErr <- errBadMessage
 				return
@@ -785,6 +797,11 @@ func (s *Server) serveTerm(conn *websocket.Conn, name string, expires time.Time,
 	for {
 		select {
 		case p := <-output:
+			_ = conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
+			if conn.WriteMessage(websocket.BinaryMessage, p) != nil {
+				return
+			}
+		case p := <-pongs:
 			_ = conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
 			if conn.WriteMessage(websocket.BinaryMessage, p) != nil {
 				return

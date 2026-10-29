@@ -36,6 +36,16 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const context = await browser.newContext(phone
       ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: 'ja-JP' }
       : { viewport: { width: 1280, height: 860 }, locale: 'ja-JP' });
+    // __deadSockets() makes the open sockets dead as a slept phone's: nothing
+    // goes out or comes in, and no close.
+    await context.addInitScript(() => {
+      const open = new Set();
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data) { open.add(this); if (!this.dead) send.call(this, data); };
+      const handler = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'onmessage');
+      Object.defineProperty(WebSocket.prototype, 'onmessage', { ...handler, set(fn) { handler.set.call(this, (e) => { if (!this.dead) fn(e); }); } });
+      window.__deadSockets = () => { for (const ws of open) ws.dead = true; };
+    });
     const page = await context.newPage();
     page.on('pageerror', (e) => failures.push('page error: ' + e.message));
     page.on('console', (m) => { if (m.type() === 'error') console.log('console: ' + m.text()); });
@@ -72,6 +82,25 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);
     check((await screenText()).includes('こんにちは iwato'), 'typed text reached the session and came back');
+    {
+      let sockets = 0;
+      const count = () => sockets++;
+      page.on('websocket', count);
+      await page.evaluate(() => {
+        window.__deadSockets();
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await page.waitForTimeout(5200);
+      const back = Date.now();
+      await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
+      await card.locator('.connection-label[data-state=connecting]').waitFor({ state: 'attached', timeout: 4000 }).catch(() => {});
+      await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached', timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      check(sockets === 1 && Date.now() - back < 6000 && await card.locator('.connection-label[data-state=connected]').count() === 1, 'a socket that died unnoticed is replaced within a few seconds of coming back (' + (Date.now() - back) + ' ms)');
+      check((await screenText()).includes('こんにちは iwato'), 'the screen is restored after that reconnect');
+      page.off('websocket', count);
+    }
     await page.keyboard.type('url');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(400);

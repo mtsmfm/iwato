@@ -79,6 +79,8 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
   // page sends them as they are), so the tests read what the page sent.
   class IwatoTerminal {
     static inputMessage(data) { return JSON.stringify({type: 'input', data}); }
+    static pingMessage(nonce) { return JSON.stringify({type: 'ping', nonce}); }
+    static isPong(bytes) { return Buffer.from(bytes).toString() === 'pong'; }
     constructor(host, options) { this.host = host; this.options = options; this.cols = 80; this.rows = 24; this.output = ''; this.received = []; this.cellH = 16; terminals.push(this); }
     fit() { this.rows = win.fitRows?.(this.host) || 24; return {cols: this.cols, rows: this.rows}; }
     hello() { const {cols, rows} = this.fit(); return JSON.stringify({type: 'hello', cols, rows}); }
@@ -1239,6 +1241,31 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     come(); await flush(); back.sockets.at(-1).close(4500); come(); await flush(); assert.equal(back.sockets.length, 8, 'an attach that failed is tried again');
     back.sockets.at(-1).close(1000); come(); await flush(); assert.equal(back.sockets.length, 8, 'not after the process exited'); }
   ok('coming back to the page (shown, focused, online) connects the shown terminal now, but not after an exit');
+  { const live = await environment({fake: false, status: 'running'}); live.sockets[0].open();
+    const D = vm.runInContext('Date', live.context); const realNow = D.now; let clock = realNow.call(D); D.now = () => clock;
+    const pings = () => live.sockets.at(-1).sent.filter((m) => m.type === 'ping');
+    const probeTimers = () => [...live.timeouts.entries()].filter(([, t]) => t.ms === 2500);
+    const hide = (ms) => { live.document.hidden = true; live.document.listeners.visibilitychange(); clock += ms; live.document.hidden = false; live.document.listeners.visibilitychange(); };
+    hide(2000); await flush(); assert.equal(pings().length, 0, 'hidden briefly: no probe');
+    hide(6000); await flush(); assert.equal(pings().length, 1, 'hidden for a while: a probe');
+    live.win.listeners.online(); live.win.listeners.blur(); clock += 6000; live.win.listeners.focus(); hide(6000); await flush();
+    assert.equal(pings().length, 1, 'one probe at a time'); assert.equal(probeTimers().length, 1);
+    live.sockets[0].receive('pong'); assert.equal(probeTimers().length, 0, 'the pong ends the probe'); assert.equal(live.terminals.at(-1).received.length, 0, 'and is not drawn');
+    assert.equal(live.sockets.length, 1, 'a reply keeps the socket');
+    live.win.listeners.online(); await flush(); assert.equal(pings().length, 2, 'online probes');
+    live.sockets[0].receive('frame'); assert.equal(probeTimers().length, 0, 'any message answers it');
+    live.win.listeners.blur(); clock += 6000; live.win.listeners.focus(); await flush(); assert.equal(pings().length, 3, 'focus after a long blur probes');
+    const [id, timer] = probeTimers()[0]; live.timeouts.delete(id); timer.fn(); await flush();
+    assert.equal(live.sockets[0].readyState, 3, 'no answer: the socket is dropped'); assert.equal(live.sockets.length, 2, 'and the terminal attaches again at once');
+    assert.equal(live.card().children[5].children[2].dataset.state, 'connecting', 'shown as reconnecting');
+    live.sockets[1].open(); live.sockets[1].close(1006); assert(live.timeouts.size && [...live.timeouts.values()].some((t) => t.ms < 1400), 'the backoff starts over');
+    await live.tickReconnect(); live.sockets[2].open();
+    // A server older than the ping closes with 1008: that is a reconnect, and no more probes.
+    live.win.listeners.online(); live.sockets[2].close(1008); await flush(); await live.tickReconnect(); assert.equal(live.sockets.length, 4, 'an old server refusing the ping reconnects');
+    live.sockets[3].open(); live.win.listeners.online(); await flush(); assert.equal(pings().length, 0, 'and is not probed again');
+    live.sockets[3].close(1008); await flush(); assert.equal([...live.timeouts.values()].filter((t) => t.ms < 31000).length, 0, 'a refusal without a probe still stops');
+    D.now = realNow; }
+  ok('coming back after a while or online, connected terminals ping their socket and reconnect at once without an answer');
 
   const desk = await environment({status: 'running'}); desk.buttons()[2].click(); await flush(); desk.sockets.at(-1).open();
   assert.equal(desk.terminals.at(-1).focusCount, 1, 'a mouse/keyboard device focuses the terminal on connect');

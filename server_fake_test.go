@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"iwato/internal/termsync"
 	"iwato/internal/termsync/termsynctest"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
@@ -189,4 +192,36 @@ func TestWebSocketFakeReconnectRetainsHistory(t *testing.T) {
 	ws.Close()
 	again := dial(t, s, c, csrf)
 	waitText(t, viewWS(t, again, 100, 30), "reconnect-marker")
+}
+
+// A ping is answered by iwato itself, also while frames wait for an ack.
+func TestWebSocketPingIsAnswered(t *testing.T) {
+	s, _ := newTestServer(t)
+	c, csrf := login(t, s)
+	request(t, s, "/api/sandboxes/dev/start", "POST", "", c, csrf)
+	ws := dial(t, s, c, csrf)
+	if e := ws.WriteMessage(websocket.BinaryMessage, append([]byte{termsync.KindHello}, termsync.Hello(80, 24)...)); e != nil {
+		t.Fatal(e)
+	}
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, p, e := ws.ReadMessage(); e != nil || p[0] != termsync.KindFrame {
+		t.Fatal("no first frame", e)
+	}
+	for _, nonce := range []string{"\x07", "\x08"} {
+		if e := ws.WriteMessage(websocket.BinaryMessage, []byte{termsync.KindPing, nonce[0]}); e != nil {
+			t.Fatal(e)
+		}
+		for {
+			_, p, e := ws.ReadMessage()
+			if e != nil {
+				t.Fatal("no pong", e)
+			}
+			if p[0] == termsync.KindPong {
+				if string(p[1:]) != nonce {
+					t.Fatalf("pong %q", p)
+				}
+				break
+			}
+		}
+	}
 }

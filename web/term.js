@@ -8,7 +8,7 @@
   const t = (key, params) => window.IwatoI18n ? window.IwatoI18n.t(key, params) : key;
 
   const OP = { RESET: 1, STYLE: 2, LINK: 3, RESIZE: 4, ALT: 5, SCROLL: 6, HISTFIRST: 7, ROW: 8, PATCH: 9, CURSOR: 10, MODES: 11, TITLE: 12, BELL: 13, CLIPBOARD: 14, OPEN: 15, LINES: 16 };
-  const KIND = { hello: 0x76, input: 0x64, resize: 0x72, ack: 0x61, history: 0x67, frame: 0x46, page: 0x50 };
+  const KIND = { hello: 0x76, input: 0x64, resize: 0x72, ack: 0x61, history: 0x67, frame: 0x46, page: 0x50, ping: 0x70, pong: 0x51 };
   const PAGE = 200; // history lines per request
   const MAX_LINES = 5000; // history lines kept in the page; older ones are fetched again
   const decoder = new TextDecoder('utf-8');
@@ -941,6 +941,10 @@
 
     // The input message for the program's input text.
     static inputMessage(text) { return message(KIND.input, encoder.encode(text)); }
+
+    // A ping (internal/termsync) and whether a server message is a pong.
+    static pingMessage(nonce) { return message(KIND.ping, uvarints(nonce)); }
+    static isPong(bytes) { return bytes[0] === KIND.pong; }
 
     paste(text) {
       text = String(text).replace(/\r\n?|\n/g, '\r');
