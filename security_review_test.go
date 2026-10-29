@@ -224,6 +224,7 @@ func TestReviewWebsocketBoundariesAndClose(t *testing.T) {
 		{bin(hello...), bin('x', 1)},
 		{bin(hello...), bin()},
 		{bin(hello...), bin(termsync.KindFrame, 0)},
+		{bin(hello...), bin(termsync.KindPing, 1, 2, 3, 4, 5, 6, 7, 8, 9)},
 		{bin(hello...), text(`{"type":"unrecognized"}`)},
 		{bin(hello...), text(`not json`)},
 	} {

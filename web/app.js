@@ -4450,6 +4450,8 @@
       this.socket = null;
       this.reconnectTimer = null;
       this.connectTimer = null;
+      this.probeTimer = null;
+      this.probeNonce = 0;
       this.resizeFrame = null;
       this.revealFrame = null;
       this.heldHeight = 0;
@@ -5670,6 +5672,7 @@
     }
 
     stopSocket() {
+      this.stopProbe();
       clearTimeout(this.reconnectTimer);
       clearTimeout(this.connectTimer);
       this.reconnectTimer = null;
@@ -5704,6 +5707,27 @@
       if (this.disposed || !state.authorized || this.starting || this.stopping || this.sandbox.status !== 'running') return;
       this.attempt = 0;
       this.connect(true);
+    }
+
+    // A phone that slept or changed networks can leave the socket dead
+    // without a close: a ping that gets no answer in time drops it, and the
+    // terminal attaches again at once.
+    probe() {
+      const socket = this.socket;
+      if (this.probeTimer || this.noProbe || this.connection !== 'connected' || !socket || socket.readyState !== WebSocket.OPEN) return;
+      this.probeNonce = (this.probeNonce + 1) % 128;
+      try { socket.send(window.IwatoTerminal.pingMessage(this.probeNonce)); } catch (_) { return; }
+      this.probeTimer = setTimeout(() => {
+        this.probeTimer = null;
+        if (this.disposed || !this.desired || socket !== this.socket) return;
+        this.attempt = 0;
+        this.connect(true);
+      }, 2500);
+    }
+
+    stopProbe() {
+      clearTimeout(this.probeTimer);
+      this.probeTimer = null;
     }
 
     connect(isRetry = false) {
@@ -5766,6 +5790,8 @@
         // Only binary terminal data is accepted. No HTML, JSON rendering, or eval.
         if (!(event.data instanceof ArrayBuffer)) return;
         const data = new Uint8Array(event.data);
+        this.stopProbe();
+        if (window.IwatoTerminal.isPong(data)) return;
         if (this.listOnData) {
           // The session runs now (attaching started it): list them all.
           this.listOnData = false;
@@ -5785,6 +5811,10 @@
         clearTimeout(this.connectTimer);
         this.connectTimer = null;
         this.socket = null;
+        // A server older than the ping refuses it (1008): reconnect as usual.
+        const probed = !!this.probeTimer && event.code === 1008;
+        if (probed) this.noProbe = true;
+        this.stopProbe();
         // A session other than main that ended (exit, closed elsewhere, or
         // could not be created) is not attached again: show another one.
         // Main too when the terminal daemon keeps it (it ends like the others).
@@ -5807,7 +5837,7 @@
           this.showError(t('conn.failed.error', { reason: event.reason || t('conn.failed.unknown') }));
           return;
         }
-        if ([1000, 1008, 4401, 4403].includes(event.code)) {
+        if (!probed && [1000, 1008, 4401, 4403].includes(event.code)) {
           this.desired = false;
           // The process exited or the session was refused: coming back to
           // the page does not attach again (resume).
@@ -6025,19 +6055,32 @@
     api('/api/presence', { method: 'POST', body: JSON.stringify({ page: presence.page, active }), keepalive: !active }).catch(() => {});
   }
   for (const name of ['keydown', 'pointerdown', 'wheel', 'paste']) document.addEventListener(name, () => reportPresence(true), { capture: true, passive: true });
+  // Back after a while (or online again), connected terminals check that
+  // their socket still works (probe).
+  let hiddenAt = 0, blurredAt = 0;
+  const probeAll = () => { for (const card of cards.values()) card.probe(); };
+  const away = (since) => since && Date.now() - since > 5000;
   document.addEventListener('visibilitychange', () => {
     reportPresence(!document.hidden);
     for (const card of cards.values()) card.renderTermTabs();
-    if (document.hidden) for (const card of cards.values()) card.releaseSize();
-    else { cards.get(state.selected)?.resume(); refreshSandboxes(); }
+    if (document.hidden) { hiddenAt = Date.now(); for (const card of cards.values()) card.releaseSize(); }
+    else {
+      if (away(hiddenAt)) probeAll();
+      hiddenAt = 0;
+      cards.get(state.selected)?.resume(); refreshSandboxes();
+    }
     // A page back from the background may render with other font data.
     if (!document.hidden) for (const card of cards.values()) card.scheduleFit();
   });
   // Fit measures the cell again: a font that loaded or came back later
   // (a phone may drop a web font's data in the background).
   document.fonts?.addEventListener?.('loadingdone', () => { for (const card of cards.values()) card.scheduleFit(); });
-  window.addEventListener('focus', () => cards.get(state.selected)?.resume());
-  window.addEventListener('online', () => cards.get(state.selected)?.resume());
+  window.addEventListener('focus', () => {
+    if (away(blurredAt)) probeAll();
+    blurredAt = 0;
+    cards.get(state.selected)?.resume();
+  });
+  window.addEventListener('online', () => { probeAll(); cards.get(state.selected)?.resume(); });
   // The card whose terminal had the keyboard last. The card's own controls
   // on the way (a tab, the menu, a panel's field) and the dialog do not
   // change it; another part of the page does.
@@ -6049,6 +6092,7 @@
     else if (!card) typingCard = null;
   });
   window.addEventListener('blur', () => {
+    blurredAt = Date.now();
     if (switcher) endSwitch(false);
     for (const card of cards.values()) card.releaseSize();
   });

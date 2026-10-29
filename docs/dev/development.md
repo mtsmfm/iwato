@@ -80,7 +80,7 @@ Run one with (`<repo>` is the checkout):
 
 | Check | Covers |
 |---|---|
-| `term-check.cjs` | the terminal: typing in the fake backend, full-width characters, row height, history pages, screenshots |
+| `term-check.cjs` | the terminal: typing in the fake backend, full-width characters, row height, history pages, a socket that dies unnoticed reconnecting on return, screenshots |
 | `focus-check.cjs` | the terminal's keyboard focus: kept during list updates and output, keys still arrive after selecting text, returns after closing menus, panels and confirmations, a reconnect does not steal it from an input. Records focus moves (focusout's relatedTarget and the stack) and prints them on failure. No `--phone` |
 | `keyboard-rows-check.cjs` | the on-screen keyboard does not change the terminal's rows (`holdRows` in `web/app.js`). Run it after changing anything around the keyboard or the page layout. No `--phone` |
 | `policy-check.cjs` | the policy tab: the approve dialog, adding rules, removing parts, the history (the fake backend runs the same code on a fake gateway, `fake_policy.go`) |
