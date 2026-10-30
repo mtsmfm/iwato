@@ -150,6 +150,11 @@ func (o *OpenShell) currentPolicy(ctx context.Context, w Sandbox) (*CurrentPolic
 func policyView(st *v1.PolicyStatusResult, rules map[string]v1.NetworkPolicyRule) *CurrentPolicy {
 	p := &CurrentPolicy{Version: st.Revision.Version, Active: st.ActiveVersion, Loaded: st.ActiveVersion >= st.Revision.Version && st.Revision.Status != v1.PolicyLoadStatusFailed, LoadError: st.Revision.LoadError, Rules: []PolicyRuleView{}}
 	for name, rule := range rules {
+		if isProviderRule(name) && len(rule.Endpoints) == 0 {
+			// An endpointless profile's (OpenShell composes its programs
+			// alone): it allows nothing.
+			continue
+		}
 		r := PolicyRuleView{Name: name, Binaries: []string{}, Endpoints: []EndpointView{}, Source: "hand"}
 		if isProviderRule(name) {
 			r.Source = "provider"

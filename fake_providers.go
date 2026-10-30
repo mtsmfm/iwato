@@ -301,3 +301,16 @@ func (d *Fake) PutProviderProfile(_ context.Context, m *pb.ProviderProfile) erro
 }
 
 func (d *Fake) DeleteProviderProfile(context.Context, string) error { return nil }
+
+// ObserveProvider follows the provider's current state: applied after
+// fakeApplyDelay.
+func (d *Fake) ObserveProvider(_ context.Context, sandbox, provider string) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.prov.receipts == nil {
+		d.prov.receipts = map[string]fakeReceipt{}
+	}
+	id := "fake-" + randomHex(8)
+	d.prov.receipts[id] = fakeReceipt{at: time.Now(), attach: slices.Contains(d.prov.attached[sandbox], provider)}
+	return id, nil
+}

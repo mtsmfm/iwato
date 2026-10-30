@@ -668,6 +668,15 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 				s.failGateway(ctx, w, sb, perr)
 				return
 			}
+			// The policy change supersedes the attach's receipt: follow the
+			// state that has both.
+			if obs, ok := s.rt.(providerObserver); ok && receipt != "" {
+				if r, oerr := obs.ObserveProvider(ctx, sb.Name, body.Provider); oerr == nil && r != "" {
+					receipt = r
+				} else if oerr != nil {
+					log.Printf("sandbox %s: provider %s: follow the attach: %v", sb.Name, body.Provider, safeText(english(oerr)))
+				}
+			}
 		}
 	} else {
 		// OpenShell refuses detaching a provider the policy binds.
@@ -884,6 +893,12 @@ func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Conte
 		log.Printf("sandbox %s: %s %s:%s of rule %s (for provider %s)", sb.Name, edit.Op, edit.Host, joinPorts(edit.Ports), edit.Rule, provider)
 	}
 	jsonResponse(w, 200, map[string]any{"ok": true, "removed": conflicts, "fixed": ambiguities})
+}
+
+// providerObserver follows a running sandbox's current state of a
+// provider: the receipt for ProviderReadiness. OpenShell and Fake.
+type providerObserver interface {
+	ObserveProvider(ctx context.Context, sandbox, provider string) (string, error)
 }
 
 // providerProfileReader reads a profile the gateway holds (in Iwato's

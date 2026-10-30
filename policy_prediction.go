@@ -82,12 +82,10 @@ func queryMatchers(in map[string]*sbv1.L7QueryMatcher) map[string]v1.L7QueryMatc
 }
 
 // composeProviderRule adds a provider's rule to rules as OpenShell does
-// (compose.rs: _provider_NAME, then _2, _3 when taken) and returns its key;
-// a profile without endpoints (Iwato's: ADR 0022) has none ("").
+// (compose.rs: _provider_NAME, then _2, _3 when taken) and returns its key.
+// A profile without endpoints (Iwato's: ADR 0022) gets a rule without
+// endpoints too, its programs only.
 func composeProviderRule(rules map[string]v1.NetworkPolicyRule, provider string, m *pb.ProviderProfile) string {
-	if len(m.GetEndpoints()) == 0 {
-		return ""
-	}
 	key := providerRuleName(provider)
 	for n := 2; ; n++ {
 		if _, taken := rules[key]; !taken {
@@ -771,9 +769,6 @@ func ruleProvidersOf(list []ProviderInfo, attached []string) map[string]RuleProv
 	for _, name := range attached {
 		i := slices.IndexFunc(list, func(x ProviderInfo) bool { return x.Name == name })
 		if i < 0 {
-			continue
-		}
-		if _, endpointless := builtinProfile(list[i].Profile); endpointless {
 			continue
 		}
 		key := providerRuleName(name)

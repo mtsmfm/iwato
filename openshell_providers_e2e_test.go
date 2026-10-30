@@ -211,8 +211,15 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if r := providerRule("provider_github_e2e"); r == nil || r.Source == "provider" || len(r.Endpoints) != 4 || r.Endpoints[0].Credential != "github-e2e" {
 		t.Fatalf("the effective policy lacks the provider's initial rule: %+v", r)
 	}
+	// OpenShell composes an endpointless profile's rule without
+	// endpoints; the view leaves it out.
 	if providerRule("_provider_github_e2e") != nil {
-		t.Fatal("the gateway composed a rule for an endpointless profile")
+		t.Fatal("the view shows an endpointless profile's rule")
+	}
+	if cfg, err := o.effectivePolicy(ctx, w); err != nil || cfg.Policy == nil {
+		t.Fatal("effective policy:", err)
+	} else if r, ok := cfg.Policy.NetworkPolicies["_provider_github_e2e"]; ok && len(r.Endpoints) != 0 {
+		t.Fatalf("an endpointless profile's rule has endpoints: %+v", r)
 	}
 	// UndoDraftChunk reaches the gateway (no chunk can be made here: see
 	// TestOpenShellE2E); an unknown one is refused, nothing changes.
@@ -265,7 +272,7 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 		t.Fatalf("after attaching:\n%s", out)
 	}
 	if providerRule("_provider_claude_e2e") != nil {
-		t.Fatal("the gateway composed a rule for an endpointless profile")
+		t.Fatal("the view shows an endpointless profile's rule")
 	}
 	if err := o.DeleteProvider(ctx, "claude-e2e"); err == nil {
 		t.Fatal("OpenShell deleted an attached provider")

@@ -109,6 +109,22 @@ func (o *OpenShell) DeleteProviderProfile(ctx context.Context, id string) error 
 	return err
 }
 
+// ObserveProvider asks the gateway to follow the running sandbox's current
+// state of the provider (GetSandboxProviderStatus without a receipt
+// records an observation of the current desired state) and returns the
+// observation's receipt for ProviderReadiness.
+func (o *OpenShell) ObserveProvider(ctx context.Context, sandbox, provider string) (string, error) {
+	_, conn, err := o.clients(ctx)
+	if err != nil {
+		return "", err
+	}
+	resp, err := pb.NewOpenShellClient(conn).GetSandboxProviderStatus(ctx, &pb.GetSandboxProviderStatusRequest{WorkspaceScope: workspaceScope(), Sandbox: sandbox, Provider: provider})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetStatus().GetReceipt().GetReceiptId(), nil
+}
+
 func diagnosticsError(ds []*pb.ProviderProfileDiagnostic) error {
 	var msgs []string
 	for _, d := range ds {

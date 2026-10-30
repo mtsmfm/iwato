@@ -122,6 +122,9 @@ func TestOpenShellAtlassianE2E(t *testing.T) {
 	defer ts.Close()
 	const testProfile = "iwato-atlassian-e2e"
 	prof := atlassianProfile(testProfile, ts.URL+"/oauth/token")
+	// Its providers get the initial rule that binds the credential (ADR
+	// 0022): without a binding OpenShell withholds it.
+	aliasProviderRules(t, testProfile, atlassianProfileID)
 	if _, err := api.GetProviderProfile(ctx, &pb.GetProviderProfileRequest{Id: testProfile}); err == nil {
 		_, _ = api.DeleteProviderProfile(ctx, &pb.DeleteProviderProfileRequest{Id: testProfile})
 	}
