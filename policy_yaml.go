@@ -481,14 +481,14 @@ func (s *Server) checkEditBinaries(ctx context.Context, sb Sandbox, edit PolicyE
 	if edit.Op != "add" && edit.Op != "add-allow" {
 		return nil
 	}
-	base, _, ok, err := s.policyLayers(ctx, sb)
+	base, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok {
 		return nil
 	}
 	if err != nil {
 		return errCode("policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
 	}
-	ops, err := edit.operations(base)
+	ops, err := edit.operations(base, withProviderRules(base, effective))
 	if err != nil {
 		return err
 	}
@@ -610,7 +610,7 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 	defer s.lockPolicy(sb.Name)()
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
-	ctx = withGatewayReads(ctx)
+	ctx = refuseDrift(withGatewayReads(ctx))
 	st, err := rt.LatestPolicy(ctx, sb)
 	if err != nil {
 		fail(w, 409, safeCLIError(err))

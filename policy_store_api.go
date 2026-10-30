@@ -71,6 +71,9 @@ func (s *Server) handlePolicyStore(w http.ResponseWriter, r *http.Request, parts
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
 	ctx = withGatewayReads(ctx)
+	if route == "revert" || route == "binding" {
+		ctx = refuseDrift(ctx)
+	}
 	switch route {
 	case "state":
 		st, err := rt.PolicyStore(ctx, sb)

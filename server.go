@@ -96,6 +96,8 @@ type Server struct {
 	resets                   resetJob         // 「すべて消す」 (reset.go)
 	autoStop                 autoStops        // stopping once the terminals end (autostop.go)
 	resources                *resourceMonitor // CPU, memory, GPU and home sizes (resources.go)
+	hostChecks               *hostChecker     // the approval's host checks (host_check.go)
+	hostChecksOnce           sync.Once
 
 	// flowCtx is the OAuth flows' life until a reset (oauthLife).
 	flowCtx context.Context
@@ -210,6 +212,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/presence", s.handlePresence)
 	mux.HandleFunc("/api/reset", s.handleReset)
 	mux.HandleFunc("/api/timezone", s.handleTimezone)
+	mux.HandleFunc("/api/hostcheck", s.handleHostCheck)
 	mux.HandleFunc("/api/resources", s.handleResources)
 	mux.HandleFunc("/api/resources/", s.handleResources)
 	mux.HandleFunc("/ws/", s.handleWS)

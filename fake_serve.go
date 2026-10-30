@@ -72,6 +72,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 			// page checks again (fake_checks.go).
 			s.checks = newFakeChecks(*engineDown)
 			s.ingress.newProvider = newFakeIngressProvider
+			s.hostChecks = newHostChecker(fakeHostLookups{})
 			seedFakePresets()
 			s.imageUpdates = &imageUpdates{src: newFakeImages()}
 			s.update = newFakeUpdate()

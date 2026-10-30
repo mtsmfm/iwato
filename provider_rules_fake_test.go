@@ -153,3 +153,41 @@ func TestApprovalOffersTheCredential(t *testing.T) {
 		}
 	}
 }
+
+// A rule by hand on a host the GitHub provider's /** endpoint covers gets
+// the path /** too (else that endpoint would take its requests) and the
+// credential, as an approval does. An approved path without the
+// credential is offered it in the policy, and takes it.
+func TestHandRuleInheritsAndApprovalsAreOffered(t *testing.T) {
+	s, d, do := providerServer(t)
+	do("POST", "/api/sandboxes/dev/start", `{}`)
+	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	if code, body := do("POST", "/api/sandboxes/dev/policy/add", `{"rule":"hand_pr","anyBinary":true,"host":"api.github.com","ports":[443],"rules":[{"method":"POST","path":"/repos/o/r/pulls"}]}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	sb, _ := s.lookupSandbox("dev")
+	rules, _ := d.PolicyRules(context.Background(), sb)
+	e := rules["hand_pr"].Endpoints
+	if len(e) != 1 || e[0].Path != "/**" || e[0].CredentialBinding == nil || e[0].CredentialBinding.Provider != "github-personal" {
+		t.Fatalf("%+v", e)
+	}
+	id := requestID("fake-git")
+	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"binaries":["/**"],"attach":false}}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	_, body := do("GET", "/api/sandboxes/dev/proposals", "")
+	var v ProposalView
+	if json.Unmarshal([]byte(body), &v) != nil || v.Policy == nil {
+		t.Fatal(body)
+	}
+	i := slices.IndexFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "allow_github_com_443" })
+	if i < 0 || len(v.Policy.Rules[i].Endpoints) != 2 || v.Policy.Rules[i].Endpoints[1].Credential != "" || v.Policy.Rules[i].Endpoints[1].Offer != "github-personal" {
+		t.Fatalf("%+v", v.Policy.Rules)
+	}
+	ep := v.Policy.Rules[i].Endpoints[1]
+	if code, body := do("POST", "/api/sandboxes/dev/policy/binding", `{"rule":"allow_github_com_443","host":"github.com","ports":[443],"path":"`+ep.Path+`","provider":"github-personal"}`); code != 200 {
+		t.Fatal(code, body)
+	}
+}

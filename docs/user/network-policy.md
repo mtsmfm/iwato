@@ -10,13 +10,15 @@ Iwato turns on OpenShell's Policy Advisor for every sandbox. When an agent needs
 
 ## The policy tab
 
-The switch at the top of the tab, which stays in place while you scroll, chooses between the lists (**List**) and the policy as YAML (**YAML**); the browser remembers the choice. The lists show OpenShell's data only (Iwato stores none of it):
+The switch at the top of the tab, which stays in place while you scroll, chooses between the lists (**List**) and the policy as YAML (**YAML**); the browser remembers the choice. Iwato keeps each sandbox's policy, with its history ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)); the proposals are OpenShell's. The lists:
 
-- **Waiting for approval**: proposals waiting for you. **Approve** or **Reject**
+- **Waiting for approval**: proposals waiting for you, the agent's first, with one opened beside them (below them on a phone; see [Approving](#approving)). **Reject all** rejects every one after a question
 - **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Rules of providers whose profile has destinations of its own (imported with OpenShell's CLI) are read-only. A rule whose destinations carry a provider's credential is marked **Credential: NAME**. For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
 - **Rejected proposals**
 
-The tab also has: **Add a rule**, adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, **History** (provider rules are not in it), and **Presets**.
+The tab also has: **Add a rule** (for every program, like approvals), adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, attaching or removing a provider's token on an endpoint whose host the provider's credential is meant for (**Attach / Remove NAME's token**), **History** (each change with its reason and diff; **Revert** undoes one as a new change, except the first), and **Presets**.
+
+When the policy was changed outside Iwato (with the `openshell` CLI, for example), a banner says so: **Import** keeps that change in Iwato's policy, **Overwrite with Iwato's** puts Iwato's back. Changes in the policy tab wait until you choose; changes made elsewhere (attaching a provider, a recreate) import it first.
 
 Decisions made elsewhere (for example with the `openshell` CLI) show up within a minute.
 
@@ -38,26 +40,19 @@ Approved proposals stay approved, and presets stay in the list; taking a preset 
 
 ## Approving
 
-The approve dialog shows the destination and the agent's reason first, then lets you narrow the proposal before approving:
+The opened proposal shows the agent's reason (none for OpenShell's own drafts), the destination, whether OpenShell inspects the requests, and the program that proposed it, for information only: approved rules allow every program ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)).
 
-- **Read only** or **Allow writes**: read only allows `GET`, `HEAD` and `OPTIONS` on the paths listed (none listed: every path). Allow writes sets the method per path, for example `POST` on one path (`*` is one segment, `**` is everything below); the writes it allows are listed above the paths. The dialog starts with what the proposal needs
-- **Details**:
-  - The program: exactly that path; the same path with versions as `*`, so an update keeps working (the default when the path has a version); names starting the same; everything under a folder; or any program. A rule also covers the processes the program starts
-  - Approving as proposed
-  - **Audit**: let every request through and record it, then pick the recorded requests to allow and switch to enforcing (**Allow only the chosen ones and switch to enforce**). Use it when you do not know the paths yet
+- **What it allows**: one checkbox per method and path; unchecked ones are left out of the approval. An uninspected proposal (L4; most of OpenShell's drafts) lists the methods on every path with `GET` and `HEAD` checked, and is approved as an inspected rule with the checked methods. Its last row lets everything through uninspected instead (checked when the port is not a web one)
+- **To check**: warnings, which never block the approval. Red: the host is a malware or phishing domain by Cloudflare's filtering resolver (1.1.1.2), or a service made to receive or publish arbitrary data (webhook.site, request catchers, tunnels such as ngrok, out-of-band test hosts, pastebins, file drops). Amber: the domain was registered less than 30 days ago (by RDAP), the rule is uninspected, a write on every path or on a wildcard host, internal addresses (`allowed_ips`), settings that widen an endpoint, and destinations that reach the loopback of the machine Iwato runs on. Otherwise the facts found. Iwato looks hosts up from the machine it runs on, with short timeouts, and remembers the answers for a few hours; a lookup that fails shows as unknown
+- **Attach NAME's token**: shown when the approved endpoint takes requests from one that carries a provider's credential (on, for example a `git push` under GitHub's `github.com`) or when its host is one an attached provider's credential is meant for (off). See [providers](providers.md#where-credentials-go)
+- **Policy diff (YAML)**: the rule the approval adds, as it will be written
+- **Reject** (with an optional reason, which the agent reads) or **Approve**
 
-An approval applies the whole rule, so the dialog shows all of it:
+A rule on Iwato's own port is refused, from the approval, a rule added by hand and the YAML editor alike. When OpenShell would refuse the rule (endpoints on the same host, port and path whose settings differ), the opened proposal says why and Approve waits. The approval is for the version you saw: when the proposal changed in the meantime, Iwato refuses it and shows the new version.
 
-- **Caution** (above the choices): a proposal that names more than one program, or every program (`/**`); settings that widen an endpoint (`tls: skip`, `allow_encoded_slash`, `websocket_credential_rewrite`, `request_body_credential_rewrite`, `allow_uninspected_credentials`); destinations that reach the loopback of the machine Iwato runs on (`host.docker.internal`, `host.wslc.internal`, `host.containers.internal`, `host-gateway` and their addresses), where Iwato itself and the published pages listen. The approval allows only the program in Details, never the proposal's other programs
-- **The proposal** (below the summary): every program and endpoint with all its settings, rules and deny rules
+A proposal with more than Iwato can show (more than 128 rules, for example) or with settings it does not show (GraphQL, MCP, request signing) can be approved only narrowed: reject it, or write the rule in YAML.
 
-A proposal with more than Iwato can show (more than 8 programs or 20 endpoints, for example) or with settings it does not show (GraphQL, MCP, request signing) cannot be approved: reject it, or write the rule in YAML. A rule on Iwato's own port is refused, from the dialog, a rule added by hand and the YAML editor alike. The YAML editor's confirmation names rules that reach the host's loopback.
-
-The approval is for the version you saw: when the proposal changed in the meantime (OpenShell refines proposals as more requests are blocked), Iwato refuses it, reloads the list and asks again.
-
-Choices OpenShell would refuse cannot be picked (the dialog says so in one line, and why under Details): OpenShell rejects rules on the same host, port and path whose inspection settings differ (endpoint ambiguity), and Iwato checks this before sending. When the gateway refuses a change anyway, Iwato explains why.
-
-A proposal under a destination that carries a provider's credential (for example a `git push` under GitHub's `github.com`) carries it too by default; the list and the approve dialog say so, and the dialog can turn it off. For a host an attached provider's credential is meant for, the dialog offers it, off by default. See [providers](providers.md#where-credentials-go).
+A rejected proposal can be approved later from the rejected list, as proposed only (OpenShell edits pending proposals only).
 
 ## Templates
 

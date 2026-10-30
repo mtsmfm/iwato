@@ -400,6 +400,18 @@ func (d *Fake) fakePropose(sandbox, host string) string {
 	return "proposed " + name
 }
 
+// fakeDrift changes the policy as OpenShell's CLI would: a revision with a
+// rule of its own and no provenance of Iwato's.
+func (d *Fake) fakeDrift(sandbox string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	revs := d.fakePolicy(sandbox)
+	rules := cloneRules(revs[len(revs)-1].rules)
+	rules["outside_change"] = v1.NetworkPolicyRule{Name: "outside_change", Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint("outside.example", 443)}}
+	d.policies[sandbox] = append(revs, fakeRevision{at: time.Now(), rules: rules})
+	return "policy changed outside Iwato"
+}
+
 // fake runs the same code as the gateway (openshell_proposals.go,
 // openshell_policy_lists.go). Each call takes d.mu.
 type fakeGateway struct {
@@ -594,6 +606,10 @@ func (d *Fake) PendingProposals(ctx context.Context, w Sandbox) ([]PendingPropos
 
 func (d *Fake) DecideProposal(ctx context.Context, w Sandbox, action, id, digest string, scope *ProposalScope) (PolicyChange, error) {
 	return d.openShell().DecideProposal(ctx, w, action, id, digest, scope)
+}
+
+func (d *Fake) PreviewApproval(ctx context.Context, w Sandbox, id, digest string, scope *ProposalScope) (ApprovalPreview, error) {
+	return d.openShell().PreviewApproval(ctx, w, id, digest, scope)
 }
 
 func (d *Fake) UndoProposal(ctx context.Context, w Sandbox, id string, restore bool) (PolicyChange, error) {

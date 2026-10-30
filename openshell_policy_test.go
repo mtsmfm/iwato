@@ -94,7 +94,7 @@ func TestPolicyEditsBecomeMergeOperations(t *testing.T) {
 			continue
 		}
 		rules := testRules()
-		ops, err := c.edit.operations(rules)
+		ops, err := c.edit.operations(rules, nil)
 		got := opsString(ops)
 		if err != nil {
 			got = "error: " + err.Error()
@@ -211,7 +211,7 @@ func TestPolicyEditsKeepAllowedIPs(t *testing.T) {
 		if err := edit.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		ops, err := edit.operations(rules())
+		ops, err := edit.operations(rules(), nil)
 		if err != nil {
 			t.Fatal(edit.Op, err)
 		}

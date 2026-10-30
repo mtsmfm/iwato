@@ -1,9 +1,12 @@
 'use strict';
 // The policy tab in a real browser against `serve -fake`: the three lists
 // (waiting, the effective policy with provider rules and rules from
-// proposals, rejected), undoing a proposal, putting an approved proposal's
-// rule back, the rules piece by piece, adding a rule through the dialog,
-// taking a method and path out, the history and the policy as YAML. Saves
+// proposals, rejected), the opened proposal (narrowing, the token, the host
+// checks' warnings, the diff, rejecting with a reason, reject-all), undoing
+// a proposal, putting an approved proposal's rule back, the rules piece by
+// piece, the token on an endpoint, adding a rule through the dialog, taking
+// a method and path out, the history with its diffs and revert, a drift,
+// and the policy as YAML. Saves
 // screenshots in a temporary directory (printed at the end). Usage
 // (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/policy-check.cjs [--phone]
@@ -69,7 +72,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const pending = panel.locator('.policy-pending');
     const rejectedList = panel.locator('.policy-rejected');
     const pendingText = await pending.innerText();
-    check(pendingText.startsWith('承認待ち (6)') && pendingText.includes('エージェントの提案') && pendingText.includes('OpenShell の自動提案') && pendingText.includes('37 回') && pendingText.includes('「iwato リポジトリにブランチを push する」'), 'waiting: the agent\'s and OpenShell\'s proposals with their counts and intent');
+    check(pendingText.startsWith('承認待ち (6)') && pendingText.includes('エージェントの提案') && pendingText.includes('OpenShell の自動提案') && pendingText.includes('37 回') && pendingText.includes('iwato リポジトリにブランチを push する'), 'waiting: the agent\'s and OpenShell\'s proposals with their counts and intent');
     // The GitHub provider's initial rule (ADR 0022): a rule of the policy,
     // marked with the credential its endpoints carry.
     const prov = rule('provider_github_personal');
@@ -121,148 +124,113 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(undoText.includes('広げたプログラム (/sandbox/.local/share/mise/installs/node/*/bin/node) も外します') && undoText.includes('規則ごと消えます') && undoText.includes('npm.pkg.github.com:443'), 'undoing says what goes with the rule');
     await page.screenshot({ path: path.join(dir, 'undo-confirm.png') });
     await page.click('#confirm-ok');
-    await pending.locator('.proposal-item', { hasText: 'registry.npmjs.org' }).waitFor();
+    await pending.locator('.review-item', { hasText: /^registry\.npmjs\.org/ }).waitFor();
     check(await rule('allow_registry_npmjs_org_443').count() === 0 && (await current.locator('.panel-meta .apply-badge').first().innerText()) === '変更済み · 反映待ち', 'the rule is gone, the proposal waits again, the policy shows 反映待ち');
     // Put back and undone: approved without its rule.
     await unlinked.getByRole('button', { name: '規則を戻して取り消す' }).click();
     await dialog.waitFor();
     await page.click('#confirm-ok');
-    await pending.locator('.proposal-item', { hasText: 'mise-versions.jdx.dev' }).waitFor();
+    await pending.locator('.review-item', { hasText: /^mise-versions\.jdx\.dev/ }).waitFor();
     check(await unlinked.count() === 0 && await rule('allow_mise_versions_jdx_dev_443').count() === 0, 'the rule went back and out again: the proposal waits again');
     // A rejected proposal: approved as proposed.
     await rejectedList.locator('.proposal-item', { hasText: '/usr/bin/curl' }).getByRole('button', { name: '承認する' }).click();
     await dialog.waitFor();
-    check(await page.locator('#approve-form').isHidden() && (await page.locator('#confirm-text').innerText()).includes('提案どおり'), 'a rejected proposal is approved as proposed');
+    check((await page.locator('#confirm-text').innerText()).includes('提案どおり') && (await page.locator('#approve-risks').innerText()).includes('検査せずに許可します (L4)'), 'a rejected proposal is approved as proposed, its L4 warned');
     await page.click('#confirm-ok');
     await rule('allow_mise_versions_jdx_dev_443').waitFor();
     check((await rejectedList.innerText()).startsWith('却下した提案 (1)'), 'it left the rejected list for the policy');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
     await page.screenshot({ path: path.join(dir, 'lists-after.png'), fullPage: true });
 
-    // The approve dialog: a versioned program widened to a glob, reads only,
-    // the paths seen narrowed by a segment click; a live summary.
-    const claudeItem = panel.locator('.proposal-item', { hasText: 'downloads.claude.ai' });
-    await claudeItem.getByRole('button', { name: '承認', exact: true }).click();
-    await dialog.waitFor();
-    const form = page.locator('#approve-form');
-    check(await form.isVisible() && await page.locator('#approve-scope').isHidden() && await page.locator('#approve-access-read').isChecked(), 'the approve dialog starts with reads only');
-    check(await page.locator('#approve-binary').inputValue() === '/sandbox/.local/share/claude/versions/*', 'the program field starts with the versions as *');
-    const chips = await page.locator('#approve-binary-chips .approve-chip').evaluateAll((els) => els.map((e) => e.dataset.path));
-    check(chips.join(' ') === '/sandbox/.local/share/claude/versions/2.1.293 /sandbox/.local/share/claude/versions/* /**', 'the candidates go narrow to wide (' + chips.join(' ') + ')');
-    const rows = page.locator('#approve-path-rows .approve-path input');
-    check(await rows.count() === 2 && await rows.first().inputValue() === '/claude-code-releases/2.1.294/manifest.json', 'the paths seen fill the list');
-    const fits = async () => dialog.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1);
-    check(await fits(), 'the approve dialog does not scroll sideways');
-    check((await page.locator('#approve-head .approve-host').innerText()) === 'downloads.claude.ai' && await page.locator('#approve-writes').isHidden() && !(await page.locator('#approve-more').evaluate((el) => el.open)), 'the destination leads; reads only shows no writes; 詳細 starts closed');
-    await page.screenshot({ path: path.join(dir, 'approve-dialog.png') });
-    await page.locator('#approve-more > summary').click();
-    await page.locator('#approve-binary-chips .approve-chip[data-path="/sandbox/.local/share/claude/versions/*"]').click();
-    await page.locator('#approve-path-rows .approve-path').first().locator('.approve-seg', { hasText: '/manifest.json' }).click();
-    check(await rows.first().inputValue() === '/claude-code-releases/2.1.294/*', 'a segment click makes it *');
-    await page.locator('#approve-path-rows .approve-path').nth(1).getByRole('button', { name: 'このパスを削除' }).click();
-    const summary = (await page.locator('#approve-summary > p').evaluateAll((els) => els.map((e) => e.textContent))).join(' | ');
-    check(summary === 'downloads.claude.ai | 読み取りだけ (GET・HEAD・OPTIONS) | /claude-code-releases/2.1.294/* | プログラム: /sandbox/.local/share/claude/versions/*', 'the summary says what it allows: ' + summary);
-    check(await page.locator('#approve-binary-check').innerText().then((t) => t.startsWith('✓')), 'the glob matches the proposed program');
-    check(await fits(), 'and still fits after the edits');
-    await form.evaluate((el) => el.scrollIntoView({ block: 'start' }));
-    await page.screenshot({ path: path.join(dir, 'approve-dialog-edited.png') });
-    await dialog.locator('.login-body').evaluate((el) => { el.scrollTop = el.scrollHeight; });
-    await page.screenshot({ path: path.join(dir, 'approve-dialog-bottom.png') });
-    // A bad program holds the approval back.
-    await page.fill('#approve-binary', 'claude');
-    check(await page.locator('#confirm-ok').isDisabled() && await page.locator('#approve-error').isVisible(), 'a relative program cannot be approved');
-    await page.locator('#approve-binary-chips .approve-chip[data-path="/sandbox/.local/share/claude/versions/*"]').click();
-    await page.click('#confirm-ok');
+    // The opened proposal (ADR 0022): beside the list on a PC, under it on
+    // a phone. What it allows, narrowed by unchecking; the host checks;
+    // the rule it adds as YAML.
+    const reviewBox = pending.locator('.review-detail');
+    // A host as a whole word (not a substring of another host).
+    const hostRE = (host) => new RegExp('^' + host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9.-])');
+    const item = (host, also) => { const l = pending.locator('.review-item').filter({ hasText: hostRE(host) }); return also ? l.filter({ hasText: also }) : l; };
+    const openItem = async (host, also) => { await item(host, also).click(); await reviewBox.locator('.review-host').filter({ hasText: hostRE(host) }).waitFor(); };
+    const rows = () => reviewBox.locator('.review-rule').evaluateAll((els) => els.map((e) => (e.querySelector('input').checked ? '+ ' : '- ') + e.innerText.replace(/\s+/g, ' ').trim()));
+    const fits = () => panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1);
+    const approve = async () => {
+      const answer = page.waitForResponse((r) => r.url().endsWith('/proposals/approve'));
+      await reviewBox.getByRole('button', { name: '承認', exact: true }).click();
+      return (await answer).status();
+    };
+    const settled = () => page.waitForFunction(() => { const b = document.querySelector('.terminal-card.selected .review-detail'); return b && !b.querySelector('.review-warn[data-level=wait]'); });
+    await openItem('downloads.claude.ai');
+    await settled();
+    check((await rows()).join(' | ') === '+ GET /claude-code-releases/2.1.294/manifest.json | + GET /claude-code-releases/2.1.294/linux-x64/claude', 'the rules seen, checked: ' + (await rows()).join(' | '));
+    const reviewText = await reviewBox.innerText();
+    check(reviewText.includes('OpenShell が止めた接続から作った下書き') && reviewText.includes('/sandbox/.local/share/claude/versions/2.1.293 (参考。許可はプログラムを問いません)') && reviewText.includes('あり (HTTP の要求を検査)'), 'the reason, the program as information, the inspection');
+    const okWarn = await reviewBox.locator('.review-warn[data-level=ok]').innerText();
+    check(okWarn.includes('危険ドメインのチェック: 問題なし') && okWarn.includes('1.1.1.2 は通常の応答') && okWarn.includes('登録から 18 年'), 'nothing found: the facts: ' + okWarn);
+    await reviewBox.locator('.review-rule', { hasText: 'linux-x64' }).locator('input').uncheck();
+    check((await reviewBox.locator('.review-rule', { hasText: 'linux-x64' }).getAttribute('data-off')) === 'true', 'an unchecked rule is struck through');
+    await reviewBox.locator('.review-diff > summary').click();
+    await page.waitForFunction(() => { const d = document.querySelector('.terminal-card.selected .review-diff-body'); return d && d.textContent.includes('manifest.json') && !d.textContent.includes('linux-x64'); });
+    check((await reviewBox.locator('.review-diff-body').innerText()).includes('+   allow_downloads_claude_ai_443:'), 'the diff adds the narrowed rule');
+    check(await fits(), 'the opened proposal does not scroll sideways');
+    await reviewBox.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(dir, 'review.png') });
+    check(await approve() === 200, 'approved');
     const raw = rule('allow_downloads_claude_ai_443');
     await raw.waitFor();
     await open('allow_downloads_claude_ai_443');
     const rawText = await raw.innerText();
-    check(rawText.includes('2.1.293 を /** に広げて承認') && ['GET', 'HEAD', 'OPTIONS'].every((m) => rawText.includes(m + ' /claude-code-releases/2.1.294/*')) && !rawText.includes('linux-x64'), 'the approved rule is for every program, with reads on the path, from its proposal: ' + rawText);
+    check(rawText.includes('GET /claude-code-releases/2.1.294/manifest.json') && !rawText.includes('linux-x64') && rawText.includes('すべてのプログラム'), 'the approved rule is for every program, with only the rule kept: ' + rawText);
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     // Not inspected, to where the attached GitHub provider's token goes
-    // (uploads.github.com, bound in its initial rule): as proposed, or with
-    // only the program widened, OpenShell would refuse it, so Iwato does,
-    // with the way out. Reads only go through, carrying the credential.
-    const ghItem = panel.locator('.proposal-item', { hasText: 'uploads.github.com' });
-    const approveOnce = async (prepare) => {
-      await ghItem.getByRole('button', { name: '承認', exact: true }).click();
-      await dialog.waitFor();
-      await prepare();
-      const answer = page.waitForResponse((r) => r.url().endsWith('/proposals/approve'));
-      await page.click('#confirm-ok');
-      return (await answer).status();
-    };
-    const refusal = panel.locator('.panel-error', { hasText: 'github-personal' });
-    let status = await approveOnce(async () => {
-      check(await page.locator('#approve-access-read').isChecked(), 'an uninspected HTTPS proposal starts with reads only');
-      await page.locator('#approve-more > summary').click();
-      await page.check('#approve-access-all');
-      check((await page.locator('#approve-writes').innerText()).includes('すべてのメソッドとパス (検査しません)'), 'as proposed, uninspected: shown as writes');
-    });
-    await refusal.waitFor();
-    check(status === 409 && (await refusal.innerText()).includes('「読み取りだけ」か「書き込みも許可」'), 'approving it as proposed is refused, with the way out');
-    check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the refusal does not make the panel scroll sideways');
-    await refusal.screenshot({ path: path.join(dir, 'approve-conflict.png') });
-    status = await approveOnce(async () => {
-      await page.locator('#approve-more > summary').click();
-      await page.locator('#approve-binary-chips .approve-chip[data-path="/usr/bin/*"]').click();
-      await page.check('#approve-access-all');
-    });
-    await refusal.waitFor();
-    check(status === 409, 'with only the program widened, still refused');
-    status = await approveOnce(async () => {});
+    // (uploads.github.com, bound in its initial rule): GET and HEAD to
+    // start with; L4 would carry the credential uninspected, which OpenShell
+    // refuses, so the preview says so and 承認 waits.
+    await openItem('uploads.github.com');
+    await settled();
+    check((await rows()).join(' | ') === '+ GET /** (すべて) | + HEAD /** (すべて) | - POST /** (すべて) | - PUT /** (すべて) | - PATCH /** (すべて) | - DELETE /** (すべて) | - 検査せずにすべての通信を通す (L4) — uploads.github.com', 'an L4 proposal starts with GET and HEAD: ' + (await rows()).join(' | '));
+    check((await reviewBox.locator('.review-warn[data-level=amber]').allInnerTexts()).some((w) => w.includes('提案は L4')), 'the L4 proposal is noted');
+    await reviewBox.locator('.review-grant').waitFor();
+    check(await reviewBox.locator('.review-grant input').isChecked() && (await reviewBox.locator('.review-grant').innerText()).includes('github-personal のトークンを付ける'), 'narrowed under the provider\'s endpoint, the token is on');
+    await reviewBox.locator('.review-rule[data-kind=l4] input').check();
+    check(await reviewBox.locator('.review-rule', { hasText: 'POST' }).locator('input').isDisabled(), 'L4 makes the methods moot');
+    await reviewBox.locator('.review-error', { hasText: 'github-personal' }).waitFor();
+    check(await reviewBox.getByRole('button', { name: '承認', exact: true }).isDisabled(), 'OpenShell would refuse it: 承認 waits');
+    await reviewBox.screenshot({ path: path.join(dir, 'review-refused.png') });
+    await reviewBox.locator('.review-rule[data-kind=l4] input').uncheck();
+    await page.waitForFunction(() => { const b = document.querySelector('.terminal-card.selected .review-detail .review-error'); return b && b.hidden; });
+    check(await approve() === 200, 'GET and HEAD go through');
     const uploads = rule('allow_uploads_github_com_443');
     await uploads.waitFor();
-    check(status === 200 && await refusal.count() === 0, 'reads only go through and clear the refusal');
     await open('allow_uploads_github_com_443');
-    check((await uploads.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'as specific as the provider\'s endpoint, it carries the credential');
+    check((await uploads.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'it carries the credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
-    // OpenShell's proposal for api.github.com, where the attached GitHub
-    // provider's initial rule enforces on /**: 監査 would make the two
-    // disagree, which OpenShell refuses, so the dialog disables it and says why.
-    const miseItem = pending.locator('.proposal-item', { hasText: 'lib/mise/mise' });
-    // In English first (the page words the reason), then in Japanese again.
+    // OpenShell's proposal for api.github.com whose only rule is a GET /
+    // nobody saw: the methods on every path, reads checked.
+    await openItem('api.github.com', 'OpenShell の自動提案');
+    check((await rows()).slice(0, 3).join(' | ') === '+ GET /** (すべて) | + HEAD /** (すべて) | - POST /** (すべて)', 'a placeholder GET / opens as reads on every path');
+    // In English, then in Japanese again.
     const relist = async (lang) => {
       await page.evaluate((l) => window.IwatoI18n.setPreference(l), lang);
       await Promise.all([page.waitForResponse((r) => r.url().endsWith('/proposals') && r.request().method() === 'GET'), panel.locator('[data-i18n="policy.refresh"]').click()]);
     };
     await relist('en');
-    await miseItem.getByRole('button', { name: 'Approve', exact: true }).click();
-    await dialog.waitFor();
-    const enNote = await page.locator('#approve-blocked').textContent();
-    check(enNote.startsWith('"Audit" is not available: api.github.com:443/** has rule provider_github_personal') && enNote.includes('Mode: enforce in provider_github_personal') && !/[\u3040-\u30ff]/.test(enNote), 'the reason in English: ' + enNote);
-    await page.locator('#approve-more > summary').click();
-    await page.screenshot({ path: path.join(dir, 'approve-blocked-en.png') });
-    await page.click('#confirm-cancel');
+    await reviewBox.getByRole('button', { name: 'Approve', exact: true }).waitFor();
+    const enText = await reviewBox.innerText();
+    check(enText.includes('What it allows') && enText.includes('(for reference: the approval is for every program)') && !/[぀-ヿ]/.test(enText), 'the opened proposal in English');
     await relist('ja');
-    await miseItem.getByRole('button', { name: '承認', exact: true }).click();
-    await dialog.waitFor();
-    const blockedNote = await page.locator('#approve-blocked').textContent();
-    check(await page.locator('#approve-access-audit').isDisabled() && !(await page.locator('#approve-access-read').isDisabled()) && await page.locator('#approve-access-read').isChecked(), 'the dialog disables 監査 where the provider enforces');
-    check(blockedNote.includes('「監査」は選べません') && blockedNote.includes('規則 provider_github_personal') && blockedNote.includes('遮断 (enforce)'), 'and names the provider\'s rule: ' + blockedNote);
-    check(await fits(), 'the dialog with the reason does not scroll sideways');
-    // Its only rule, GET /, was seen by no one (OpenShell copied it):
-    // no request seen, the list empty (all paths), a hint to narrow.
-    const miseSeen = await page.locator('#approve-seen').innerText();
-    check(miseSeen === '見えた要求はありません · 空ならすべてのパス' && await page.locator('#approve-path-rows .approve-path').count() === 0, 'a placeholder GET / is no request seen: ' + miseSeen);
-    check((await page.locator('#approve-path-suggest').innerText()).includes('/repos/*/*/**') && (await page.locator('#approve-summary > .approve-sum-paths').innerText()) === 'すべてのパス', 'reads on all paths, with a hint to narrow');
-    await page.screenshot({ path: path.join(dir, 'approve-blocked.png') });
-    await page.locator('#approve-more > summary').click();
-    await page.locator('#approve-blocked').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: path.join(dir, 'approve-blocked-details.png') });
-    await page.click('#confirm-ok');
+    check(await approve() === 200, 'approved');
     const miseRule = rule('allow_api_github_com_443');
     await miseRule.waitFor();
     await open('allow_api_github_com_443');
     const miseText = await miseRule.innerText();
-    check(miseText.includes('読み取りだけ') && !miseText.includes('GET /'), 'approved: reads on every path, no rule on exactly /');
+    check(miseText.includes('GET /** (すべて)') && miseText.includes('HEAD /** (すべて)') && !miseText.includes('GET / (ルートだけ)'), 'approved: GET and HEAD on every path, no rule on exactly /: ' + miseText);
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
     // A rule by hand enforcing where the policy audits (GitHub Enterprise)
     // is refused by the server, naming the rules.
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();
     await dialog.waitFor();
+    check(await page.locator('#policy-rule').isVisible() && await page.locator('#policy-binaries').count() === 0, 'the add form asks no program (every program)');
     await page.fill('#policy-rule', 'curl_audit');
     let adds = 0;
     const countAdd = (r) => { if (r.url().endsWith('/policy/add')) adds++; };
@@ -274,7 +242,6 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();
     await dialog.waitFor();
     check(await page.inputValue('#policy-rule') === 'curl_audit', 'as キャンセル, it keeps what was typed');
-    await page.fill('#policy-binaries', '/usr/bin/curl');
     await page.fill('#policy-host', 'github.example.com');
     await page.fill('#policy-ports', '443');
     await page.check('#approve-scope-full');
@@ -288,46 +255,22 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the refusal does not make the panel scroll sideways');
     await ambError.screenshot({ path: path.join(dir, 'edit-ambiguity.png') });
 
-    // Writes seen (git push): methods and paths, as seen.
-    const gitItem = pending.locator('.proposal-item', { hasText: 'git-remote-http' });
-    await gitItem.getByRole('button', { name: '承認', exact: true }).click();
-    await dialog.waitFor();
-    check(await page.locator('#approve-access-rules').isChecked() && await page.locator('#approve-path-rows select').first().isVisible(), 'writes seen start with methods and paths');
-    // Under the GitHub provider's github.com/**: its credential by default.
-    check((await page.locator('#approve-grant').innerText()).includes('プロバイダーの認証情報を付ける: github-personal → github.com/mtsmfm/iwato.git/') && await page.locator('#approve-attach').isChecked() && (await gitItem.locator('.proposal-provider[data-kind=rule]').innerText()).includes('github-personal の認証情報が付きます'), 'a proposal under a provider\'s endpoint carries its credential by default, said in the list and the dialog');
-    const gitChips = await page.locator('#approve-binary-chips .approve-chip').evaluateAll((els) => els.map((e) => e.dataset.path));
-    check(gitChips.join(' ') === '/usr/lib/git-core/git-remote-http /usr/lib/git-core/* /**', 'no version: no version candidates');
-    check(await page.locator('#approve-writes').isVisible() && (await page.locator('#approve-writes').innerText()).includes('POST /mtsmfm/iwato.git/git-receive-pack') && await page.locator('#approve-summary').getAttribute('data-write') === 'true', 'a write is spelled out and the summary is marked');
-    check(await fits(), 'the push dialog does not scroll sideways');
-    await page.screenshot({ path: path.join(dir, 'approve-dialog-push.png') });
-    await dialog.locator('.login-body').evaluate((el) => { el.scrollTop = el.scrollHeight; });
-    await page.screenshot({ path: path.join(dir, 'approve-dialog-push-bottom.png') });
-    await dialog.locator('.login-body').evaluate((el) => { el.scrollTop = 0; });
-    // Selecting text by dragging out of the dialog onto the backdrop keeps
-    // it open; a click on the backdrop closes it.
-    const textBox = await page.locator('#confirm-text').boundingBox();
-    await page.mouse.move(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(3, 3, { steps: 5 });
-    await page.mouse.up();
-    check(await dialog.isVisible(), 'dragging a text selection out of the dialog keeps it open');
-    await page.mouse.click(3, 3);
-    check(await dialog.isHidden(), 'a click on the backdrop closes the dialog');
-    await gitItem.getByRole('button', { name: '承認', exact: true }).click();
-    await dialog.waitFor();
-    await page.keyboard.press('Escape');
-    check(await dialog.isHidden(), 'Escape closes the approve dialog');
-
+    // Writes seen (git push), under the GitHub provider's github.com/**:
+    // its credential by default, said in the list.
+    await openItem('github.com');
+    check((await rows()).join(' | ') === '+ GET /mtsmfm/iwato.git/info/refs | + POST /mtsmfm/iwato.git/git-receive-pack', 'writes seen: as seen');
+    check(await reviewBox.locator('.review-grant input').isChecked() && (await item('github.com').locator('.review-chip').allInnerTexts()).includes('トークン'), 'the token is on by default, marked in the list');
+    check((await reviewBox.locator('.review-rule[data-write=true] .review-method').innerText()) === 'POST', 'a write is marked');
+    await reviewBox.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(dir, 'review-push.png') });
     // Approving: the change shows 反映待ち until the sandbox loads it (the
     // fake takes 3 seconds, in place of the sandbox's settings poll, about
     // every 10 seconds), then 反映済み.
-    await gitItem.getByRole('button', { name: '承認', exact: true }).click();
-    await page.locator('#confirm-panel').waitFor();
-    await page.click('#confirm-ok');
+    check(await approve() === 200, 'approved');
     const github = rule('allow_github_com_443');
     const ruleBadge = github.locator('.apply-badge');
     await ruleBadge.waitFor();
-    check(await ruleBadge.innerText() === '承認済み · 反映待ち' && await pending.locator('.proposal-item', { hasText: 'git-remote-http' }).count() === 0, 'an approval shows 反映待ち on its rule; the proposal left the waiting list');
+    check(await ruleBadge.innerText() === '承認済み · 反映待ち' && await item('git-remote-http').count() === 0, 'an approval shows 反映待ち on its rule; the proposal left the waiting list');
     await page.screenshot({ path: path.join(dir, 'pending-badge.png'), fullPage: true });
     await github.locator('.apply-badge[data-state=applied]').waitFor({ timeout: 10000 });
     check(true, 'it turns 反映済み once the sandbox loaded it');
@@ -336,13 +279,67 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await github.locator('.policy-src[data-source=provider-host]').innerText() === '認証情報: github-personal', 'the approved rule carries the provider\'s credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
     check(true, 'and fades away');
+    // The token can come off an endpoint more specific than the provider's.
+    await github.getByRole('button', { name: 'github-personal のトークンを外す' }).first().click();
+    await dialog.waitFor();
+    check((await page.locator('#confirm-text').innerText()).includes('トークンなしで送られます'), 'taking the token off asks first');
+    await page.click('#confirm-ok');
+    await github.getByRole('button', { name: 'github-personal のトークンを付ける' }).first().waitFor();
+    await github.getByRole('button', { name: 'github-personal のトークンを付ける' }).first().click();
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => [...document.querySelectorAll('.terminal-card.selected .policy-binding')].every((b) => b.textContent.endsWith('外す')));
+    check(true, 'and back on');
+    await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
+
+    // The host checks: a domain the filtering resolver blocks, registered
+    // 6 days ago, and an exfiltration service. Warnings, not blocks.
+    const term = card.locator('.card-tab', { hasText: 'ターミナル' });
+    await term.click();
+    const connect = card.getByRole('button', { name: /^接続/ });
+    if (await connect.isVisible() && await connect.isEnabled()) await connect.click();
+    await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached' });
+    for (const cmd of ['propose cdn-x7k2q.top', 'propose webhook.site']) {
+      await card.locator('.iw-input').focus();
+      await page.keyboard.type(cmd);
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(300);
+    }
+    await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    await item('cdn-x7k2q.top').waitFor();
+    await settled();
+    const chipsOf = (text) => item(text).locator('.review-chip').evaluateAll((els) => els.map((e) => e.dataset.level + ' ' + e.textContent));
+    await page.waitForFunction(() => [...document.querySelectorAll('.terminal-card.selected .review-item')].some((n) => n.textContent.includes('cdn-x7k2q.top') && n.textContent.includes('危険ドメイン')));
+    check((await chipsOf('cdn-x7k2q.top')).join(', ') === 'red 危険ドメイン, amber 新しいドメイン, amber 検査なし', 'the list marks the dangerous domain: ' + (await chipsOf('cdn-x7k2q.top')).join(', '));
+    await openItem('cdn-x7k2q.top');
+    await settled();
+    const warns = await reviewBox.locator('.review-warn').evaluateAll((els) => els.map((e) => e.dataset.level + ' ' + e.innerText.replace(/\s+/g, ' ')));
+    check(warns[0].startsWith('red ! 危険ドメイン: 1.1.1.2 が cdn-x7k2q.top に 0.0.0.0 を返しました') && warns[1].startsWith('amber ▲ cdn-x7k2q.top は登録から 6 日のドメインです') && !warns.some((w) => w.startsWith('ok')), 'red, then amber: ' + warns.join(' / '));
+    check(await reviewBox.getByRole('button', { name: '承認', exact: true }).isEnabled(), 'warnings never block');
+    await reviewBox.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(dir, 'review-danger.png') });
+    await openItem('webhook.site');
+    await settled();
+    check(/外部送信サービス: webhook\.site は webhook\.site です/.test(await reviewBox.locator('.review-warn[data-level=red]').innerText()), 'an exfiltration service is red');
+    // Rejecting with a reason; then まとめて却下 asks in the page.
+    await reviewBox.locator('.review-reason').fill('使いません');
+    const rejectAnswer = page.waitForRequest((r) => r.url().endsWith('/proposals/reject'));
+    await reviewBox.getByRole('button', { name: '却下', exact: true }).click();
+    check(JSON.parse((await rejectAnswer).postData()).reason === '使いません', 'the reason goes with the rejection');
+    await item('webhook.site').waitFor({ state: 'detached' });
+    const waitingNow = await pending.locator('.review-item').count();
+    await pending.getByRole('button', { name: 'まとめて却下' }).click();
+    await dialog.waitFor();
+    check((await page.locator('#confirm-text').innerText()).includes('承認待ちの提案 ' + waitingNow + ' 件をすべて却下'), 'reject-all asks first, with the count');
+    await page.screenshot({ path: path.join(dir, 'reject-all.png') });
+    await page.click('#confirm-ok');
+    await pending.getByText('承認待ちはありません。').waitFor();
+    check(/cdn-x7k2q\.top/.test(await rejectedList.innerText()), 'all were rejected');
 
     // A rule by hand: two ports, methods and paths, audit.
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();
     await dialog.waitFor();
-    check(await page.locator('#approve-form').isHidden() && await page.locator('#approve-scope-readwrite').isVisible(), 'the add dialog offers the access presets, not the approval\'s form');
+    check(await page.locator('#approve-scope-readwrite').isVisible(), 'the add dialog offers the access presets');
     await page.fill('#policy-rule', '');
-    await page.fill('#policy-binaries', '/usr/bin/curl\n/usr/bin/wget');
     await page.fill('#policy-host', 'files.example.org');
     await page.fill('#policy-ports', '443, 8443');
     await page.check('#approve-scope-rules');
@@ -359,7 +356,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await added.waitFor();
     await open('allow_files_example_org_443');
     const addedText = await added.innerText();
-    check(addedText.includes('files.example.org:443,8443 · 検査 (監査 · すべて通す)') && addedText.includes('POST /upload') && addedText.includes('/usr/bin/wget'), 'the added rule shows as entered');
+    check(addedText.includes('files.example.org:443,8443 · 検査 (監査 · すべて通す)') && addedText.includes('POST /upload') && addedText.includes('すべてのプログラム'), 'the added rule shows as entered, for every program');
 
     // One method and path out, then an endpoint into an existing rule.
     await added.getByRole('button', { name: 'POST /upload を外す' }).click();
@@ -368,7 +365,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(!(await current.innerText()).includes('POST /upload') && (await added.innerText()).includes('GET /pub/**'), 'a method and path came out, the rest stayed');
     await open('allow_pypi_org_443');
     await rule('allow_pypi_org_443').getByRole('button', { name: '宛先を追加' }).click();
-    check(await page.locator('#policy-binaries').isHidden() && await page.locator('#policy-rule').inputValue() === 'allow_pypi_org_443', 'adding to a rule keeps its programs');
+    check(await page.locator('#policy-rule').inputValue() === 'allow_pypi_org_443', 'adding to a rule names it');
     await page.fill('#policy-host', 'mirror.example.org');
     await page.fill('#policy-ports', '443');
     await page.check('#approve-scope-read');
@@ -450,15 +447,58 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await provDenied.count() === 0 && (await prov.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'the provider\'s endpoint allows it now, still with the credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
+    // The history: the policy repository's commits, each with its diff
+    // and, but the first, 取り消す.
     await current.getByRole('button', { name: '履歴' }).click();
     const history = panel.locator('.policy-history');
-    await history.getByText('版 6').waitFor();
-    await history.locator('.policy-revision', { hasText: '版 1 ·' }).getByRole('button', { name: '見る' }).click();
-    await history.locator('.policy-revision-rules').waitFor();
-    const old = await history.locator('.policy-revision-rules').innerText();
-    check(old.includes('allow_pypi_org_443') && !old.includes('allow_api_example_com_443') && !old.includes('_provider_') && await history.locator('.policy-revision-rules button').count() === 0, 'an old revision shows read-only (without the providers\' rules, which no revision holds)');
+    await history.locator('.policy-commit').first().waitFor();
+    const commits = await history.locator('.policy-commit-what').allInnerTexts();
+    check(commits.some((c) => c.startsWith('Approve proposal fake-git as rule allow_github_com_443')) && /^Start from the template|^Import the policy/.test(commits.at(-1)) && await history.locator('.policy-commit').last().getByRole('button', { name: /を取り消す$/ }).count() === 0, 'the commits, newest first; the first cannot be undone: ' + commits.slice(-2).join(' / '));
+    const presetCommit = history.locator('.policy-commit').filter({ hasText: 'Allow requests on' }).first();
+    await presetCommit.getByRole('button', { name: /の差分を見る$/ }).click();
+    await history.locator('.policy-commit-diff .diff-add').first().waitFor();
+    check((await history.locator('.policy-commit-diff').innerText()).includes('+'), 'a commit shows its diff');
     await history.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(dir, 'history.png'), fullPage: true });
+    // Undo the method and path added to the provider's endpoint.
+    await presetCommit.getByRole('button', { name: /を取り消す$/ }).click();
+    await dialog.waitFor();
+    check((await page.locator('#confirm-text').innerText()).includes('を取り消しますか'), 'reverting asks first');
+    await page.click('#confirm-ok');
+    await history.locator('.policy-commit-what').first().filter({ hasText: /^Revert / }).waitFor().catch(async () => console.log('error: ' + await panel.locator('.panel-error').innerText().catch(() => '')));
+    await prov.locator('.policy-allow', { hasText: 'POST /repos/mtsmfm/iwato/releases' }).waitFor({ state: 'detached' });
+    check(true, 'the revert is a commit of its own, and the rule is as before');
+    await current.getByRole('button', { name: '履歴を閉じる' }).click();
+    await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
+
+    // A change made outside Iwato: a banner with import and overwrite; the
+    // policy screen's changes wait for it.
+    await term.click();
+    await card.locator('.iw-input').focus();
+    await page.keyboard.type('drift');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.keyboard.type('propose later.example');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    const drift = panel.locator('.policy-drift');
+    await drift.waitFor();
+    check((await drift.innerText()).includes('Iwato の外でポリシーが変更されました。') && await drift.getByRole('button', { name: '取り込む' }).isVisible(), 'the drift banner shows in the header');
+    await page.screenshot({ path: path.join(dir, 'drift.png') });
+    await open('allow_pypi_org_443');
+    await rule('allow_pypi_org_443').getByRole('button', { name: '宛先 mirror.example.org:443 を外す' }).click();
+    await page.click('#confirm-ok');
+    await panel.locator('.panel-error', { hasText: '取り込むか Iwato の版で上書きしてから' }).waitFor();
+    check(true, 'a change waits for the drift to be settled');
+    await drift.getByRole('button', { name: 'Iwato の版で上書き' }).click();
+    await dialog.waitFor();
+    await page.click('#confirm-cancel');
+    await drift.getByRole('button', { name: '取り込む' }).click();
+    await drift.waitFor({ state: 'hidden' });
+    await rule('outside_change').waitFor();
+    check(true, 'imported: the banner goes, the change outside is in the policy');
+    await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
     // Network presets: the fake's own one, with a parameter, goes in and
     // out again.
     await current.getByRole('button', { name: 'プリセット', exact: true }).click();
@@ -605,44 +645,32 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     if (await expStart.isVisible() && await expStart.isEnabled()) { await expStart.click(); await page.waitForTimeout(1500); }
     await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
     const expPending = exp.locator('.policy-pending');
-    const prItem = expPending.locator('.proposal-item', { hasText: 'octo-org/octo-repo' });
-    await prItem.waitFor();
-    check(await prItem.locator('.proposal-provider').count() === 0, 'no credential to attach for a provider made before');
-    // Over 128 rules: why it cannot be approved as proposed and what to do,
-    // at the top; narrowing says how to get under 16 paths.
-    await expPending.locator('.proposal-item', { hasText: 'api.huge.example' }).getByRole('button', { name: '承認', exact: true }).click();
-    await dialog.waitFor();
-    const hugeRisk = page.locator('#approve-risks');
-    await hugeRisk.scrollIntoViewIfNeeded();
-    const hugeText = await hugeRisk.innerText();
-    check(await inView(hugeRisk) && hugeText.includes('提案どおりには承認できません。許可する条件 (メソッドとパス) が 128 個を超えています') && hugeText.includes('「ポリシー」タブの「YAML」'), 'over 128 rules: what was exceeded and what to do: ' + hugeText);
-    const hugeError = await page.locator('#approve-error').innerText();
-    check(await page.locator('#confirm-ok').isDisabled() && /パスは 16 個までです \(いま 1[23][0-9] 個\)/.test(hugeError) && hugeError.includes('「候補」') && !hugeError.includes('提案どおり'), 'over 16 paths, with as proposed ruled out: ' + hugeError);
-    await page.locator('#approve-path-suggest .approve-chip', { hasText: '/v2/things/**' }).click();
-    check(await page.locator('#confirm-ok').isEnabled() && await fits(), 'the suggestion combines them into one path');
-    await page.screenshot({ path: path.join(dir, 'approve-huge.png') });
-    await page.click('#confirm-cancel');
-    await dialog.waitFor({ state: 'hidden' });
-    // 100 rules over four endpoints: the dialog scrolls, and OK stays
-    // reachable once approved as proposed (the 16-rule narrowing does not).
-    const manyItem = expPending.locator('.proposal-item', { hasText: 'api1.many.example' });
-    await manyItem.getByRole('button', { name: '承認', exact: true }).click();
-    await dialog.waitFor();
-    const body = dialog.locator('.login-body');
-    check(await page.locator('#approve-path-rows .approve-path').count() === 100, 'all 100 rules are path rows');
-    const manyError = page.locator('#approve-error');
-    await manyError.scrollIntoViewIfNeeded();
-    check(await page.locator('#approve-access-rules').isChecked() && await page.locator('#confirm-ok').isDisabled() && await inView(manyError) && (await manyError.innerText()).startsWith('メソッドとパスは 16 個までです (いま 100 個)。区切りを押して * や ** にし、まとめてください') && (await manyError.innerText()).includes('「詳細」の「提案どおり」で承認できます'), '書き込みも許可 over 16: how to combine them, or approve as proposed: ' + await manyError.innerText());
-    await page.locator('#approve-proposal > summary').click();
-    const lines = await page.locator('#approve-proposal-body .approve-proposal-line').allInnerTexts();
-    check(lines.length === 105 && lines.some((l) => l.includes('/v1/items/99')), 'the details list every rule: ' + lines.length);
-    check(await body.evaluate((el) => el.scrollHeight > el.clientHeight + 200 && el.getBoundingClientRect().bottom <= window.innerHeight + 1 && el.getBoundingClientRect().top >= -1) && await fits(), 'the dialog scrolls within the window');
-    await page.locator('#approve-more > summary').click();
-    await page.check('#approve-access-all');
-    await page.locator('#confirm-ok').scrollIntoViewIfNeeded();
-    check(await page.locator('#confirm-ok').isEnabled() && await inView(page.locator('#confirm-ok')) && await inView(page.locator('#confirm-cancel')), 'OK and Cancel are reachable at the end');
-    await page.screenshot({ path: path.join(dir, 'approve-many.png') });
-    await page.click('#confirm-ok');
+    const expItem = (host) => expPending.locator('.review-item').filter({ hasText: new RegExp('^' + host.replace(/[.]/g, '\\.') + '(?![a-z0-9.-])') });
+    const expReview = expPending.locator('.review-detail');
+    await expItem('api.github.com').filter({ hasText: 'エージェントの提案' }).waitFor();
+    await expItem('api.github.com').filter({ hasText: 'エージェントの提案' }).click();
+    await expReview.locator('.review-host', { hasText: /^api\.github\.com/ }).waitFor();
+    await page.waitForTimeout(800);
+    check(await expReview.locator('.review-grant').isHidden(), 'no credential to attach for a provider made before');
+    // Over 128 rules: why it cannot be approved as proposed and what to do.
+    await expItem('api.huge.example').click();
+    await expReview.locator('.review-host', { hasText: /^api\.huge\.example/ }).waitFor();
+    const hugeError = expReview.locator('.review-error');
+    await hugeError.waitFor();
+    const hugeText = await hugeError.innerText();
+    check(hugeText.includes('提案どおりには承認できません。許可する条件 (メソッドとパス) が 128 個を超えています') && hugeText.includes('「ポリシー」タブの「YAML」') && await expReview.getByRole('button', { name: '承認', exact: true }).isDisabled(), 'over 128 rules: what was exceeded and what to do: ' + hugeText);
+    await expReview.locator('.review-rule input').first().uncheck();
+    check(/16 個までです \(いま 127 個\)/.test(await hugeError.innerText()), 'narrowed, the 16 limit says how many');
+    await page.screenshot({ path: path.join(dir, 'review-huge.png') });
+    // 100 rules over four endpoints, all kept: approved as proposed.
+    await expItem('api1.many.example').click();
+    await expReview.locator('.review-host', { hasText: /^api1\.many\.example/ }).waitFor();
+    check(await expReview.locator('.review-rule').count() === 100 && await fits(), 'all 100 rules are rows');
+    const manyApprove = expReview.getByRole('button', { name: '承認', exact: true });
+    await manyApprove.scrollIntoViewIfNeeded();
+    check(await manyApprove.isEnabled() && await inView(manyApprove), '承認 is reachable at the end');
+    await page.screenshot({ path: path.join(dir, 'review-many.png') });
+    await manyApprove.click();
     await exp.locator('.policy-current').getByText('allow_many_example').first().waitFor();
     check(true, 'the 100-rule proposal is approved');
 
@@ -664,7 +692,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await policyBadge.isVisible() && (await page.title()).startsWith('(' + (titleBefore + 1) + ') ') && (await exp.locator('.proposal-bar-text').innerText()).startsWith('提案 ' + (waitingBefore + 1) + ' 件'), 'a proposal raised with the policy tab hidden shows in the badge, the title and the bar');
     check(fullReads.length === 0, 'with the policy tab hidden the page does not read the whole policy: ' + fullReads.length);
     await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
-    await expPending.locator('.proposal-item', { hasText: 'new.example' }).waitFor();
+    await expItem('new.example').waitFor();
     check(fullReads.length > 0, 'showing the tab reads it, with the new proposal');
 
     if (!phone) {

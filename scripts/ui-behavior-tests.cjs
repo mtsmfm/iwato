@@ -50,16 +50,16 @@ const response = (data, status = 200) => ({ok: status >= 200 && status < 300, st
 async function environment({touch = false, fullscreen = true, noSandboxes = false, token = true, fake = true, status = 'not-created', unauthorized = false, savedTerm = null, search = '', terms = null, push = false, androidApp = false, languages = ['ja-JP']} = {}) {
   const ids = ['terminal-grid', 'notice-title', 'notice-text', 'notice', 'server-label', 'server-state', 'connection-count', 'empty-title', 'empty-text', 'empty-state', 'refresh-button', 'fake-banner', 'sandbox-nav', 'menu-button', 'sidebar', 'sidebar-actions', 'app-shell',
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
-    'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-binaries', 'policy-any', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
+    'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
-    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-form', 'approve-binary', 'approve-binary-chips', 'approve-binary-check', 'approve-access-read', 'approve-access-rules', 'approve-access-all', 'approve-access-audit', 'approve-blocked', 'approve-paths', 'approve-seen', 'approve-path-rows', 'approve-add-path', 'approve-path-suggest', 'approve-summary', 'approve-error', 'approve-head', 'approve-grant', 'approve-blocked-line', 'approve-writes', 'approve-more', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button', 'res-totals', 'shortcut-toast'];
+    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-head', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button', 'res-totals', 'shortcut-toast'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
-  for (const id of ids) { const m = id.match(/^approve-(?:scope|access)-(\w+)$/); if (m) els[id].value = m[1]; }
+  for (const id of ids) { const m = id.match(/^approve-scope-(\w+)$/); if (m) els[id].value = m[1]; }
   els['terminal-grid'].append(els['empty-state']); els.notice.hidden = true; els['fake-banner'].hidden = true;
   for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button', 'shortcut-toast']) els[id].hidden = true;
   const shared = []; let shareFailure = null;
   const requests = [], sockets = [], terminals = [], timeouts = new Map(), intervals = [], confirmations = [];
-  let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null, resourcesHandler = null; const created = []; const copied = []; const swListeners = {};
+  let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null, resourcesHandler = null, hostHandler = null; const created = []; const copied = []; const swListeners = {};
   // The page asks in its own confirmation panel; answer it as the owner would.
   let confirmShown = false;
   Object.defineProperty(els['confirm-panel'], 'hidden', {get: () => !confirmShown, set: value => {
@@ -135,6 +135,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       if (path === '/api/push') return response(push ? {available: true, publicKey: 'B'.repeat(87)} : {available: false});
       if (path === '/api/push/subscribe') return response({ok: true});
       if (path === '/api/presence') return response({ok: true});
+      if (path.startsWith('/api/hostcheck')) { const host = decodeURIComponent(path.split('host=')[1]); return response(hostHandler ? hostHandler(host) : {host, domain: host, filter: 'clean', rdap: 'found', registered: 1200000000}); }
       if (path.startsWith('/api/resources')) return resourcesHandler ? resourcesHandler(path, opt) : response({sandboxes: {}, host: {cpus: 16, memory: 32 * 2 ** 30}, settings: {warn: 80, crit: 95}});
       if (path === '/api/pair') return response({url: 'http://127.0.0.1:8765/#token=' + 'b'.repeat(64), qr: 'data:image/png;base64,iVBORw0KGgo='});
       if (path.includes('/terminals')) return termHandler ? termHandler(path, opt) : response({terminals: ['main'], multi: false});
@@ -161,7 +162,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     // The card's actions in a fixed order, wherever they sit (the rare ones are in the ⋯ menu).
     buttons: () => { const found = {}; const walk = (n) => { if (n.dataset?.action) found[n.dataset.action] = n; n.children.forEach(walk); }; walk(card()); return ['start', 'stop', 'connect', 'disconnect', 'delete', 'update', 'reconnect', 'recreate'].map((k) => found[k]); },
     setShareFailure: value => { shareFailure = value; }, setFailStart: value => { failStart = value; }, setTermHandler: handler => { termHandler = handler; }, setConfirm: value => { confirmResult = value; }, setConfirmHandler: handler => { confirmHandler = handler; },
-    setSandboxHandler: handler => { sandboxHandler = handler; }, setPasteHandler: handler => { pasteHandler = handler; }, setVolumeHandler: handler => { volumeHandler = handler; }, setProviderHandler: handler => { providerHandler = handler; }, setFilesHandler: handler => { filesHandler = handler; }, setIngressHandler: handler => { ingressHandler = handler; }, setImagesHandler: handler => { imagesHandler = handler; }, setResetHandler: handler => { resetHandler = handler; }, setUpdateHandler: handler => { updateHandler = handler; }, setResourcesHandler: handler => { resourcesHandler = handler; },
+    setSandboxHandler: handler => { sandboxHandler = handler; }, setPasteHandler: handler => { pasteHandler = handler; }, setVolumeHandler: handler => { volumeHandler = handler; }, setProviderHandler: handler => { providerHandler = handler; }, setFilesHandler: handler => { filesHandler = handler; }, setIngressHandler: handler => { ingressHandler = handler; }, setImagesHandler: handler => { imagesHandler = handler; }, setResetHandler: handler => { resetHandler = handler; }, setUpdateHandler: handler => { updateHandler = handler; }, setResourcesHandler: handler => { resourcesHandler = handler; }, setHostHandler: handler => { hostHandler = handler; },
     setProposalHandler: handler => { proposalHandler = handler; }, setStartHandler: handler => { startHandler = handler; }, setStopHandler: handler => { stopHandler = handler; }, setUnauthorized: value => { unauthorized = value; },
     policy: () => card().children.find(node => node.className === 'info-panel policy-panel'),
     card: () => card(),
@@ -257,7 +258,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const failed = await environment(); failed.setFailStart(true); failed.buttons()[0].click(); await flush(); assert.equal(failed.card().children[7].hidden, false); assert(failed.card().children[7].children[0].textContent.includes('<img src=x')); failed.card().children[7].children[1].listeners.click(); assert.equal(failed.card().children[7].hidden, true, 'the close button closes the error'); assert.equal(failed.buttons()[0].disabled, false);
   ok('start errors remain literal text; retry controls restored');
 
-  const proposal = {id: 'a'.repeat(32), digest: 'd'.repeat(64), state: 'pending-approval', summary: '/usr/bin/git → github.com:443 <img src=x onerror=alert(1)>', createdAt: 1791036300};
+  const proposal = {id: 'a'.repeat(32), digest: 'd'.repeat(64), state: 'pending-approval', summary: '/usr/bin/git → github.com:443 <img src=x onerror=alert(1)>', createdAt: 1791036300, intent: 'push <b>it</b>', hits: 2,
+    binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/o/r.git/info/refs'}, {method: 'POST', path: '/o/r.git/git-receive-pack'}]}]};
   const proposalItem = {available: true, pending: [proposal, {id: 'bad', state: 'pending-approval', summary: 'x'}], recent: [{decision: 'rejected', host: 'evil.example', summary: '/usr/bin/curl → evil.example:443 <b>x</b>', at: 1}, {decision: 'approved', host: 'pypi.org', summary: '', at: 2}]};
   const policyRefresh = (env) => env.policy().children[0].children[0].children[1];
   // The policy as the tab reads it (hidden, it follows the list's pending proposals only).
@@ -265,219 +267,126 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const nodes = (n) => [n, ...n.children.flatMap(nodes)];
   const texts = (n) => nodes(n).map((x) => x.textContent).filter(Boolean).join('\n');
   const find = (n, label) => nodes(n).find((x) => x.tagName === 'button' && (x.textContent === label || x.attributes['aria-label'] === label));
-  // The panel: 0 the header (0 the switch and refresh, 1 status, 2 error, 3 done), 1 the lists (0 waiting, 1 the policy, 2 history, 3 rejected), 2 the YAML.
-  const pendingItems = (env) => env.policy().children[1].children[0].children.filter((n) => n.className === 'proposal-item');
-  const approveFirst = async (env) => { find(pendingItems(env)[0], '承認').click(); await flush(); };
+  // The panel: 0 the header (0 the switch and refresh, 1 status, 2 error, 3 done, 4 drift), 1 the lists (0 waiting, 1 the policy, 2 history, 3 rejected), 2 the YAML.
+  const pendingSec = (env) => env.policy().children[1].children[0];
+  const pendingItems = (env) => nodes(pendingSec(env)).filter((n) => n.className === 'review-item');
+  const review = (env) => nodes(pendingSec(env)).find((n) => n.className === 'review-detail');
+  const boxes = (env) => nodes(review(env)).filter((n) => n.type === 'checkbox');
+  const ruleRows = (env) => nodes(review(env)).filter((n) => n.className === 'review-rule').map((r) => [r.children[0].checked, texts(r).replace(/\n/g, ' '), r.dataset.off]);
+  const toggle = (box) => { box.checked = !box.checked; box.listeners.change(); };
+  const approveFirst = async (env) => { find(review(env), '承認').click(); await flush(); };
+  // The host checks and the preview wait on short timers.
+  const runTimers = async (env) => { for (let i = 0; i < 2; i++) { for (const [id, x] of [...env.timeouts]) if (x.ms === 30 || x.ms === 250) { env.timeouts.delete(id); x.fn(); } await flush(); } };
+  const scopeOf = (env) => JSON.parse(mutations(env).at(-1).body);
   const eg = await environment({fake: false}); eg.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response(proposalItem)); await readPolicy(eg);
-  const egRow = () => pendingItems(eg)[0];
-  assert.equal(pendingItems(eg).length, 1, 'malformed proposals are dropped'); assert.match(texts(egRow()), /<img/); assert.match(eg.policy().children[0].children[1].textContent, /ポリシーの提案が承認を待って/);
-  find(egRow(), '承認').click(); await flush(); assert.equal(mutations(eg).length, 0, 'a cancelled confirmation sends nothing');
-  assert.match(eg.confirmations.at(-1), /"api"/); assert.match(texts(eg.els['approve-head']), /github\.com:443/);
-  eg.setConfirm(true); find(egRow(), '承認').click(); await flush();
+  assert.equal(pendingItems(eg).length, 1, 'malformed proposals are dropped'); assert.equal(pendingItems(eg)[0].attributes['aria-current'], 'true', 'the first opens');
+  assert.match(texts(review(eg)), /push <b>it<\/b>/); assert.match(texts(review(eg)), /\/usr\/bin\/git \(参考。許可はプログラムを問いません\)/); assert.match(eg.policy().children[0].children[1].textContent, /ポリシーの提案が承認を待って/);
+  assert.deepEqual(ruleRows(eg), [[true, 'GET /o/r.git/info/refs', 'false'], [true, 'POST /o/r.git/git-receive-pack', 'false']]);
+  await approveFirst(eg);
+  assert.equal(eg.confirmations.length, 0, 'approving the opened proposal needs no further question');
   assert.equal(mutations(eg).length, 1); const approveReq = mutations(eg)[0]; assert.equal(approveReq.path, '/api/sandboxes/api/proposals/approve'); assert.equal(approveReq.method, 'POST');
-  assert.deepEqual(JSON.parse(approveReq.body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64)}, 'the request ID and the digest shown: no permanent flag'); assert.equal(approveReq.headers['X-CSRF-Token'], 'csrf123');
+  assert.deepEqual(JSON.parse(approveReq.body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'as proposed: every program, the request ID and the digest shown'); assert.equal(approveReq.headers['X-CSRF-Token'], 'csrf123');
   assert.equal(eg.policy().children[0].children[3].hidden, false); assert.match(eg.policy().children[0].children[3].textContent, /10 秒ほど/, 'an approval says it takes a moment to reach the sandbox');
   eg.card().children[2].children[0].children[1].click(); await flush(); assert(eg.intervals.some((i) => i.ms === 2000 && !i.cleared), 'the policy tab follows closely just after the owner acted');
-  ok('the policy tab approves a proposal after a confirmation, posting its request ID and digest with CSRF');
+  ok('the policy tab opens a proposal beside the list and approves it as proposed for every program, with its request ID and digest');
+
+  const approveEnv = async (pending, more = {}) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : /\/preview$/.test(path) ? response({yaml: 'allow_x:\n  endpoints: []\n'}) : response({...proposalItem, pending: [pending], ...more})); await readPolicy(env); return env; };
   {
-  // The approve dialog: the program (a glob from the candidates), the access
-  // (reads only by default) and the paths seen, in one approval.
-  const claude = '/sandbox/.claude/downloads/claude-2.1.293-linux-x64';
-  const rawProposal = {...proposal, binaries: [claude, 7], endpoints: [{host: 'raw.githubusercontent.com', ports: [443, 'x'], protocol: 'rest'}, 'bad'],
-    rules: [{method: 'GET', path: '/anthropics/claude-code/main/install.sh'}, {method: 'GET', path: '/anthropics/claude-code/main/CHANGELOG.md'}, {method: 'HEAD', path: '/anthropics/claude-code/main/install.sh'}]};
-  const approveEnv = async (pending) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response({...proposalItem, pending: [pending]})); await readPolicy(env); return env; };
-  const narrow = await approveEnv(rawProposal);
-  const pathRows = () => narrow.els['approve-path-rows'].children;
-  let shown = null;
-  narrow.setConfirmHandler(() => {
-    const e = narrow.els;
-    shown = {read: e['approve-access-read'].checked, binary: e['approve-binary'].value, chips: e['approve-binary-chips'].children.map((c) => c.dataset.path), labels: e['approve-binary-chips'].children.map((c) => c.children[1].textContent),
-      rows: pathRows().map((r) => r.input.value), seen: e['approve-seen'].textContent, summary: e['approve-summary'].children.map((c) => c.textContent), check: e['approve-binary-check'].textContent, form: e['approve-form'].hidden, access: e['approve-form'].dataset.access};
-    e['approve-binary-chips'].children[1].click();
-    shown.picked = [e['approve-binary'].value, e['approve-binary-chips'].children.map((c) => c.attributes['aria-pressed'])];
-    // Segment clicks: install.sh -> * -> ** -> back.
-    const segs = () => pathRows()[0].segs.children;
-    assert.deepEqual(segs().map((b) => b.textContent), ['/anthropics', '/claude-code', '/main', '/install.sh']);
-    segs()[3].click(); shown.star = pathRows()[0].input.value;
-    segs()[3].click(); shown.twice = pathRows()[0].input.value;
-    segs()[3].click(); shown.back = pathRows()[0].input.value;
-    segs()[3].click();
-    shown.after = e['approve-summary'].children.map((c) => c.textContent);
-    return true;
-  });
-  await approveFirst(narrow);
-  assert.equal(shown.form, false); assert.equal(shown.read, true, 'reads only by default'); assert.equal(shown.access, 'read'); assert.equal(shown.binary, '/sandbox/.claude/downloads/claude-*-linux-x64', 'versions as * by default');
-  assert.deepEqual(shown.chips, [claude, '/sandbox/.claude/downloads/claude-*-linux-x64', '/sandbox/.claude/downloads/claude-*', '/sandbox/.claude/downloads/*', '/**']);
-  assert.deepEqual(shown.labels, ['…/claude-2.1.293-linux-x64', '…/claude-*-linux-x64', '…/claude-*', '…/*', '/**'], 'the candidates are short');
-  assert.deepEqual(shown.rows, ['/anthropics/claude-code/main/install.sh', '/anthropics/claude-code/main/CHANGELOG.md'], 'the paths seen, once each');
-  assert.equal(shown.seen, '見えた要求から');
-  assert.match(shown.check, /^✓ 提案したプログラムに当たります/);
-  assert.deepEqual(shown.summary, ['raw.githubusercontent.com', '読み取りだけ (GET・HEAD・OPTIONS)', '/anthropics/claude-code/main/install.sh, /anthropics/claude-code/main/CHANGELOG.md', 'プログラム: /sandbox/.claude/downloads/claude-*-linux-x64'], 'the destination first, the program last');
-  assert.deepEqual(shown.picked, ['/sandbox/.claude/downloads/claude-*-linux-x64', ['false', 'true', 'false', 'false', 'false']]);
-  assert.equal(shown.star, '/anthropics/claude-code/main/*'); assert.equal(shown.twice, '/anthropics/claude-code/main/**'); assert.equal(shown.back, '/anthropics/claude-code/main/install.sh');
-  assert.deepEqual(shown.after.slice(2), ['/anthropics/claude-code/main/*, /anthropics/claude-code/main/CHANGELOG.md', 'プログラム: /sandbox/.claude/downloads/claude-*-linux-x64'], 'the summary follows the edits');
-  assert.deepEqual(JSON.parse(mutations(narrow)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/sandbox/.claude/downloads/claude-*-linux-x64'], readOnly: true,
-    rules: [{method: '', path: '/anthropics/claude-code/main/*'}, {method: '', path: '/anthropics/claude-code/main/CHANGELOG.md'}]}}, 'the program glob, reads only, on the paths');
-  assert.equal(narrow.els['approve-form'].hidden, true); assert.equal(narrow.els['confirm-ok'].disabled, false);
-  ok('the approve dialog widens the program, keeps reads only and narrows the paths by segment, with a live summary');
-
-  // Writes seen: methods and paths, as seen; an invalid program holds the approval back.
-  const push = await approveEnv({...proposal, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443]}], rules: [{method: 'GET', path: '/o/r.git/info/refs'}, {method: 'POST', path: '/o/r.git/git-receive-pack'}]});
-  let pushShown = null;
-  push.setConfirmHandler(() => {
-    const e = push.els;
-    pushShown = {writes: [e['approve-writes'].hidden, texts(e['approve-writes'])], summary: [e['approve-summary'].dataset.write, e['approve-summary'].children[1].textContent], rules: e['approve-access-rules'].checked, chips: e['approve-binary-chips'].children.map((c) => c.dataset.path), rows: push.els['approve-path-rows'].children.map((r) => r.method.value + ' ' + r.input.value)};
-    e['approve-binary'].value = 'git'; e['approve-binary'].listeners.input();
-    pushShown.blocked = [e['confirm-ok'].disabled, e['approve-error'].hidden, e['approve-error'].textContent, e['approve-binary-check'].dataset.state];
-    return true;
-  });
-  await approveFirst(push);
-  assert.equal(pushShown.rules, true, 'writes seen: methods and paths');
-  assert.deepEqual(pushShown.writes, [false, '書き込みを許可します\nPOST /o/r.git/git-receive-pack'], 'the writes spelled out'); assert.deepEqual(pushShown.summary, ['true', '書き込みも許可']);
-  assert.deepEqual(pushShown.chips, ['/usr/bin/git', '/usr/bin/*', '/**'], 'no version, no version candidates');
-  assert.deepEqual(pushShown.rows, ['GET /o/r.git/info/refs', 'POST /o/r.git/git-receive-pack']);
-  assert.equal(pushShown.blocked[0], true); assert.equal(pushShown.blocked[1], false); assert.match(pushShown.blocked[2], /絶対パス/); assert.equal(pushShown.blocked[3], 'error');
-  assert.equal(mutations(push).length, 0, 'not sent while the program is invalid'); assert.equal(push.els['confirm-panel'].hidden, false);
-  push.els['approve-binary'].value = '/usr/bin/git'; push.els['approve-binary'].listeners.input();
-  push.els['confirm-ok'].click(); await flush();
-  assert.deepEqual(JSON.parse(mutations(push)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/bin/git'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}, {method: 'POST', path: '/o/r.git/git-receive-pack'}]}}, 'the program is always sent');
-  ok('writes seen start with their methods and paths; an invalid program blocks the approval');
-
-  // A provider's credential (ADR 0022): on by default where the approved
-  // endpoint takes requests from a bound one, offered off for a host it is
-  // meant for; the choice goes as scope.attach.
-  const bound = {...proposal, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], protocol: 'rest'}], rules: [{method: 'POST', path: '/o/r.git/git-receive-pack'}],
-    attach: [{provider: 'gh', host: 'github.com', path: '/o/r.git/git-receive-pack'}, {host: 7}]};
-  const boundEnv = await approveEnv(bound);
-  assert.match(texts(pendingItems(boundEnv)[0]), /承認すると gh の認証情報が付きます/);
-  let grant = null;
-  boundEnv.setConfirmHandler(() => { const g = boundEnv.els['approve-grant']; grant = [g.hidden, texts(g), g.children[0].children[0].checked]; return true; });
-  await approveFirst(boundEnv);
-  assert.equal(grant[0], false); assert.match(grant[1], /プロバイダーの認証情報を付ける: gh → github\.com\/o\/r\.git\/git-receive-pack/); assert.equal(grant[2], true, 'on by default');
-  assert.equal(boundEnv.els['approve-grant'].hidden, true, 'hidden after the dialog');
-  assert.equal(JSON.parse(mutations(boundEnv)[0].body).scope.attach, true);
-  const offerEnv = await approveEnv({...bound, attach: [], offer: [{provider: 'gh', host: 'github.com', path: ''}]});
-  offerEnv.setConfirmHandler(() => { grant = offerEnv.els['approve-grant'].children[0].children[0].checked; return true; });
-  await approveFirst(offerEnv);
-  assert.equal(grant, false, 'offered off'); assert.equal(JSON.parse(mutations(offerEnv)[0].body).scope.attach, false);
-  const plainEnv = await approveEnv({...bound, attach: []});
-  plainEnv.setConfirm(true); await approveFirst(plainEnv);
-  assert.equal('attach' in JSON.parse(mutations(plainEnv)[0].body).scope, false, 'nothing to attach: not sent');
-  ok('an approval carries a provider\'s credential by default where it shadows a bound endpoint, offered off elsewhere');
-
-  // Nothing seen: an empty list (all paths) and the audit hint; audit approves to record.
-  const seedEnv = await approveEnv({...proposal, binaries: ['/usr/bin/curl'], endpoints: [{host: 'api.example.com', ports: [443]}]});
-  let seenText = '', seedRows = -1;
-  seedEnv.setConfirmHandler(() => {
-    const e = seedEnv.els; seenText = e['approve-seen'].textContent; seedRows = e['approve-path-rows'].children.length;
-    e['approve-access-read'].checked = false; e['approve-access-audit'].checked = true; e['approve-access-audit'].listeners.change();
-    return true;
-  });
-  await approveFirst(seedEnv);
-  assert.equal(seedRows, 0); assert.equal(seenText, '見えた要求はありません · 空ならすべてのパス');
-  assert.deepEqual(JSON.parse(mutations(seedEnv)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/bin/curl'], audit: true}}, 'audit approves without blocking');
-  // Not HTTP(S) by its port: as proposed, which sends nothing more.
-  const ssh = await approveEnv({...proposal, binaries: ['/usr/bin/ssh'], endpoints: [{host: 'github.com', ports: [22]}]});
-  ssh.setConfirmHandler(() => ssh.els['approve-access-all'].checked);
-  await approveFirst(ssh);
-  assert.deepEqual(JSON.parse(mutations(ssh)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/bin/ssh']}});
-  ok('no paths seen: all paths and a hint to audit; a non-HTTP port starts as proposed');
-
-  // Choices OpenShell would refuse (an endpoint already in the policy, a
-  // provider's, has other settings): disabled, with the server's reason;
-  // forced, the approval is held back.
-  const reason = '「監査」は選べません: api.github.com:443 には プロバイダー github-personal (GitHub) の規則 _provider_github_personal があり、設定が食い違います';
-  const ghBlocked = await approveEnv({...proposal, binaries: ['/usr/bin/gh'], endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest'}], blocked: {audit: {reason}, bogus: {reason: 'x'}, read: {reason: 7}}});
-  let blockedShown = null;
-  ghBlocked.setConfirmHandler(() => {
-    const e = ghBlocked.els;
-    blockedShown = {disabled: ['read', 'rules', 'all', 'audit'].map((k) => e['approve-access-' + k].disabled), read: e['approve-access-read'].checked, note: e['approve-blocked'].textContent, noteHidden: e['approve-blocked'].hidden, line: e['approve-blocked-line'].hidden};
-    e['approve-access-read'].checked = false; e['approve-access-audit'].checked = true; e['approve-access-audit'].listeners.change();
-    blockedShown.forced = [e['confirm-ok'].disabled, e['approve-error'].textContent];
-    e['approve-access-audit'].checked = false; e['approve-access-read'].checked = true; e['approve-access-read'].listeners.change();
-    return true;
-  });
-  await approveFirst(ghBlocked);
-  assert.deepEqual(blockedShown.disabled, [false, false, false, true], 'only the blocked choice is disabled (malformed ones dropped)');
-  assert.equal(blockedShown.read, true); assert.equal(blockedShown.note, reason); assert.equal(blockedShown.noteHidden, false);
-  assert.deepEqual(blockedShown.forced, [true, '「監査」は既存の規則と食い違うため選べません'], 'a blocked choice cannot be approved, with a one-line reason'); assert.equal(blockedShown.line, true, 'audit blocked: no line in the main view');
-  assert.deepEqual(JSON.parse(mutations(ghBlocked)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/bin/gh'], readOnly: true}});
-  assert.equal(ghBlocked.els['approve-access-audit'].disabled, false, 'the radios are enabled again after the dialog');
-  // The default blocked: the first choice that works.
-  const auditDefault = await approveEnv({...proposal, binaries: ['/usr/bin/gh'], endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest'}], blocked: {read: {reason: 'r'}, rules: {reason: 'r'}}});
-  let startedWith = '';
-  auditDefault.setConfirmHandler(() => { startedWith = ['read', 'rules', 'all', 'audit'].find((k) => auditDefault.els['approve-access-' + k].checked); return false; });
-  await approveFirst(auditDefault);
-  assert.equal(startedWith, 'all');
-  // A refusal from the gateway: in Japanese, its own words folded away.
-  const refused = await environment({fake: false});
-  refused.setProposalHandler((path) => /\/approve$/.test(path) ? response({error: 'OpenShell が拒否しました: api.github.com:443 で …', raw: "network endpoint ambiguity validation failed:; network policies '_provider_github' …"}, 409) : response({...proposalItem, pending: [{...proposal, endpoints: [{host: 'github.com', ports: [22]}]}]}));
-  await readPolicy(refused);
-  refused.setConfirm(true); await approveFirst(refused);
-  const errorBox = refused.policy().children[0].children[2];
-  assert.equal(errorBox.hidden, false); assert.match(errorBox.textContent, /^OpenShell が拒否しました/);
-  const raw = errorBox.children.find((c) => c.className === 'error-raw');
-  assert.ok(raw, 'the raw text is in a details toggle'); assert.equal(raw.children[0].textContent, 'OpenShell のメッセージ (原文)'); assert.match(raw.children[1].textContent, /^network endpoint ambiguity validation failed/);
-  ok('approve choices OpenShell would refuse are disabled with the reason; a gateway refusal shows in Japanese with its raw text folded');
-
-  // OpenShell's proposal whose only rule is a GET / nobody asked for (the
-  // server's placeholder): no request seen, an empty list (all paths),
-  // a hint to narrow; never a rule on exactly / unless typed.
-  const mise = await approveEnv({...proposal, binaries: ['/usr/local/lib/mise/mise'], endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest', enforcement: 'enforce'}], rules: [], placeholder: true});
-  let miseShown = null;
-  mise.setConfirmHandler(() => {
-    const e = mise.els;
-    miseShown = {seen: e['approve-seen'].textContent, rows: e['approve-path-rows'].children.length, read: e['approve-access-read'].checked, summary: e['approve-summary'].children.map((c) => c.textContent),
-      chips: e['approve-path-suggest'].children.map((c) => c.children.map((x) => x.textContent).join(' '))};
-    e['approve-access-read'].checked = false; e['approve-access-all'].checked = true; e['approve-access-all'].listeners.change();
-    miseShown.all = [e['approve-summary'].children.map((c) => c.textContent), e['approve-writes'].hidden];
-    e['approve-access-all'].checked = false; e['approve-access-read'].checked = true; e['approve-access-read'].listeners.change();
-    e['approve-path-suggest'].children[0].click();
-    miseShown.hinted = e['approve-path-rows'].children.map((r) => r.method.value + ' ' + r.input.value);
-    return true;
-  });
-  await approveFirst(mise);
-  assert.equal(miseShown.seen, '見えた要求はありません · 空ならすべてのパス');
-  assert.equal(miseShown.rows, 0, 'the list starts empty'); assert.equal(miseShown.read, true);
-  assert.deepEqual(miseShown.summary.slice(1, 3), ['読み取りだけ (GET・HEAD・OPTIONS)', 'すべてのパス']);
-  assert.deepEqual(miseShown.chips, ['例 /repos/*/*/**']);
-  assert.deepEqual(miseShown.all, [['api.github.com', '提案どおり', 'GET / (ルートだけ)', 'プログラム: /usr/local/lib/mise/mise'], true], 'as proposed says it is the root only, no write');
-  assert.deepEqual(miseShown.hinted, ['GET /repos/*/*/**']);
-  assert.deepEqual(JSON.parse(mutations(mise)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/local/lib/mise/mise'], readOnly: true, rules: [{method: '', path: '/repos/*/*/**'}]}});
-  // Approved untouched: reads on all paths, no rule on /.
-  const mise2 = await approveEnv({...proposal, binaries: ['/usr/local/lib/mise/mise'], endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest'}], rules: [], placeholder: true});
-  mise2.setConfirm(true); await approveFirst(mise2);
-  assert.deepEqual(JSON.parse(mutations(mise2)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/local/lib/mise/mise'], readOnly: true}});
-  const box2 = {window: {}, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box2); vm.runInNewContext(approveSource, box2);
-  assert.equal(box2.window.IwatoApprove.pathHint([{host: 'github.com'}]), '/*/*/**'); assert.equal(box2.window.IwatoApprove.pathHint([{host: 'example.com'}]), '');
-  // As proposed on an endpoint whose access preset is full: the dialog marks the writes; the rule goes as proposed.
-  const fullEnv = await approveEnv({...proposal, binaries: ['/usr/bin/gh'], endpoints: [{host: 'api.example.com', ports: [443], protocol: 'rest', enforcement: 'enforce', access: 'full'}], rules: [{method: 'GET', path: '/a'}]});
-  let fullShown = null;
-  fullEnv.setConfirmHandler(() => {
-    const e = fullEnv.els;
-    e['approve-access-read'].checked = false; e['approve-access-all'].checked = true; e['approve-access-all'].listeners.change();
-    fullShown = [e['approve-writes'].hidden, texts(e['approve-writes']), e['approve-summary'].dataset.write, e['approve-form'].dataset.write];
-    return true;
-  });
-  await approveFirst(fullEnv);
-  assert.deepEqual(fullShown, [false, '書き込みを許可します\nすべてのメソッド (すべてのパス)', 'true', 'true'], 'access full as proposed is a write');
-  assert.deepEqual(JSON.parse(mutations(fullEnv)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/bin/gh']}}, 'as proposed, with its program (the server approves it unchanged)');
-  ok('a placeholder GET / is no request seen: all paths, a hint to narrow, never exactly / unless typed');
-  // Several programs, one of them every program: warned in the main view
-  // with every program listed, and only the program field's is sent.
-  const multi = await approveEnv({...proposal, binaries: ['/usr/bin/gh', '/**'], endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest', enforcement: 'enforce', allowEncodedSlash: true, rules: [{method: 'POST', path: ''}]}], rules: [{method: 'GET', path: '/a'}]});
-  let multiShown = null;
-  multi.setConfirmHandler(() => { const e = multi.els; multiShown = [e['approve-risks'].hidden, texts(e['approve-risks']), e['approve-binary'].value, texts(e['approve-proposal-body']), e['approve-proposal'].hidden]; return true; });
-  await approveFirst(multi);
-  assert.equal(multiShown[0], false, 'the warnings are in the main view');
-  assert.match(multiShown[1], /提案は 2 個のプログラムを挙げています \(\/usr\/bin\/gh, \/\*\*\)。承認で許可するのは \/usr\/bin\/gh だけです/);
-  assert.match(multiShown[1], /提案はすべてのプログラム \(\/\*\*\) を挙げています/); assert.match(multiShown[1], /api\.github\.com: allow_encoded_slash/);
-  assert.equal(multiShown[2], '/usr/bin/gh'); assert.equal(multiShown[4], false);
-  assert.match(multiShown[3], /プログラム: \/usr\/bin\/gh, \/\*\*/); assert.match(multiShown[3], /allow_encoded_slash/); assert.match(multiShown[3], /許可 POST \(パスの指定なし\)/, 'a path-less rule is shown');
-  assert.deepEqual(JSON.parse(mutations(multi)[0].body).scope.binaries, ['/usr/bin/gh'], 'the program field only, never the proposal\'s');
-  ok('a proposal naming several programs or every program warns of them in the main view, lists all under its details, and sends only the chosen program');
-  // As proposed (a rejected one) with every program, a host gateway and
-  // Iwato's own port: warned, and the port cannot be approved.
+    // Narrowed: an unchecked rule leaves the approval; the rest go as rules.
+    const narrow = await approveEnv(proposal);
+    toggle(boxes(narrow)[1]);
+    assert.deepEqual(ruleRows(narrow)[1], [false, 'POST /o/r.git/git-receive-pack', 'true']);
+    await runTimers(narrow);
+    const preview = narrow.requests.filter((r) => r.path.endsWith('/proposals/preview'));
+    assert.deepEqual(JSON.parse(preview.at(-1).body).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}]}, 'the preview asks about the narrowed rule');
+    assert.match(texts(review(narrow)), /\+ {3}allow_x:/, 'the diff shows the rule added');
+    await approveFirst(narrow);
+    assert.deepEqual(scopeOf(narrow).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}]});
+    // Nothing checked: nothing to approve.
+    const none = await approveEnv(proposal);
+    for (const b of boxes(none)) toggle(b);
+    assert.equal(find(review(none), '承認').disabled, true); assert.match(texts(review(none)), /1 つ以上チェック/);
+    // OpenShell's L4 draft: GET and HEAD on every path, writes and L4 unchecked.
+    const l4 = await approveEnv({...proposal, source: 'auto', intent: '', binaries: ['/usr/bin/node'], endpoints: [{host: 'cdn.example', ports: [443]}]});
+    assert.deepEqual(ruleRows(l4).map((r) => r[0] + ' ' + r[1]), ['true GET /** (すべて)', 'true HEAD /** (すべて)', 'false POST /** (すべて)', 'false PUT /** (すべて)', 'false PATCH /** (すべて)', 'false DELETE /** (すべて)', 'false 検査せずにすべての通信を通す (L4) — cdn.example']);
+    assert.match(texts(review(l4)), /OpenShell が止めた接続から作った下書き/);
+    await runTimers(l4);
+    assert.match(texts(review(l4)), /提案は L4/);
+    toggle(boxes(l4)[2]); await runTimers(l4);
+    assert.match(texts(review(l4)), /書き込みをすべてのパスに許可します\nPOST cdn\.example\/\*\*/, 'a write on every path is warned');
+    toggle(boxes(l4)[2]);
+    await approveFirst(l4);
+    assert.deepEqual(scopeOf(l4).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}]});
+    toggle(boxes(l4)[6]);
+    assert.equal(boxes(l4)[0].disabled, true, 'L4 makes the methods moot'); assert.match(texts(review(l4)), /検査せずに許可します \(L4\)/);
+    await approveFirst(l4);
+    assert.deepEqual(scopeOf(l4).scope, {binaries: ['/**']}, 'L4: as proposed, every program');
+    // Not a web port: L4 checked from the start.
+    const ssh = await approveEnv({...proposal, endpoints: [{host: 'github.com', ports: [22]}]});
+    assert.equal(ruleRows(ssh).at(-1)[0], true); assert.equal(ruleRows(ssh)[0][0], false);
+    // Several hosts: each rule names its host.
+    const two = await approveEnv({...proposal, endpoints: [{host: 'a.example', ports: [443], protocol: 'rest', access: 'read-only'}, {host: 'b.example', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: '*', path: '/x/**'}]}]});
+    assert.deepEqual(ruleRows(two).map((r) => r[1]), ['GET a.example/** (すべて)', 'HEAD a.example/** (すべて)', 'OPTIONS a.example/** (すべて)', 'すべて b.example/x/**']);
+    toggle(boxes(two)[1]); await approveFirst(two);
+    assert.deepEqual(scopeOf(two).scope.rules, [{method: 'GET', path: '/**', host: 'a.example'}, {method: 'OPTIONS', path: '/**', host: 'a.example'}, {method: '*', path: '/x/**', host: 'b.example'}]);
+  }
+  ok('unchecked rules leave the approval; L4 drafts start with GET and HEAD, writes and L4 unchecked; the preview follows the checkboxes');
+  {
+    // A provider's credential: on where the approved endpoint takes
+    // requests from a bound one, offered off where its host is one the
+    // credential is meant for; the choice goes as scope.attach.
+    const bound = {...proposal, attach: [{provider: 'gh', host: 'github.com', ports: [443], path: '/o/r.git/info/refs'}]};
+    const boundEnv = await approveEnv(bound);
+    const grant = nodes(review(boundEnv)).find((n) => n.className === 'review-grant');
+    assert.match(texts(grant), /gh のトークンを付ける/); assert.equal(grant.children[0].checked, true);
+    await approveFirst(boundEnv); assert.equal(scopeOf(boundEnv).scope.attach, true);
+    const offerEnv = await approveEnv({...proposal, offer: [{provider: 'gh', host: 'github.com', path: ''}]});
+    assert.equal(nodes(review(offerEnv)).find((n) => n.className === 'review-grant').children[0].checked, false);
+    await approveFirst(offerEnv); assert.equal(scopeOf(offerEnv).scope.attach, false);
+    assert(nodes(pendingSec(offerEnv)).some((n) => n.className === 'review-chip' && n.textContent === 'トークン'), 'the list marks it');
+    const plainEnv = await approveEnv(proposal); await approveFirst(plainEnv);
+    assert.equal('attach' in scopeOf(plainEnv).scope, false, 'no credential, no attach');
+  }
+  ok('the token checkbox is on where the credential covers the endpoint, off where it is offered, and goes as scope.attach');
+  {
+    // The host checks: red and amber in the list and the opened proposal;
+    // the facts when nothing is found.
+    const env = await environment({fake: false});
+    const now = Math.floor(Date.now() / 1000);
+    env.setHostHandler((host) => host === 'bad.example' ? {host, domain: 'bad.example', filter: 'blocked', rdap: 'found', registered: now - 6 * 86400} : {host, domain: host, exfil: host === 'webhook.site' ? 'webhook.site' : '', filter: 'clean', rdap: 'found', registered: now - 3 * 365 * 86400});
+    env.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, endpoints: [{host: 'bad.example', ports: [443]}]}, {...proposal, id: 'c'.repeat(32), endpoints: [{host: 'webhook.site', ports: [443]}], allowedIps: [{host: 'webhook.site', ips: ['10.0.0.0/8']}]}, {...proposal, id: 'f'.repeat(32), endpoints: [{host: 'ok.example', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/a'}]}]}]}));
+    await readPolicy(env); await runTimers(env);
+    const chips = (i) => nodes(pendingItems(env)[i]).filter((n) => n.className === 'review-chip').map((n) => n.dataset.level + ' ' + n.textContent);
+    assert.deepEqual(chips(0), ['red 危険ドメイン', 'amber 新しいドメイン', 'amber 検査なし']);
+    const warns = () => nodes(review(env)).filter((n) => n.className === 'review-warn').map((n) => n.dataset.level + ' ' + texts(n).split('\n')[1]);
+    assert.deepEqual(warns().slice(0, 2), ['red 危険ドメイン: 1.1.1.2 が bad.example に 0.0.0.0 を返しました', 'amber bad.example は登録から 6 日のドメインです']);
+    assert.equal(find(review(env), '承認').disabled, false, 'warnings never block');
+    pendingItems(env)[1].click(); await runTimers(env);
+    assert.equal(warns()[0], 'red 外部送信サービス: webhook.site は webhook.site です', 'an exfiltration service');
+    assert(warns().some((w) => w === 'amber webhook.site: 解決先 IP を 10.0.0.0/8 に限定 (内部アドレスも許可)'), 'internal addresses are warned');
+    pendingItems(env)[2].click(); await runTimers(env);
+    assert.deepEqual(warns(), ['ok 危険ドメインのチェック: 問題なし (ok.example)']);
+    assert.match(texts(review(env)), /1\.1\.1\.2 は通常の応答。登録から 3 年/);
+    assert.equal(env.requests.filter((r) => r.path.startsWith('/api/hostcheck')).length, 3, 'each host is checked once');
+  }
+  ok('the host checks show red and amber warnings in the list and the opened proposal, and the facts when nothing is found');
+  {
+    // Rejecting: the reason typed goes to the agent; まとめて却下 asks first.
+    const env = await approveEnv(proposal, {pending: [proposal, {...proposal, id: 'c'.repeat(32), digest: 'e'.repeat(64)}]});
+    nodes(review(env)).find((n) => n.className === 'text-input review-reason').value = ' 不要です ';
+    find(review(env), '却下').click(); await flush();
+    assert.equal(env.confirmations.length, 0, 'rejecting one needs no confirmation');
+    assert.deepEqual(scopeOf(env), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), reason: '不要です'});
+    const before = mutations(env).length;
+    find(pendingSec(env), 'まとめて却下').click(); await flush();
+    assert.match(env.confirmations.at(-1), /承認待ちの提案 2 件をすべて却下/); assert.equal(mutations(env).length, before, 'cancelled: nothing sent');
+    env.setConfirm(true); find(pendingSec(env), 'まとめて却下').click(); await flush();
+    assert.deepEqual(mutations(env).slice(before).map((r) => JSON.parse(r.body).digest), ['d'.repeat(64), 'e'.repeat(64)]);
+    assert.match(env.policy().children[0].children[3].textContent, /2 件を却下しました/);
+  }
+  ok('rejecting sends the reason typed; reject-all asks in the page, then rejects each');
+  // A rejected proposal is approved as proposed: a host gateway and
+  // Iwato's own port are warned, and the port cannot be approved.
   {
     const gw = await environment({fake: false});
     const item = {...proposal, id: 'b'.repeat(32), state: 'rejected', binaries: ['/**'], endpoints: [{host: 'host.docker.internal', ports: [17600]}]};
@@ -487,115 +396,51 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     gw.setConfirmHandler(() => { gwShown = [texts(gw.els['approve-risks']), gw.els['confirm-ok'].disabled]; return true; });
     const rejSec = gw.policy().children[1].children[3];
     find(rejSec, '承認する').click(); await flush();
-    assert.match(gwShown[0], /すべてのプログラム \(\/\*\*\) に許可します/); assert.match(gwShown[0], /host\.docker\.internal は Iwato が動くマシンのループバックに届きます/);
-    assert.match(gwShown[0], /ポート 17600 は Iwato 自身のポートです/); assert.match(gwShown[0], /書き込み: すべてのメソッドとパス/);
+    assert.match(gwShown[0], /host\.docker\.internal は Iwato が動くマシンのループバックに届きます/);
+    assert.match(gwShown[0], /ポート 17600 は Iwato 自身のポートです/); assert.match(gwShown[0], /検査せずに許可します \(L4\)/);
     assert.equal(gwShown[1], true, 'Iwato\'s port cannot be approved');
     assert.equal(mutations(gw).filter((r) => /approve$/.test(r.path)).length, 0);
+    const ok2 = await environment({fake: false}); ok2.setConfirm(true);
+    ok2.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : response({...proposalItem, pending: [], rejected: [{...item, endpoints: [{host: 'x.example', ports: [443]}]}]}));
+    await readPolicy(ok2); find(ok2.policy().children[1].children[3], '承認する').click(); await flush();
+    assert.deepEqual(scopeOf(ok2), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64)}, 'as proposed: no scope');
   }
-  ok('as proposed, every program, a host gateway and Iwato\'s port are warned, and Iwato\'s port is not approved');
-  // A proposal that changed since it was listed: the server refuses with
-  // proposal_changed, the page reads the list again and asks about the new
-  // version, whose digest it sends.
+  ok('a rejected proposal is approved as proposed after a question that warns of a host gateway and Iwato\'s port');
   {
-    let digest = 'd'.repeat(64);
-    const ch = await environment({fake: false});
-    ch.setProposalHandler((path, opt) => {
-      if (/\/approve$/.test(path)) {
-        if (JSON.parse(opt.body).digest !== digest) return response({error: 'changed', code: 'proposal_changed'}, 409);
-        return response({ok: true});
-      }
-      return response({...proposalItem, pending: [{...proposal, digest, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443]}]}]});
-    });
-    await readPolicy(ch);
-    digest = 'e'.repeat(64);
-    let asked = 0;
-    ch.setConfirmHandler(() => { asked++; return true; });
-    await approveFirst(ch); await flush();
-    const sent = mutations(ch).filter((r) => /approve$/.test(r.path)).map((r) => JSON.parse(r.body).digest);
-    assert.deepEqual(sent, ['d'.repeat(64), 'e'.repeat(64)]); assert.equal(asked, 2, 'asked again about the new version');
-  }
-  ok('a changed proposal is refused, read again and asked about again with its new digest');
-
-  {
-  // web/approve.js: candidates, the expansion and the summary.
-  // With the page's dictionary (Japanese), as the page loads it.
+  // web/approve.js, with the page's dictionary (Japanese).
   const box = {window: {}, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box); vm.runInNewContext(approveSource, box); const A = box.window.IwatoApprove;
-  const paths = (p) => JSON.parse(JSON.stringify(A.binaryCandidates(p).map((c) => c.path)));
-  assert.deepEqual(paths('/usr/bin/python3.12'), ['/usr/bin/python3.12', '/usr/bin/python3.*', '/usr/bin/python*', '/usr/bin/*', '/**']);
-  assert.deepEqual(paths('/home/dev/.local/share/claude/versions/2.1.293'), ['/home/dev/.local/share/claude/versions/2.1.293', '/home/dev/.local/share/claude/versions/*', '/**'], 'a version as the name: versions/*, which is also the folder');
-  assert.deepEqual(paths('/opt/node-v22.1.0-rc1/bin/node'), ['/opt/node-v22.1.0-rc1/bin/node', '/opt/node-v*/bin/node', '/opt/node-v22.1.0-rc1/bin/*', '/**'], 'v22.1.0-rc1 is a version');
-  assert.deepEqual(paths('/nix/store/0a1b2c3d4e5f-curl/bin/curl'), ['/nix/store/0a1b2c3d4e5f-curl/bin/curl', '/nix/store/*-curl/bin/curl', '/nix/store/0a1b2c3d4e5f-curl/bin/*', '/**'], 'a hash');
-  assert.deepEqual(paths('/usr/bin/x86_64-linux-gnu-gcc'), ['/usr/bin/x86_64-linux-gnu-gcc', '/usr/bin/*', '/**'], 'x86_64 is no version');
-  assert.deepEqual(paths('/usr/bin/deadbeef'), ['/usr/bin/deadbeef', '/usr/bin/*', '/**'], 'hex letters alone are a word');
-  assert.deepEqual(paths(''), ['/**']); assert.deepEqual(paths('/bin'), ['/bin', '/*', '/**']);
-  assert.equal(A.binaryCandidates('/usr/bin/python3.12').find((c) => c.kind === 'all').label, 'すべてのプログラム');
-  // glob.match(p, ["/"], path): * and ? stay in a segment, ** crosses.
-  assert(A.globMatch('/sandbox/.claude/downloads/claude-*-linux-x64', '/sandbox/.claude/downloads/claude-2.1.300-linux-x64'));
-  assert(!A.globMatch('/sandbox/.claude/downloads/*', '/sandbox/.claude/downloads/sub/x'));
-  // The access to start with when OpenShell would refuse some; the paths as the owner reads them.
-  assert.equal(A.pickAccess('read', {}), 'read'); assert.equal(A.pickAccess('audit', {audit: {}}), 'read'); assert.equal(A.pickAccess('read', {read: {}, rules: {}}), 'all');
-  assert.equal(A.pickAccess('read', {read: {}, rules: {}, all: {}, audit: {}}), '');
+  const plain = (x) => JSON.parse(JSON.stringify(x));
   assert.equal(A.pathLabel('/'), '/ (ルートだけ)'); assert.equal(A.pathLabel('/**'), '/** (すべて)'); assert.equal(A.pathLabel('**'), '** (すべて)'); assert.equal(A.pathLabel('/v1/**'), '/v1/**');
-  assert(A.globMatch('/sandbox/**', '/sandbox/.claude/downloads/sub/x')); assert(A.globMatch('/**', '/usr/bin/curl'));
-  assert(!A.globMatch('/usr/bin/git', '/usr/bin/gitk')); assert(!A.globMatch('/usr/bin/python3.?', '/usr/bin/python3.9'), 'without * OpenShell compares the path as it is'); assert(A.globMatch('/usr/bin/py*3.?', '/usr/bin/python3.9')); assert(!A.globMatch('/usr/bin/a.c*', '/usr/bin/abc'), 'a dot is literal');
-  for (const bad of ['claude', '/', '/a//b', '/a/', '/a b', '/a\u200bb', '/a\tb']) assert(A.binaryError(bad), bad);
-  assert.equal(A.binaryError('/opt/日本語/x'), '');
-  assert.equal(A.defaultAccess([{method: 'GET', path: '/'}], [{host: 'h', ports: [443]}]), 'read');
-  assert.equal(A.defaultAccess([{method: '*', path: '/'}], [{host: 'h', ports: [443]}]), 'rules', 'any method may write');
-  assert.equal(A.defaultAccess([], [{host: 'h', ports: [5432], protocol: 'rest'}]), 'read', 'an inspected endpoint is HTTP');
-  assert.equal(A.defaultAccess([], [{host: 'h', ports: [5432]}]), 'all');
   assert.equal(A.toggleSegment('/a/b/c', '/a/b/c', 0), '/*/b/c'); assert.equal(A.toggleSegment('/*/b/c', '/a/b/c', 0), '/**'); assert.equal(A.toggleSegment('/**', '/a/b/c', 0), '/a/b/c');
   assert.equal(A.toggleSegment('/a/**', '/a/**', 1), '/a/*', 'a ** typed by hand turns into *');
-  assert.equal(A.pathSuggestion(['/o/r/main/a.sh', '/o/r/main/b/c.md']), '/o/r/main/**'); assert.equal(A.pathSuggestion(['/a', '/b']), ''); assert.equal(A.pathSuggestion(['/o/a']), '');
-  const build = (o) => JSON.parse(JSON.stringify(A.buildScope({binary: '/usr/bin/curl', proposed: ['/usr/bin/curl'], ...o})));
-  assert.deepEqual(build({access: 'all'}), {scope: {binaries: ['/usr/bin/curl']}, rules: [], error: ''}, 'as proposed sends the program (the server never keeps the proposal\'s)');
-  assert.deepEqual(build({access: 'read'}).scope, {binaries: ['/usr/bin/curl'], readOnly: true});
-  const expanded = build({access: 'read', rows: [{method: 'POST', path: ' /a '}, {method: 'GET', path: '/a'}, {method: 'GET', path: '/b/**'}, {method: 'GET', path: ''}]});
-  assert.deepEqual(expanded.scope, {binaries: ['/usr/bin/curl'], readOnly: true, rules: [{method: '', path: '/a'}, {method: '', path: '/b/**'}]});
-  assert.deepEqual(expanded.rules.map((r) => r.method + ' ' + r.path), ['GET /a', 'HEAD /a', 'OPTIONS /a', 'GET /b/**', 'HEAD /b/**', 'OPTIONS /b/**'], 'read-only x paths');
-  assert.deepEqual(build({access: 'read', rows: [{path: '/a'}, {path: '/**'}]}).scope, {binaries: ['/usr/bin/curl'], readOnly: true}, '/** is every path');
-  const many = build({access: 'read', rows: Array.from({length: 17}, (_, i) => ({path: '/p' + i}))});
-  assert.match(many.error, /パスは 16 個までです \(いま 17 個\)/); assert.equal(many.rules.length, 51);
-  assert.equal(build({access: 'rules', rows: Array.from({length: 17}, (_, i) => ({method: 'POST', path: '/p' + i})), tips: {suggest: true, asProposed: true}}).error, 'メソッドとパスは 16 個までです (いま 17 個)。区切りを押して * や ** にし、まとめてください。「候補」を押すと一度にまとめられます。提案全体を認めてよいなら、「詳細」の「提案どおり」で承認できます', 'over 16: how to combine them, or approve as proposed');
-  assert.match(build({access: 'rules', rows: []}).error, /1 つ以上/); assert.match(build({access: 'rules', rows: [{method: 'GET', path: 'x'}]}).error, /\/ で始まり/);
-  assert.deepEqual(build({access: 'all', binary: '/usr/bin/*'}).scope, {binaries: ['/usr/bin/*']}, 'a program alone');
-  assert.match(build({access: 'all', binary: ''}).error, /プログラムを入力/);
-  assert.equal(build({access: 'all', binary: '', proposed: []}).scope, null);
-  const sum = (o) => A.summary({binary: '/usr/bin/curl', proposed: ['/usr/bin/curl'], endpoints: [{host: 'a.example', ports: [443, 8443]}], ...o});
-  const line = (o) => { const x = sum(o); return [x.dest, x.access, x.paths, x.program, x.write].join(' | '); };
-  assert.equal(line({access: 'all'}), 'a.example:443,8443 | 提案どおり: 検査せず、すべての通信 |  | プログラム: /usr/bin/curl | true', 'as proposed, uninspected: everything, a write');
-  const rest = (more) => [{host: 'a.example', ports: [443], protocol: 'rest', enforcement: 'enforce', ...more}];
-  assert.equal(line({access: 'all', endpoints: rest(), seen: [{method: 'GET', path: '/a'}]}), 'a.example | 提案どおり | GET /a | プログラム: /usr/bin/curl | false', 'as proposed, inspected and enforced: the proposed rules');
-  // As proposed, what widens the rule beyond its rules counts as writes; what cannot be told is warned.
-  const asProposed = (endpoints, more) => [...A.writes({access: 'all', binary: '/usr/bin/curl', proposed: ['/usr/bin/curl'], endpoints, ...more})];
-  assert.deepEqual(asProposed(rest({access: 'full'})), ['すべてのメソッド (すべてのパス)'], 'access full, no rules');
-  assert.deepEqual(asProposed(rest({access: 'read-write'}), {seen: [{method: 'GET', path: '/a'}]}), ['POST・PUT・PATCH (すべてのパス)']);
-  assert.deepEqual(asProposed(rest({access: 'read-only'}), {seen: [{method: 'GET', path: '/a'}]}), [], 'read-only stays green');
-  assert.deepEqual(asProposed(rest({access: 'odd'}), {seen: [{method: 'GET', path: '/a'}]}), ['提案が許可する範囲を確かめられません (書き込みを含むかもしれません)']);
-  assert.deepEqual(asProposed(rest()), ['提案が許可する範囲を確かめられません (書き込みを含むかもしれません)'], 'no rules and no preset: unknown');
-  assert.deepEqual(asProposed(rest({enforcement: 'audit'}), {seen: [{method: 'GET', path: '/a'}]}), ['すべての要求 (止めずに通して記録)'], 'audit lets everything through');
-  assert.deepEqual(asProposed(rest({enforcement: ''}), {seen: [{method: 'GET', path: '/a'}]}), ['すべての要求 (止めずに通して記録)'], 'enforcement not reported: treated as audit');
-  assert.deepEqual(asProposed(rest({access: 'full'}), {placeholder: true}), ['すべてのメソッド (すべてのパス)'], 'the placeholder does not hide a preset');
-  assert.deepEqual(asProposed(rest(), {placeholder: true}), [], 'the placeholder alone is GET / only');
-  const audSum = sum({access: 'all', endpoints: rest({enforcement: 'audit'}), seen: [{method: 'GET', path: '/a'}]});
-  assert.deepEqual([audSum.access, audSum.paths, audSum.write], ['提案どおり: 監査 (すべての要求を通して記録)', '', true]);
-  assert.equal(line({access: 'read', binary: '/**'}), 'a.example:443,8443 | 読み取りだけ (GET・HEAD・OPTIONS) | すべてのパス | プログラム: すべて | false');
-  assert.equal(line({access: 'rules', rows: [{method: '*', path: '/x/**'}, {method: 'POST', path: '/y'}]}), 'a.example:443,8443 | 書き込みも許可 | すべてのメソッド /x/**, POST /y | プログラム: /usr/bin/curl | true');
-  assert.deepEqual([...A.writes({access: 'rules', binary: '/usr/bin/curl', proposed: ['/usr/bin/curl'], rows: [{method: 'GET', path: '/a'}, {method: 'POST', path: '/y'}]})], ['POST /y'], 'only the writes');
-  assert.equal(sum({access: 'rules', rows: [{method: 'HEAD', path: '/a'}]}).access, '読み取りだけ (指定したメソッド)');
-  assert.equal(line({access: 'audit'}), 'a.example:443,8443 | 監査: すべての要求を通して記録 |  | プログラム: /usr/bin/curl | true');
-  ok('approve.js: program candidates narrow to wide, glob semantics, read-only x paths, the 16 limit, the summary');
+  // The placeholder (a GET / nobody saw) lists the methods on every path, reads checked.
+  const ph = plain(A.reviewRows({placeholder: true, endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/'}]}]}));
+  assert.deepEqual(ph.map((r) => r.checked + ' ' + r.method + ' ' + r.path), ['true GET /**', 'true HEAD /**', 'false POST /**', 'false PUT /**', 'false PATCH /**', 'false DELETE /**']);
+  assert.deepEqual(plain(A.reviewScope({placeholder: true, endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/'}]}]}, ph)).scope.rules, [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}], 'never exactly / unless proposed by the agent');
+  // Audited as proposed: enforced with its rules.
+  const audited = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'audit', rules: [{method: 'GET', path: '/a'}]}]};
+  assert.deepEqual(plain(A.reviewScope(audited, A.reviewRows(audited))).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/a'}]});
+  const many = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: Array.from({length: 20}, (_, i) => ({method: 'GET', path: '/p' + i}))}]};
+  const manyRows = A.reviewRows(many);
+  assert.deepEqual(plain(A.reviewScope(many, manyRows)), {scope: {binaries: ['/**']}, error: ''}, 'over 16, all kept: as proposed');
+  manyRows[0].checked = false;
+  assert.match(A.reviewScope(many, manyRows).error, /16 個までです \(いま 19 個\)/);
+  const day = 86400, now = Date.UTC(2026, 9, 31) / 1000;
+  const warn = (c) => plain(A.hostWarnings({host: 'x.example', domain: 'x.example', exfil: '', filter: 'clean', rdap: 'found', ...c}, now * 1000)).map((w) => w.level + ' ' + w.text + ' / ' + w.detail);
+  assert.deepEqual(warn({registered: now - 29 * day}), ['amber x.example は登録から 29 日のドメインです / RDAP の登録日: 2026-10-02。', 'ok 危険ドメインのチェック: 問題なし (x.example) / 1.1.1.2 は通常の応答。外部送信サービスの一覧に該当なし']);
+  assert.deepEqual(warn({registered: now - 30 * day, filter: 'unknown'}), ['ok 危険ドメインのチェック: 問題なし (x.example) / 1.1.1.2 の応答は不明。登録から 30 日 (2026-10-01)。外部送信サービスの一覧に該当なし']);
+  assert.deepEqual(warn({rdap: 'unknown', filter: 'blocked'}).map((w) => w.split(' / ')[0]), ['red 危険ドメイン: 1.1.1.2 が x.example に 0.0.0.0 を返しました'], 'red: no facts line');
+  assert.deepEqual(plain(A.broadWrites([{kind: 'rule', host: '*.example.com', method: 'POST', path: '/a', checked: true, write: true}, {kind: 'rule', host: 'h', method: 'PUT', path: '/a', checked: true, write: true}, {kind: 'rule', host: 'h', method: '*', path: '**', checked: true, write: true}])), ['POST *.example.com/a', 'すべて h**'], 'a wildcard host or every path');
+  ok('approve.js: the rows, the scope (as proposed when nothing was narrowed, the 16 limit), the host warnings, broad writes');
   }
-  }
-  const internal = {...proposalItem, pending: [{...proposal, allowedIps: [{host: 'ci.tailnet.example', ips: ['100.64.0.0/10', 7]}, {host: '', ips: ['10.0.0.0/8']}, {host: 'x.example', ips: []}, 'bad', {ips: ['1.2.3.4']}]}]};
-  const intEnv = await environment({fake: false}); intEnv.setProposalHandler(() => response(internal)); await readPolicy(intEnv);
-  await approveFirst(intEnv);
-  const asked = intEnv.els['approve-head'].children.filter((c) => c.className === 'approve-warn').map((c) => c.textContent).join('\n');
-  assert.equal(asked, 'ci.tailnet.example: 解決先 IP を 100.64.0.0/10 に限定 (内部アドレスも許可)\nすべてのホスト: ホストを問わず、解決先 IP が 10.0.0.0/8 なら許可 (内部アドレスも)', 'internal addresses are warned; malformed entries are dropped');
-  ok('the approve dialog spells out the internal addresses (allowed_ips) a proposal opens');
   const withPolicy = {...proposalItem, policy: {version: 3, loaded: false, rules: [{name: 'git', binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], inspect: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/o/r.git/**'}, {method: '*', path: '/o/r.git/info/**'}], deny: [{method: 'DELETE', path: '/**'}], allowedIps: ['100.64.0.0/10', 42, '']}]},
     {name: 'api', binaries: ['/usr/bin/curl', '/usr/bin/wget'], endpoints: [{host: 'api.example.com', ports: [443, 8443], inspect: 'rest', enforcement: 'audit', access: 'read-only', rules: []}, {host: 'example.com', ports: [80], inspect: '', rules: []}]}]}};
-  const pol = await environment({fake: false, status: 'running'}); pol.setProposalHandler((path) => /\/policy\/[a-z-]+$/.test(path) && !path.endsWith('/history') ? response({ok: true}) : path.endsWith('/history') ? response({revisions: [{version: 3, status: 'pending', createdAt: 9}, {version: 2, status: 'loaded', active: true, createdAt: 8}]}) : path.endsWith('/history/2') ? response({version: 2, loaded: true, rules: [{name: 'old', binaries: ['/usr/bin/ssh'], endpoints: [{host: 'old.example', ports: [22]}]}]}) : response(withPolicy));
+  const pol = await environment({fake: false, status: 'running'}); const shaA = '1'.repeat(40), shaB = '2'.repeat(40);
+  let drifted = false;
+  pol.setProposalHandler((path) => path.endsWith('/policy/commits') ? response({commits: [{sha: shaA, time: 9, subject: 'Approve proposal x <b>', kind: 'approve'}, {sha: shaB, time: 8, subject: 'Start from the template', kind: 'import', root: true}, {sha: 'bad'}]})
+    : path.endsWith('/policy/commits/' + shaA) ? response({commit: {sha: shaA}, diff: '--- a/policy.yaml\n+++ b/policy.yaml\n@@ -1 +1,2 @@\n network_policies:\n+  x: {}\n-  y: {}'})
+    : path.endsWith('/policy/store') ? response(drifted ? {state: 'drift', version: 7, head: {sha: shaA}} : {state: 'synced', version: 3})
+    : /\/policy\/[a-z-]+$/.test(path) || path.endsWith('/revert') || path.endsWith('/import') || path.endsWith('/overwrite') ? response({ok: true}) : response(drifted ? {...withPolicy, policy: {...withPolicy.policy, version: 7}} : withPolicy));
   await readPolicy(pol);
   const current = pol.policy().children[1].children[1];
   const listed = texts(current);
@@ -619,12 +464,12 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   pol.setConfirmHandler((question) => {
     if (!/規則を追加します/.test(question)) return true;
     assert.equal(pol.els['policy-form'].hidden, false); assert.equal(pol.els['approve-scope'].dataset.mode, 'add'); assert.equal(pol.els['policy-form'].dataset.mode, 'rule');
-    pol.els['policy-binaries'].value = ' /usr/bin/curl \n\n'; pol.els['policy-host'].value = ' api.example.org '; pol.els['policy-ports'].value = '443, 8443';
+    pol.els['policy-host'].value = ' api.example.org '; pol.els['policy-ports'].value = '443, 8443';
     pol.els['approve-scope-all'].checked = false; pol.els['approve-scope-readwrite'].checked = true; pol.els['policy-audit'].checked = true;
     return true;
   });
   find(pol.policy().children[1].children[1], '規則を追加').click(); await flush();
-  assert.deepEqual(JSON.parse(posted('add')[0].body), {rule: '', host: 'api.example.org', ports: [443, 8443], binaries: ['/usr/bin/curl'], access: 'read-write', audit: true});
+  assert.deepEqual(JSON.parse(posted('add')[0].body), {rule: '', host: 'api.example.org', ports: [443, 8443], anyBinary: true, access: 'read-write', audit: true});
   assert.equal(pol.els['policy-form'].hidden, true); assert.equal(pol.els['approve-scope'].hidden, true);
   pol.setConfirmHandler((question) => {
     assert.match(question, /規則「git」に宛先を追加します/); assert.equal(pol.els['policy-form'].dataset.mode, 'endpoint'); assert.equal(pol.els['policy-rule'].value, 'git');
@@ -692,24 +537,43 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.match(question, /プロバイダーの規則「_provider_github」は変えられないので、同じ宛先 api\.github\.com:443 に規則を追加します/);
     assert.match(question, /遮断モードでメソッドとパスを指定/);
     assert.equal(den.els['policy-form'].dataset.mode, 'rule'); assert.equal(den.els['policy-host'].value, 'api.github.com'); assert.equal(den.els['policy-ports'].value, '443');
-    assert.equal(den.els['policy-binaries'].value, '/usr/bin/gh'); assert.equal(den.els['approve-scope-rules'].checked, true); assert.equal(den.els['policy-audit'].checked, false);
+    assert.equal(den.els['approve-scope-rules'].checked, true); assert.equal(den.els['policy-audit'].checked, false);
     return true;
   });
   den.els['approve-rules'].children = []; // the stand-in's textContent = '' keeps children
   const provAdd = find(cur(), '止められたリクエストから規則を追加'); assert.equal(provAdd.textContent, '規則を追加');
   provAdd.click(); await flush();
-  assert.deepEqual(JSON.parse(postedTo('add').at(-1).body), {rule: '', host: 'api.github.com', ports: [443], binaries: ['/usr/bin/gh'], rules: [{method: 'POST', path: '/repos/o/r/releases'}]});
+  assert.deepEqual(JSON.parse(postedTo('add').at(-1).body), {rule: '', host: 'api.github.com', ports: [443], anyBinary: true, rules: [{method: 'POST', path: '/repos/o/r/releases'}]});
   ok('denied requests list under their endpoint; picked ones go into add-allow, a provider\'s into a new rule by hand');
   }
   find(pol.policy().children[1].children[1], '履歴').click(); await flush();
   const hist = pol.policy().children[1].children[2]; assert.equal(hist.hidden, false);
-  assert.match(texts(hist), /版 3 · 反映待ち/); assert.match(texts(hist), /版 2 · 反映済み \(使用中\)/);
-  find(hist, '見る').click(); await flush();
-  assert.equal(pol.requests.at(-1).path, '/api/sandboxes/api/policy/history/3');
-  find(hist, '閉じる').click(); await flush();
-  nodes(hist).filter((x) => x.textContent === '見る')[1].click(); await flush();
-  assert.match(texts(hist), /old\.example:22/); assert.equal(find(hist, '規則「old」を外す'), undefined, 'an old revision is read-only');
-  ok('the history lists the revisions and shows one read-only');
+  assert.equal(pol.requests.at(-1).path, '/api/sandboxes/api/policy/commits');
+  assert.match(texts(hist), /1111111\nApprove proposal x <b>/); assert.equal(nodes(hist).filter((x) => x.className === 'policy-commit').length, 2, 'malformed commits are dropped');
+  assert.equal(find(hist, '2222222 を取り消す'), undefined, 'the first commit cannot be reverted');
+  find(hist, '1111111 の差分を見る').click(); await flush();
+  assert.deepEqual(nodes(hist).filter((x) => /^diff-/.test(x.className)).map((x) => x.className), ['diff-ctx', 'diff-ctx', 'diff-ctx', 'diff-ctx', 'diff-add', 'diff-del'], 'the diff, coloured by line');
+  pol.setConfirmHandler(null); pol.setConfirm(false);
+  find(hist, '1111111 を取り消す').click(); await flush();
+  assert.match(pol.confirmations.at(-1), /「Approve proposal x <b>」を取り消しますか/); assert.equal(pol.requests.filter((r) => r.path.endsWith('/revert')).length, 0, 'cancelled: nothing sent');
+  pol.setConfirm(true); find(hist, '1111111 を取り消す').click(); await flush();
+  assert.equal(pol.requests.filter((r) => r.path === '/api/sandboxes/api/policy/commits/' + shaA + '/revert').length, 1);
+  ok('the history lists the commits, shows a diff and reverts one after a question');
+  {
+    // A change made outside Iwato: the banner, import, overwrite after a question.
+    drifted = true; await readPolicy(pol); await flush();
+    const banner = pol.policy().children[0].children[4];
+    assert.equal(banner.hidden, false); assert.match(texts(banner), /Iwato の外でポリシーが変更されました。/); assert.match(texts(banner), /版 \(7\) が、Iwato が最後に入れた版 \(1111111\)/);
+    find(banner, '取り込む').click(); await flush();
+    assert.equal(pol.requests.filter((r) => r.path.endsWith('/policy/store/import') && r.method === 'POST').length, 1);
+    pol.setConfirm(false); find(pol.policy().children[0].children[4], 'Iwato の版で上書き').click(); await flush();
+    assert.match(pol.confirmations.at(-1), /Iwato の外での変更は消えます/); assert.equal(pol.requests.filter((r) => r.path.endsWith('/overwrite')).length, 0);
+    pol.setConfirm(true); find(pol.policy().children[0].children[4], 'Iwato の版で上書き').click(); await flush();
+    assert.equal(pol.requests.filter((r) => r.path.endsWith('/policy/store/overwrite')).length, 1);
+    drifted = false; await readPolicy(pol); await flush();
+    assert.equal(pol.policy().children[0].children[4].hidden, true, 'synced: no banner');
+  }
+  ok('a drift shows a banner with import and overwrite');
   find(pol.policy().children[1].children[1], 'プリセット').click(); await flush(); await flush();
   const presetBox = () => nodes(pol.policy().children[1].children[1]).find((x) => x.className === 'policy-presets');
   assert.match(texts(presetBox()), /パッケージのダウンロード/); assert.match(texts(presetBox()), /読めないプリセット bad\.yaml: field x not found/); assert.match(texts(presetBox()), /読めないプリセット odd\.yaml: 規則 r: \$\{x\} という params はありません/, 'a coded file error is worded by the page');
@@ -722,13 +586,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(JSON.parse(pol.requests.find((r) => r.path === '/api/sandboxes/api/presets/remove').body), 'packages');
   assert.match(pol.policy().children[0].children[3].textContent, /allow_x_443 は残しました/);
   ok('the policy tab puts a preset in with its parameters and takes one out, naming the rules it left');
-  const confirmsBefore = eg.confirmations.length; find(egRow(), '却下').click(); await flush();
-  assert.equal(eg.confirmations.length, confirmsBefore, 'rejecting needs no confirmation'); assert.equal(mutations(eg).at(-1).path, '/api/sandboxes/api/proposals/reject'); assert.deepEqual(JSON.parse(mutations(eg).at(-1).body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64)});
-  ok('rejecting is one click');
   const staleEg = await environment({fake: false}); staleEg.setConfirm(true); staleEg.setProposalHandler((path) => path.endsWith('/approve') ? response({error: 'この依頼は決定済みです'}, 409) : response(proposalItem)); await readPolicy(staleEg);
   await approveFirst(staleEg);
   assert.equal(mutations(staleEg).length, 1); assert.equal(staleEg.policy().children[0].children[2].hidden, false); assert.match(staleEg.policy().children[0].children[2].textContent, /決定済み/);
-  await staleEg.tickPoll(); assert.match(staleEg.policy().children[0].children[2].textContent, /決定済み/, 'the error stays across refreshes'); assert.equal(staleEg.confirmations.length, 1, 'nothing is resent');
+  await staleEg.tickPoll(); assert.match(staleEg.policy().children[0].children[2].textContent, /決定済み/, 'the error stays across refreshes'); assert.equal(mutations(staleEg).length, 1, 'nothing is resent');
   ok('a refused decision shows the server\'s reason, keeps it across refreshes and is not resent');
   const pendingRead = deferred(); const guarded = await environment({fake: false}); guarded.setProposalHandler(() => pendingRead.promise);
   const guardedBefore = proposalReads(guarded).length; policyRefresh(guarded).click(); policyRefresh(guarded).click(); await guarded.tickPoll(); assert.equal(proposalReads(guarded).length, guardedBefore + 1);
@@ -736,7 +597,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   ok('concurrent proposal reads coalesce');
   const mutationWait = deferred(); const busy = await environment({fake: false}); busy.setConfirm(true); busy.setProposalHandler((path) => path.endsWith('/approve') ? mutationWait.promise : response(proposalItem)); await readPolicy(busy);
   await approveFirst(busy); const busyReads = proposalReads(busy).length;
-  assert.equal(find(pendingItems(busy)[0], '却下').disabled, true); find(pendingItems(busy)[0], '却下').click(); policyRefresh(busy).click(); await busy.tickPoll();
+  assert.equal(find(review(busy), '却下').disabled, true); find(review(busy), '却下').click(); policyRefresh(busy).click(); await busy.tickPoll();
   assert.equal(proposalReads(busy).length, busyReads, 'no reads while a decision is in flight'); assert.equal(mutations(busy).length, 1);
   mutationWait.resolve(response({ok: true})); await flush(); assert(proposalReads(busy).length > busyReads);
   ok('an in-flight decision blocks repeated decisions and polling reads until it completes');
@@ -767,19 +628,19 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const pairReq = pair.requests.find(r => r.path === '/api/pair'); assert.equal(pairReq.method, 'POST'); assert.equal(pairReq.headers['X-CSRF-Token'], 'csrf123');
   assert.match(pair.els['pair-url'].textContent, /#token=b{64}$/); assert.equal(pair.els['pair-panel'].hidden, false); assert.equal(pair.els['pair-qr'].src, 'data:image/png;base64,iVBORw0KGgo='); assert.equal(pair.els['pair-qr'].hidden, false); pair.els['pair-close'].click(); assert.equal(pair.els['pair-qr'].hidden, true); assert.equal(pair.els['pair-url'].textContent, ''); assert.equal(pair.els['pair-panel'].hidden, true);
   ok('pairing issues a link only through an authenticated CSRF POST and can be dismissed');
-  const tabbed = await environment({fake: false, status: 'stopped'}); tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, id: 'c'.repeat(32), source: 'auto', summary: '/usr/bin/curl → auto.example:443'}, ...proposalItem.pending]})); await readPolicy(tabbed);
+  const tabbed = await environment({fake: false, status: 'stopped'}); tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, id: 'c'.repeat(32), source: 'auto', summary: '/usr/bin/curl → auto.example:443', endpoints: []}, ...proposalItem.pending]})); await readPolicy(tabbed);
   const [termTab, policyTab, , portsTab, viewTab] = tabbed.card().children[2].children[0].children; assert.deepEqual(tabbed.card().children[2].children[0].children.map((t) => t.textContent), ['ターミナル', 'ポリシー', 'エディタ', 'ポート', '']); assert.equal(viewTab.hidden, true);
   { const views = nodes(tabbed.card()).filter((n) => n.dataset?.view); assert.deepEqual(views.map((n) => [n.textContent, n.getAttribute('role'), n.parent.className]), [['リンク', 'menuitem', 'card-menu'], ['テキスト', 'menuitem', 'card-menu'], ['ファイル', 'menuitem', 'card-menu'], ['リソース', 'menuitem', 'card-menu']], 'the rarer views are in the ⋯ menu');
     views[2].click(); assert.equal(tabbed.card().dataset.tab, 'files'); assert.equal(viewTab.hidden, false); assert.equal(viewTab.textContent, 'ファイル', 'the open one shows as the current tab'); assert.equal(views[2].getAttribute('aria-current'), 'true'); assert.equal(termTab.getAttribute('aria-selected'), 'false');
     termTab.click(); assert.equal(viewTab.hidden, true); assert.equal(views[2].getAttribute('aria-current'), null);
     portsTab.click(); assert.equal(tabbed.card().dataset.tab, 'ports'); assert.equal(portsTab.getAttribute('aria-selected'), 'true'); assert.equal(viewTab.hidden, true, 'a tab of the row is not repeated as the view tab');
     termTab.click(); }
-  { const bar = tabbed.card().children.find((n) => n.className === 'proposal-bar'); assert.equal(bar.hidden, false); assert.equal(bar.attributes.role, 'status'); assert.equal(bar.children[0].textContent, '提案 1 件: /usr/bin/git → github.com:443 <img src=x onerror=alert(1)>', 'literal text');
+  { const bar = tabbed.card().children.find((n) => n.className === 'proposal-bar'); assert.equal(bar.hidden, false); assert.equal(bar.attributes.role, 'status'); assert.equal(bar.children[0].textContent, '提案 1 件: github.com:443 (git)');
     bar.children[2].click(); assert.equal(bar.hidden, true, 'あとで hides it'); await tabbed.tickPoll(); assert.equal(bar.hidden, true, 'until a new proposal arrives'); }
   ok('the tab row has the terminal, the policy, the editor and the ports; the other views open from the ⋯ menu; a line tells about waiting proposals');
   assert.equal(tabbed.card().dataset.tab, 'terminal'); assert.equal(termTab.getAttribute('aria-selected'), 'true');
   assert.equal(policyTab.children[0].hidden, false); assert.equal(policyTab.children[0].textContent, '1', 'OpenShell\'s automatic proposals are not counted'); assert.equal(tabbed.document.title, '(1) Iwato');
-  assert.deepEqual(tabbed.policy().children[1].children[0].children.map((n) => n.className), ['policy-sec-title', 'proposal-item', 'policy-sub-title', 'proposal-item'], 'the agent\'s proposals first, then OpenShell\'s under their own heading'); assert.match(texts(pendingItems(tabbed)[1]), /auto\.example/);
+  assert.deepEqual(pendingItems(tabbed).map((n) => n.children[1].textContent), ['エージェントの提案 · 2 回', 'OpenShell の自動提案 · 2 回'], 'the agent\'s proposals first, then OpenShell\'s'); assert.match(texts(pendingItems(tabbed)[1]), /auto\.example/);
   const readsBeforeTab = proposalReads(tabbed).length; policyTab.click(); await flush(); assert.equal(tabbed.card().dataset.tab, 'policy'); assert.equal(policyTab.getAttribute('aria-selected'), 'true'); assert.equal(termTab.getAttribute('aria-selected'), 'false'); assert(proposalReads(tabbed).length > readsBeforeTab);
   assert.equal(tabbed.intervals.filter((i) => !i.cleared && i.ms !== 4000).length, 1, 'the policy tab follows proposals with the sandbox list (every 10 seconds) while nothing waits');
   const readsFollowing = proposalReads(tabbed).length; await tabbed.tickPoll(); assert(proposalReads(tabbed).length > readsFollowing);
@@ -1636,11 +1497,12 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   lists.setProposalHandler((path) => /\/proposals\/[a-z]+$/.test(path) ? response({ok: true}) : response(data));
   await readPolicy(lists);
   const [pend, cur, rej] = [0, 1, 3].map((i) => lists.policy().children[1].children[i]);
-  const items = pend.children.filter((n) => n.className === 'proposal-item');
+  const items = nodes(pend).filter((n) => n.className === 'review-item');
+  const opened = nodes(pend).find((n) => n.className === 'review-detail');
   assert.match(texts(pend), /^承認待ち \(2\)/);
-  assert.match(texts(items[0]), /github\.com:443 GET \//); assert.match(texts(items[0]), / ← \/usr\/lib\/git-core\/git-remote-http/);
-  assert.match(texts(items[0]), /エージェントの提案/); assert.match(texts(items[0]), /3 回 · 初回 \d\d:\d\d · 最後 \d\d:\d\d · 規則 allow_github_com_443/); assert.match(texts(items[0]), /「clone <b>iwato<\/b>」/);
-  assert.match(texts(items[1]), /OpenShell の自動提案/); assert.match(texts(items[1]), /37 回/);
+  assert.match(texts(items[0]), /^github\.com\nエージェントの提案 · 3 回/);
+  assert.match(texts(opened), /\/usr\/lib\/git-core\/git-remote-http \(参考/); assert.match(texts(opened), /3 回 · 初回 \d\d:\d\d · 最後 \d\d:\d\d/); assert.match(texts(opened), /clone <b>iwato<\/b>/);
+  assert.match(texts(items[1]), /OpenShell の自動提案 · 37 回/);
   ok('waiting proposals show the source, OpenShell\'s count and times, and the agent\'s intent as literal text');
   const rule = (name) => cur.children.find((n) => n.className === 'policy-rule' && n.children[0].children[0].children[0].textContent === name);
   // A provider's rule: labelled, read-only.
@@ -1680,10 +1542,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.match(texts(rejItems()[0]), /に却下 · 却下後も 2 回、最後は \d\d:\d\d/); assert.match(texts(rejItems()[1]), /OpenShell が自動で却下 \(承認済みの提案と同じ宛先\)/); assert.doesNotMatch(texts(rejItems()[2]), /却下後も/);
   find(lists.policy().children[1].children[3], 'もっと見る (ほか 2 件)').click(); await flush();
   assert.equal(rejItems().length, 12);
-  let formShown = null;
-  lists.setConfirmHandler((q) => { formShown = lists.els['approve-form'].hidden; return /提案どおり/.test(q); });
+  lists.setConfirmHandler((q) => /提案どおり/.test(q));
   find(rejItems()[0], '承認する').click(); await flush();
-  assert.equal(formShown, true, 'a rejected proposal is approved as proposed: no narrowing form');
   const appr = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/approve');
   assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest});
   ok('the rejected list shows the newest 10 then more, the hits since, OpenShell\'s own rejections, and approves as proposed');
@@ -2596,19 +2456,18 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const a = {rule: '_provider_github', provider: {name: 'github', label: 'GitHub', profile: 'iwato-github'}, with: 'allow_x', endpoint: 'api.github.com:443', diffs: [{field: 'enforcement', value: 'enforce', withValue: 'audit'}], details: ['サーバーの文'], fix: ''};
   assert.equal(J.message('ambiguous_edit', null, {ambiguities: [a]}, 'x'), 'この変更は OpenShell に拒否されます: api.github.com:443 で プロバイダー github (GitHub) の規則 _provider_github と 規則 allow_x の設定が食い違います (検査のモード: _provider_github は 遮断 (enforce)、allow_x は 監査 (audit))。OpenShell は、同じ宛先 (ホスト・ポート・パス) に当たる規則どうしで、検査のしかたがそろっていることを求めます (network endpoint ambiguity)。プロバイダーの規則は変えられないので、検査のモードを 遮断 (enforce) にそろえてください。プロバイダーのプログラムには、プロバイダーの規則が既に許可しています。');
   assert.equal(E.message('ambiguous_edit', null, {ambiguities: [a]}, 'x'), 'OpenShell would refuse this change: at api.github.com:443, rule _provider_github of provider github (GitHub) and rule allow_x disagree (Mode: enforce in _provider_github, audit in allow_x). OpenShell requires rules for the same destination (host, port, path) to inspect it the same way (network endpoint ambiguity). The provider\'s rule cannot change: set Mode to enforce. The provider\'s rule already allows the provider\'s programs.');
-  assert.match(E.message('ambiguous_approve', {choices: ['read', 'nope']}, {ambiguities: [a]}, 'x'), /It can be approved with "Read only"\.$/);
+  assert.match(E.message('ambiguous_approve', null, {ambiguities: [a]}, 'x'), /change what it allows, or reject this proposal\.$/);
   assert.equal(J.message('ambiguous_edit', null, {ambiguities: []}, 'サーバーの文'), 'サーバーの文', 'without the pairs, the server\'s text');
   assert.equal(J.message('provider_fix_remove_failed', {rule: 'r', host: 'h', detail: 'raw'}, {gateway: [a]}, 'x'), '規則 r の h を外せませんでした: OpenShell が拒否しました: api.github.com:443 で プロバイダー github (GitHub) の規則 _provider_github と 規則 allow_x の設定が食い違います (検査のモード: _provider_github は 遮断 (enforce)、allow_x は 監査 (audit))。同じ宛先 (ホスト・ポート・パス) に当たる規則どうしで、検査のしかたがそろっている必要があります。承認一覧で、プロバイダーではない方の規則の宛先をもう一方に合わせる (監査なら「遮断に切り替え」) か、外してください。', 'the gateway\'s refusal as the detail');
   assert.match(E.message('gateway_ambiguous', null, {gateway: []}, 'x'), /^OpenShell refused it: rules for the same destination/);
   const c = {rule: 'allow_api', host: 'api.github.com', ports: [443], mode: 'L4-only', provider: 'gh', label: 'GitHub', profile: 'iwato-github'};
   assert.match(E.message('credential_uninspected', null, {conflicts: [c]}, 'x'), /^This would allow the destinations that get the value of gh \(GitHub\), attached to this sandbox, uninspected: rule allow_api: api\.github\.com:443 \(L4-only\)\./);
   assert.match(E.message('provider_attach_refused', {provider: 'gh'}, {conflicts: [c], ambiguities: [a]}, 'x'), /^The policy allows .* OpenShell would refuse attaching gh: at api\.github\.com:443/);
-  assert.equal(J.blocked('audit', [a], 'x'), '「監査」は選べません: api.github.com:443 には プロバイダー github (GitHub) の規則 _provider_github があり、設定が食い違います (検査のモード: _provider_github は 遮断 (enforce)、allow_x は 監査 (audit))。OpenShell は同じ宛先の規則どうしで検査のしかたがそろっていることを求めます。');
   assert.deepEqual([...J.details({...a, diffs: []})], ['サーバーの文'], 'no diffs: the server\'s details');
   assert.equal(J.unshown(['rules > 128', 'binaries > 8']), '提案どおりには承認できません。許可する条件 (メソッドとパス) が 128 個を超えています。プログラムが 8 個を超えています。却下すると、項目を減らして (パスを * や ** でまとめる、提案を分けるなど) 提案し直すようエージェントに伝えます。または「ポリシー」タブの「YAML」で規則を書いてください');
   assert.equal(E.message('proposal_unshown', {parts: ['rules > 128', 'graphql', 'protocol: websocket']}, {}, 'x'), 'This proposal cannot be approved. It has more than 128 allow rules (method and path). It has a setting Iwato cannot show (GraphQL). It has a setting Iwato cannot show (protocol: websocket). Proposing it again will not help: write the rule in YAML on the Policy tab.', 'a setting: YAML only; unknown parts raw');
   assert.match(J.unshown(['host length', 'odd > 3']), /^提案どおりには承認できません。宛先のホストかパスが長すぎて表示できません。oddが 3 個を超えています。提案し直してもらっても/);
-  ok('refusals.js: ambiguities, the gateway\'s refusal, credential conflicts, blocked choices and unshown proposals, in Japanese and English');
+  ok('refusals.js: ambiguities, the gateway\'s refusal, credential conflicts and unshown proposals, in Japanese and English');
   }
   {
   // The example screens: login in the browser's language, the settings'

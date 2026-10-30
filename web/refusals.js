@@ -40,14 +40,10 @@
   const pair = (a) => t('ambiguity.pair', { endpoint: a.endpoint, owner: owner(a.rule, a.provider), withOwner: owner(a.with, a.withProvider), details: list(details(a)) });
   const wants = (a) => list((a.diffs || []).map((d) => t('ambiguity.want', { field: fieldLabel(d.field), value: valueLabel(d.field, d.value) })));
 
-  const choices = ['read', 'rules', 'all', 'audit'];
   // What to do instead, per refused change.
   function fix(code, params, vs) {
     switch (code) {
-      case 'ambiguous_approve': {
-        const ok = (Array.isArray(params?.choices) ? params.choices : []).filter((c) => choices.includes(c));
-        return ok.length ? t('ambiguity.fix.approve', { choices: list(ok.map((c) => t('ambiguity.choice.quoted', { choice: t('ambiguity.choice.' + c) }))) }) : t('ambiguity.fix.approveNone');
-      }
+      case 'ambiguous_approve': return t('ambiguity.fix.approve');
       case 'ambiguous_attach': return t(vs.every((a) => a.fix === 'enforce') ? 'ambiguity.fix.attachEnforce' : 'ambiguity.fix.attach');
       case 'ambiguous_providers': return t('ambiguity.fix.oneProvider');
       case 'ambiguous_presets': return t('ambiguity.fix.removeOne');
@@ -74,7 +70,7 @@
   // The gateway's ambiguity refusal, from its pairs.
   const gatewayText = (pairs) => pairs.length ? t('ambiguity.gateway', { pairs: sentences(pairs.map(pair)) }) : t('error.gateway_ambiguous');
 
-  // The parts of a proposal the approve dialog cannot show (proposal_guard.go
+  // The parts of a proposal the page cannot show (proposal_guard.go
   // proposalUnshown: "rules > 128", "host length", "graphql"), and what to
   // do: a count can be proposed again smaller, the rest only written in YAML.
   function unshown(parts, lead = 'unshown.asProposed') {
@@ -115,12 +111,5 @@
     return I() ? I().serverError(code, params, fallback) : fallback;
   }
 
-  // Why an approve choice cannot be taken.
-  function blocked(choice, vs, fallback) {
-    if (!vs.length || !choices.includes(choice)) return fallback;
-    const parts = vs.map((a) => t('ambiguity.blockedPair', { endpoint: a.endpoint, owner: owner(a.rule, a.provider), details: list(details(a)) }));
-    return t('ambiguity.blocked', { choice: t('ambiguity.choice.' + choice), pairs: sentences(parts) });
-  }
-
-  window.IwatoRefusals = Object.freeze({ message, blocked, details, unshown });
+  window.IwatoRefusals = Object.freeze({ message, details, unshown });
 })();

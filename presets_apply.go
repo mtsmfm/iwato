@@ -96,7 +96,7 @@ func (s *Server) handleSandboxPresets(w http.ResponseWriter, r *http.Request, pa
 	}
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
-	ctx = withGatewayReads(ctx)
+	ctx = refuseDrift(withGatewayReads(ctx))
 	defer s.lockPolicy(sb.Name)()
 	if parts[2] == "apply" {
 		s.applyPreset(ctx, w, rt, sb, ref)

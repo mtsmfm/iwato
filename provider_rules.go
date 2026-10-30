@@ -221,7 +221,7 @@ func setBinding(rules map[string]v1.NetworkPolicyRule, b PolicyBinding) (map[str
 		return nil, errCode("policy_rule_not_found", nil, "この規則はポリシーにありません")
 	}
 	for i, e := range r.Endpoints {
-		if !strings.EqualFold(e.Host, b.Host) || !slices.Equal(effectivePorts(e), b.Ports) || e.Path != b.Path {
+		if !strings.EqualFold(e.Host, b.Host) || !slices.Equal(slices.Sorted(slices.Values(effectivePorts(e))), slices.Sorted(slices.Values(b.Ports))) || e.Path != b.Path {
 			continue
 		}
 		if b.Provider == "" {

@@ -1,108 +1,31 @@
-/* The approve dialog's logic, pure (no DOM): program candidates, the access
-   a proposal starts with, path segments, and the scope an approval sends. */
+/* The approval's logic, pure (no DOM): the rules an opened proposal lists
+   to narrow, the scope an approval sends, and its warnings (ADR 0022). */
 (() => {
   'use strict';
   // The UI's strings (web/i18n.js, loaded first); the key where it is not.
   const t = (key, params) => window.IwatoI18n ? window.IwatoI18n.t(key, params) : key;
   const reads = ['GET', 'HEAD', 'OPTIONS'];
+  const writeMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
   const isWild = (seg) => seg === '*' || seg === '**';
-
-  // OpenShell (sandbox-policy.rego) compares a program path as it is, and a
-  // path with "*" as glob.match(pattern, ["/"], path): "*" and "?" stay
-  // within a segment, "**" crosses them. It checks the process and every
-  // ancestor, so the programs it starts are covered too.
-  function globMatch(pattern, path) {
-    if (!pattern.includes('*')) return pattern === path;
-    const re = pattern.split(/(\*\*|\*|\?)/).map((x) => x === '**' ? '.*' : x === '*' ? '[^/]*' : x === '?' ? '[^/]' : x.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('');
-    return new RegExp('^' + re + '$').test(path);
-  }
-
-  // As the server accepts (openshell_proposals.go validBinary): absolute,
-  // printable, no spaces, no empty segment.
-  function binaryError(b) {
-    if (!b.startsWith('/') || b === '/' || b.length > 512 || /[\s\p{C}\p{Z}]/u.test(b) || b.slice(1).split('/').some((s) => s === '')) {
-      return t('approve.binary.invalid');
-    }
-    return '';
-  }
-
-  // A version: 2.1.293, 3.12 (with -rc1, +build and the like), or a hash of
-  // 7+ hex digits with a digit in it.
-  const versionRE = /\d+(?:\.\d+)+(?:[-+](?:rc|alpha|beta|pre|dev|post|nightly|build)\.?\d*)?/gi;
-  const hexRE = /(?<![0-9A-Za-z])(?=[0-9a-f]*\d)[0-9a-f]{7,}(?![0-9A-Za-z])/g;
-
-  // One segment with its versions as "*". A version glued to a name keeps
-  // its first number (python3.12 -> python3.*: python3 is the name).
-  function starVersions(seg) {
-    const letter = (c) => /[A-Za-z]/.test(c || '');
-    // A lone "v" marks a version (node-v22.1.0) rather than a name.
-    const glued = (at) => letter(seg[at - 1]) && !(/v/i.test(seg[at - 1]) && !letter(seg[at - 2]));
-    return seg.replace(versionRE, (v, at) => glued(at) ? v.split('.')[0] + '.*' : '*').replace(hexRE, '*');
-  }
-
-  // Candidates for the program, narrow to wide: as proposed, its versions
-  // as "*", the name and "*", its folder, every program. Versions only
-  // when the path has one.
-  function binaryCandidates(path) {
-    const out = [];
-    const add = (kind, value, label, note) => { if (value && !out.some((c) => c.path === value)) out.push({ kind, path: value, label, note }); };
-    if (!path || binaryError(path)) return [{ kind: 'all', path: '/**', label: t('approve.cand.all'), note: t('approve.cand.all.note') }];
-    add('exact', path, t('approve.cand.exact'), t('approve.cand.exact.note'));
-    const segs = path.split('/');
-    const narrow = segs.map(starVersions).join('/');
-    if (narrow !== path) {
-      add('version', narrow, t('approve.cand.version'), t('approve.cand.version.note'));
-      // The wide one cuts each versioned segment where its version starts.
-      const wide = segs.map((seg, i) => {
-        versionRE.lastIndex = 0;
-        const m = versionRE.exec(seg);
-        return m && m.index > 0 ? seg.slice(0, m.index) + '*' : segs.map(starVersions)[i];
-      }).join('/');
-      add('name', wide, t('approve.cand.name'), t('approve.cand.name.note'));
-    }
-    const dir = path.slice(0, path.lastIndexOf('/'));
-    add('folder', (dir || '') + '/*', t('approve.cand.folder'), t('approve.cand.folder.note', { dir: dir || '/' }));
-    add('all', '/**', t('approve.cand.all'), t('approve.cand.all.note'));
-    return out;
-  }
+  const isRead = (m) => reads.includes(m);
+  const allPaths = (p) => p === '/**' || p === '**';
+  const presetMethods = { 'read-only': reads, 'read-write': [...reads, 'POST', 'PUT', 'PATCH'], full: [...reads, ...writeMethods] };
 
   // Inspecting requests suits HTTP(S) only: an endpoint OpenShell already
   // inspects, or one on a web port.
   function looksHTTP(endpoints) {
     return endpoints.length > 0 && endpoints.every((e) => e.protocol === 'rest' || (e.ports.length > 0 && e.ports.every((p) => [80, 443, 8080, 8443].includes(p))));
   }
-
-  // Reads only, unless writes were seen (then those methods and paths), or
-  // the traffic may not be HTTP (then as proposed).
-  function defaultAccess(rules, endpoints) {
-    if (rules.some((r) => !reads.includes(r.method))) return 'rules';
-    return looksHTTP(endpoints) ? 'read' : 'all';
-  }
-
-  // The access to start with: the default unless OpenShell would refuse
-  // it (blocked: the server's Blocked), then the first choice it takes, in
-  // the dialog's order; '' when it takes none.
-  function pickAccess(access, blocked = {}) {
-    if (!blocked[access]) return access;
-    return ['read', 'rules', 'all', 'audit'].find((k) => !blocked[k]) || '';
-  }
+  // Inspected: rest, and not tls: skip (OpenShell then cannot see the requests).
+  const inspectedEndpoint = (e) => e.protocol === 'rest' && e.tls !== 'skip';
 
   // A rule's path for the owner: "/" alone is the root only, "/**" (and
   // OpenShell's "**") every path; they look alike.
   function pathLabel(path) {
     if (!path) return t('approve.path.none');
     if (path === '/') return t('approve.path.root');
-    if (path === '/**' || path === '**') return t('approve.path.all', { path });
+    if (allPaths(path)) return t('approve.path.all', { path });
     return path;
-  }
-
-  // A path to narrow reads to when no request was seen, for hosts whose
-  // paths are known: GitHub's API and git over HTTPS (owner and repository).
-  function pathHint(endpoints) {
-    const hosts = endpoints.map((e) => String(e.host || '').toLowerCase());
-    if (hosts.length && hosts.every((h) => h === 'api.github.com')) return '/repos/*/*/**';
-    if (hosts.length && hosts.every((h) => h === 'github.com')) return '/*/*/**';
-    return '';
   }
 
   // A click on segment index (0 is the first after "/") turns it to "*",
@@ -120,124 +43,109 @@
     return '/' + [...segs.slice(0, index), '*', ...segs.slice(index + 1)].join('/');
   }
 
-  // A narrowed path for several seen ones: their common folder and "**".
-  function pathSuggestion(paths) {
-    const list = paths.filter((p) => p.startsWith('/')).map((p) => p.split('/').slice(1));
-    if (list.length < 2) return '';
-    const common = [];
-    for (let i = 0; list.every((s) => i < s.length - 1 && s[i] === list[0][i] && !isWild(s[i])); i++) common.push(list[0][i]);
-    return common.length ? '/' + common.join('/') + '/**' : '';
+  // The rows an opened proposal lists, each a method and path on a host,
+  // checked when the approval keeps it. An endpoint OpenShell does not
+  // inspect (its own drafts, mostly) or whose only rule is a GET / nobody
+  // saw (placeholder) lists the methods on every path, reads checked; it
+  // also gets a row to allow it uninspected (L4), checked when the port is
+  // not a web one. An access preset lists its methods on every path.
+  function reviewRows(item) {
+    const rows = [];
+    const add = (host, method, path, checked) => {
+      if (!rows.some((r) => r.kind === 'rule' && r.host === host && r.method === method && r.path === path)) rows.push({ kind: 'rule', host, method, path, checked, write: !isRead(method) });
+    };
+    for (const e of item.endpoints || []) {
+      const host = e.host || '';
+      const uninspected = !inspectedEndpoint(e);
+      if (uninspected || item.placeholder || (!e.access && !(e.rules || []).length)) {
+        const web = looksHTTP([e]);
+        for (const m of ['GET', 'HEAD', ...writeMethods]) add(host, m, '/**', web && isRead(m));
+        if (uninspected && !rows.some((r) => r.kind === 'l4')) rows.push({ kind: 'l4', host, checked: !web, write: true });
+        continue;
+      }
+      for (const m of presetMethods[e.access] || []) add(host, m, '/**', true);
+      for (const r of e.rules || []) add(host, r.method, r.path, true);
+    }
+    return rows;
   }
 
-  const pathError = (p) => (!p.startsWith('/') && p !== '**') || p.length > 512 || /[\s\x7f]/.test(p) ? t('approve.path.invalid', { path: JSON.stringify(p) }) : '';
+  // Whether the rows, as they are, approve the proposal as proposed: every
+  // endpoint inspected and enforced with its own rules, all kept.
+  function asProposed(item, rows) {
+    const eps = item.endpoints || [];
+    return eps.length > 0 && !item.placeholder && eps.every((e) => inspectedEndpoint(e) && e.enforcement === 'enforce' && !e.access && (e.rules || []).length) &&
+      rows.every((r) => r.kind !== 'rule' || r.checked);
+  }
 
-  // The approval: {scope (null: as proposed), rules (what OpenShell will
-  // allow, expanded), error}. Read-only with paths allows GET, HEAD and
-  // OPTIONS on each; the server expands it the same way. The program is
-  // always sent: the server applies exactly it, never the proposal's (a
-  // scope naming only the proposal's own programs approves as proposed).
-  function buildScope({ access, binary, proposed = [], rows = [], tips = {} }) {
-    const out = { scope: null, rules: [], error: '' };
-    const b = String(binary || '').trim();
-    const scope = {};
-    if (b) {
-      out.error = binaryError(b);
-      scope.binaries = [b];
-    } else if (proposed.length) out.error = t('approve.binary.missing');
-    const filled = rows.map((r) => ({ method: r.method, path: String(r.path || '').trim() })).filter((r) => r.path);
-    if (access === 'audit') scope.audit = true;
-    if (access === 'read') {
-      scope.readOnly = true;
-      const paths = [...new Set(filled.map((r) => r.path))];
-      if (!paths.some((p) => p === '**' || p === '/**') && paths.length) {
-        scope.rules = paths.map((path) => ({ method: '', path }));
-        out.rules = paths.flatMap((path) => reads.map((method) => ({ method, path })));
-      } else out.rules = [{ method: 'GET・HEAD・OPTIONS', path: '**' }];
+  // The approval: {scope (null: nothing to send), error}. Every program
+  // (ADR 0022); the checked rules per host, or as proposed when nothing was
+  // narrowed or the uninspected row is checked. attach is the token
+  // checkbox (null when not shown).
+  function reviewScope(item, rows, attach = null) {
+    const out = { scope: null, error: '' };
+    const scope = { binaries: ['/**'] };
+    if (attach !== null) scope.attach = attach;
+    const l4 = rows.some((r) => r.kind === 'l4' && r.checked);
+    if (!l4 && !asProposed(item, rows)) {
+      const picked = rows.filter((r) => r.kind === 'rule' && r.checked);
+      if (!picked.length) {
+        out.error = t('review.nothing');
+        return out;
+      }
+      if (picked.length > 16) {
+        out.error = t('review.tooMany', { count: picked.length });
+        return out;
+      }
+      const hosts = new Set((item.endpoints || []).map((e) => e.host));
+      scope.rules = picked.map((r) => hosts.size > 1 ? { method: r.method, path: r.path, host: r.host } : { method: r.method, path: r.path });
     }
-    if (access === 'rules') {
-      const seen = new Set();
-      scope.rules = filled.filter((r) => !seen.has(r.method + ' ' + r.path) && seen.add(r.method + ' ' + r.path));
-      out.rules = scope.rules;
-      if (!scope.rules.length) out.error ||= t('approve.rules.missing');
+    out.scope = scope;
+    return out;
+  }
+
+  // The writes the checked rows allow broadly: a write on every path, or
+  // on a wildcard host.
+  function broadWrites(rows) {
+    return rows.filter((r) => r.kind === 'rule' && r.checked && r.write && (allPaths(r.path) || r.host.includes('*')))
+      .map((r) => (r.method === '*' ? t('review.allMethods') : r.method) + ' ' + r.host + r.path);
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  // A host's check (host_check.go) as warnings: red (an exfiltration
+  // service, the filtering resolver's block), amber (registered under 30
+  // days ago), and the facts when neither.
+  function hostWarnings(check, now = Date.now()) {
+    const out = [];
+    const host = check.host;
+    if (check.exfil) out.push({ level: 'red', text: t('review.warn.exfil', { host, service: check.exfil }), detail: t('review.warn.exfil.detail') });
+    if (check.filter === 'blocked') out.push({ level: 'red', text: t('review.warn.malware', { host }), detail: t('review.warn.malware.detail') });
+    const days = check.registered ? Math.floor((now - check.registered * 1000) / dayMs) : -1;
+    const date = check.registered ? new Date(check.registered * 1000).toISOString().slice(0, 10) : '';
+    if (days >= 0 && days < 30) out.push({ level: 'amber', text: t('review.warn.new', { domain: check.domain || host, days }), detail: t('review.warn.new.detail', { date }) });
+    if (!out.some((w) => w.level === 'red')) {
+      const facts = [
+        check.filter === 'clean' ? t('review.fact.filterClean') : check.filter === 'unknown' ? t('review.fact.filterUnknown') : '',
+        days >= 365 ? t('review.fact.years', { years: Math.floor(days / 365), date }) : days >= 30 ? t('review.fact.days', { days, date }) : check.rdap === 'unknown' ? t('review.fact.ageUnknown') : '',
+        t('review.fact.noExfil')
+      ].filter(Boolean);
+      out.push({ level: 'ok', text: t('review.ok', { host }), detail: facts.join(t('review.factSep')) });
     }
-    const entered = scope.rules?.length || 0;
-    // Over 16: how to get under it, or past it as proposed.
-    if (entered > 16) out.error ||= [t(access === 'read' ? 'approve.tooManyPaths' : 'approve.tooManyRules', { count: entered }), tips.suggest && t('approve.tooMany.suggest'), access === 'read' && t('approve.tooMany.allPaths'), tips.asProposed && t('approve.tooMany.asProposed')].filter(Boolean).join(t('ambiguity.sentenceSep'));
-    for (const r of scope.rules || []) out.error ||= pathError(r.path);
-    if (Object.keys(scope).length) out.scope = scope;
+    return out;
+  }
+
+  // The rows' own warnings: allowed uninspected, broad writes.
+  function rowWarnings(rows) {
+    const out = [];
+    if (rows.some((r) => r.kind === 'l4' && r.checked)) out.push({ level: 'amber', text: t('review.warn.l4'), detail: t('review.warn.l4.detail') });
+    else if (rows.some((r) => r.kind === 'l4')) out.push({ level: 'amber', text: t('review.warn.draftL4'), detail: t('review.warn.draftL4.detail') });
+    const broad = broadWrites(rows);
+    if (broad.length && !rows.some((r) => r.kind === 'l4' && r.checked)) out.push({ level: 'amber', text: t('review.warn.broadWrite'), detail: broad.join(', ') });
     return out;
   }
 
   // The destinations for the owner: the host, and the ports unless just 443.
   const destParts = (endpoints) => endpoints.map((e) => ({ host: e.host || t('policy.anyHost'), port: e.ports.length && !(e.ports.length === 1 && e.ports[0] === 443) ? ':' + e.ports.join(',') : '' }));
-  const destLabel = (endpoints) => destParts(endpoints).map((d) => d.host + d.port).join(', ') || t('approve.dest');
-  const ruleLabel = (r) => (r.method === '*' ? t('policy.access.full') : r.method) + ' ' + (r.path || t('approve.path.none'));
-  // Inspected: rest, and not tls: skip (OpenShell then cannot see the requests).
-  const inspected = (endpoints) => endpoints.length > 0 && endpoints.every((e) => e.protocol === 'rest' && e.tls !== 'skip');
-  // The rules as proposed: each endpoint's (path-less ones too), else the
-  // flat list.
-  const askedRules = (endpoints, seen) => endpoints.some((e) => e.rules?.length) ? endpoints.flatMap((e) => e.rules || []) : seen;
-
-  // As proposed, an inspected endpoint that is not enforced (OpenShell's
-  // default is audit, or the server did not say) lets every request through.
-  const audited = (endpoints) => endpoints.some((e) => e.enforcement !== 'enforce');
-
-  // The writes the approval allows, one line each (empty: reads only). As
-  // proposed: an uninspected or audited endpoint lets everything through,
-  // an access preset adds its methods on every path, and a proposal whose
-  // reach cannot be told (no rules, no preset) is warned as a write.
-  function writes({ access, binary, endpoints = [], rows = [], proposed = [], seen = [], placeholder = false }) {
-    if (access === 'audit') return [t('approve.writes.audit')];
-    if (access === 'all') {
-      if (!inspected(endpoints)) return [t('approve.writes.everything')];
-      if (audited(endpoints)) return [t('approve.writes.audit')];
-      const presets = endpoints.map((e) => e.access).filter(Boolean);
-      const out = [];
-      if (presets.some((a) => !['read-only', 'read-write', 'full'].includes(a))) out.push(t('approve.writes.unknown'));
-      else if (presets.includes('full')) out.push(t('approve.writes.full'));
-      else if (presets.includes('read-write')) out.push(t('approve.writes.readwrite'));
-      const asked = askedRules(endpoints, seen);
-      if (!placeholder && !asked.length && !presets.length) out.push(t('approve.writes.unknown'));
-      return out.concat(placeholder ? [] : asked.filter((r) => !reads.includes(r.method)).map(ruleLabel));
-    }
-    if (access !== 'rules') return [];
-    return buildScope({ access, binary, proposed, rows }).rules.filter((r) => !reads.includes(r.method)).map(ruleLabel);
-  }
-
-  // What the approval will allow, line by line: the destination, reads or
-  // writes, the paths, and the program last.
-  function summary({ access, binary, endpoints = [], rows = [], proposed = [], seen = [], placeholder = false }) {
-    const b = String(binary || '').trim();
-    const built = buildScope({ access, binary, proposed, rows });
-    const write = writes({ access, binary, endpoints, rows, proposed, seen, placeholder }).length > 0;
-    const out = { dest: destLabel(endpoints), access: '', paths: '', write,
-      program: b === '/**' ? t('approve.summary.allPrograms') : t('approve.summary.program', { program: b || '-' }) };
-    if (access === 'read') {
-      const paths = built.scope?.rules?.map((r) => r.path) || [];
-      out.access = t('approve.summary.read');
-      out.paths = paths.length ? paths.join(', ') : t('approve.summary.allPaths');
-    } else if (access === 'rules') {
-      out.access = write ? t('approve.summary.write') : t('approve.summary.readMethods');
-      out.paths = built.rules.length ? built.rules.map(ruleLabel).join(', ') : t('approve.summary.rulesNone');
-    } else if (access === 'audit') {
-      out.access = t('approve.summary.audit');
-    } else if (!inspected(endpoints)) {
-      out.access = t('approve.summary.everything');
-    } else if (audited(endpoints)) {
-      out.access = t('approve.summary.asProposedAudit');
-    } else if (placeholder) {
-      // As proposed with the placeholder: exactly GET / (no request seen asked for it).
-      out.access = t('approve.summary.asProposed');
-      out.paths = 'GET ' + pathLabel('/');
-    } else {
-      out.access = t('approve.summary.asProposed');
-      out.paths = askedRules(endpoints, seen).map(ruleLabel).join(', ');
-    }
-    return out;
-  }
-
-  // A program glob that matches any program (/**, /**/*, …).
-  const allPrograms = (b) => ['/usr/bin/x', '/a/b/c/d/e/f', '/sandbox/.local/bin/x'].every((x) => globMatch(b, x));
+  const ruleLabel = (r) => (r.method === '*' ? t('review.allMethods') : r.method) + ' ' + (r.path || t('approve.path.none'));
 
   // IPv4 a.b.c.d in an allowed_ips entry (an address or a CIDR).
   function ipIn(ip, entry) {
@@ -260,25 +168,12 @@
     return '';
   }
 
-  // Warnings for the top of the approve dialog, each a line: the proposal's
-  // programs when more than one or every program, settings that widen an
-  // endpoint, and destinations that reach the host's loopback or Iwato's
-  // own port (error: that one cannot be approved). asProposed: the
-  // approval keeps the proposal's programs and endpoints as they are.
-  function risks({ access, binary, proposed = [], endpoints = [], asProposed = false, listenPort = 0, gateways = [] }) {
+  // Endpoint settings that widen what passes, destinations that reach the
+  // host's loopback, and Iwato's own port (error: that one cannot be
+  // approved), one line each. wide: tls: skip lets everything through.
+  function risks({ endpoints = [], wide = true, listenPort = 0, gateways = [] }) {
     const lines = [];
     let error = '';
-    const b = String(binary || '').trim();
-    const programs = proposed.join(', ');
-    if (asProposed) {
-      if (proposed.length > 1) lines.push(t('approve.risk.programs', { count: proposed.length, programs }));
-      if (proposed.some(allPrograms)) lines.push(t('approve.risk.allPrograms'));
-    } else {
-      if (proposed.length > 1) lines.push(t('approve.risk.programs.narrowed', { count: proposed.length, programs, binary: b || '-' }));
-      if (proposed.some(allPrograms) && !(b && allPrograms(b))) lines.push(t('approve.risk.allPrograms.named'));
-      if (b && allPrograms(b)) lines.push(t('approve.binary.all'));
-    }
-    const wide = asProposed || access === 'all';
     for (const e of endpoints) {
       const host = e.host || t('policy.anyHost');
       if (wide && e.tls === 'skip') lines.push(t('approve.risk.tlsSkip', { host }));
@@ -296,8 +191,8 @@
     return { lines, error };
   }
 
-  // The whole proposal, line by line, for 詳細: the programs, then each
-  // endpoint with its settings, rules, deny rules and allowed_ips.
+  // The whole proposal, line by line: the programs, then each endpoint
+  // with its settings, rules, deny rules and allowed_ips.
   function details({ proposed = [], endpoints = [] }) {
     const out = [t('approve.detail.programs', { programs: proposed.join(', ') || '-' })];
     for (const e of endpoints) {
@@ -319,5 +214,5 @@
     return out;
   }
 
-  window.IwatoApprove = { globMatch, binaryError, binaryCandidates, looksHTTP, defaultAccess, pickAccess, pathLabel, pathHint, toggleSegment, pathSuggestion, buildScope, destParts, writes, summary, risks, details, gatewayHit, allPrograms };
+  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, broadWrites, hostWarnings, rowWarnings, destParts, ruleLabel, risks, details, gatewayHit };
 })();

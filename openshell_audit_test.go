@@ -44,7 +44,7 @@ func TestEnforceAnAuditedEndpoint(t *testing.T) {
 	if err := edit.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	ops, err := edit.operations(rules)
+	ops, err := edit.operations(rules, nil)
 	if err != nil || len(ops) != 2 || ops[0].RemoveEndpoint == nil || ops[1].AddRule == nil {
 		t.Fatal(ops, err)
 	}
@@ -55,7 +55,7 @@ func TestEnforceAnAuditedEndpoint(t *testing.T) {
 	// Only an audited endpoint.
 	audited.Enforcement = v1.NetworkEnforcementModeEnforce
 	rules["gh"] = v1.NetworkPolicyRule{Name: "gh", Endpoints: []v1.PolicyNetworkEndpoint{audited}}
-	if _, err := edit.operations(rules); err == nil {
+	if _, err := edit.operations(rules, nil); err == nil {
 		t.Fatal("enforced an enforced endpoint")
 	}
 	if err := (PolicyEdit{Op: "enforce", Rule: "gh", Host: "api.github.com", Ports: []uint32{443}}).Validate(); err == nil {
@@ -217,7 +217,7 @@ func TestAddAllowToAPresetEndpoint(t *testing.T) {
 	if err := edit.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	ops, err := edit.operations(rules)
+	ops, err := edit.operations(rules, nil)
 	if err != nil || len(ops) != 1 || ops[0].AddAllowRules == nil {
 		t.Fatal(ops, err)
 	}

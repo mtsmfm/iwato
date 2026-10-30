@@ -182,11 +182,13 @@ type PolicyCommit struct {
 	Subject string `json:"subject"`
 	Message string `json:"message"`
 	Kind    string `json:"kind,omitempty"`
+	// Root: the first commit, which cannot be reverted.
+	Root bool `json:"root,omitempty"`
 }
 
 func policyCommitView(c *object.Commit) PolicyCommit {
 	msg := strings.TrimRight(c.Message, "\n")
-	v := PolicyCommit{SHA: c.Hash.String(), Time: c.Committer.When.Unix()}
+	v := PolicyCommit{SHA: c.Hash.String(), Time: c.Committer.When.Unix(), Root: len(c.ParentHashes) == 0}
 	lines := strings.Split(msg, "\n")
 	if last := lines[len(lines)-1]; strings.HasPrefix(last, policyChangeTrailer) {
 		v.Kind = strings.TrimPrefix(last, policyChangeTrailer)

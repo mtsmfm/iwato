@@ -63,7 +63,8 @@ func addRule(name, host string) []v1.PolicyMergeOperation {
 // The repository follows what OpenShell took: a sandbox without one
 // imports its policy first; a change is committed only once applied, with
 // the commit in the revision's provenance; a change made outside Iwato is
-// imported before the next change; a commit can be reverted.
+// imported before the next change, or refused on the policy screen; a
+// commit can be reverted.
 func TestPolicyStoreFollowsOpenShell(t *testing.T) {
 	g := &storeGateway{}
 	g.add(map[string]v1.NetworkPolicyRule{"a": storeRule("a.example")}, nil)
@@ -110,6 +111,10 @@ func TestPolicyStoreFollowsOpenShell(t *testing.T) {
 	if st, _ := o.PolicyStore(ctx, w); st.State != "drift" {
 		t.Fatalf("%+v", st)
 	}
+	// The policy screen's writes wait for the owner to import or overwrite it.
+	if _, err := o.applyOps(refuseDrift(ctx), w, []v1.PolicyMergeOperation{{RemoveRule: &v1.RemoveNetworkRule{RuleName: "a"}}}); codeOf(err) != "policy_drift" {
+		t.Fatal("a drift under the policy screen:", err)
+	}
 	if _, err := o.applyOps(ctx, w, []v1.PolicyMergeOperation{{RemoveRule: &v1.RemoveNetworkRule{RuleName: "a"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -129,8 +134,11 @@ func TestPolicyStoreFollowsOpenShell(t *testing.T) {
 	if rules := g.revs[len(g.revs)-1].Policy.NetworkPolicies; len(rules) != 1 || len(rules["cli"].Endpoints) != 1 {
 		t.Fatalf("%+v", rules)
 	}
-	if _, err := o.RevertPolicyCommit(ctx, w, log[3].SHA); err == nil || !strings.Contains(err.Error(), "a") {
-		t.Fatal("reverted the import of a rule removed since:", err)
+	if _, err := o.RevertPolicyCommit(ctx, w, log[3].SHA); codeOf(err) != "policy_revert_root" {
+		t.Fatal("reverted the first commit:", err)
+	}
+	if _, err := revertRules(map[string]v1.NetworkPolicyRule{"a": storeRule("x.example")}, map[string]v1.NetworkPolicyRule{"a": storeRule("a.example")}, map[string]v1.NetworkPolicyRule{}); codeOf(err) != "policy_revert_conflict" {
+		t.Fatal("reverted a rule changed since:", err)
 	}
 	_, diff, err := o.PolicyCommitDiff(ctx, w, log[0].SHA)
 	if err != nil || !strings.Contains(diff, "-  a:") {

@@ -13,58 +13,37 @@ import (
 )
 
 // The fake's mise proposal for api.github.com with the GitHub provider
-// attached: audit is refused (the dialog's choice disabled, with the
-// provider's rule named: a path-less endpoint becomes /** there, as
-// specific as the provider's), the others go through.
-func TestApproveDialogKnowsTheProviderEnforces(t *testing.T) {
+// attached: audited, it would disagree with the provider's enforced /**
+// endpoint (a path-less endpoint becomes /** there), which the server
+// refuses naming the provider's rule, in the preview too; enforced, it
+// goes through.
+func TestApprovalRefusedWhereTheProviderEnforces(t *testing.T) {
 	s, _, do := providerServer(t)
 	do("POST", "/api/sandboxes/dev/start", `{}`)
 	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	_ = s
-	code, body := do("GET", "/api/sandboxes/dev/proposals", "")
-	var v ProposalView
-	if code != 200 || json.Unmarshal([]byte(body), &v) != nil {
-		t.Fatal(code, body)
-	}
-	i := slices.IndexFunc(v.Pending, func(p PendingProposal) bool { return p.ID == requestID("fake-mise-gh") })
-	if i < 0 {
-		t.Fatal(body)
-	}
-	b := v.Pending[i].Blocked
-	if len(b) != 1 || !strings.Contains(b["audit"].Reason, "「監査」は選べません") || !strings.Contains(b["audit"].Reason, "規則 provider_github_personal") ||
-		!strings.Contains(b["audit"].Reason, "遮断 (enforce)") || b["audit"].Ambiguities[0].Rule != "provider_github_personal" {
-		t.Fatalf("%+v", b)
-	}
-	// The push to github.com (the provider enforces there too) cannot be
-	// audited either; the others are free.
-	for _, p := range v.Pending {
-		want := 0
-		if strings.HasSuffix(p.Rule, "github_com_443") {
-			want = 1
+	id := `{"requestId":"` + requestID("fake-mise-gh") + `"` + digestField(s.rt, requestID("fake-mise-gh"))
+	for _, op := range []string{"preview", "approve"} {
+		code, body := do("POST", "/api/sandboxes/dev/proposals/"+op, id+`,"scope":{"audit":true,"binaries":["/**"]}}`)
+		var resp struct {
+			Error       string
+			Code        string
+			Ambiguities []AmbiguityView
 		}
-		if _, audit := p.Blocked["audit"]; len(p.Blocked) != want || want == 1 && !audit {
-			t.Fatalf("%s blocked: %+v", p.Rule, p.Blocked)
+		if code != 409 || json.Unmarshal([]byte(body), &resp) != nil || len(resp.Ambiguities) != 1 || resp.Ambiguities[0].Rule != "provider_github_personal" ||
+			resp.Code != "ambiguous_approve" || !slices.Equal(resp.Ambiguities[0].Diffs, []AmbiguityDiff{{"enforcement", "enforce", "audit"}}) ||
+			!strings.Contains(resp.Error, "この承認は OpenShell に拒否されます") {
+			t.Fatal(op, code, body)
 		}
 	}
-	// The server refuses the same, saying what works.
-	code, body = do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-mise-gh")+`"`+digestField(s.rt, requestID("fake-mise-gh"))+`,"scope":{"audit":true,"binaries":["`+fakeMise+`"]}}`)
-	var resp struct {
-		Error       string
-		Code        string
-		Params      struct{ Choices []string }
-		Ambiguities []AmbiguityView
-	}
-	// The page words it from the code, the choices that work and the
-	// pairs' diffs.
-	if code != 409 || json.Unmarshal([]byte(body), &resp) != nil || len(resp.Ambiguities) != 1 || resp.Ambiguities[0].Rule != "provider_github_personal" ||
-		resp.Code != "ambiguous_approve" || !slices.Equal(resp.Params.Choices, []string{"read", "rules", "all"}) ||
-		!slices.Equal(resp.Ambiguities[0].Diffs, []AmbiguityDiff{{"enforcement", "enforce", "audit"}}) ||
-		!strings.Contains(resp.Error, "この承認は OpenShell に拒否されます") || !strings.Contains(resp.Error, "「読み取りだけ」「メソッドとパスを指定」「提案どおり」なら承認できます") {
+	scope := `,"scope":{"rules":[{"method":"GET","path":"/**"}],"binaries":["/**"]}}`
+	code, body := do("POST", "/api/sandboxes/dev/proposals/preview", id+scope)
+	var preview struct{ YAML string }
+	if code != 200 || json.Unmarshal([]byte(body), &preview) != nil || !strings.Contains(preview.YAML, "path: /**") || !strings.Contains(preview.YAML, "provider: github-personal") {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-mise-gh")+`"`+digestField(s.rt, requestID("fake-mise-gh"))+`,"scope":{"readOnly":true,"binaries":["`+fakeMise+`"]}}`); code != 200 {
+	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", id+scope); code != 200 {
 		t.Fatal(code, body)
 	}
 }

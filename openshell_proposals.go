@@ -144,23 +144,12 @@ func (o *OpenShell) Proposals(ctx context.Context, w Sandbox) (ProposalView, err
 	}
 	p, perr := o.currentPolicy(ctx, w)
 	if perr == nil {
-		// Which approve choices OpenShell would refuse as ambiguous.
+		// The rule each approval writes, with the credentials it carries by default.
 		if p.effective != nil {
-			before, err := indexAmbiguities(ctx, withProviderRules(p.base, p.effective))
-			if err != nil {
-				return v, err
-			}
 			composed := withProviderRules(p.base, p.effective)
 			for _, c := range chunks {
 				if c.Status == "pending" && c.ProposedRule != nil {
-					fit, err := proposalFit(ctx, before, p.base, p.effective, c.RuleName, *c.ProposedRule)
-					if err != nil {
-						return v, err
-					}
 					j := slices.IndexFunc(v.Pending, func(x PendingProposal) bool { return x.ID == requestID(c.ID) })
-					if len(fit) > 0 {
-						v.Pending[j].fit = fit
-					}
 					plan := inheritShadowed(approvedRule(c.RuleName, *c.ProposedRule), composed, nil)
 					v.Pending[j].Attach, v.Pending[j].plan = approvalAttach(plan), &plan
 				}
@@ -243,10 +232,16 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 		// The reason (which the agent reads back through policy.local)
 		// carries the count so far: the rejected list tells the hits
 		// since from OpenShell's own data.
-		note := ""
-		if chunk.ProposedRule != nil {
-			note = tooManyReason(proposalUnshown(*chunk.ProposedRule))
+		var notes []string
+		if owner, _ := ctx.Value(rejectNoteKey{}).(string); owner != "" {
+			notes = append(notes, owner)
 		}
+		if chunk.ProposedRule != nil {
+			if n := tooManyReason(proposalUnshown(*chunk.ProposedRule)); n != "" {
+				notes = append(notes, n)
+			}
+		}
+		note := strings.Join(notes, "; ")
 		return none, pol.RejectDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, rejectReason(chunk.HitCount, note))
 	}
 	if chunk.ProposedRule == nil {
@@ -270,33 +265,9 @@ func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyIn
 	if err != nil {
 		return none, err
 	}
-	proposed := *chunk.ProposedRule
-	if scope != nil {
-		proposed = scope.apply(proposed)
-	}
-	name := chunk.RuleName
-	if name == "" && len(proposed.Endpoints) > 0 && len(endpointPorts(proposed.Endpoints[0])) > 0 {
-		name = generatedRuleName(proposed.Endpoints[0].Host, endpointPorts(proposed.Endpoints[0])[0])
-	}
-	if name == "" {
-		name = "approved"
-	}
-	composed, err := o.withProviders(ctx, w, sync.rules)
+	plan, err := o.approvalPlan(ctx, w, sync.rules, chunk, scope)
 	if err != nil {
 		return none, err
-	}
-	var attach *bool
-	if scope != nil {
-		attach = scope.Attach
-	}
-	plan := inheritShadowed(approvedRule(freeRuleName(sync.rules, name), proposed), composed, attach)
-	if attach != nil && *attach {
-		// The credentials offered for the hosts they are meant for.
-		list, attached, err := o.listProvidersFor(ctx)
-		if err != nil {
-			return none, err
-		}
-		plan = bindOffers(plan, list, attached[w.Name])
 	}
 	planned := cloneRules(sync.rules)
 	planned[plan.Name] = plan
@@ -309,7 +280,7 @@ func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyIn
 	}
 	change := PolicyChange{Kind: "approve", Host: host, Summary: chunkSummary(*chunk), At: time.Now().Unix()}
 	token := chunk.ReviewToken
-	name = ""
+	name := ""
 	if rejected {
 		// A rejected chunk's review token is from before the policy moved
 		// on: OpenShell refreshes it on the first try ("evaluation
@@ -378,6 +349,107 @@ func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyIn
 	return change, nil
 }
 
+// approvalPlan is the rule approving chunk (narrowed by scope) adds to
+// rules.
+func (o *OpenShell) approvalPlan(ctx context.Context, w Sandbox, rules map[string]v1.NetworkPolicyRule, chunk *v1.PolicyChunk, scope *ProposalScope) (v1.NetworkPolicyRule, error) {
+	proposed := *chunk.ProposedRule
+	if scope != nil {
+		proposed = scope.apply(proposed)
+	}
+	name := chunk.RuleName
+	if name == "" && len(proposed.Endpoints) > 0 && len(endpointPorts(proposed.Endpoints[0])) > 0 {
+		name = generatedRuleName(proposed.Endpoints[0].Host, endpointPorts(proposed.Endpoints[0])[0])
+	}
+	if name == "" {
+		name = "approved"
+	}
+	composed, err := o.withProviders(ctx, w, rules)
+	if err != nil {
+		return v1.NetworkPolicyRule{}, err
+	}
+	var attach *bool
+	if scope != nil {
+		attach = scope.Attach
+	}
+	plan := inheritShadowed(approvedRule(freeRuleName(rules, name), proposed), composed, attach)
+	if attach != nil && *attach {
+		// The credentials offered for the hosts they are meant for.
+		list, attached, err := o.listProvidersFor(ctx)
+		if err != nil {
+			return v1.NetworkPolicyRule{}, err
+		}
+		plan = bindOffers(plan, list, attached[w.Name])
+	}
+	return plan, nil
+}
+
+// ApprovalPreview is the rule an approval would add, as policy.yaml has it,
+// and the credentials its endpoints would carry by default (Attach) or
+// could carry (Offer), whatever the scope's attach says.
+type ApprovalPreview struct {
+	YAML   string           `json:"yaml"`
+	Attach []ApprovalAttach `json:"attach"`
+	Offer  []ApprovalAttach `json:"offer"`
+}
+
+// PreviewApproval is what approving a pending or rejected proposal would
+// add (nothing is changed).
+func (o *OpenShell) PreviewApproval(ctx context.Context, w Sandbox, request, digest string, scope *ProposalScope) (ApprovalPreview, error) {
+	none := ApprovalPreview{}
+	pol, err := o.policy(ctx)
+	if err != nil {
+		return none, err
+	}
+	chunk, _, err := draftChunk(ctx, pol, w.Name, request, "pending", "rejected")
+	if err != nil {
+		return none, err
+	}
+	if chunk == nil {
+		return none, errCode("request_not_found", nil, "この依頼は見つかりません")
+	}
+	if digest != proposalDigest(*chunk) {
+		return none, errProposalChanged()
+	}
+	if chunk.ProposedRule == nil {
+		return none, errCode("proposal_empty", nil, "この提案には規則がありません")
+	}
+	if scope, err = scope.against(*chunk.ProposedRule); err != nil {
+		return none, err
+	}
+	sync, st, err := o.policyCompare(ctx, w)
+	if err != nil {
+		return none, err
+	}
+	rules := sync.rules
+	if st.State == "none" {
+		rules = revisionRulesOf(sync.latest)
+	}
+	plan, err := o.approvalPlan(ctx, w, rules, chunk, scope)
+	if err != nil {
+		return none, err
+	}
+	out := ApprovalPreview{Attach: []ApprovalAttach{}, Offer: []ApprovalAttach{}}
+	if out.YAML, err = encodeYAML(storeRules(map[string]v1.NetworkPolicyRule{plan.Name: plan})); err != nil {
+		return none, err
+	}
+	var plain *ProposalScope
+	if scope != nil {
+		x := *scope
+		x.Attach = nil
+		plain = &x
+	}
+	if plan, err = o.approvalPlan(ctx, w, rules, chunk, plain); err != nil {
+		return none, err
+	}
+	list, attached, err := o.listProvidersFor(ctx)
+	if err != nil {
+		return none, err
+	}
+	out.Attach = append(out.Attach, approvalAttach(plan)...)
+	out.Offer = append(out.Offer, credentialOffers(plan, list, attached[w.Name])...)
+	return out, nil
+}
+
 func binaryPaths(r v1.NetworkPolicyRule) []string {
 	out := make([]string, len(r.Binaries))
 	for i, b := range r.Binaries {
@@ -412,10 +484,12 @@ type ProposalScope struct {
 }
 
 // ProposalRule allows one method ("*" for any) on paths matching a glob
-// ("*" within a segment, "**" across segments).
+// ("*" within a segment, "**" across segments). In a scope, Host limits it
+// to the proposal's endpoints on that host (empty: all of them).
 type ProposalRule struct {
 	Method string `json:"method"`
 	Path   string `json:"path"`
+	Host   string `json:"host,omitempty"`
 }
 
 var scopeMethods = map[string]bool{"*": true, "GET": true, "HEAD": true, "OPTIONS": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true}
@@ -468,6 +542,9 @@ func validateRules(rules []ProposalRule) error {
 		if !scopeMethods[r.Method] {
 			return errCode("scope_method_invalid", map[string]any{"method": fmt.Sprintf("%q", r.Method)}, fmt.Sprintf("メソッド %q は使えません", r.Method))
 		}
+		if r.Host != "" && !hostPattern.MatchString(r.Host) {
+			return errCode("policy_host_invalid", map[string]any{"host": fmt.Sprintf("%q", r.Host)}, fmt.Sprintf("ホスト %q は使えません", r.Host))
+		}
 		if !strings.HasPrefix(r.Path, "/") && r.Path != "**" || len(r.Path) > 512 || strings.IndexFunc(r.Path, func(c rune) bool { return c <= ' ' || c == 0x7f }) >= 0 {
 			return errCode("scope_path_invalid", map[string]any{"path": fmt.Sprintf("%q", r.Path)}, fmt.Sprintf("パス %q は / で始まり、空白を含まないようにしてください", r.Path))
 		}
@@ -511,6 +588,9 @@ func (s *ProposalScope) against(rule v1.NetworkPolicyRule) (*ProposalScope, erro
 			return nil, nil
 		}
 	}
+	if len(s.apply(rule).Endpoints) == 0 {
+		return nil, errCode("scope_no_endpoint", nil, "承認する宛先がありません")
+	}
 	return s, nil
 }
 
@@ -526,8 +606,8 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 {
 		return rule
 	}
-	endpoints := make([]v1.PolicyNetworkEndpoint, len(rule.Endpoints))
-	for i, e := range rule.Endpoints {
+	endpoints := make([]v1.PolicyNetworkEndpoint, 0, len(rule.Endpoints))
+	for _, e := range rule.Endpoints {
 		e.Protocol, e.Enforcement = "rest", v1.NetworkEnforcementModeEnforce
 		// Inspected: not tls: skip (OpenShell would refuse a provider's
 		// credentials on it).
@@ -556,10 +636,16 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 			e.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/"}}}
 		default:
 			for _, r := range s.Rules {
-				e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: r.Method, Path: r.Path}})
+				if r.Host == "" || strings.EqualFold(r.Host, e.Host) {
+					e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: r.Method, Path: r.Path}})
+				}
+			}
+			// None of its rules kept: the endpoint is left out.
+			if len(e.Rules) == 0 {
+				continue
 			}
 		}
-		endpoints[i] = e
+		endpoints = append(endpoints, e)
 	}
 	rule.Endpoints = endpoints
 	return rule
@@ -634,11 +720,6 @@ type PendingProposal struct {
 	// Endpoints are where the rule goes (the approve dialog's summary, and
 	// whether it looks like HTTP).
 	Endpoints []ProposalEndpoint `json:"endpoints,omitempty"`
-	// Blocked are the approve dialog's choices (read, rules, all, audit)
-	// that OpenShell would refuse: an endpoint already in the policy (a
-	// provider's, say) overlaps the proposal's with other settings
-	// (endpoint_ambiguity.go). The server fills it from fit.
-	Blocked map[string]BlockedChoice `json:"blocked,omitempty"`
 	// Digest is what a decision sends back (proposalDigest): the server
 	// refuses it when the proposal changed since.
 	Digest string `json:"digest"`
@@ -652,14 +733,7 @@ type PendingProposal struct {
 	// provider's (credentialOffers): scope.attach true binds them too.
 	Offer []ApprovalAttach `json:"offer,omitempty"`
 	plan  *v1.NetworkPolicyRule
-	fit   map[string][]EndpointAmbiguity
 	rule  *v1.NetworkPolicyRule
-}
-
-// BlockedChoice says why an approve choice cannot be taken.
-type BlockedChoice struct {
-	Reason      string          `json:"reason"`
-	Ambiguities []AmbiguityView `json:"ambiguities"`
 }
 
 // mechanisticRationale is how OpenShell's own proposals explain themselves
@@ -722,6 +796,18 @@ type RejectedProposal struct {
 	HitsAfter int32  `json:"hitsAfter"`
 	SeenAfter bool   `json:"seenAfter"`
 	Auto      string `json:"auto,omitempty"`
+}
+
+type rejectNoteKey struct{}
+
+// withRejectNote gives a rejection made with ctx the owner's reason, on
+// one line.
+func withRejectNote(ctx context.Context, reason string) context.Context {
+	reason = strings.Join(strings.FieldsFunc(reason, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) }), " ")
+	if reason == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, rejectNoteKey{}, reason)
 }
 
 // rejectReason is the reason Iwato gives a rejection: a note for the agent,

@@ -361,44 +361,6 @@ func approvalPlanOps(base, effective map[string]v1.NetworkPolicyRule, name strin
 	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: plan.Name, Rule: plan}}}
 }
 
-// approveChoices are the approve dialog's choices as scopes (the methods
-// and paths do not matter to the check, nor do the programs).
-var approveChoices = []struct {
-	Name  string
-	Label string
-	Scope *ProposalScope
-}{
-	{"read", "読み取りだけ", &ProposalScope{ReadOnly: true}},
-	{"rules", "メソッドとパスを指定", &ProposalScope{Rules: []ProposalRule{{Method: "*", Path: "/**"}}}},
-	{"all", "提案どおり", nil},
-	{"audit", "監査", &ProposalScope{Audit: true}},
-}
-
-// proposalFit says, per approve choice, which ambiguities approving the
-// proposed rule with it would bring. before indexes
-// withProviderRules(base, effective).
-func proposalFit(ctx context.Context, before *ambiguityIndex, base, effective map[string]v1.NetworkPolicyRule, name string, rule v1.NetworkPolicyRule) (map[string][]EndpointAmbiguity, error) {
-	out := map[string][]EndpointAmbiguity{}
-	for _, c := range approveChoices {
-		r := rule
-		if c.Scope != nil {
-			r = c.Scope.apply(cloneRule(rule))
-		}
-		merged, err := simulateMerge(base, approvalPlanOps(base, effective, name, r, nil))
-		if err != nil {
-			continue
-		}
-		a, err := before.newIn(ctx, withProviderRules(merged, effective))
-		if err != nil {
-			return nil, err
-		}
-		if len(a) > 0 {
-			out[c.Name] = a
-		}
-	}
-	return out, nil
-}
-
 // AmbiguityView is an ambiguity for the owner: the endpoint already in the
 // policy (Rule, maybe a provider's) and the one the change brings (With),
 // what they disagree on (Diffs; Details is the Japanese text of each) and
@@ -888,35 +850,8 @@ func (s *Server) failGateway(ctx context.Context, w http.ResponseWriter, sb Sand
 	fail(w, 409, msg)
 }
 
-// choiceLabel is an approve choice as the dialog names it.
-func choiceLabel(name string) string {
-	for _, c := range approveChoices {
-		if c.Name == name {
-			return c.Label
-		}
-	}
-	return name
-}
-
-// blockedChoices says which approve choices OpenShell would refuse and why.
-func blockedChoices(fit map[string][]EndpointAmbiguity, rule string, providers map[string]RuleProvider) map[string]BlockedChoice {
-	if len(fit) == 0 {
-		return nil
-	}
-	out := map[string]BlockedChoice{}
-	for choice, list := range fit {
-		views := ambiguityViews(list, []string{rule}, nil, providers)
-		var parts []string
-		for _, v := range views {
-			parts = append(parts, v.Endpoint+" には "+ruleOwner(v.Rule, v.Provider)+" があり、設定が食い違います ("+strings.Join(v.Details, "、")+")")
-		}
-		out[choice] = BlockedChoice{Reason: "「" + choiceLabel(choice) + "」は選べません: " + strings.Join(parts, "。") + "。OpenShell は同じ宛先の規則どうしで検査のしかたがそろっていることを求めます。", Ambiguities: views}
-	}
-	return out
-}
-
 // checkApproval refuses an approval (the proposed rule, narrowed by scope)
-// that OpenShell would refuse as ambiguous, saying which choices work.
+// that OpenShell would refuse as ambiguous.
 func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rule v1.NetworkPolicyRule, scope *ProposalScope) error {
 	base, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok {
@@ -935,26 +870,8 @@ func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rul
 		return nil
 	}
 	views := ambiguityViews(list, []string{name}, nil, s.ruleProviders(ctx, sb))
-	before, err := indexAmbiguities(ctx, withProviderRules(base, effective))
-	if err != nil {
-		return err
-	}
-	fit, err := proposalFit(ctx, before, base, effective, name, rule)
-	if err != nil {
-		return err
-	}
-	ok2, labels := []string{}, []string{}
-	for _, c := range approveChoices {
-		if _, blocked := fit[c.Name]; !blocked {
-			ok2 = append(ok2, c.Name)
-			labels = append(labels, "「"+c.Label+"」")
-		}
-	}
-	fix := "どの選び方でも承認できません。食い違う規則の宛先を外す (プロバイダーの規則ならプロバイダーを外す) か、この提案を却下してください。"
-	if len(ok2) > 0 {
-		fix = strings.Join(labels, "") + "なら承認できます。"
-	}
-	return errRefused("ambiguous_approve", map[string]any{"choices": ok2}, ambiguityMessage("この承認は OpenShell に拒否されます", views, fix), views, nil)
+	fix := "食い違う規則の宛先を外す (プロバイダーの規則ならプロバイダーを外す) か、許可する内容を変えるか、この提案を却下してください。"
+	return errRefused("ambiguous_approve", nil, ambiguityMessage("この承認は OpenShell に拒否されます", views, fix), views, nil)
 }
 
 // checkEdit refuses a hand edit that OpenShell would refuse as ambiguous.
@@ -964,11 +881,11 @@ func (s *Server) checkEdit(ctx context.Context, sb Sandbox, edit PolicyEdit) err
 	default:
 		return nil // removing never makes endpoints ambiguous
 	}
-	base, _, ok, err := s.policyLayers(ctx, sb)
+	base, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok || err != nil {
 		return nil
 	}
-	ops, err := edit.operations(base)
+	ops, err := edit.operations(base, withProviderRules(base, effective))
 	if err != nil {
 		return nil // the runtime says why
 	}

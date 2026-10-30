@@ -26,8 +26,11 @@ import (
 // whole policy without them keeps them.
 //
 // OpenShell's policy is read to import it (a sandbox without a repository)
-// and to see changes made outside Iwato (drift). Before a write, a drift is
-// imported as its own commit, so the write starts from what OpenShell has.
+// and to see changes made outside Iwato (drift). The policy screen shows a
+// drift for the owner to import or overwrite, and its writes are refused
+// until then (refuseDrift); writes made elsewhere (attaching a provider, a
+// recreate) import it as its own commit first, since the owner cannot act
+// on it from there.
 
 const (
 	provenanceCommit = "iwato/commit"
@@ -176,9 +179,17 @@ func revisionRulesOf(st *v1.PolicyStatusResult) map[string]v1.NetworkPolicyRule 
 	return out
 }
 
+type refuseDriftKey struct{}
+
+// refuseDrift makes the writes made with ctx refuse a drift (the policy
+// screen's).
+func refuseDrift(ctx context.Context) context.Context {
+	return context.WithValue(ctx, refuseDriftKey{}, true)
+}
+
 // syncStore makes the repository match OpenShell before a write: a
 // sandbox without one gets OpenShell's policy as its first commit, and a
-// drift is imported as a commit.
+// drift is imported as a commit or refused (refuseDrift).
 func (o *OpenShell) syncStore(ctx context.Context, w Sandbox) (*storeSync, error) {
 	sync, st, err := o.policyCompare(ctx, w)
 	if err != nil {
@@ -192,6 +203,9 @@ func (o *OpenShell) syncStore(ctx context.Context, w Sandbox) (*storeSync, error
 		}
 		return o.importPolicy(ctx, w, sync, message)
 	case "drift":
+		if ctx.Value(refuseDriftKey{}) != nil {
+			return nil, errCode("policy_drift", nil, "Iwato の外でポリシーが変更されました。取り込むか Iwato の版で上書きしてから、もう一度試してください")
+		}
 		return o.importPolicy(ctx, w, sync, fmt.Sprintf("Import changes made outside Iwato (OpenShell version %d)", st.Version))
 	}
 	return sync, nil
@@ -649,11 +663,14 @@ func (o *OpenShell) storeCommit(w Sandbox, sha string) (*git.Repository, *object
 
 // RevertPolicyCommit undoes one commit as a new commit: the rules it
 // changed go back to how they were before it, unless a later change
-// changed them again.
+// changed them again. The first commit cannot be undone.
 func (o *OpenShell) RevertPolicyCommit(ctx context.Context, w Sandbox, sha string) (uint32, error) {
 	repo, c, err := o.storeCommit(w, sha)
 	if err != nil {
 		return 0, err
+	}
+	if len(c.ParentHashes) == 0 {
+		return 0, errCode("policy_revert_root", nil, "最初の版は取り消せません")
 	}
 	store := o.policyStoreOf()
 	after, _, err := store.content(repo, c.Hash)
