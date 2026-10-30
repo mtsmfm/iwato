@@ -95,9 +95,10 @@ type storeSync struct {
 
 // policyCompare reads OpenShell's latest revision (once per change: the
 // change holds the sandbox's policy lock) and compares it with the
-// repository. It moves the branch to a commit OpenShell took but the
-// branch missed (Iwato stopped between the two).
-func (o *OpenShell) policyCompare(ctx context.Context, w Sandbox) (*storeSync, PolicyStoreState, error) {
+// repository. A commit OpenShell took but the branch missed (Iwato stopped
+// between the two, or a write is between the two now) counts as the head;
+// only a writer (holding the policy lock) moves the branch to it.
+func (o *OpenShell) policyCompare(ctx context.Context, w Sandbox, writer bool) (*storeSync, PolicyStoreState, error) {
 	latest, err := o.latestPolicy(ctx, w)
 	if err != nil {
 		return nil, PolicyStoreState{}, err
@@ -122,8 +123,10 @@ func (o *OpenShell) policyCompare(ctx context.Context, w Sandbox) (*storeSync, P
 	}
 	if st.Commit != "" && st.Commit != sync.head.String() {
 		if c, err := repo.CommitObject(plumbing.NewHash(st.Commit)); err == nil && len(c.ParentHashes) == 1 && c.ParentHashes[0] == sync.head {
-			if err := store.advance(repo, sync.head, c.Hash); err != nil {
-				return nil, st, err
+			if writer {
+				if err := store.advance(repo, sync.head, c.Hash); err != nil {
+					return nil, st, err
+				}
 			}
 			sync.head = c.Hash
 		}
@@ -191,7 +194,7 @@ func refuseDrift(ctx context.Context) context.Context {
 // sandbox without one gets OpenShell's policy as its first commit, and a
 // drift is imported as a commit or refused (refuseDrift).
 func (o *OpenShell) syncStore(ctx context.Context, w Sandbox) (*storeSync, error) {
-	sync, st, err := o.policyCompare(ctx, w)
+	sync, st, err := o.policyCompare(ctx, w, true)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +366,7 @@ func (o *OpenShell) applyOps(ctx context.Context, w Sandbox, ops []v1.PolicyMerg
 // revision is no longer it (an operation on a proposal merged into it).
 func (o *OpenShell) reassert(ctx context.Context, w Sandbox, kind string) (uint32, error) {
 	forgetPolicy(ctx, w.Name)
-	sync, st, err := o.policyCompare(ctx, w)
+	sync, st, err := o.policyCompare(ctx, w, true)
 	if err != nil || st.State != "drift" {
 		return st.Version, err
 	}
@@ -601,7 +604,7 @@ func (o *OpenShell) checkWithProviders(ctx context.Context, w Sandbox, before, a
 
 // PolicyStore says how the repository compares with OpenShell.
 func (o *OpenShell) PolicyStore(ctx context.Context, w Sandbox) (PolicyStoreState, error) {
-	_, st, err := o.policyCompare(ctx, w)
+	_, st, err := o.policyCompare(ctx, w, false)
 	return st, err
 }
 
@@ -744,7 +747,7 @@ func revertRules(rules, before, after map[string]v1.NetworkPolicyRule) (map[stri
 
 // ImportPolicy commits OpenShell's latest policy (a drift accepted).
 func (o *OpenShell) ImportPolicy(ctx context.Context, w Sandbox) (PolicyStoreState, error) {
-	sync, st, err := o.policyCompare(ctx, w)
+	sync, st, err := o.policyCompare(ctx, w, true)
 	if err != nil {
 		return st, err
 	}
@@ -753,13 +756,13 @@ func (o *OpenShell) ImportPolicy(ctx context.Context, w Sandbox) (PolicyStoreSta
 			return st, err
 		}
 	}
-	_, st, err = o.policyCompare(ctx, w)
+	_, st, err = o.policyCompare(ctx, w, true)
 	return st, err
 }
 
 // OverwritePolicy applies the repository's policy over a drift.
 func (o *OpenShell) OverwritePolicy(ctx context.Context, w Sandbox) (uint32, error) {
-	sync, st, err := o.policyCompare(ctx, w)
+	sync, st, err := o.policyCompare(ctx, w, true)
 	if err != nil {
 		return 0, err
 	}

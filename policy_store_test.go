@@ -259,3 +259,30 @@ func TestApprovalInheritsTheShadowedEndpoint(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 }
+
+// A read of the store between OpenShell taking a write and the write
+// moving the branch neither moves the branch nor fails the write, and
+// reports the commit OpenShell took as the head.
+func TestPolicyStoreReadDuringWrite(t *testing.T) {
+	g := &storeGateway{}
+	g.add(map[string]v1.NetworkPolicyRule{"a": storeRule("a.example")}, nil)
+	o := &OpenShell{pol: g, sandboxConfig: g.config}
+	w, ctx := newSandbox("dev"), context.Background()
+	var seen PolicyStoreState
+	o.updateConfig = func(ctx context.Context, u *v1.ConfigUpdate) (*v1.ConfigUpdateResult, error) {
+		res, err := g.update(ctx, u)
+		if err == nil {
+			seen, err = o.PolicyStore(ctx, w)
+		}
+		return res, err
+	}
+	for _, name := range []string{"b", "c"} {
+		if _, err := o.applyOps(ctx, w, addRule(name, name+".example")); err != nil {
+			t.Fatal(err)
+		}
+		log, _ := o.PolicyCommits(ctx, w, 10)
+		if seen.State != "synced" || seen.Head == nil || seen.Head.SHA != log[0].SHA {
+			t.Fatalf("%+v %+v", seen, log)
+		}
+	}
+}

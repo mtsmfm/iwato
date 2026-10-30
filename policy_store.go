@@ -147,13 +147,20 @@ func (p *policyStore) write(r *git.Repository, content []byte, parent plumbing.H
 	return s.SetEncodedObject(commitObj)
 }
 
-// advance moves the branch from old to c, refusing when it moved since.
+// advance moves the branch from old to c, refusing when it moved since
+// (to anything but c).
 func (p *policyStore) advance(r *git.Repository, old, c plumbing.Hash) error {
 	ref := plumbing.NewHashReference(policyBranch, c)
 	if old.IsZero() {
 		return r.Storer.SetReference(ref)
 	}
-	return r.Storer.CheckAndSetReference(ref, plumbing.NewHashReference(policyBranch, old))
+	err := r.Storer.CheckAndSetReference(ref, plumbing.NewHashReference(policyBranch, old))
+	if err != nil {
+		if cur, rerr := r.Storer.Reference(policyBranch); rerr == nil && cur.Hash() == c {
+			return nil
+		}
+	}
+	return err
 }
 
 // content is policy.yaml at commit c.

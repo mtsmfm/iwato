@@ -416,7 +416,7 @@ func (o *OpenShell) PreviewApproval(ctx context.Context, w Sandbox, request, dig
 	if scope, err = scope.against(*chunk.ProposedRule); err != nil {
 		return none, err
 	}
-	sync, st, err := o.policyCompare(ctx, w)
+	sync, st, err := o.policyCompare(ctx, w, false)
 	if err != nil {
 		return none, err
 	}
