@@ -865,6 +865,10 @@ func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rul
 	if scope != nil {
 		r, attach = scope.apply(cloneRule(rule)), scope.Attach
 	}
+	composed := withProviderRules(base, effective)
+	if err := bindingRequired(inheritShadowed(approvedRule(freeRuleName(base, name), r), composed, attach), composed); err != nil {
+		return err
+	}
 	list, err := predictAmbiguities(base, effective, approvalPlanOps(base, effective, name, r, attach))
 	if err != nil || len(list) == 0 {
 		return nil

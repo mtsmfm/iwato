@@ -105,7 +105,8 @@ func TestPolicyBindingAPI(t *testing.T) {
 }
 
 // An approval on a host an attached provider's credential is meant for
-// offers the credential: off by default, bound with attach true. A path
+// offers the credential: off by default (attach true does not bind it),
+// bound with offer true. A path
 // under the provider's endpoint carries it by default.
 func TestApprovalOffersTheCredential(t *testing.T) {
 	s, d, do := providerServer(t)
@@ -142,7 +143,7 @@ func TestApprovalOffersTheCredential(t *testing.T) {
 				t.Fatal(code, body)
 			}
 		}
-		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"readOnly":true,"binaries":["/usr/bin/gh"],"attach":`+attach+`}}`)
+		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"readOnly":true,"binaries":["/usr/bin/gh"],"attach":true,"offer":`+attach+`}}`)
 		if code != 200 {
 			t.Fatal(attach, code, body)
 		}

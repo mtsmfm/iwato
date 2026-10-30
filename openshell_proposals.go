@@ -148,10 +148,18 @@ func (o *OpenShell) Proposals(ctx context.Context, w Sandbox) (ProposalView, err
 		if p.effective != nil {
 			composed := withProviderRules(p.base, p.effective)
 			for _, c := range chunks {
-				if c.Status == "pending" && c.ProposedRule != nil {
-					j := slices.IndexFunc(v.Pending, func(x PendingProposal) bool { return x.ID == requestID(c.ID) })
+				if c.ProposedRule == nil {
+					continue
+				}
+				var pp *PendingProposal
+				if j := slices.IndexFunc(v.Pending, func(x PendingProposal) bool { return x.ID == requestID(c.ID) }); c.Status == "pending" && j >= 0 {
+					pp = &v.Pending[j]
+				} else if j := slices.IndexFunc(v.Rejected, func(x RejectedProposal) bool { return x.ID == requestID(c.ID) }); c.Status == "rejected" && j >= 0 {
+					pp = &v.Rejected[j].PendingProposal
+				}
+				if pp != nil {
 					plan := inheritShadowed(approvedRule(c.RuleName, *c.ProposedRule), composed, nil)
-					v.Pending[j].Attach, v.Pending[j].plan = approvalAttach(plan), &plan
+					pp.Attach, pp.plan = approvalAttach(plan, composed), &plan
 				}
 			}
 		}
@@ -225,7 +233,7 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 			return none, errProposalUnshown(parts)
 		}
 	}
-	if rejected && scope != nil {
+	if rejected && scope.narrows() {
 		return none, errCode("rejected_as_proposed", nil, "却下した提案は OpenShell では提案どおりにしか承認できません")
 	}
 	if action == "reject" {
@@ -372,7 +380,10 @@ func (o *OpenShell) approvalPlan(ctx context.Context, w Sandbox, rules map[strin
 		attach = scope.Attach
 	}
 	plan := inheritShadowed(approvedRule(freeRuleName(rules, name), proposed), composed, attach)
-	if attach != nil && *attach {
+	if err := bindingRequired(plan, composed); err != nil {
+		return v1.NetworkPolicyRule{}, err
+	}
+	if scope != nil && scope.Offer {
 		// The credentials offered for the hosts they are meant for.
 		list, attached, err := o.listProvidersFor(ctx)
 		if err != nil {
@@ -385,7 +396,7 @@ func (o *OpenShell) approvalPlan(ctx context.Context, w Sandbox, rules map[strin
 
 // ApprovalPreview is the rule an approval would add, as policy.yaml has it,
 // and the credentials its endpoints would carry by default (Attach) or
-// could carry (Offer), whatever the scope's attach says.
+// could carry (Offer), whatever the scope's attach and offer say.
 type ApprovalPreview struct {
 	YAML   string           `json:"yaml"`
 	Attach []ApprovalAttach `json:"attach"`
@@ -435,7 +446,7 @@ func (o *OpenShell) PreviewApproval(ctx context.Context, w Sandbox, request, dig
 	var plain *ProposalScope
 	if scope != nil {
 		x := *scope
-		x.Attach = nil
+		x.Attach, x.Offer = nil, false
 		plain = &x
 	}
 	if plan, err = o.approvalPlan(ctx, w, rules, chunk, plain); err != nil {
@@ -445,7 +456,11 @@ func (o *OpenShell) PreviewApproval(ctx context.Context, w Sandbox, request, dig
 	if err != nil {
 		return none, err
 	}
-	out.Attach = append(out.Attach, approvalAttach(plan)...)
+	composed, err := o.withProviders(ctx, w, rules)
+	if err != nil {
+		return none, err
+	}
+	out.Attach = append(out.Attach, approvalAttach(plan, composed)...)
 	out.Offer = append(out.Offer, credentialOffers(plan, list, attached[w.Name])...)
 	return out, nil
 }
@@ -472,20 +487,34 @@ func binaryPaths(r v1.NetworkPolicyRule) []string {
 // Binaries, when set, replace the proposed rule's programs, for instance a
 // versioned path widened to a glob (claude-*-linux-x64). Alone they leave the
 // endpoints as proposed.
+//
+// Uninspected are the indexes of the proposed endpoints approved as
+// proposed (uninspected, L4); the others are narrowed, and left out without
+// rules of their own.
 type ProposalScope struct {
-	ReadOnly bool           `json:"readOnly"`
-	Audit    bool           `json:"audit"`
-	Rules    []ProposalRule `json:"rules"`
-	Binaries []string       `json:"binaries"`
+	ReadOnly    bool           `json:"readOnly"`
+	Audit       bool           `json:"audit"`
+	Rules       []ProposalRule `json:"rules"`
+	Binaries    []string       `json:"binaries"`
+	Uninspected []int          `json:"uninspected,omitempty"`
 	// Attach: whether the approved endpoints carry the credential of the
-	// endpoints they shadow (nil: that default, PendingProposal.Attach),
-	// and, when true, the credentials offered (PendingProposal.Offer).
+	// endpoints they shadow (nil: that default, PendingProposal.Attach).
 	Attach *bool `json:"attach,omitempty"`
+	// Offer binds the credentials offered (PendingProposal.Offer), off
+	// unless the owner turns it on (ADR 0022).
+	Offer bool `json:"offer,omitempty"`
+}
+
+// narrows: the scope changes the proposed endpoints (programs and
+// credentials do not).
+func (s *ProposalScope) narrows() bool {
+	return s != nil && (s.ReadOnly || s.Audit || len(s.Rules) > 0 || len(s.Uninspected) > 0)
 }
 
 // ProposalRule allows one method ("*" for any) on paths matching a glob
 // ("*" within a segment, "**" across segments). In a scope, Host limits it
-// to the proposal's endpoints on that host (empty: all of them).
+// to the proposal's endpoints on that host; empty is the host-less ones, or
+// every endpoint of a proposal with a single host.
 type ProposalRule struct {
 	Method string `json:"method"`
 	Path   string `json:"path"`
@@ -505,11 +534,14 @@ func (s ProposalScope) Validate() error {
 	if s.Audit && (s.ReadOnly || len(s.Rules) > 0) {
 		return errCode("scope_audit_alone", nil, "監査は読み取りだけやメソッドとパスと一緒には指定できません")
 	}
-	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 && len(s.Binaries) == 0 && s.Attach == nil {
+	if !s.narrows() && len(s.Binaries) == 0 && s.Attach == nil && !s.Offer {
 		return errCode("scope_empty", nil, "読み取りだけ、監査、メソッドとパス、プログラムのどれかを指定してください")
 	}
 	if len(s.Binaries) > 8 {
 		return errCode("scope_binaries_too_many", nil, "プログラムは 8 個までです")
+	}
+	if len(s.Uninspected) > proposalLimits.Endpoints || slices.ContainsFunc(s.Uninspected, func(i int) bool { return i < 0 }) {
+		return errCode("scope_uninspected_invalid", nil, "検査せずに通す宛先の指定が正しくありません")
 	}
 	for _, b := range s.Binaries {
 		if err := validBinary(b); err != nil {
@@ -579,7 +611,10 @@ func (s *ProposalScope) against(rule v1.NetworkPolicyRule) (*ProposalScope, erro
 	if len(s.Binaries) == 0 && len(rule.Binaries) > 0 {
 		return nil, errCode("scope_binaries_missing", nil, "承認するプログラムがありません")
 	}
-	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 && s.Attach == nil {
+	if slices.ContainsFunc(s.Uninspected, func(i int) bool { return i >= len(rule.Endpoints) }) {
+		return nil, errCode("scope_uninspected_invalid", nil, "検査せずに通す宛先の指定が正しくありません")
+	}
+	if !s.narrows() && s.Attach == nil && !s.Offer {
 		same := len(s.Binaries) == len(rule.Binaries)
 		for i, b := range rule.Binaries {
 			same = same && s.Binaries[i] == b.Path
@@ -594,8 +629,9 @@ func (s *ProposalScope) against(rule v1.NetworkPolicyRule) (*ProposalScope, erro
 	return s, nil
 }
 
-// apply sets the programs and narrows every endpoint's requests; everything
-// else, allowed_ips included, stays as proposed.
+// apply sets the programs and narrows the requests of every endpoint but
+// the uninspected ones; everything else, allowed_ips included, stays as
+// proposed.
 func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 	if len(s.Binaries) > 0 {
 		rule.Binaries = make([]v1.PolicyNetworkBinary, len(s.Binaries))
@@ -603,11 +639,22 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 			rule.Binaries[i] = v1.PolicyNetworkBinary{Path: b}
 		}
 	}
-	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 {
+	if !s.narrows() {
 		return rule
 	}
-	endpoints := make([]v1.PolicyNetworkEndpoint, 0, len(rule.Endpoints))
+	hosts := map[string]bool{}
 	for _, e := range rule.Endpoints {
+		hosts[strings.ToLower(e.Host)] = true
+	}
+	endpoints := make([]v1.PolicyNetworkEndpoint, 0, len(rule.Endpoints))
+	for i, e := range rule.Endpoints {
+		if slices.Contains(s.Uninspected, i) {
+			endpoints = append(endpoints, e)
+			continue
+		}
+		if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 {
+			continue
+		}
 		e.Protocol, e.Enforcement = "rest", v1.NetworkEnforcementModeEnforce
 		// Inspected: not tls: skip (OpenShell would refuse a provider's
 		// credentials on it).
@@ -636,7 +683,7 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 			e.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/"}}}
 		default:
 			for _, r := range s.Rules {
-				if r.Host == "" || strings.EqualFold(r.Host, e.Host) {
+				if strings.EqualFold(r.Host, e.Host) || r.Host == "" && len(hosts) == 1 {
 					e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: r.Method, Path: r.Path}})
 				}
 			}
@@ -730,7 +777,7 @@ type PendingProposal struct {
 	// default, approved as proposed (inheritShadowed).
 	Attach []ApprovalAttach `json:"attach,omitempty"`
 	// Offer are its endpoints without one that could carry an attached
-	// provider's (credentialOffers): scope.attach true binds them too.
+	// provider's (credentialOffers): scope.offer binds them.
 	Offer []ApprovalAttach `json:"offer,omitempty"`
 	plan  *v1.NetworkPolicyRule
 	rule  *v1.NetworkPolicyRule

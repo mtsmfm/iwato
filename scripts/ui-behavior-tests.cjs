@@ -340,14 +340,24 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const grant = nodes(review(boundEnv)).find((n) => n.className === 'review-grant');
     assert.match(texts(grant), /gh のトークンを付ける/); assert.equal(grant.children[0].checked, true);
     await approveFirst(boundEnv); assert.equal(scopeOf(boundEnv).scope.attach, true);
+    // A required one says how to go without it.
+    const required = await approveEnv({...proposal, attach: [{provider: 'gh', host: 'github.com', ports: [443], path: '/**', required: true}]});
+    assert.match(texts(nodes(review(required)).find((n) => n.className === 'review-grant')), /パスをもっと狭く/);
+    // An offer is a checkbox of its own, off: checking the inherited one
+    // never binds it.
     const offerEnv = await approveEnv({...proposal, offer: [{provider: 'gh', host: 'github.com', path: ''}]});
-    assert.equal(nodes(review(offerEnv)).find((n) => n.className === 'review-grant').children[0].checked, false);
-    await approveFirst(offerEnv); assert.equal(scopeOf(offerEnv).scope.attach, false);
+    const grants = nodes(review(offerEnv)).filter((n) => n.className === 'review-grant');
+    assert.equal(grants[0].hidden, true); assert.equal(grants[1].hidden, false); assert.equal(grants[1].children[0].checked, false);
+    await approveFirst(offerEnv); assert.equal('attach' in scopeOf(offerEnv).scope, false); assert.equal('offer' in scopeOf(offerEnv).scope, false);
+    toggle(nodes(review(offerEnv)).filter((n) => n.className === 'review-grant')[1].children[0]);
+    await approveFirst(offerEnv); assert.equal(scopeOf(offerEnv).scope.offer, true);
+    const both = await approveEnv({...bound, offer: [{provider: 'gh', host: 'github.com', path: ''}]});
+    await approveFirst(both); assert.equal(scopeOf(both).scope.attach, true); assert.equal('offer' in scopeOf(both).scope, false);
     assert(nodes(pendingSec(offerEnv)).some((n) => n.className === 'review-chip' && n.textContent === 'トークン'), 'the list marks it');
     const plainEnv = await approveEnv(proposal); await approveFirst(plainEnv);
     assert.equal('attach' in scopeOf(plainEnv).scope, false, 'no credential, no attach');
   }
-  ok('the token checkbox is on where the credential covers the endpoint, off where it is offered, and goes as scope.attach');
+  ok('the token checkbox is on where the credential covers the endpoint and goes as scope.attach; an offer is its own checkbox, off, as scope.offer');
   {
     // The host checks: red and amber in the list and the opened proposal;
     // the facts when nothing is found.
@@ -403,9 +413,16 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const ok2 = await environment({fake: false}); ok2.setConfirm(true);
     ok2.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : response({...proposalItem, pending: [], rejected: [{...item, endpoints: [{host: 'x.example', ports: [443]}]}]}));
     await readPolicy(ok2); find(ok2.policy().children[1].children[3], '承認する').click(); await flush();
-    assert.deepEqual(scopeOf(ok2), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64)}, 'as proposed: no scope');
+    assert.deepEqual(scopeOf(ok2), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**'], attach: false}}, 'as proposed, no credential unless named');
+    // The credential it carries by default is named in the question, and sent.
+    const tok = await environment({fake: false}); let tokShown = '';
+    tok.setConfirmHandler((q) => { tokShown = q; return true; });
+    tok.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : response({...proposalItem, pending: [], rejected: [{...item, endpoints: [{host: 'x.example', ports: [443]}], attach: [{provider: 'gh', host: 'x.example', path: '/a'}]}]}));
+    await readPolicy(tok); find(tok.policy().children[1].children[3], '承認する').click(); await flush();
+    assert.match(tokShown, /x\.example\/a への要求には gh のトークンが付きます/);
+    assert.equal(scopeOf(tok).scope.attach, true);
   }
-  ok('a rejected proposal is approved as proposed after a question that warns of a host gateway and Iwato\'s port');
+  ok('a rejected proposal is approved as proposed after a question that warns of a host gateway and Iwato\'s port, and names the credential it carries');
   {
   // web/approve.js, with the page's dictionary (Japanese).
   const box = {window: {}, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box); vm.runInNewContext(approveSource, box); const A = box.window.IwatoApprove;
@@ -420,6 +437,14 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // Audited as proposed: enforced with its rules.
   const audited = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'audit', rules: [{method: 'GET', path: '/a'}]}]};
   assert.deepEqual(plain(A.reviewScope(audited, A.reviewRows(audited))).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/a'}]});
+  // One L4 row per uninspected endpoint; only the checked ones go uninspected.
+  const twoL4 = {endpoints: [{host: 'a.example', ports: [443]}, {host: 'b.example', ports: [5432]}]};
+  const l4Rows = A.reviewRows(twoL4);
+  assert.deepEqual(plain(l4Rows.filter((r) => r.kind === 'l4').map((r) => r.checked + ' ' + r.ep + ' ' + r.label)), ['false 0 a.example', 'true 1 b.example:5432']);
+  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {binaries: ['/**'], uninspected: [1], rules: [{method: 'GET', path: '/**', host: 'a.example'}, {method: 'HEAD', path: '/**', host: 'a.example'}]});
+  assert.deepEqual(plain([...A.uninspectedHosts(twoL4, l4Rows)]), ['b.example']);
+  for (const r of l4Rows) if (r.kind === 'l4') r.checked = true;
+  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {binaries: ['/**']}, 'every endpoint uninspected: as proposed');
   const many = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: Array.from({length: 20}, (_, i) => ({method: 'GET', path: '/p' + i}))}]};
   const manyRows = A.reviewRows(many);
   assert.deepEqual(plain(A.reviewScope(many, manyRows)), {scope: {binaries: ['/**']}, error: ''}, 'over 16, all kept: as proposed');
@@ -1545,7 +1570,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   lists.setConfirmHandler((q) => /提案どおり/.test(q));
   find(rejItems()[0], '承認する').click(); await flush();
   const appr = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/approve');
-  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest});
+  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {binaries: ['/**'], attach: false}});
   ok('the rejected list shows the newest 10 then more, the hits since, OpenShell\'s own rejections, and approves as proposed');
   }
 

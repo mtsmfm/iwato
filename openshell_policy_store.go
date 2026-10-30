@@ -537,23 +537,45 @@ func equalBinding(e v1.PolicyNetworkEndpoint, rules map[string]v1.NetworkPolicyR
 
 // ApprovalAttach is the credential an approved endpoint carries by
 // default: the binding of the endpoint it shadows (inheritShadowed).
+// Required: an endpoint as specific as it is bound (equalBinding), so it
+// cannot go without the credential (bindingRequired).
 type ApprovalAttach struct {
 	Host     string   `json:"host"`
 	Ports    []uint32 `json:"ports"`
 	Path     string   `json:"path"`
 	Provider string   `json:"provider"`
+	Required bool     `json:"required,omitempty"`
 }
 
 // approvalAttach lists the endpoints of the approved rule that carry a
 // credential by default.
-func approvalAttach(plan v1.NetworkPolicyRule) []ApprovalAttach {
+func approvalAttach(plan v1.NetworkPolicyRule, rules map[string]v1.NetworkPolicyRule) []ApprovalAttach {
 	var out []ApprovalAttach
 	for _, e := range plan.Endpoints {
 		if e.CredentialBinding != nil {
-			out = append(out, ApprovalAttach{Host: e.Host, Ports: endpointPorts(e), Path: e.Path, Provider: e.CredentialBinding.Provider})
+			provider := e.CredentialBinding.Provider
+			e.CredentialBinding = nil
+			out = append(out, ApprovalAttach{Host: e.Host, Ports: endpointPorts(e), Path: e.Path, Provider: provider, Required: equalBinding(e, rules) != nil})
 		}
 	}
 	return out
+}
+
+// bindingRequired refuses an approved endpoint left without the credential
+// of a bound endpoint as specific as it (equalBinding): OpenShell refuses
+// the two unless they bind the same provider, and only a narrower path
+// avoids it.
+func bindingRequired(plan v1.NetworkPolicyRule, rules map[string]v1.NetworkPolicyRule) error {
+	for _, e := range plan.Endpoints {
+		if e.CredentialBinding != nil {
+			continue
+		}
+		if b := equalBinding(e, rules); b != nil {
+			return errCode("approval_credential_required", map[string]any{"host": e.Host, "path": e.Path, "provider": b.Provider},
+				fmt.Sprintf("%s%s には %s の認証情報が付いた同じ範囲の宛先があるので、認証情報なしでは承認できません。付けないなら、もっと狭いパスに絞ってください", e.Host, e.Path, b.Provider))
+		}
+	}
+	return nil
 }
 
 // freeRuleName is name, or name_N when the rules have it.

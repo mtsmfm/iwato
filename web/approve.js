@@ -46,21 +46,22 @@
   // The rows an opened proposal lists, each a method and path on a host,
   // checked when the approval keeps it. An endpoint OpenShell does not
   // inspect (its own drafts, mostly) or whose only rule is a GET / nobody
-  // saw (placeholder) lists the methods on every path, reads checked; it
-  // also gets a row to allow it uninspected (L4), checked when the port is
-  // not a web one. An access preset lists its methods on every path.
+  // saw (placeholder) lists the methods on every path, reads checked; an
+  // uninspected one also gets a row to allow it as proposed (L4, ep its
+  // index), checked when the port is not a web one. An access preset lists
+  // its methods on every path.
   function reviewRows(item) {
     const rows = [];
     const add = (host, method, path, checked) => {
       if (!rows.some((r) => r.kind === 'rule' && r.host === host && r.method === method && r.path === path)) rows.push({ kind: 'rule', host, method, path, checked, write: !isRead(method) });
     };
-    for (const e of item.endpoints || []) {
+    for (const [i, e] of (item.endpoints || []).entries()) {
       const host = e.host || '';
       const uninspected = !inspectedEndpoint(e);
       if (uninspected || item.placeholder || (!e.access && !(e.rules || []).length)) {
         const web = looksHTTP([e]);
         for (const m of ['GET', 'HEAD', ...writeMethods]) add(host, m, '/**', web && isRead(m));
-        if (uninspected && !rows.some((r) => r.kind === 'l4')) rows.push({ kind: 'l4', host, checked: !web, write: true });
+        if (uninspected) rows.push({ kind: 'l4', host, ep: i, label: destParts([e]).map((d) => d.host + d.port)[0], checked: !web, write: true });
         continue;
       }
       for (const m of presetMethods[e.access] || []) add(host, m, '/**', true);
@@ -77,18 +78,31 @@
       rows.every((r) => r.kind !== 'rule' || r.checked);
   }
 
+  // The hosts whose every endpoint is allowed uninspected (their L4 rows
+  // checked): their rule rows do not apply.
+  function uninspectedHosts(item, rows) {
+    const eps = item.endpoints || [];
+    const on = new Set(rows.filter((r) => r.kind === 'l4' && r.checked).map((r) => r.ep));
+    return new Set(eps.map((e) => e.host || '').filter((h) => eps.every((e, i) => (e.host || '') !== h || on.has(i))));
+  }
+
   // The approval: {scope (null: nothing to send), error}. Every program
-  // (ADR 0022); the checked rules per host, or as proposed when nothing was
-  // narrowed or the uninspected row is checked. attach is the token
-  // checkbox (null when not shown).
-  function reviewScope(item, rows, attach = null) {
+  // (ADR 0022); the checked rules per host and the endpoints whose L4 row is
+  // checked (uninspected), or as proposed when nothing was narrowed or every
+  // endpoint is allowed uninspected. grant is the token checkboxes: attach
+  // (inherited; null when not shown) and offer.
+  function reviewScope(item, rows, grant = {}) {
     const out = { scope: null, error: '' };
     const scope = { binaries: ['/**'] };
-    if (attach !== null) scope.attach = attach;
-    const l4 = rows.some((r) => r.kind === 'l4' && r.checked);
-    if (!l4 && !asProposed(item, rows)) {
-      const picked = rows.filter((r) => r.kind === 'rule' && r.checked);
-      if (!picked.length) {
+    if (grant.attach === true || grant.attach === false) scope.attach = grant.attach;
+    if (grant.offer === true) scope.offer = true;
+    const l4 = rows.filter((r) => r.kind === 'l4' && r.checked);
+    const all = l4.length > 0 && l4.length === (item.endpoints || []).length;
+    if (!all && !(l4.length === 0 && asProposed(item, rows))) {
+      const skip = uninspectedHosts(item, rows);
+      const picked = rows.filter((r) => r.kind === 'rule' && r.checked && !skip.has(r.host));
+      if (l4.length) scope.uninspected = l4.map((r) => r.ep);
+      if (!picked.length && !l4.length) {
         out.error = t('review.nothing');
         return out;
       }
@@ -97,7 +111,7 @@
         return out;
       }
       const hosts = new Set((item.endpoints || []).map((e) => e.host));
-      scope.rules = picked.map((r) => hosts.size > 1 ? { method: r.method, path: r.path, host: r.host } : { method: r.method, path: r.path });
+      if (picked.length) scope.rules = picked.map((r) => hosts.size > 1 ? { method: r.method, path: r.path, host: r.host } : { method: r.method, path: r.path });
     }
     out.scope = scope;
     return out;
@@ -214,5 +228,5 @@
     return out;
   }
 
-  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, broadWrites, hostWarnings, rowWarnings, destParts, ruleLabel, risks, details, gatewayHit };
+  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, ruleLabel, risks, details, gatewayHit };
 })();

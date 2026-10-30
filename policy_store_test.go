@@ -254,7 +254,7 @@ func TestApprovalInheritsTheShadowedEndpoint(t *testing.T) {
 	if strings.Join(got, ",") != "POST /repos/o/r/pulls,GET /repos/**,DELETE /repos/**" || len(e.DenyRules) != 1 || e.CredentialBinding == nil || e.CredentialBinding.Provider != "github" {
 		t.Fatalf("%v %+v", got, e)
 	}
-	if a := approvalAttach(plan); len(a) != 1 || a[0].Path != "/repos/o/r/pulls" || a[0].Provider != "github" {
+	if a := approvalAttach(plan, rules); len(a) != 1 || a[0].Required || a[0].Path != "/repos/o/r/pulls" || a[0].Provider != "github" {
 		t.Fatalf("%+v", a)
 	}
 	off := false

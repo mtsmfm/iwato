@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
 )
 
 // testDigest is the digest the page sends for a proposal (proposalDigest).
@@ -279,7 +280,8 @@ func TestProposalAllowedIPsShowAndSurviveNarrowing(t *testing.T) {
 	if len(p.AllowedIPs) != 2 || p.AllowedIPs[0].Host != "ci.tailnet.example" || strings.Join(p.AllowedIPs[0].IPs, ",") != "100.64.0.0/10" || p.AllowedIPs[1].Host != "" || len(p.AllowedIPs[1].IPs) != 2 {
 		t.Errorf("allowed IPs: %+v", p.AllowedIPs)
 	}
-	for _, scope := range []ProposalScope{{ReadOnly: true}, {Audit: true}, {Rules: []ProposalRule{{Method: "GET", Path: "/**"}}}} {
+	every := []ProposalRule{{Method: "GET", Path: "/**", Host: "ci.tailnet.example"}, {Method: "GET", Path: "/**"}, {Method: "GET", Path: "/**", Host: "plain.example"}}
+	for _, scope := range []ProposalScope{{ReadOnly: true}, {Audit: true}, {Rules: every}} {
 		got := scope.apply(*rule)
 		for i, e := range got.Endpoints {
 			if !slices.Equal(e.AllowedIPs, rule.Endpoints[i].AllowedIPs) || e.Host != rule.Endpoints[i].Host {
@@ -292,6 +294,41 @@ func TestProposalAllowedIPsShowAndSurviveNarrowing(t *testing.T) {
 	}
 	if got := f.chunks[0].ProposedRule.Endpoints[0].AllowedIPs; strings.Join(got, ",") != "100.64.0.0/10" {
 		t.Fatal("the edited chunk lost allowed_ips:", got)
+	}
+}
+
+// A rule without a host narrows only the host-less endpoints of a
+// proposal with several hosts; uninspected endpoints are approved as
+// proposed one by one.
+func TestScopeHostsAndUninspected(t *testing.T) {
+	rule := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{
+		{Host: "", Port: 443, AllowedIPs: []string{"10.0.0.0/8"}},
+		{Host: "api.example.com", Port: 443, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce, Rules: []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/x"}}}},
+	}}
+	got := ProposalScope{Rules: []ProposalRule{{Method: "POST", Path: "/**"}}}.apply(rule)
+	if len(got.Endpoints) != 1 || got.Endpoints[0].Host != "" {
+		t.Fatalf("a host-less rule reached another host: %+v", got.Endpoints)
+	}
+	// One host: rules without a host narrow it.
+	single := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{rule.Endpoints[1]}}
+	if got := (ProposalScope{Rules: []ProposalRule{{Method: "POST", Path: "/**"}}}).apply(single); len(got.Endpoints) != 1 {
+		t.Fatalf("%+v", got)
+	}
+
+	two := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{{Host: "a.example", Port: 22}, {Host: "b.example", Port: 5432}}}
+	got = ProposalScope{Uninspected: []int{1}}.apply(two)
+	if len(got.Endpoints) != 1 || got.Endpoints[0].Host != "b.example" || got.Endpoints[0].Protocol != "" {
+		t.Fatalf("%+v", got.Endpoints)
+	}
+	got = ProposalScope{Uninspected: []int{1}, Rules: []ProposalRule{{Method: "GET", Path: "/**", Host: "a.example"}}}.apply(two)
+	if len(got.Endpoints) != 2 || got.Endpoints[0].Protocol != "rest" || got.Endpoints[1].Protocol != "" {
+		t.Fatalf("%+v", got.Endpoints)
+	}
+	if _, err := (&ProposalScope{Uninspected: []int{2}}).against(two); codeOf(err) != "scope_uninspected_invalid" {
+		t.Fatal(err)
+	}
+	if err := (ProposalScope{Uninspected: []int{-1}}).Validate(); codeOf(err) != "scope_uninspected_invalid" {
+		t.Fatal(err)
 	}
 }
 
@@ -421,5 +458,48 @@ func TestProposalEndpointsReportWhatWidens(t *testing.T) {
 	want := []string{"a.example full enforce", "b.example  audit", "c.example  ", "d.example unknown audit"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// The credential an approval carries by default shows for a rejected
+// proposal too, and its approval can go without it; an endpoint as broad as
+// a bound one cannot, and says so.
+func TestApprovalCredentialChoice(t *testing.T) {
+	bound := v1.PolicyNetworkEndpoint{Host: "api.example.com", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce, Path: "/**",
+		Rules: []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/**"}}}, CredentialBinding: &types.NetworkCredentialBinding{Provider: "work"}}
+	rest := func(rules ...v1.L7Rule) *v1.NetworkPolicyRule {
+		e := v1.PolicyNetworkEndpoint{Host: "api.example.com", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce, Rules: rules}
+		if len(rules) == 0 {
+			e.Access = v1.NetworkAccessPresetReadOnly
+		}
+		return &v1.NetworkPolicyRule{Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: []v1.PolicyNetworkEndpoint{e}}
+	}
+	f := &fakePolicy{providerRules: map[string]v1.NetworkPolicyRule{"_provider_work": {Endpoints: []v1.PolicyNetworkEndpoint{bound}}}, chunks: []v1.PolicyChunk{
+		{ID: "narrow", Status: "rejected", RuleName: "narrow", ReviewToken: "t1", Binary: "/usr/bin/curl", ProposedRule: rest(v1.L7Rule{Allow: &v1.L7Allow{Method: "POST", Path: "/x"}})},
+		{ID: "whole", Status: "pending", RuleName: "whole", ReviewToken: "t2", Binary: "/usr/bin/curl", ProposedRule: rest()},
+	}}
+	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}, newSandbox("dev"), context.Background()
+	v, err := o.Proposals(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := v.Rejected[0].Attach; len(a) != 1 || a[0].Provider != "work" || a[0].Required {
+		t.Fatalf("rejected: %+v", a)
+	}
+	if a := v.Pending[0].Attach; len(a) != 1 || a[0].Path != "/**" || !a[0].Required {
+		t.Fatalf("pending: %+v", a)
+	}
+	off := false
+	id := requestID("narrow")
+	if _, err := o.DecideProposal(ctx, w, "approve", id, testDigest(o, ctx, w, id), &ProposalScope{Binaries: []string{"/**"}, Attach: &off}); err != nil {
+		t.Fatal(err)
+	}
+	applied := f.updates[len(f.updates)-1].Policy.NetworkPolicies
+	if r, ok := applied["narrow"]; !ok || r.Endpoints[0].CredentialBinding != nil {
+		t.Fatalf("%+v", applied)
+	}
+	id = requestID("whole")
+	if _, err := o.DecideProposal(ctx, w, "approve", id, testDigest(o, ctx, w, id), &ProposalScope{Binaries: []string{"/**"}, Attach: &off}); codeOf(err) != "approval_credential_required" {
+		t.Fatal(err)
 	}
 }

@@ -2161,7 +2161,7 @@
         return value.slice(0, max);
       };
       const methodPaths = (value, max, name) => list(value, max, name).filter((r) => r && typeof r.path === 'string' && typeof r.method === 'string').map((r) => ({ method: text(r.method, 10), path: text(r.path, 512) }));
-      const credentials = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512) }));
+      const credentials = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512), required: a.required === true }));
       return { id: p.id, digest: /^[0-9a-f]{64}$/.test(p.digest) ? p.digest : '', unshown, summary: text(p.summary, 600), createdAt: Number(p.createdAt), source: p.source === 'auto' ? 'auto' : 'agent', intent: text(p.intent, 600), notes: text(p.notes, 600), rule: text(p.rule, 200),
         hits: Number(p.hits) || 0, firstSeen: Number(p.firstSeen) || 0, lastSeen: Number(p.lastSeen) || 0,
         rules: methodPaths(p.rules, lim.rules, 'rules'),
@@ -2520,7 +2520,7 @@
         input.checked = row.checked;
         input.id = 'review-rule-' + p.id + '-' + i;
         input.addEventListener('change', () => { row.checked = input.checked; this.updateReview(); });
-        if (row.kind === 'l4') label.append(input, element('span', 'review-rule-text', t('review.l4', { host: row.host })));
+        if (row.kind === 'l4') label.append(input, element('span', 'review-rule-text', t('review.l4', { host: row.label })));
         else label.append(input, element('span', 'review-method', row.method === '*' ? t('review.allMethods') : row.method), element('span', 'review-path', (multi ? row.host : '') + pathLabel(row.path)));
         list.append(label);
         return { input, label, row };
@@ -2532,16 +2532,23 @@
       warnSec.append(element('h6', 'review-sec-title', t('review.warnings')), r.warns);
       node.append(rules, warnSec);
       // A provider's credential: on where the approved endpoint takes
-      // requests from a bound one (attach), offered off where its host is
-      // one the credential is meant for (offer). The preview says which,
-      // for the rule as narrowed.
-      r.grant = element('label', 'review-grant');
-      r.attachInput = document.createElement('input');
-      r.attachInput.type = 'checkbox';
+      // requests from a bound one (attach), and apart, off, where its host
+      // is one the credential is meant for (offer; ADR 0022). The preview
+      // says which, for the rule as narrowed.
+      const grantBox = () => {
+        const label = element('label', 'review-grant');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = false;
+        const words = element('span');
+        label.append(input, words);
+        node.append(label);
+        return { label, input, words };
+      };
+      ({ label: r.grant, input: r.attachInput, words: r.grantText } = grantBox());
       r.attachInput.addEventListener('change', () => { r.attachTouched = true; this.updateReview(); });
-      r.grantText = element('span');
-      r.grant.append(r.attachInput, r.grantText);
-      node.append(r.grant);
+      ({ label: r.offerGrant, input: r.offerInput, words: r.offerText } = grantBox());
+      r.offerInput.addEventListener('change', () => this.updateReview());
       const diff = element('details', 'review-diff');
       r.diff = element('pre', 'review-diff-body');
       diff.append(element('summary', '', t('review.diff')), r.diff);
@@ -2568,22 +2575,29 @@
       if (!r) return;
       const p = r.p;
       const l4 = r.rows.some((x) => x.kind === 'l4' && x.checked);
+      const skip = approveLogic.uninspectedHosts(p, r.rows);
       for (const { input, label, row } of r.inputs) {
-        label.dataset.off = String(!row.checked || (l4 && row.kind === 'rule'));
-        input.disabled = this.mutating || (l4 && row.kind === 'rule');
+        const covered = row.kind === 'rule' && skip.has(row.host);
+        label.dataset.off = String(!row.checked || covered);
+        input.disabled = this.mutating || covered;
       }
       const grants = r.preview?.grants || { attach: p.attach, offer: p.offer };
-      const all = [...grants.attach, ...grants.offer];
-      const grantKey = JSON.stringify(all) + window.IwatoI18n.language();
+      const grantKey = JSON.stringify(grants) + window.IwatoI18n.language();
       if (r.grantKey !== grantKey) {
         r.grantKey = grantKey;
-        const words = element('span', '', t('review.token', { provider: [...new Set(all.map((a) => a.provider))].join(', ') }));
-        words.append(element('small', '', t('review.token.note', { where: all.map((a) => a.host + a.path).join(', ') })));
-        r.grantText.replaceChildren(words);
+        const words = (list, note) => {
+          const out = element('span', '', t('review.token', { provider: [...new Set(list.map((a) => a.provider))].join(', ') }));
+          out.append(element('small', '', t(note, { where: list.map((a) => a.host + a.path).join(', ') })));
+          return out;
+        };
+        // Declining an endpoint as broad as a bound one needs a narrower path.
+        r.grantText.replaceChildren(words(grants.attach, grants.attach.some((a) => a.required) ? 'review.token.required' : 'review.token.note'));
+        r.offerText.replaceChildren(words(grants.offer, 'review.token.offer'));
       }
-      r.grant.hidden = !all.length;
+      r.grant.hidden = !grants.attach.length;
+      r.offerGrant.hidden = !grants.offer.length;
       if (!r.attachTouched) r.attachInput.checked = grants.attach.length > 0;
-      const built = approveLogic.reviewScope(p, r.rows, all.length ? r.attachInput.checked : null);
+      const built = approveLogic.reviewScope(p, r.rows, { attach: grants.attach.length ? r.attachInput.checked : null, offer: grants.offer.length > 0 && r.offerInput.checked });
       r.built = built;
       const risk = approveLogic.risks({ endpoints: p.endpoints, wide: l4, listenPort: policyGuard.listenPort, gateways: policyGuard.gateways });
       const warns = [];
@@ -2619,7 +2633,7 @@
       const off = this.mutating || !state.authorized;
       r.approve.disabled = off || Boolean(error);
       r.reject.disabled = off;
-      r.attachInput.disabled = this.mutating;
+      r.attachInput.disabled = r.offerInput.disabled = this.mutating;
     }
 
     // The rule the approval writes, as policy.yaml will hold it, read from
@@ -2637,7 +2651,7 @@
         let preview;
         try {
           const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/preview', { method: 'POST', body: JSON.stringify(body), timeoutMs: 30000 });
-          const grants = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512) }));
+          const grants = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512), required: a.required === true }));
           preview = { yaml: text(data?.yaml, 100000), error: '', grants: { attach: grants(data?.attach), offer: grants(data?.offer) } };
         } catch (error) {
           preview = { yaml: '', error: error.message, raw: error.raw || '' };
@@ -2679,8 +2693,10 @@
     async approveRejected(item) {
       if (this.mutating || this.refreshing || !state.authorized) return;
       const name = JSON.stringify(this.sandbox.name);
-      if (!(await askApprove(t('policy.approve.rejectedQuestion', { name }) + '\n' + item.summary + '\n\n' + t('policy.approve.rejectedEffect'), item))) return;
-      await this.post('/proposals/approve', { requestId: item.id, digest: item.digest }, t('policy.approve.done'));
+      // The credential it carries by default is named, and sent only then.
+      const token = item.attach.length ? '\n\n' + t('policy.approve.rejectedToken', { provider: [...new Set(item.attach.map((a) => a.provider))].join(', '), where: item.attach.map((a) => a.host + a.path).join(', ') }) : '';
+      if (!(await askApprove(t('policy.approve.rejectedQuestion', { name }) + '\n' + item.summary + '\n\n' + t('policy.approve.rejectedEffect') + token, item))) return;
+      await this.post('/proposals/approve', { requestId: item.id, digest: item.digest, scope: { binaries: ['/**'], attach: item.attach.length > 0 } }, t('policy.approve.done'));
     }
 
     renderRejected(data) {
