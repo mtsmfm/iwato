@@ -204,3 +204,50 @@ func TestStorePolicyRoundTrip(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+// A path-specific approved endpoint keeps what the endpoint it shadows
+// allowed on its path (the most specific of those), and that endpoint's
+// credential binding by default.
+func TestApprovalInheritsTheShadowedEndpoint(t *testing.T) {
+	allow := func(m, p string) v1.L7Rule { return v1.L7Rule{Allow: &v1.L7Allow{Method: m, Path: p}} }
+	ep := func(path string, rules ...v1.L7Rule) v1.PolicyNetworkEndpoint {
+		return v1.PolicyNetworkEndpoint{Host: "api.github.com", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce, Path: path, Rules: rules}
+	}
+	broad := ep("", allow("GET", "/**"), allow("POST", "/gists"))
+	broad.CredentialBinding = &types.NetworkCredentialBinding{Provider: "github"}
+	repos := ep("/repos/**", allow("GET", "/repos/**"), allow("DELETE", "/repos/**"))
+	repos.DenyRules = []v1.L7DenyRule{{Method: "DELETE", Path: "/repos/**"}}
+	repos.CredentialBinding = &types.NetworkCredentialBinding{Provider: "github"}
+	other := ep("/other/x/y/z/long", allow("GET", "/other/**"))
+	rules := map[string]v1.NetworkPolicyRule{"broad": {Endpoints: []v1.PolicyNetworkEndpoint{broad}}, "repos": {Endpoints: []v1.PolicyNetworkEndpoint{repos}}, "other": {Endpoints: []v1.PolicyNetworkEndpoint{other}}}
+	proposed := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{ep("", allow("POST", "/repos/o/r/pulls"))}}
+
+	plan := inheritShadowed(approvedRule("pr", proposed), rules, nil)
+	e := plan.Endpoints[0]
+	var got []string
+	for _, r := range e.Rules {
+		got = append(got, r.Allow.Method+" "+r.Allow.Path)
+	}
+	// From /repos/** (more specific than the whole host), not from broad.
+	if strings.Join(got, ",") != "POST /repos/o/r/pulls,GET /repos/**,DELETE /repos/**" || len(e.DenyRules) != 1 || e.CredentialBinding == nil || e.CredentialBinding.Provider != "github" {
+		t.Fatalf("%v %+v", got, e)
+	}
+	if a := approvalAttach(plan); len(a) != 1 || a[0].Path != "/repos/o/r/pulls" || a[0].Provider != "github" {
+		t.Fatalf("%+v", a)
+	}
+	off := false
+	if e := inheritShadowed(approvedRule("pr", proposed), rules, &off).Endpoints[0]; e.CredentialBinding != nil || len(e.Rules) != 3 {
+		t.Fatalf("%+v", e)
+	}
+	// Without a shadowed endpoint: nothing copied, no credential.
+	delete(rules, "repos")
+	delete(rules, "broad")
+	if e := inheritShadowed(approvedRule("pr", proposed), rules, nil).Endpoints[0]; e.CredentialBinding != nil || len(e.Rules) != 1 {
+		t.Fatalf("%+v", e)
+	}
+	// An uninspected source let everything through on the path.
+	rules["l4"] = v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.github.com", Port: 443}}}
+	if e := inheritShadowed(approvedRule("pr", proposed), rules, nil).Endpoints[0]; len(e.Rules) != 2 || e.Rules[1].Allow.Method != "*" || e.Rules[1].Allow.Path != "/repos/o/r/pulls" {
+		t.Fatalf("%+v", e)
+	}
+}

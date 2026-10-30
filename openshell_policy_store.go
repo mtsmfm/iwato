@@ -401,6 +401,89 @@ func splitByPath(e v1.PolicyNetworkEndpoint) []v1.PolicyNetworkEndpoint {
 	return out
 }
 
+// shadowedSource is the endpoint a path-specific endpoint e takes requests
+// from at runtime: of the other endpoints on its host and a shared port
+// whose path can match the same requests with a lower specificity, the most
+// specific (OpenShell routes a request to the most specific matching
+// endpoint). ok is false when there is none.
+func shadowedSource(e v1.PolicyNetworkEndpoint, rules map[string]v1.NetworkPolicyRule) (src v1.PolicyNetworkEndpoint, ok bool) {
+	best := -1
+	for _, name := range slices.Sorted(maps.Keys(rules)) {
+		for _, x := range rules[name].Endpoints {
+			spec := pathSpecificity(x.Path)
+			if !strings.EqualFold(x.Host, e.Host) || len(sharedPorts(effectivePorts(x), effectivePorts(e))) == 0 ||
+				spec >= pathSpecificity(e.Path) || !pathPatternsOverlap(x.Path, e.Path) || spec <= best {
+				continue
+			}
+			src, best, ok = x, spec, true
+		}
+	}
+	return src, ok
+}
+
+// inheritShadowed keeps what an approval's path-specific endpoints would
+// take away: each gets the allow and deny rules of the endpoint it shadows
+// (shadowedSource) that can match requests on its path, and that
+// endpoint's credential binding as the default (attach false drops it).
+// An uninspected or audited source let every request through, so the
+// endpoint allows every method on its path.
+func inheritShadowed(plan v1.NetworkPolicyRule, rules map[string]v1.NetworkPolicyRule, attach *bool) v1.NetworkPolicyRule {
+	for i := range plan.Endpoints {
+		e := &plan.Endpoints[i]
+		if e.Path == "" {
+			continue
+		}
+		src, ok := shadowedSource(*e, rules)
+		if !ok {
+			continue
+		}
+		switch {
+		case src.Protocol == "" || src.Enforcement != v1.NetworkEnforcementModeEnforce:
+			e.Rules = appendUniqueAllow(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: "*", Path: e.Path}})
+		default:
+			for _, m := range accessMethods[accessNames[src.Access]] {
+				e.Rules = appendUniqueAllow(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: m, Path: e.Path}})
+			}
+			for _, r := range src.Rules {
+				if r.Allow != nil && pathPatternsOverlap(r.Allow.Path, e.Path) {
+					e.Rules = appendUniqueAllow(e.Rules, r)
+				}
+			}
+		}
+		for _, d := range src.DenyRules {
+			if pathPatternsOverlap(d.Path, e.Path) && !slices.ContainsFunc(e.DenyRules, func(x v1.L7DenyRule) bool { return x.Method == d.Method && x.Path == d.Path }) {
+				e.DenyRules = append(e.DenyRules, d)
+			}
+		}
+		if src.CredentialBinding != nil && (attach == nil || *attach) {
+			b := *src.CredentialBinding
+			e.CredentialBinding = &b
+		}
+	}
+	return plan
+}
+
+// ApprovalAttach is the credential an approved endpoint carries by
+// default: the binding of the endpoint it shadows (inheritShadowed).
+type ApprovalAttach struct {
+	Host     string   `json:"host"`
+	Ports    []uint32 `json:"ports"`
+	Path     string   `json:"path"`
+	Provider string   `json:"provider"`
+}
+
+// approvalAttach lists the endpoints of the approved rule that carry a
+// credential by default.
+func approvalAttach(plan v1.NetworkPolicyRule) []ApprovalAttach {
+	var out []ApprovalAttach
+	for _, e := range plan.Endpoints {
+		if e.CredentialBinding != nil {
+			out = append(out, ApprovalAttach{Host: e.Host, Ports: endpointPorts(e), Path: e.Path, Provider: e.CredentialBinding.Provider})
+		}
+	}
+	return out
+}
+
 // freeRuleName is name, or name_N when the rules have it.
 func freeRuleName(rules map[string]v1.NetworkPolicyRule, name string) string {
 	out := name
@@ -423,6 +506,18 @@ func ambiguityError(list []EndpointAmbiguity) error {
 		lines = append(lines, a.String())
 	}
 	return errors.New("network endpoint ambiguity validation failed:\n" + strings.Join(lines, "\n"))
+}
+
+// withProviders is rules with the attached providers' rules, as the
+// gateway composes them.
+func (o *OpenShell) withProviders(ctx context.Context, w Sandbox, rules map[string]v1.NetworkPolicyRule) (map[string]v1.NetworkPolicyRule, error) {
+	effective := map[string]v1.NetworkPolicyRule{}
+	if cfg, err := o.effectivePolicy(ctx, w); err != nil {
+		return nil, err
+	} else if cfg.Policy != nil {
+		effective = cfg.Policy.NetworkPolicies
+	}
+	return withProviderRules(rules, effective), nil
 }
 
 // checkWithProviders refuses rules that OpenShell would refuse with the

@@ -150,16 +150,18 @@ func (o *OpenShell) Proposals(ctx context.Context, w Sandbox) (ProposalView, err
 			if err != nil {
 				return v, err
 			}
+			composed := withProviderRules(p.base, p.effective)
 			for _, c := range chunks {
 				if c.Status == "pending" && c.ProposedRule != nil {
 					fit, err := proposalFit(ctx, before, p.base, p.effective, c.RuleName, *c.ProposedRule)
 					if err != nil {
 						return v, err
 					}
+					j := slices.IndexFunc(v.Pending, func(x PendingProposal) bool { return x.ID == requestID(c.ID) })
 					if len(fit) > 0 {
-						j := slices.IndexFunc(v.Pending, func(x PendingProposal) bool { return x.ID == requestID(c.ID) })
 						v.Pending[j].fit = fit
 					}
+					v.Pending[j].Attach = approvalAttach(inheritShadowed(approvedRule(c.RuleName, *c.ProposedRule), composed, nil))
 				}
 			}
 		}
@@ -278,7 +280,15 @@ func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyIn
 	if name == "" {
 		name = "approved"
 	}
-	plan := approvedRule(freeRuleName(sync.rules, name), proposed)
+	composed, err := o.withProviders(ctx, w, sync.rules)
+	if err != nil {
+		return none, err
+	}
+	var attach *bool
+	if scope != nil {
+		attach = scope.Attach
+	}
+	plan := inheritShadowed(approvedRule(freeRuleName(sync.rules, name), proposed), composed, attach)
 	planned := cloneRules(sync.rules)
 	planned[plan.Name] = plan
 	if err := o.checkWithProviders(ctx, w, sync.rules, planned); err != nil {
@@ -386,6 +396,9 @@ type ProposalScope struct {
 	Audit    bool           `json:"audit"`
 	Rules    []ProposalRule `json:"rules"`
 	Binaries []string       `json:"binaries"`
+	// Attach: whether the approved endpoints carry the credential of the
+	// endpoints they shadow (nil: that default, PendingProposal.Attach).
+	Attach *bool `json:"attach,omitempty"`
 }
 
 // ProposalRule allows one method ("*" for any) on paths matching a glob
@@ -408,7 +421,7 @@ func (s ProposalScope) Validate() error {
 	if s.Audit && (s.ReadOnly || len(s.Rules) > 0) {
 		return errCode("scope_audit_alone", nil, "監査は読み取りだけやメソッドとパスと一緒には指定できません")
 	}
-	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 && len(s.Binaries) == 0 {
+	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 && len(s.Binaries) == 0 && s.Attach == nil {
 		return errCode("scope_empty", nil, "読み取りだけ、監査、メソッドとパス、プログラムのどれかを指定してください")
 	}
 	if len(s.Binaries) > 8 {
@@ -479,7 +492,7 @@ func (s *ProposalScope) against(rule v1.NetworkPolicyRule) (*ProposalScope, erro
 	if len(s.Binaries) == 0 && len(rule.Binaries) > 0 {
 		return nil, errCode("scope_binaries_missing", nil, "承認するプログラムがありません")
 	}
-	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 {
+	if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 && s.Attach == nil {
 		same := len(s.Binaries) == len(rule.Binaries)
 		for i, b := range rule.Binaries {
 			same = same && s.Binaries[i] == b.Path
@@ -627,6 +640,9 @@ type PendingProposal struct {
 	// Unshown are the parts of the proposed rule the page cannot show
 	// (proposalUnshown): it cannot be approved as proposed.
 	Unshown []string `json:"unshown,omitempty"`
+	// Attach are the approved rule's endpoints that carry a credential by
+	// default, approved as proposed (inheritShadowed).
+	Attach []ApprovalAttach `json:"attach,omitempty"`
 	fit     map[string][]EndpointAmbiguity
 	rule    *v1.NetworkPolicyRule
 }
