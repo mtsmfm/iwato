@@ -166,6 +166,20 @@ func TestApprovedRuleSplitsPaths(t *testing.T) {
 	if p := r.Endpoints[2]; p.Path != "" || p.Host != "pypi.org" || !p.AdvisorProposed {
 		t.Fatalf("%+v", p)
 	}
+	// A path's endpoint keeps the approved rules that can match its
+	// requests: GET /api/** reaches /api/upload, POST /api/upload does not
+	// widen /api/**'s endpoint beyond its own path.
+	nested := approvedRule("n", v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.example.com", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce,
+		Rules: []v1.L7Rule{allow("GET", "/api/**"), allow("POST", "/api/upload"), allow("GET", "/other")}}}})
+	if len(nested.Endpoints) != 3 {
+		t.Fatalf("%+v", nested)
+	}
+	if p := nested.Endpoints[1]; p.Path != "/api/upload" || len(p.Rules) != 2 || p.Rules[0].Allow.Method != "GET" || p.Rules[1].Allow.Method != "POST" {
+		t.Fatalf("%+v", p)
+	}
+	if p := nested.Endpoints[2]; p.Path != "/other" || len(p.Rules) != 1 {
+		t.Fatalf("%+v", p)
+	}
 	// Any path, or an access preset: the endpoint stays whole.
 	e.Rules = append(e.Rules, allow("GET", "**"))
 	if r := approvedRule("x", v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{e}}); len(r.Endpoints) != 1 || r.Endpoints[0].Path != "" {

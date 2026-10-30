@@ -330,6 +330,10 @@ func TestApprovalSetsProgramsAndReadOnlyPaths(t *testing.T) {
 			rules = append(rules, r.Allow.Method+" "+r.Allow.Path)
 		}
 		want := "GET " + path + ",HEAD " + path + ",OPTIONS " + path
+		if i == 0 {
+			// The wider path's rules reach the narrower one's endpoint too.
+			want += ",GET /a/**,HEAD /a/**,OPTIONS /a/**"
+		}
 		if e.Path != path || strings.Join(rules, ",") != want || e.Access != v1.NetworkAccessPresetUnspecified || e.Protocol != "rest" || e.Enforcement != v1.NetworkEnforcementModeEnforce || strings.Join(e.AllowedIPs, ",") != "10.0.0.0/8" {
 			t.Fatalf("endpoint: %v %+v", rules, e)
 		}

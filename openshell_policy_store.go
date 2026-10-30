@@ -390,8 +390,11 @@ func approvedRule(name string, in v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 }
 
 // splitByPath makes an endpoint with REST allow rules one endpoint per
-// distinct path. An endpoint with a path already, an access preset, audit,
-// or a rule for any path stays as it is.
+// distinct path. Each also keeps the rules of paths no more specific that
+// can match requests on its own: OpenShell routes a request to the most specific endpoint only, so
+// GET /api/** must be on /api/upload's endpoint too. An endpoint with a
+// path already, an access preset, audit, or a rule for any path stays as it
+// is.
 func splitByPath(e v1.PolicyNetworkEndpoint) []v1.PolicyNetworkEndpoint {
 	if e.Protocol != "rest" || e.Path != "" || e.Access != v1.NetworkAccessPresetUnspecified || e.Enforcement != v1.NetworkEnforcementModeEnforce || len(e.Rules) == 0 {
 		return []v1.PolicyNetworkEndpoint{e}
@@ -411,7 +414,7 @@ func splitByPath(e v1.PolicyNetworkEndpoint) []v1.PolicyNetworkEndpoint {
 		x.Path = p
 		x.Rules = nil
 		for _, r := range e.Rules {
-			if r.Allow.Path == p {
+			if r.Allow.Path == p || pathSpecificity(r.Allow.Path) <= pathSpecificity(p) && pathPatternsOverlap(r.Allow.Path, p) {
 				x.Rules = append(x.Rules, r)
 			}
 		}
