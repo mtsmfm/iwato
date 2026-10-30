@@ -161,6 +161,9 @@ COPY install-tools.sh /tmp/install-tools.sh
 RUN sh /tmp/install-tools.sh && rm /tmp/install-tools.sh
 COPY etc/ /etc/iwato/
 COPY AGENTS.md /etc/iwato/AGENTS.md
+# Package-manager defaults against malicious releases (ADR 0022).
+COPY package-defaults.sh /tmp/package-defaults.sh
+RUN sh /tmp/package-defaults.sh && rm /tmp/package-defaults.sh
 # OpenShell's Policy Advisor guide, which its supervisor means to install but
 # writes into its own container (NVIDIA/OpenShell#3698).
 COPY openshell-skills/ /etc/openshell/skills/

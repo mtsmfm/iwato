@@ -40,7 +40,7 @@ mise は GitHub の openai/codex のリリースから入れます。codex は�
 
 ## エージェント向けのサンドボックスの説明 (`/AGENTS.md`)
 
-標準イメージには `/AGENTS.md` があり、エージェントに環境を説明します: 止められた通信の見え方と規則の提案のしかた、残るもの、認証情報が置き換え用の値であること、HTTPS の git、デスクトップ。Claude Code も Codex も `/AGENTS.md` を自分では読まないので、Iwato はサンドボックスを起動するたびに次を **ないときだけ** 置きます:
+標準イメージには `/AGENTS.md` があり、エージェントに環境を説明します: 止められた通信の見え方と規則の提案のしかた、残るもの、認証情報が置き換え用の値であること、パッケージマネージャーの既定 ([サンドボックス](sandboxes.md#パッケージマネージャーの既定))、HTTPS の git、デスクトップ。Claude Code も Codex も `/AGENTS.md` を自分では読まないので、Iwato はサンドボックスを起動するたびに次を **ないときだけ** 置きます:
 
 - Claude Code: `~/.claude/CLAUDE.md` (`@/AGENTS.md` の 1 行で取り込む)
 - Codex: `~/.codex/AGENTS.md` (`/AGENTS.md` へのシンボリックリンク)

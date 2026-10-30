@@ -40,7 +40,7 @@ Approve their proposals.
 
 ## The sandbox's instructions for agents (`/AGENTS.md`)
 
-The standard image has `/AGENTS.md`, which explains the environment to agents: how a blocked connection looks and how to propose a rule, what persists, that credentials are placeholders, git over HTTPS, the desktop. Neither Claude Code nor Codex reads `/AGENTS.md` by itself, so on every start of a sandbox Iwato places, **only when absent**:
+The standard image has `/AGENTS.md`, which explains the environment to agents: how a blocked connection looks and how to propose a rule, what persists, that credentials are placeholders, the package-manager defaults ([sandboxes](sandboxes.md#package-manager-defaults)), git over HTTPS, the desktop. Neither Claude Code nor Codex reads `/AGENTS.md` by itself, so on every start of a sandbox Iwato places, **only when absent**:
 
 - Claude Code: `~/.claude/CLAUDE.md`, one line `@/AGENTS.md` that includes it
 - Codex: `~/.codex/AGENTS.md`, a symbolic link to `/AGENTS.md`
