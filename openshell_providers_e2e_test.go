@@ -263,8 +263,21 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if took := time.Since(start); took > 5*time.Second {
 		t.Fatal("attach waited for the sandbox:", took)
 	}
-	if state, _, _ := o.ProviderReadiness(ctx, w.Name, "claude-e2e", receipt); state != "pending" && state != "persisted" && state != "ready" {
+	// Endpointless: until the policy binds it, OpenShell withholds the
+	// credential. Iwato commits the initial rules next and follows a new
+	// observation (handleSandboxProviders), as here.
+	if state, _, _ := o.ProviderReadiness(ctx, w.Name, "claude-e2e", receipt); state != "pending" && state != "persisted" && state != "withheld" {
 		t.Fatal("readiness right after attaching:", state)
+	}
+	initial, err := providerInitialRules(claudeSubscriptionProfileID, "claude-e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.AddProviderRules(ctx, w, "claude-e2e", initial); err != nil {
+		t.Fatal("the provider's rules:", err)
+	}
+	if receipt, err = o.ObserveProvider(ctx, w.Name, "claude-e2e"); err != nil || receipt == "" {
+		t.Fatal("observe:", receipt, err)
 	}
 	applied("claude-e2e", receipt, "ready")
 	// New processes get it.
@@ -276,6 +289,13 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	}
 	if err := o.DeleteProvider(ctx, "claude-e2e"); err == nil {
 		t.Fatal("OpenShell deleted an attached provider")
+	}
+	// OpenShell refuses detaching it while the policy binds it.
+	if _, _, err := o.DetachProvider(ctx, w.Name, "claude-e2e"); err == nil {
+		t.Fatal("OpenShell detached a provider the policy binds")
+	}
+	if _, err := o.RemoveProvider(ctx, w, "claude-e2e"); err != nil {
+		t.Fatal("the provider's rules out:", err)
 	}
 	ok, receipt, err = o.DetachProvider(ctx, w.Name, "claude-e2e")
 	if !ok || receipt == "" || err != nil {

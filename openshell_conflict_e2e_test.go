@@ -120,9 +120,9 @@ func TestOpenShellCredentialConflictE2E(t *testing.T) {
 		t.Fatal("OpenShell took the L4 rule:", err)
 	}
 
-	// OpenShell's gap (why Iwato checks before attaching): its attach
-	// checks the creation policy only, not the approved revisions. (Iwato
-	// detaches: the bound endpoints go first.)
+	// Endpointless (ADR 0022), OpenShell's own attach over an L4 rule goes
+	// through and leaves the credential withheld; binding it is what
+	// OpenShell refuses, as Iwato's check before the attach does.
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/providers/detach", `{"provider":"claude-conflict"}`); code != 200 {
 		t.Fatal("detach:", code, body)
 	}
@@ -139,5 +139,9 @@ func TestOpenShellCredentialConflictE2E(t *testing.T) {
 			}
 		}
 		t.Logf("then the sandbox: %s (%s)", state, reason)
+	}
+	initial, _ := providerInitialRules(claudeSubscriptionProfileID, "claude-conflict")
+	if _, err := o.AddProviderRules(ctx, w, "claude-conflict", initial); err == nil || !strings.Contains(err.Error(), "credentialed endpoint") {
+		t.Fatal("OpenShell bound the credential over the L4 rule:", err)
 	}
 }
