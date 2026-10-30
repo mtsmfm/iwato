@@ -42,7 +42,7 @@ func TestEnsureContainerCreatesWithTheRelayCertificates(t *testing.T) {
 	}
 	o := Options{Prefix: "iwato-default", Dir: dir, Port: 17670, DriverPort: 17671}
 	tag, err := imageTag(o)
-	if err != nil || !strings.HasPrefix(tag, "iwato-default-gateway:0.1.5-") {
+	if err != nil || !strings.HasPrefix(tag, "iwato-default-gateway:0.1.6-") {
 		t.Fatal(tag, err)
 	}
 	f := &fakeRunner{}

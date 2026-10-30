@@ -1,6 +1,6 @@
 # Iwato's Modal profile: the control plane the `modal` CLI and Python client
 # use, gRPC (grpclib) over HTTP/2 only. It works only with Iwato's patched
-# supervisor (internal/openshell/gateway/h2-l7.patch), which offers h2 to
+# supervisor (internal/openshell/gateway/openshell.patch), which offers h2 to
 # these endpoints alone (OPENSHELL_HTTP2_ENDPOINTS in the gateway's
 # Dockerfile). Iwato imports it into the gateway (platform scope) when it
 # prepares OpenShell. Lint it with:

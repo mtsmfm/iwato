@@ -30,6 +30,7 @@ const (
 	ComputeDriver_CreateSandbox_FullMethodName         = "/openshell.compute.v1.ComputeDriver/CreateSandbox"
 	ComputeDriver_StopSandbox_FullMethodName           = "/openshell.compute.v1.ComputeDriver/StopSandbox"
 	ComputeDriver_StartSandbox_FullMethodName          = "/openshell.compute.v1.ComputeDriver/StartSandbox"
+	ComputeDriver_SuspendSandbox_FullMethodName        = "/openshell.compute.v1.ComputeDriver/SuspendSandbox"
 	ComputeDriver_DeleteSandbox_FullMethodName         = "/openshell.compute.v1.ComputeDriver/DeleteSandbox"
 	ComputeDriver_WatchSandboxes_FullMethodName        = "/openshell.compute.v1.ComputeDriver/WatchSandboxes"
 	ComputeDriver_EnsureWorkspace_FullMethodName       = "/openshell.compute.v1.ComputeDriver/EnsureWorkspace"
@@ -70,6 +71,14 @@ type ComputeDriverClient interface {
 	StopSandbox(ctx context.Context, in *StopSandboxRequest, opts ...grpc.CallOption) (*StopSandboxResponse, error)
 	// Idempotently start platform resources for a stopped sandbox.
 	StartSandbox(ctx context.Context, in *StartSandboxRequest, opts ...grpc.CallOption) (*StartSandboxResponse, error)
+	// Idempotently suspend a running sandbox, retaining its memory state.
+	// Drivers advertise openshell.compute.suspend-resume when implemented;
+	// otherwise this returns UNIMPLEMENTED. Before returning, the driver has the
+	// supervisor call IsolationBackend.SuspendBoundary, obtains the retained
+	// state handle through its native backend integration, and ensures the old
+	// generation is fenced. The gateway
+	// never receives the restore reference.
+	SuspendSandbox(ctx context.Context, in *SuspendSandboxRequest, opts ...grpc.CallOption) (*SuspendSandboxResponse, error)
 	// Tear down platform resources for a sandbox.
 	DeleteSandbox(ctx context.Context, in *DeleteSandboxRequest, opts ...grpc.CallOption) (*DeleteSandboxResponse, error)
 	// Stream sandbox observations from the platform.
@@ -169,6 +178,16 @@ func (c *computeDriverClient) StartSandbox(ctx context.Context, in *StartSandbox
 	return out, nil
 }
 
+func (c *computeDriverClient) SuspendSandbox(ctx context.Context, in *SuspendSandboxRequest, opts ...grpc.CallOption) (*SuspendSandboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SuspendSandboxResponse)
+	err := c.cc.Invoke(ctx, ComputeDriver_SuspendSandbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *computeDriverClient) DeleteSandbox(ctx context.Context, in *DeleteSandboxRequest, opts ...grpc.CallOption) (*DeleteSandboxResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSandboxResponse)
@@ -252,6 +271,14 @@ type ComputeDriverServer interface {
 	StopSandbox(context.Context, *StopSandboxRequest) (*StopSandboxResponse, error)
 	// Idempotently start platform resources for a stopped sandbox.
 	StartSandbox(context.Context, *StartSandboxRequest) (*StartSandboxResponse, error)
+	// Idempotently suspend a running sandbox, retaining its memory state.
+	// Drivers advertise openshell.compute.suspend-resume when implemented;
+	// otherwise this returns UNIMPLEMENTED. Before returning, the driver has the
+	// supervisor call IsolationBackend.SuspendBoundary, obtains the retained
+	// state handle through its native backend integration, and ensures the old
+	// generation is fenced. The gateway
+	// never receives the restore reference.
+	SuspendSandbox(context.Context, *SuspendSandboxRequest) (*SuspendSandboxResponse, error)
 	// Tear down platform resources for a sandbox.
 	DeleteSandbox(context.Context, *DeleteSandboxRequest) (*DeleteSandboxResponse, error)
 	// Stream sandbox observations from the platform.
@@ -294,6 +321,9 @@ func (UnimplementedComputeDriverServer) StopSandbox(context.Context, *StopSandbo
 }
 func (UnimplementedComputeDriverServer) StartSandbox(context.Context, *StartSandboxRequest) (*StartSandboxResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartSandbox not implemented")
+}
+func (UnimplementedComputeDriverServer) SuspendSandbox(context.Context, *SuspendSandboxRequest) (*SuspendSandboxResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SuspendSandbox not implemented")
 }
 func (UnimplementedComputeDriverServer) DeleteSandbox(context.Context, *DeleteSandboxRequest) (*DeleteSandboxResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSandbox not implemented")
@@ -472,6 +502,24 @@ func _ComputeDriver_StartSandbox_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ComputeDriver_SuspendSandbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SuspendSandboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ComputeDriverServer).SuspendSandbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ComputeDriver_SuspendSandbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ComputeDriverServer).SuspendSandbox(ctx, req.(*SuspendSandboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ComputeDriver_DeleteSandbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteSandboxRequest)
 	if err := dec(in); err != nil {
@@ -575,6 +623,10 @@ var ComputeDriver_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartSandbox",
 			Handler:    _ComputeDriver_StartSandbox_Handler,
+		},
+		{
+			MethodName: "SuspendSandbox",
+			Handler:    _ComputeDriver_SuspendSandbox_Handler,
 		},
 		{
 			MethodName: "DeleteSandbox",

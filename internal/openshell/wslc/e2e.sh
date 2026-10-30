@@ -23,7 +23,7 @@ set -u
 # background closes the lock (9>&-), so a leftover cannot hold it.
 exec 9>/tmp/iwato-e2e.lock
 flock 9
-VERSION=${VERSION:-0.1.5}
+VERSION=${VERSION:-0.1.6}
 TAG=v$VERSION
 [ "$VERSION" = dev ] && TAG=dev
 MODE=${MODE:-plain}

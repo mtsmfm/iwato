@@ -33,7 +33,7 @@ import (
 //     not have.
 //   - PKCE S256, state, and the resource indicator (RFC 8707) on the
 //     authorization and the code exchange. The gateway's refresh cannot
-//     send resource (OpenShell v0.1.5); whether Atlassian needs it there is
+//     send resource (OpenShell v0.1.6); whether Atlassian needs it there is
 //     checked by rotating once right after connecting.
 //
 // No token, code or verifier is logged or returned to the page.

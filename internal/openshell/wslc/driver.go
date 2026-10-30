@@ -38,9 +38,9 @@ import (
 // tag alone is found by it too). scripts/check-pins.sh checks the digests
 // against the registry; docs/dev/development.md#bumping-pinned-versions.
 const (
-	OpenShellVersion       = "0.1.5"
-	supervisorImageDigest  = "sha256:fabcd01f656e9d23df4386f82e80b4f48b90f3452d7d5c58889007643a069161"
-	sandboxImageDigest     = "sha256:e9adf9ecde328122414ad2ee8c6fc5d5b389e4cf168daf4357c46f5a77d55851"
+	OpenShellVersion       = "0.1.6"
+	supervisorImageDigest  = "sha256:ce859a7d77ee515d3fe0b3c7dc61286516f402eb1d25c761d806d9ae5ed96c0b"
+	sandboxImageDigest     = "sha256:1038eb5c1f191fa3c34684fd7041b891c78ec570979d487f36e06e08f91bfb63"
 	DefaultSupervisorImage = "ghcr.io/nvidia/openshell/supervisor:" + OpenShellVersion + "@" + supervisorImageDigest
 	DefaultSandboxImage    = "ghcr.io/nvidia/openshell/sandbox:" + OpenShellVersion + "@" + sandboxImageDigest
 )
@@ -74,7 +74,7 @@ const (
 	supervisorExitGrace = time.Second
 	// The sandbox answers SIGTERM by killing the workload at once
 	// (BoundaryRuntime::deactivate), so a longer grace buys the workload
-	// nothing. If its supervisor is gone without ending it, v0.1.5 (as
+	// nothing. If its supervisor is gone without ending it, v0.1.6 (as
 	// v0.1.2) can hang after SIGTERM until killed (docs/dev/openshell.md);
 	// a short grace bounds that.
 	stopTimeoutSec = 2

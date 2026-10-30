@@ -61,7 +61,7 @@ require (
 )
 
 require (
-	github.com/NVIDIA/OpenShell/sdk/go v0.0.0-20261020123705-bdb956f2cd65
+	github.com/NVIDIA/OpenShell/sdk/go v0.1.6
 	golang.org/x/net v0.59.0
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
