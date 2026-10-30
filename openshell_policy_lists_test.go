@@ -112,6 +112,25 @@ func TestUndoPlanTakesTheWidenedGlob(t *testing.T) {
 	}
 }
 
+// A rejected proposal approved as proposed names its program, but Iwato's
+// rule for it names every program: the rule is still the proposal's, and
+// undoing it takes the rule out.
+func TestApprovedAfterRejectLinksToItsRule(t *testing.T) {
+	rule := binaryRule("allow_x", []string{everyProgram}, "x.example")
+	c := approvedChunk("late", "allow_x", "/usr/bin/curl", []string{"/usr/bin/curl"}, "x.example", 1)
+	if !linked(c, map[string]v1.NetworkPolicyRule{"allow_x": rule}) {
+		t.Fatal("not linked")
+	}
+	left, removes := undoPlan(rule, c, []v1.PolicyChunk{c})
+	if !slices.Equal(left, []string{everyProgram}) || !removes {
+		t.Fatal(left, removes)
+	}
+	rules, err := simulateMerge(map[string]v1.NetworkPolicyRule{"allow_x": rule}, []v1.PolicyMergeOperation{{RemoveBinary: &v1.RemoveNetworkBinary{RuleName: "allow_x", BinaryPath: everyProgram}}})
+	if _, ok := rules["allow_x"]; err != nil || ok {
+		t.Fatal(err, rules)
+	}
+}
+
 func chunkStatus(t *testing.T, o *OpenShell, w Sandbox, id string) string {
 	t.Helper()
 	draft, _ := o.pol.GetDraft(context.Background(), "", w.Name)

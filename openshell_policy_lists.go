@@ -54,6 +54,21 @@ func ruleHasBinary(rule v1.NetworkPolicyRule, path string) bool {
 	return slices.ContainsFunc(rule.Binaries, func(b v1.PolicyNetworkBinary) bool { return b.Path == path })
 }
 
+// everyProgram is the program an approval's rule names (approvedRule).
+const everyProgram = "/**"
+
+// ruleBinaries are the programs approved chunk c put into rule: its own
+// (chunkBinaries), and every program when the rule names it, as the rule
+// Iwato writes for an approval does whatever the chunk proposed (a
+// rejected chunk approved as proposed keeps its program).
+func ruleBinaries(c v1.PolicyChunk, rule v1.NetworkPolicyRule) []string {
+	out := chunkBinaries(c)
+	if ruleHasBinary(rule, everyProgram) && !slices.Contains(out, everyProgram) {
+		out = append(out, everyProgram)
+	}
+	return out
+}
+
 // linked says whether an approved chunk's rule is in rules: the rule of its
 // name still holds one of its programs.
 func linked(c v1.PolicyChunk, rules map[string]v1.NetworkPolicyRule) bool {
@@ -64,7 +79,7 @@ func linked(c v1.PolicyChunk, rules map[string]v1.NetworkPolicyRule) bool {
 	if ruleHasBinary(rule, c.Binary) {
 		return true
 	}
-	return slices.ContainsFunc(chunkBinaries(c), func(b string) bool { return ruleHasBinary(rule, b) })
+	return slices.ContainsFunc(ruleBinaries(c, rule), func(b string) bool { return ruleHasBinary(rule, b) })
 }
 
 // undoPlan is what undoing approved chunk c does to its rule: OpenShell
@@ -79,11 +94,11 @@ func undoPlan(rule v1.NetworkPolicyRule, c v1.PolicyChunk, approved []v1.PolicyC
 			continue
 		}
 		claimed[o.Binary] = true
-		for _, b := range chunkBinaries(o) {
+		for _, b := range ruleBinaries(o, rule) {
 			claimed[b] = true
 		}
 	}
-	for _, b := range chunkBinaries(c) {
+	for _, b := range ruleBinaries(c, rule) {
 		if b != c.Binary && !claimed[b] && ruleHasBinary(rule, b) && !slices.Contains(leftovers, b) {
 			leftovers = append(leftovers, b)
 		}
