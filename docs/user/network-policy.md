@@ -13,7 +13,7 @@ Iwato turns on OpenShell's Policy Advisor for every sandbox. When an agent needs
 The switch at the top of the tab, which stays in place while you scroll, chooses between the lists (**List**) and the policy as YAML (**YAML**); the browser remembers the choice. The lists show OpenShell's data only (Iwato stores none of it):
 
 - **Waiting for approval**: proposals waiting for you. **Approve** or **Reject**
-- **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Provider rules are read-only. Rules on the hosts a provider's credentials reach are marked as that provider's ("Provider X's destination"). For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
+- **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Rules of providers whose profile has destinations of its own (imported with OpenShell's CLI) are read-only. A rule whose destinations carry a provider's credential is marked **Credential: NAME**. For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
 - **Rejected proposals**
 
 The tab also has: **Add a rule**, adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, **History** (provider rules are not in it), and **Presets**.
@@ -32,7 +32,7 @@ Saving is refused when:
 
 If a change made directly in OpenShell (its CLI) lands while saving, it may be replaced; the tab says so.
 
-A rule added or changed that reaches a host where a provider's credentials go (any provider type, attached or not) asks for confirmation and names the providers. If you allow it, the provider's credential is also sent with that traffic. For GitHub, the provider's scope can allow it more narrowly. Adding a rule or methods and paths by hand, including from a provider rule's blocked requests, is asked the same way. A rule bound to a provider's credential cannot change its programs.
+A rule bound to a provider's credential cannot change its programs.
 
 Approved proposals stay approved, and presets stay in the list; taking a preset out later removes only the rules that are still as it made them.
 
@@ -57,7 +57,7 @@ The approval is for the version you saw: when the proposal changed in the meanti
 
 Choices OpenShell would refuse cannot be picked (the dialog says so in one line, and why under Details): OpenShell rejects rules on the same host, port and path whose inspection settings differ (endpoint ambiguity), and Iwato checks this before sending. When the gateway refuses a change anyway, Iwato explains why.
 
-A proposal for a host where an attached provider's credentials go is handled by the provider ([ADR 0006](../adr/0006-providers-own-credentialed-hosts.md)): for a provider with a scope (GitHub), approving widens the provider's scope instead of adding a policy rule (for example a `git push` to `OWNER/REPO` adds that repository, and an Atlassian MCP tool call adds that tool), and the proposal is then rejected with the reason "retry" once the sandbox has the new scope. Other proposals on such hosts are approved as rules, with a warning that the token rides along. See [providers](providers.md#scopes).
+A proposal under a destination that carries a provider's credential (for example a `git push` under GitHub's `github.com`) carries it too by default; the list and the approve dialog say so, and the dialog can turn it off. For a host an attached provider's credential is meant for, the dialog offers it, off by default. See [providers](providers.md#where-credentials-go).
 
 ## Presets
 
@@ -69,7 +69,7 @@ Iwato's presets:
 |---|---|
 | Package, Claude Code and Grok Build downloads | read-only (GET, HEAD, OPTIONS, and the POSTs that only read: npm's audit, the registries' tokens) from any program: npm, PyPI (and uv's Python builds), crates.io, the Rust toolchains (rustup), the Go proxy, RubyGems, mise, the Node.js and Go downloads, GitHub release and archive downloads and raw files, Docker Hub and ghcr.io images. No publishing or uploads. For mise, claude and grok only: mise's downloads (GitHub, mise-versions.jdx.dev), Claude Code's updates and settings (downloads.claude.ai, platform.claude.com), grok's version check, download and updates (x.ai, storage.googleapis.com) |
 
-Presets never include hosts where a provider's credentials go (github.com, api.github.com, the agents' APIs): those belong to the providers. The only exception is mise's read-only GitHub rules in the package preset (mise downloads from GitHub); the list marks them.
+Presets carry no credentials: the agents' APIs come with their providers. The package preset reads GitHub for mise only (mise downloads from GitHub).
 
 ### Your own presets
 
@@ -93,4 +93,4 @@ network_policies:
     binaries: [/usr/bin/curl]
 ```
 
-When you save, Iwato checks that the preset contains no provider hosts and does not conflict with the providers' rules. A preset that allows every host cannot be made: OpenShell refuses `*` and `**` as a host, and a rule with `allowed_ips` but no host would conflict with other rules and providers on the same port.
+When you save, Iwato checks that the preset does not conflict with the providers' rules. A preset that allows every host cannot be made: OpenShell refuses `*` and `**` as a host, and a rule with `allowed_ips` but no host would conflict with other rules and providers on the same port.

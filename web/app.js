@@ -120,13 +120,6 @@
     else typingCard?.restoreFocus();
     done(value);
   }
-  // A change that lets a provider's credential go with a rule (the server's
-  // 409 names the hosts): asked, with the provider's scope suggested where
-  // it has one.
-  function confirmProviderHosts(error) {
-    return askConfirm(t('policy.providerHost.confirm', { message: error.message }) + (error.scoped ? t('policy.providerHost.scoped') : ''), { ok: t('policy.providerHost.ok'), danger: true });
-  }
-
   function askConfirm(text, { ok = t('confirm.ok'), danger = false } = {}) {
     // One question at a time; the page behind is inert until it is answered.
     if (pendingConfirm) return Promise.resolve(false);
@@ -388,6 +381,7 @@
       hideApproveHead();
       return yes && !unshown && !risk.error ? { scope: null } : null;
     }
+    const attach = showAttachChoice(item);
     const proposed = item.binaries || [];
     const endpoints = item.endpoints || [];
     const seen = item.rules || [];
@@ -451,27 +445,25 @@
     const built = approving.built;
     approving = null;
     if (!ok || built.error) return null;
-    return { scope: built.scope };
+    return { scope: built.scope, attach: attach ? attach.checked : null };
   }
-  // A proposal that widens a provider's scope: what the scope gains, each
-  // line a write or not.
-  function showScopeGrant(item, ps) {
+  // The providers' credentials the approved endpoints would carry (ADR
+  // 0022): on by default where an endpoint takes requests from a bound one
+  // (item.attach), offered off where the host is one an attached
+  // provider's credential is meant for (item.offer).
+  function showAttachChoice(item) {
     const box = $('approve-grant');
-    box.replaceChildren(element('p', 'approve-head', t('approve.grant.title', { provider: approveLogic.providerName(ps) })));
-    for (const line of approveLogic.scopeLines(ps)) {
-      const p = element('p', 'approve-grant-line');
-      p.dataset.write = String(line.write);
-      if (line.write) {
-        const badge = element('span', 'approve-badge', t('approve.badge.write'));
-        badge.dataset.kind = 'write';
-        p.append(badge);
-      }
-      p.append(element('span', '', line.text));
-      box.append(p);
-    }
-    if (item.rules?.length) box.append(element('p', 'panel-meta approve-grant-req', t('approve.grant.requests', { requests: item.rules.map((r) => (r.method === '*' ? t('policy.method.all') : r.method) + ' ' + r.path).join(', ') })));
-    box.append(element('p', 'panel-meta', t('approve.grant.shared')));
+    const all = [...item.attach, ...item.offer];
+    if (!all.length) { box.hidden = true; return null; }
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = 'approve-attach';
+    input.checked = item.attach.length > 0;
+    const label = element('label', 'approve-attach');
+    label.append(input, element('span', '', t('approve.attach', { what: all.map((a) => a.provider + ' → ' + a.host + a.path).join(', ') })));
+    box.replaceChildren(label, element('p', 'panel-meta', t('approve.attach.note')));
     box.hidden = false;
+    return input;
   }
   // An endpoint for a new rule, or (rule given) for an existing one, which
   // keeps its programs. Resolves to the edit to post, or null.
@@ -663,14 +655,6 @@
         if (typeof data.raw === 'string') error.raw = data.raw.slice(0, 4000);
         // The editor's save: the file changed since it was opened.
         if (data.changed === true) error.changed = true;
-        // A change to confirm first (a provider's credential goes with it):
-        // the retry carries the token; scoped: the provider's scope can say it.
-        if (typeof data.confirm === 'string') { error.confirm = data.confirm.slice(0, 128); error.scoped = data.scoped === true; }
-        // The endpoints that would carry a provider's credential beyond its scope.
-        if (Array.isArray(data.beyond)) error.beyond = data.beyond.filter((b) => b && typeof b.rule === 'string').slice(0, 20).map((b) => ({
-          rule: text(b.rule, 200), host: text(b.host, 253), ports: (Array.isArray(b.ports) ? b.ports : []).filter(Number.isInteger).slice(0, 16),
-          binaries: (Array.isArray(b.binaries) ? b.binaries : []).filter((x) => typeof x === 'string').slice(0, 16).map((x) => x.slice(0, 512))
-        }));
         // The rules a recreate could not put back.
         if (Array.isArray(data.failed)) error.failed = carryFailures(data.failed);
         throw error;
@@ -955,18 +939,18 @@
     const localized = (p, field, value) => p.custom === true ? value : window.IwatoI18n.localized('profile.' + text(p.id, 128) + '.' + field, value);
     providerView.profiles = (Array.isArray(data.profiles) ? data.profiles : []).filter((p) => p && typeof p.id === 'string').slice(0, 80).map((p) => ({
       id: text(p.id, 128), label: localized(p, 'label', text(p.label, 100)), group: text(p.group, 64), note: localized(p, 'note', text(p.note, 500)), hint: localized(p, 'hint', text(p.hint, 500)), oauth: p.oauth === true, oauthFlow: text(p.oauthFlow, 32), guide: text(p.guide, 500),
-      scoped: p.scoped === true, custom: p.custom === true,
+      custom: p.custom === true, hosts: (Array.isArray(p.credentialHosts) ? p.credentialHosts : []).filter((h) => typeof h === 'string').slice(0, 16).map((h) => h.slice(0, 260)),
       defaultName: typeof p.defaultName === 'string' && /^[a-z][a-z0-9-]{0,40}$/.test(p.defaultName) ? p.defaultName : '',
       credentials: p.oauth === true ? [] : (Array.isArray(p.credentials) ? p.credentials : []).filter((c) => c && typeof c.name === 'string').slice(0, 8).map((c) => ({ name: text(c.name, 64), label: localized(p, 'credential.' + text(c.name, 64), text(c.label, 100)) }))
     }));
     providerView.list = (Array.isArray(data.providers) ? data.providers : []).filter((p) => p && typeof p.name === 'string' && providerNamePattern.test(p.name)).slice(0, 200).map((p) => ({
       name: p.name, profile: text(p.profile, 128), createdAt: text(p.createdAt, 64),
-      // kind: the profile the page groups it under (a provider with its
-      // own profile, providers_scope.go, under the built-in one).
-      kind: text(p.base || p.profile, 128), scope: providerScopeView(p.scope),
+      // kind: the profile the page groups it under (one with its own
+      // profile, made before ADR 0022, under the built-in one: legacy).
+      kind: text(p.legacy || p.profile, 128), legacy: Boolean(p.legacy),
       keys: (Array.isArray(p.keys) ? p.keys : []).filter((k) => typeof k === 'string').slice(0, 16).map((k) => k.slice(0, 64)),
       attached: (Array.isArray(p.attached) ? p.attached : []).filter((s) => typeof s === 'string').slice(0, 64).map((s) => s.slice(0, 64)),
-      applying: (Array.isArray(p.applying) ? p.applying : []).filter((a) => a && typeof a.sandbox === 'string').slice(0, 64).map((a) => ({ sandbox: a.sandbox.slice(0, 64), attach: a.attach === true, scope: a.scope === true, state: text(a.state, 32), reason: text(a.reason, 200) })),
+      applying: (Array.isArray(p.applying) ? p.applying : []).filter((a) => a && typeof a.sandbox === 'string').slice(0, 64).map((a) => ({ sandbox: a.sandbox.slice(0, 64), attach: a.attach === true, state: text(a.state, 32), reason: text(a.reason, 200) })),
       refresh: p.refresh && typeof p.refresh === 'object' ? {
         status: text(p.refresh.status, 64), recovery: text(p.refresh.recovery, 64), failureCode: text(p.refresh.failureCode, 64), error: text(p.refresh.error, 300),
         expiresAt: text(p.refresh.expiresAt, 64), nextRefreshAt: text(p.refresh.nextRefreshAt, 64), lastRefreshAt: text(p.refresh.lastRefreshAt, 64)
@@ -974,25 +958,6 @@
     }));
     providerView.error = text(data.error, 500);
     return providerView.error;
-  }
-  // A provider's access scope (providers_scope.go): read-only or full
-  // write, and for GitHub (modes with repos) writes to repositories and
-  // GraphQL mutations, for Atlassian (mode tools) read tools plus named
-  // tools; custom when the owner edited its profile as YAML.
-  function providerScopeView(s) {
-    if (!s || typeof s !== 'object') return null;
-    const names = (list, n, max = 50) => (Array.isArray(list) ? list : []).filter((x) => typeof x === 'string').slice(0, max).map((x) => x.slice(0, n));
-    const modes = (Array.isArray(s.modes) ? s.modes : []).filter((m) => ['read-only', 'repos', 'tools', 'full'].includes(m));
-    if (!modes.length) modes.push('read-only', 'repos', 'full');
-    return { mode: modes.includes(s.mode) ? s.mode : modes[0], modes, repos: names(s.repos, 160), mutations: names(s.mutations, 100), tools: names(s.tools, 128, 100), readTools: names(s.readTools, 128, 200), custom: s.custom === true, missing: s.missing === true };
-  }
-  function scopeSummary(s) {
-    if (s.custom) return t('providers.scope.custom');
-    const github = s.modes.includes('repos');
-    const mcp = s.modes.includes('tools');
-    const parts = [s.mode === 'full' ? t(github ? 'providers.scope.full' : mcp ? 'providers.scope.allTools' : 'providers.scope.write') : s.mode === 'repos' ? t('providers.scope.repos', { repos: s.repos.join(', ') }) : s.mode === 'tools' ? (s.tools.length ? t('providers.scope.tools', { tools: s.tools.join(', ') }) : t('providers.scope.readTools')) : t('providers.scope.read')];
-    if (s.mode !== 'full' && s.mutations.length) parts.push(t('providers.scope.mutations', { mutations: s.mutations.join(', ') }));
-    return t('providers.scope', { parts: parts.join(' · ') }) + (s.missing ? t('providers.scope.missing') : '');
   }
   // The name the server gives a provider of the profile when the owner
   // leaves the field empty (providers_names.go): its default, or with the
@@ -1108,7 +1073,7 @@
   // An attach or detach a running sandbox has not applied yet (OpenShell's
   // supervisor picks it up on its next poll), or could not apply.
   function applyNote(a, withSandbox) {
-    const what = (withSandbox ? a.sandbox + ': ' : '') + t(a.scope ? 'providers.change.scope' : a.attach ? 'providers.change.attach' : 'providers.change.detach');
+    const what = (withSandbox ? a.sandbox + ': ' : '') + t(a.attach ? 'providers.change.attach' : 'providers.change.detach');
     const failed = a.state === 'failed' || a.state === 'withheld';
     const note = element('span', 'panel-meta provider-applying', failed
       ? t('providers.apply.failed', { what, detail: a.state + (a.reason ? ', ' + a.reason : '') })
@@ -1156,7 +1121,7 @@
       const data = await api('/api/provider-profiles/' + encodeURIComponent(id));
       if (seq !== profileYAMLRequest) return;
       const yaml = typeof data.yaml === 'string' ? data.yaml.slice(0, 200000) : '';
-      const source = ['iwato', 'scope', 'custom'].includes(data.source) ? data.source : 'gateway';
+      const source = ['iwato', 'custom'].includes(data.source) ? data.source : 'gateway';
       const tag = element('span', 'tag-source', t('providers.yaml.source.' + source));
       tag.dataset.source = source;
       title.append(tag);
@@ -1174,115 +1139,6 @@
     }
   }
 
-  // The scope editor of a provider with its own profile (providers_scope.go):
-  // read-only or writes allowed; GitHub's also writes to listed
-  // repositories and GraphQL mutations by name, Atlassian's read tools plus
-  // write tools by name or every tool. The details are in its profile, as
-  // YAML. It names the sandboxes the change reaches.
-  function scopeEditor(p) {
-    const s = p.scope;
-    const github = s.modes.includes('repos');
-    const mcp = s.modes.includes('tools');
-    const form = element('form', 'stack-form provider-access-form');
-    form.hidden = true;
-    const modes = element('div', 'provider-access-modes');
-    modes.setAttribute('role', 'radiogroup');
-    modes.setAttribute('aria-label', t('providers.scope.label', { name: p.name }));
-    const radios = {};
-    const labels = github ? { 'read-only': t('providers.scope.mode.read'), repos: t('providers.scope.mode.repos'), full: t('providers.scope.mode.full') }
-      : mcp ? { tools: t('providers.scope.mode.tools'), full: t('providers.scope.mode.allTools') }
-        : { 'read-only': t('providers.scope.mode.readOnly'), full: t('providers.scope.mode.write') };
-    for (const mode of s.modes) {
-      const label = labels[mode];
-      const label_ = element('label', 'provider-access-mode');
-      const radio = element('input');
-      radio.type = 'radio';
-      radio.name = 'access-' + p.name;
-      radio.value = mode;
-      radio.checked = s.mode === mode;
-      radio.disabled = s.custom;
-      radios[mode] = radio;
-      label_.append(radio, element('span', '', label));
-      modes.append(label_);
-    }
-    const repos = element('textarea', 'text-input provider-access-repos');
-    repos.rows = 3;
-    repos.value = s.repos.join('\n');
-    repos.placeholder = t('providers.scope.repos.placeholder');
-    repos.setAttribute('aria-label', t('providers.scope.repos.label'));
-    repos.setAttribute('spellcheck', 'false');
-    repos.setAttribute('autocapitalize', 'off');
-    const mutations = element('input', 'text-input provider-access-mutations');
-    mutations.type = 'text';
-    mutations.value = s.mutations.join(', ');
-    mutations.placeholder = t('providers.scope.mutations.placeholder');
-    mutations.setAttribute('aria-label', t('providers.scope.mutations.label'));
-    mutations.setAttribute('spellcheck', 'false');
-    mutations.setAttribute('autocapitalize', 'off');
-    const tools = element('input', 'text-input provider-access-tools');
-    tools.type = 'text';
-    tools.value = s.tools.join(', ');
-    tools.placeholder = t('providers.scope.tools.placeholder');
-    tools.setAttribute('aria-label', t('providers.scope.tools.label'));
-    tools.setAttribute('spellcheck', 'false');
-    tools.setAttribute('autocapitalize', 'off');
-    const sync = () => {
-      const mode = Object.keys(radios).find((m) => radios[m].checked) || s.modes[0];
-      repos.disabled = s.custom || mode !== 'repos';
-      mutations.disabled = s.custom || mode === 'full';
-      tools.disabled = s.custom || mode !== 'tools';
-      return mode;
-    };
-    for (const radio of Object.values(radios)) radio.addEventListener('change', sync);
-    sync();
-    const status = element('p', 'panel-meta provider-access-status');
-    status.setAttribute('role', 'status');
-    const save = element('button', 'button button-primary', t('common.save'));
-    save.type = 'submit';
-    save.disabled = s.custom;
-    const buttons = element('div', 'login-form');
-    buttons.append(save, button('button-subtle provider-access-yaml', t('providers.scope.editYaml'), () => editScopeYAML(p)));
-    if (s.custom) buttons.append(button('button-subtle provider-access-reset', t('providers.scope.reset'), () => postScope(p, { reset: true }, status)));
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      if (s.custom) return;
-      const body = { mode: sync(), repos: String(repos.value || '').split('\n').map((r) => r.trim()).filter(Boolean), mutations: String(mutations.value || '').split(/[\s,]+/).filter(Boolean) };
-      if (mcp) body.tools = String(tools.value || '').split(/[\s,]+/).filter(Boolean);
-      postScope(p, body, status);
-    });
-    if (s.custom) form.append(element('p', 'panel-meta provider-access-custom', t('providers.scope.customNote')));
-    form.append(modes);
-    if (github) {
-      form.append(repos,
-        element('p', 'panel-meta', t('providers.scope.reposNote')),
-        mutations,
-        element('p', 'panel-meta provider-access-warning', t('providers.scope.mutationsWarning')),
-        element('p', 'panel-meta', t('providers.scope.tokenNote')));
-    }
-    if (mcp) {
-      form.append(tools, element('p', 'panel-meta provider-access-warning', t('providers.scope.toolsWarning')));
-      if (s.readTools.length) form.append(element('p', 'panel-meta provider-access-read-tools', t('providers.scope.readToolsList', { tools: s.readTools.join(', ') })));
-    }
-    form.append(element('p', 'panel-meta provider-access-sandboxes', p.attached.length ? t('providers.scope.appliesTo', { sandboxes: p.attached.join(', ') }) : t('providers.scope.appliesToNone')),
-      buttons, status);
-    return form;
-  }
-  async function sendScope(p, body) {
-    const result = await api('/api/providers/' + encodeURIComponent(p.name) + '/scope', { method: 'POST', body: JSON.stringify(body), timeoutMs: 70000 });
-    const pending = Array.isArray(result?.pending) ? result.pending.filter((x) => typeof x === 'string').slice(0, 16).map((x) => x.slice(0, 64)) : [];
-    await refreshProviders();
-    $('provider-status').textContent = t('providers.scope.changed', { name: p.name }) + (pending.length ? t('providers.scope.pending', { sandboxes: pending.join(', ') }) : '');
-  }
-  async function postScope(p, body, status) {
-    if (!state.authorized) return;
-    status.textContent = t('providers.saving');
-    try {
-      await sendScope(p, body);
-    } catch (error) {
-      status.textContent = t('providers.changeFailed', { message: error.message });
-      if (error.status === 401 || error.status === 403) invalidateSession();
-    }
-  }
   // A profile in a YAML editor, in the YAML box: save checks it on
   // the server (Iwato's and OpenShell's checks) and shows the refusal here.
   function openYAMLEditor({ title, note, yaml, save, extra = [] }) {
@@ -1315,20 +1171,6 @@
     box.hidden = false;
     area.refresh();
     if (typeof box.scrollIntoView === 'function') box.scrollIntoView({ block: 'nearest' });
-  }
-  async function editScopeYAML(p) {
-    try {
-      const data = await api('/api/provider-profiles/' + encodeURIComponent(p.profile));
-      openYAMLEditor({
-        title: t('providers.yaml.title', { id: p.name }),
-        note: t('providers.scope.yamlNote'),
-        yaml: typeof data.yaml === 'string' ? data.yaml.slice(0, 200000) : '',
-        save: (yaml) => sendScope(p, { yaml })
-      });
-    } catch (error) {
-      $('provider-status').textContent = t('providers.yaml.failed', { message: error.message });
-      if (error.status === 401 || error.status === 403) invalidateSession();
-    }
   }
   // Custom profiles (providers_custom.go): a whole profile as YAML, kept as
   // <config folder>/profiles/ID.yaml.
@@ -1763,8 +1605,7 @@
         const info = element('div', 'volume-info');
         info.append(element('span', 'volume-path', p.name),
           element('span', 'panel-meta', (profile.id ? '' : p.profile + ' · ') + (p.keys.join(', ') || t('providers.noValues')) + ' · ' + (p.attached.length ? t('providers.attachedTo', { sandboxes: p.attached.join(', ') }) : t('providers.attachedNone'))));
-        if (p.scope) info.append(element('span', 'panel-meta provider-access-summary', scopeSummary(p.scope)));
-        else if (profile.scoped) info.append(element('span', 'panel-meta provider-access-summary', t('providers.scope.legacy')));
+        if (p.legacy) info.append(element('span', 'panel-meta provider-access-summary', t('providers.legacy')));
         for (const a of p.applying) info.append(applyNote(a, true));
         if (profile.oauth) {
           const r = element('span', 'panel-meta provider-refresh', refreshText(p.refresh));
@@ -1784,9 +1625,7 @@
         save.type = 'submit';
         edit.append(save);
         edit.addEventListener('submit', (event) => { event.preventDefault(); updateProvider(p, inputs, edit); });
-        if (known && !known.oauth) actions.append(button('button-subtle', t('providers.changeValue'), () => { edit.hidden = !edit.hidden; if (edit.hidden) clearValues(inputs); }));
-        const access = p.scope ? scopeEditor(p) : null;
-        if (access) actions.append(button('button-subtle provider-access-button', t('providers.changeScope'), () => { access.hidden = !access.hidden; }));
+        if (known && !known.oauth && !p.legacy) actions.append(button('button-subtle', t('providers.changeValue'), () => { edit.hidden = !edit.hidden; if (edit.hidden) clearValues(inputs); }));
         const remove = button('button-disconnect', t('common.delete'), () => deleteProvider(p));
         remove.disabled = p.attached.length > 0;
         if (remove.disabled) remove.title = t('providers.detachFirst');
@@ -1794,8 +1633,9 @@
         actions.append(button('button-subtle provider-yaml-button', t('providers.yaml.view'), () => showProfileYAML(p.profile)));
         row.append(info, actions);
         group.append(row, edit);
-        if (access) group.append(access);
       }
+      // What the proxy cannot narrow: the credential itself has to.
+      if (window.IwatoI18n.has('providers.limit.' + profile.id)) group.append(element('p', 'panel-meta provider-limit', t('providers.limit.' + profile.id)));
       nodes.push(group);
     }
     if (!nodes.length) nodes.push(element('p', 'panel-meta', t('providers.none')));
@@ -1918,7 +1758,6 @@
         // Iwato's presets come in Japanese; the dictionary has other languages.
         id: text(p.id, 60), label: builtinText(p, 'label', text(p.label, 200)), note: builtinText(p, 'note', text(p.note, 2000)), source: p.source === 'user' ? 'user' : 'builtin', file: text(p.file, 200),
         hosts: list(p.hosts, 60).filter((h) => typeof h === 'string').map((h) => text(h, 253)),
-        providerHosts: list(p.providerHosts, 20).filter((h) => typeof h === 'string').map((h) => text(h, 300)),
         params: list(p.params, 4).filter((x) => x && typeof x.name === 'string').map((x) => ({ name: text(x.name, 20), label: text(x.label, 200), placeholder: text(x.placeholder, 100) }))
       })),
       errors: list(data?.errors, 50).filter((e) => e && typeof e.file === 'string').map((e) => ({ file: text(e.file, 300), error: text(e.error, 1000), code: e.code, params: e.params })),
@@ -2488,6 +2327,7 @@
         return value.slice(0, max);
       };
       const methodPaths = (value, max, name) => list(value, max, name).filter((r) => r && typeof r.path === 'string' && typeof r.method === 'string').map((r) => ({ method: text(r.method, 10), path: text(r.path, 512) }));
+      const credentials = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512) }));
       return { id: p.id, digest: /^[0-9a-f]{64}$/.test(p.digest) ? p.digest : '', unshown, summary: text(p.summary, 600), createdAt: Number(p.createdAt), source: p.source === 'auto' ? 'auto' : 'agent', intent: text(p.intent, 600), notes: text(p.notes, 600), rule: text(p.rule, 200),
         hits: Number(p.hits) || 0, firstSeen: Number(p.firstSeen) || 0, lastSeen: Number(p.lastSeen) || 0,
         rules: methodPaths(p.rules, lim.rules, 'rules'),
@@ -2504,14 +2344,9 @@
           const vs = list(p.blocked[k].ambiguities, 20, 'ambiguities').filter((a) => a && typeof a.rule === 'string').map(validAmbiguity);
           return [k, { reason: window.IwatoRefusals.blocked(k, vs, text(p.blocked[k].reason, 1500)) }];
         })),
-        // On a provider's host (ADR 0006): approving widens its scope, or
-        // (with a reason) adds the rule with the provider's token.
-        providerScope: p.providerScope && typeof p.providerScope.provider === 'string' && p.providerScope.provider ? {
-          provider: text(p.providerScope.provider, 100), label: text(p.providerScope.label, 100), reason: window.IwatoI18n.serverError(p.providerScope.reasonCode, p.providerScope.reasonParams, text(p.providerScope.reason, 600)), resolving: p.providerScope.resolving === true,
-          repos: list(p.providerScope.repos, 50, 'repos').filter((r) => typeof r === 'string').map((r) => text(r, 200)),
-          mutations: list(p.providerScope.mutations, 50, 'mutations').filter((m) => typeof m === 'string').map((m) => text(m, 100)),
-          tools: list(p.providerScope.tools, 100, 'tools').filter((m) => typeof m === 'string').map((m) => text(m, 128)), write: p.providerScope.write === true } : null,
-        scopeProvider: text(p.scopeProvider, 100) };
+        // The providers' credentials the approved endpoints carry by
+        // default (attach) and can carry (offer): ADR 0022.
+        attach: credentials(p.attach), offer: credentials(p.offer) };
     }
 
     validate(data) {
@@ -2546,15 +2381,13 @@
           name: text(r.name, 200),
           source: ['provider', 'proposal', 'hand'].includes(r.source) ? r.source : 'hand',
           provider: r.provider && typeof r.provider.name === 'string' ? { name: text(r.provider.name, 100), profile: text(r.provider.profile, 100), label: text(r.provider.label, 100) } : null,
-          // Endpoints where an attached provider's credential goes.
-          providerHosts: list(r.providerHosts, 20).filter((h) => h && typeof h.provider === 'string' && typeof h.host === 'string').map((h) => ({ provider: text(h.provider, 100), label: text(h.label, 100), host: text(h.host, 253) })),
           chunks: list(r.chunks, 20).filter((c) => c && /^[a-f0-9]{32}$/.test(c.id)).map((c) => ({ id: c.id, binary: text(c.binary, 512), binaries: strings(c.binaries, 8, 512),
             widened: c.widened === true, source: c.source === 'auto' ? 'auto' : 'agent', intent: text(c.intent, 600), decidedAt: Number(c.decidedAt) || 0,
             removesRule: c.removesRule === true, drops: strings(c.drops, 20, 300) })),
           binaries: list(r.binaries, 20).filter((b) => typeof b === 'string').map((b) => text(b, 300)),
           endpoints: list(r.endpoints, 20).filter((e) => e && typeof e.host === 'string').map((e) => ({
             host: text(e.host, 253), ports: list(e.ports, 16).map(Number).filter((n) => n > 0 && n < 65536), path: text(e.path, 512),
-            inspect: text(e.inspect, 20), enforcement: text(e.enforcement, 20), access: text(e.access, 20),
+            inspect: text(e.inspect, 20), enforcement: text(e.enforcement, 20), access: text(e.access, 20), credential: text(e.credential, 64),
             rules: methodPaths(e.rules), deny: methodPaths(e.deny), allowedIps: allowedIPsList(e.allowedIps),
             observed: list(e.observed, 50).filter((x) => x && typeof x.path === 'string').map((x) => ({ method: text(x.method, 10), path: text(x.path, 512), binary: text(x.binary, 512), count: Number(x.count) || 0, last: Number(x.last) || 0 })),
             denied: list(e.denied, 100).filter((x) => x && typeof x.path === 'string' && (x.kind === 'binary' ? typeof x.binary === 'string' && x.binary : x.path)).map((x) => ({ kind: x.kind === 'binary' ? 'binary' : 'request', method: text(x.method, 10), path: text(x.path, 512), binary: text(x.binary, 512), count: Number(x.count) || 0, last: Number(x.last) || 0, reason: text(x.reason, 300) }))
@@ -2714,15 +2547,11 @@
       const actions = element('div', 'panel-buttons');
       if (kind === 'pending') {
         meta.append(element('span', '', t('policy.hits', { count: p.hits }) + (p.firstSeen ? t('policy.firstSeen', { time: clockTime(p.firstSeen) }) : '') + (p.lastSeen ? t('policy.lastSeen', { time: clockTime(p.lastSeen) }) : '') + (p.rule ? t('policy.ruleOf', { rule: p.rule }) : '')));
-        const widens = p.providerScope && !p.providerScope.reason;
-        const approve = button('button-start', widens ? t('policy.widen') : t('policy.approve'), () => this.decide(p, 'approve'));
-        approve.setAttribute('aria-label', widens ? t('policy.widen.label') : t('policy.approve.label'));
+        const approve = button('button-start', t('policy.approve'), () => this.decide(p, 'approve'));
+        approve.setAttribute('aria-label', t('policy.approve.label'));
         const reject = button('button-disconnect', t('policy.reject'), () => this.decide(p, 'reject'));
-        approve.disabled = reject.disabled = off || Boolean(p.providerScope?.resolving);
+        approve.disabled = reject.disabled = off;
         actions.append(approve, reject);
-      } else if (p.scopeProvider) {
-        // Closed by Iwato after widening the provider's scope instead.
-        meta.append(element('span', 'proposal-after', t('policy.closedByScope', { time: clockTime(p.decidedAt, true), provider: p.scopeProvider })));
       } else {
         let when = t('policy.rejectedAt', { time: clockTime(p.decidedAt, true) });
         if (p.auto) when += t('policy.autoRejected', { why: p.auto === 'covered' ? t('policy.autoRejected.covered') : t('policy.autoRejected.superseded') });
@@ -2738,9 +2567,9 @@
       row.append(this.proposalWhat(p), meta);
       if (p.intent) row.append(element('p', 'proposal-intent', t('policy.quote', { text: p.intent })));
       if (p.notes) row.append(element('p', 'panel-meta proposal-notes', t('policy.notes', { notes: p.notes })));
-      if (kind === 'pending' && p.providerScope) {
-        const note = element('p', 'panel-meta proposal-provider', approveLogic.scopeNote(p.providerScope));
-        note.dataset.kind = p.providerScope.resolving ? 'resolving' : p.providerScope.reason ? 'rule' : 'scope';
+      if (kind === 'pending' && p.attach.length) {
+        const note = element('p', 'panel-meta proposal-provider', t('policy.attachNote', { providers: [...new Set(p.attach.map((a) => a.provider))].join(', ') }));
+        note.dataset.kind = 'rule';
         row.append(note);
       }
       row.append(actions);
@@ -2875,12 +2704,12 @@
           tag.dataset.source = 'hand';
           title.append(tag);
         }
-        // Endpoints a provider's credential reaches (ADR 0006: the provider's scope's).
-        const hostProviders = [...new Set((r.providerHosts || []).map((h) => h.provider))];
-        for (const name of hostProviders) {
-          const tag = element('span', 'policy-src', t('policy.src.providerHost', { name }));
+        // Endpoints that carry a provider's credential (credential_binding).
+        const bound = r.endpoints.filter((e) => e.credential);
+        for (const name of [...new Set(bound.map((e) => e.credential))]) {
+          const tag = element('span', 'policy-src', t('policy.src.credential', { name }));
           tag.dataset.source = 'provider-host';
-          tag.title = t('policy.src.providerHost.title', { name });
+          tag.title = t('policy.src.credential.title', { name, hosts: [...new Set(bound.filter((e) => e.credential === name).map((e) => e.host + e.path))].join(', ') });
           title.append(tag);
         }
         const change = editable ? (this.snapshot?.changes || []).filter((c) => c.rule === r.name).at(-1) : null;
@@ -2923,11 +2752,6 @@
         if (editable) row.append(element('p', 'panel-meta policy-rule-fold', fold));
         const body = element('div', 'policy-rule-body');
         if (r.source === 'provider') body.append(element('p', 'panel-meta policy-provider-note', t('policy.provider.note')));
-        if (hostProviders.length) {
-          const hosts = [...new Set(r.providerHosts.map((h) => h.host))].join(', ');
-          const who = r.providerHosts.filter((h, i, a) => a.findIndex((x) => x.provider === h.provider) === i).map((h) => h.provider + (h.label ? ' (' + h.label + ')' : '')).join(t('common.listSep'));
-          body.append(element('p', 'panel-meta policy-provider-host-note', t('policy.providerHost.note', { hosts, who })));
-        }
         for (const c of chunks) {
           const chunk = element('div', 'policy-chunk');
           const what = c.widened ? t('policy.chunk.widened', { binary: c.binary, binaries: c.binaries.join(', ') }) : (c.binaries.join(', ') || c.binary);
@@ -3134,15 +2958,7 @@
       this.showActionError('');
       this.render();
       try {
-        const send = (b) => api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + path, { method: 'POST', body: JSON.stringify(b), timeoutMs: 40000 });
-        let result;
-        try {
-          result = await send(body);
-        } catch (error) {
-          // A provider's credential would go with it: only once the owner says so.
-          if (!error.confirm || !body || typeof body !== 'object' || !(await confirmProviderHosts(error))) throw error;
-          result = await send({ ...body, confirm: error.confirm });
-        }
+        const result = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + path, { method: 'POST', body: JSON.stringify(body), timeoutMs: 40000 });
         this.done.textContent = doneText;
         succeeded?.(result);
         this.done.hidden = false;
@@ -3211,7 +3027,6 @@
         apply.disabled = busy;
         const what = element('div', 'policy-preset-what');
         what.append(element('span', '', preset.label + (preset.source === 'user' ? t('presets.mineFile', { file: preset.file }) : '')), element('span', 'panel-meta', preset.note), element('span', 'panel-meta', t('presets.hosts', { hosts: preset.hosts.join(', ') })));
-        if (preset.providerHosts.length) what.append(element('span', 'panel-meta preset-error', t('presets.providerHosts', { hosts: preset.providerHosts.join(', ') })));
         row.append(what, ...inputs, apply);
         this.presets.append(row);
       }
@@ -3411,20 +3226,12 @@
       const ed = this.yamlEd;
       if (!ed || ed.busy || this.mutating || !state.authorized) return;
       const path = '/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/policy/yaml';
-      let confirm = '';
-      const send = (apply) => api(path, { method: 'POST', body: JSON.stringify(confirm ? { version: ed.version, yaml: ed.yaml, apply, confirm } : { version: ed.version, yaml: ed.yaml, apply }), timeoutMs: 40000 });
+      const send = (apply) => api(path, { method: 'POST', body: JSON.stringify({ version: ed.version, yaml: ed.yaml, apply }), timeoutMs: 40000 });
       ed.busy = true;
       ed.error = '';
       this.renderYAML();
       try {
-        let res;
-        try {
-          res = await send(false);
-        } catch (error) {
-          if (!error.confirm || !(await confirmProviderHosts(error))) throw error;
-          confirm = error.confirm;
-          res = await send(false);
-        }
+        const res = await send(false);
         const rules = (list) => (Array.isArray(list) ? list.slice(0, 100) : []).map((r) => text(r?.name, 200) + (Array.isArray(r?.hosts) && r.hosts.length ? ' (' + r.hosts.slice(0, 8).map((h) => text(h, 270)).join(', ') + ')' : ''));
         const diff = res?.diff || {};
         const changes = [['added', diff.added], ['removed', diff.removed], ['changed', diff.changed]].filter(([, l]) => Array.isArray(l) && l.length)
@@ -3587,29 +3394,16 @@
     async decideOnce(item, action, rejected) {
       if (this.mutating || this.refreshing || !state.authorized || !['approve', 'reject'].includes(action)) return;
       let scope = null;
-      const ps = !rejected && action === 'approve' ? item.providerScope : null;
-      if (ps && !ps.reason) {
-        // The provider's scope instead of a policy rule (ADR 0006).
-        policyFormFor = '';
-        $('approve-form').hidden = true;
-        showApproveHead(item);
-        showScopeGrant(item, ps);
-        const yes = await askConfirm(t('policy.scope.question', { sandbox: JSON.stringify(this.sandbox.name) }), { ok: t('policy.scope.ok') });
-        hideApproveHead();
-        if (!yes) return;
-        return this.post('/proposals/scope', { requestId: item.id, digest: item.digest }, t('policy.scope.done'), (result) => {
-          if (result && result.closed) this.done.textContent = t('policy.scope.closed');
-        });
-      }
       if (action === 'approve') {
-        // Internal addresses spelled out, and a provider's token riding along.
+        // Internal addresses spelled out.
         const warnings = item.allowedIps.map((x) => [t('policy.approve.internal', { host: x.host || t('policy.anyHost'), ips: allowedIPsLabel(x.host, x.ips) }), '']);
-        if (ps) warnings.push([t('approve.providerWarning', { provider: approveLogic.providerName(ps) }), ps.reason ? t('approve.providerWarning.why', { reason: ps.reason }) : '']);
         const name = JSON.stringify(this.sandbox.name);
         const question = rejected ? t('policy.approve.rejectedQuestion', { name }) + '\n' + item.summary + '\n\n' + t('policy.approve.rejectedEffect') : t('policy.approve.question', { name });
         const answer = await askApprove(question, item, { asProposed: rejected, warnings });
         if (!answer) return;
         scope = answer.scope;
+        // As proposed, programs alone keep the proposed rule.
+        if (answer.attach !== null && answer.attach !== undefined) scope = { ...(scope || { binaries: item.binaries || [] }), attach: answer.attach };
       }
       const body = { requestId: item.id, digest: item.digest };
       if (scope) body.scope = scope;
@@ -4354,40 +4148,21 @@
       this.conflictBox.hidden = false;
     }
 
-    // Endpoints that would carry its credential beyond its scope: removed
-    // (the token says which), or attached anyway.
-    showBeyond(p, error) {
-      const beyond = error.beyond || [];
-      const list = element('ul', 'conflict-list');
-      for (const b of beyond) {
-        list.append(element('li', '', t('card.providers.beyond', { rule: b.rule, where: b.host + ':' + b.ports.join(',') }) + (b.binaries.length ? t('card.providers.conflict.binaries', { binaries: b.binaries.join(', ') }) : '')));
-      }
-      const choice = element('div', 'login-form');
-      choice.append(
-        button('button-start', t('card.providers.fix.remove'), () => this.fix(p, 'remove', error.confirm)),
-        button('button-disconnect', t('card.providers.fix.anyway'), () => this.change(p, true, error.confirm)),
-        button('button-subtle', t('providers.oauth.cancel'), () => { this.conflictBox.hidden = true; }));
-      this.conflictBox.replaceChildren(element('p', 'panel-meta', beyond.length ? t('card.providers.beyond.intro', { name: p.name }) : error.message), list, choice);
-      this.conflictBox.hidden = false;
-    }
-
     // A refused attach the panel offers fixes for: shown, true.
-    showRefusal(p, error, confirm) {
-      const fixable = error.conflicts?.length || error.ambiguities?.length;
-      if (!fixable && !(error.confirm && !confirm)) return false;
-      if (fixable) this.showConflicts(p, error.conflicts || [], error.ambiguities || []);
-      else this.showBeyond(p, error);
+    showRefusal(p, error) {
+      if (!error.conflicts?.length && !error.ambiguities?.length) return false;
+      this.showConflicts(p, error.conflicts || [], error.ambiguities || []);
       this.status.textContent = t('card.providers.notYet', { name: p.name });
       return true;
     }
 
-    async fix(p, mode = 'remove', confirm = '') {
+    async fix(p, mode = 'remove') {
       const name = this.card.sandbox.name;
       if (!state.authorized || this.busy) return;
       this.conflictBox.hidden = true;
       this.status.textContent = mode === 'enforce' ? t('card.providers.enforcing') : t('card.providers.removing');
       try {
-        await api('/api/sandboxes/' + encodeURIComponent(name) + '/providers/fix', { method: 'POST', body: JSON.stringify(confirm ? { provider: p.name, mode, confirm } : { provider: p.name, mode }), timeoutMs: 70000 });
+        await api('/api/sandboxes/' + encodeURIComponent(name) + '/providers/fix', { method: 'POST', body: JSON.stringify({ provider: p.name, mode }), timeoutMs: 70000 });
       } catch (error) {
         this.status.textContent = t(mode === 'enforce' ? 'card.providers.enforceFailed' : 'card.providers.removeFailed', { message: error.message });
         if (error.status === 401 || error.status === 403) invalidateSession();
@@ -4396,7 +4171,7 @@
       await this.change(p, true);
     }
 
-    async change(p, attach, confirm = '') {
+    async change(p, attach) {
       const name = this.card.sandbox.name;
       if (!state.authorized || this.busy) return;
       this.busy = true;
@@ -4404,7 +4179,7 @@
       this.conflictBox.hidden = true;
       this.status.textContent = t(attach ? 'card.providers.attaching' : 'card.providers.detaching', { name: p.name });
       try {
-        const result = await api('/api/sandboxes/' + encodeURIComponent(name) + '/providers/' + (attach ? 'attach' : 'detach'), { method: 'POST', body: JSON.stringify(confirm ? { provider: p.name, confirm } : { provider: p.name }), timeoutMs: 70000 });
+        const result = await api('/api/sandboxes/' + encodeURIComponent(name) + '/providers/' + (attach ? 'attach' : 'detach'), { method: 'POST', body: JSON.stringify({ provider: p.name }), timeoutMs: 70000 });
         const done = t(attach ? 'card.providers.attachedDone' : 'card.providers.detachedDone', { name: p.name }) + (result.restart === true || this.card.sandbox.status === 'running' ? '' : t('card.providers.nextStart'));
         if (result.restart === true) {
           this.restartText.textContent = t('card.providers.restartText');
@@ -4414,7 +4189,7 @@
         await this.refresh(done);
       } catch (error) {
         try {
-          if (attach && this.showRefusal(p, error, confirm)) return;
+          if (attach && this.showRefusal(p, error)) return;
         } catch (_) { /* the error as it came, below */ }
         errorContent(this.status, t(attach ? 'card.providers.attachFailed' : 'card.providers.removeFailed', { message: error.message }), error.raw);
         if (error.status === 401 || error.status === 403) invalidateSession();
@@ -5083,10 +4858,10 @@
 
     // One proposal opens its approval; several open the policy tab to choose.
     async reviewProposals() {
-      // Approving needs the whole read (blocked, providerScope), not the list's.
+      // Approving needs the whole read (blocked, attach), not the list's.
       await this.policy.refresh();
       const waiting = (this.policy.snapshot?.pending || []).filter((p) => p.source === 'agent');
-      if (waiting.length === 1 && !waiting[0].providerScope?.resolving) this.policy.decide(waiting[0], 'approve');
+      if (waiting.length === 1) this.policy.decide(waiting[0], 'approve');
       else { this.policy.showView('list'); this.selectTab('policy'); }
     }
 
@@ -6148,7 +5923,7 @@
   // A change of language (設定): the marked nodes change by themselves;
   // what the cards and the sidebar build from t() is drawn again here.
   window.IwatoI18n.onChange(() => {
-    for (const card of cards.values()) { card.relabelTabs(); card.update(card.sandbox); card.renderTabs(); }
+    for (const card of cards.values()) { card.relabelTabs(); card.update(card.sandbox); card.renderTabs(); if (!card.providers.root.hidden) card.providers.render(); }
     renderBuild(state.build);
     if (state.lastImages !== undefined) renderImages(state.lastImages, state.lastEngine);
     checkSettings?.render();

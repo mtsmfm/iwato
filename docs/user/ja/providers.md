@@ -8,7 +8,7 @@
 
 サイドバーの「プロバイダー」を開き、種類を選んで名前 (あとから変えられません。例: `github-personal`) を付け、値を入れます。種類ごとに、設定される変数と値の送り先が表示されます。
 
-プロバイダーは作成フォームで付けるか、あとからサンドボックスのメニューの「プロバイダー」で付け外しします。動いているサンドボックスでの付け外しは再起動で反映されます。それまでは「再起動待ち」、サンドボックスが変更を取り込むまでは「反映待ち」と表示されます。プロセスが動いている間に付けたプロバイダーは、その後に起動したプロセスにだけ届きます。サンドボックスのポリシーに、プロバイダーの認証情報をプロバイダーの範囲より広く届ける規則 (たとえば GitHub が読み取りのみのときに `api.github.com` をすべて許可する規則) があるときは、その規則を示し、規則から外して付けるか、このまま付けるかを選べます。
+プロバイダーは作成フォームで付けるか、あとからサンドボックスのメニューの「プロバイダー」で付け外しします。動いているサンドボックスでの付け外しは再起動で反映されます。それまでは「再起動待ち」、サンドボックスが変更を取り込むまでは「反映待ち」と表示されます。プロセスが動いている間に付けたプロバイダーは、その後に起動したプロセスにだけ届きます。Iwato の種類のプロバイダーを付けると、その規則がサンドボックスのポリシーに加わります (下記)。すでにある規則と食い違うときは、その規則を示して直し方を選べます。
 
 Iwato のプロバイダーの種類:
 
@@ -18,42 +18,33 @@ Iwato のプロバイダーの種類:
 | 「Grok Build (xAI のサブスクリプション)」 | `XAI_OAUTH_TOKEN` | xAI のアカウントでログイン (下記) |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
 | 「Atlassian (MCP)」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。送れるのは `claude` だけで、送り先は mcp.atlassian.com/v2/mcp |
-| GitHub | `GH_TOKEN`、`GITHUB_TOKEN` | `gh` と HTTPS の git が使います。リポジトリごとの範囲あり (下記) |
+| GitHub | `GH_TOKEN`、`GITHUB_TOKEN` | `gh` と HTTPS の git が使います。読み取りと clone・fetch。書き込みと push は提案の承認で |
 | Hugging Face | `HF_TOKEN`、`HUGGING_FACE_HUB_TOKEN` | ダウンロードだけ。アップロードはポリシーの提案の承認で。ファイルの CDN (`*.hf.co` など) には値を送らないので、その提案は読み取りで承認します |
 | Civitai | `CIVITAI_API_TOKEN`、`CIVITAI_TOKEN` | 読み取りとダウンロードだけ。生成 (Buzz を使う) は提案の承認で。ダウンロードの転送先には値を送らないので、その提案は読み取りで承認します |
 | Comfy Cloud | `COMFY_CLOUD_API_KEY`、`COMFY_API_KEY` | ワークフローの実行 (クレジットを使う) もできます |
 | Vast.ai | `VAST_API_KEY` | 読み取りとオファーの検索だけ。インスタンスの作成は提案の承認で |
 | RunPod | `RUNPOD_API_KEY` | 読み取りだけ (api.runpod.io、rest.runpod.io、api.runpod.ai、hapi.runpod.net)。Pod の作成・起動とサーバーレスの実行は提案の承認で |
 | Modal | `MODAL_TOKEN_ID`、`MODAL_TOKEN_SECRET` | `modal` CLI と Python クライアント (api.modal.com と api.modal2.com への HTTP/2 の gRPC)。アプリの実行やデプロイ (費用がかかる) もできます。**注意:** これを付けたサンドボックスは Modal でコードを実行できます。Modal からはインターネットに自由に出られるので、データの行き先はサンドボックスのネットワークポリシーで制限できなくなり、そのコードはワークスペースの Modal Secrets も読めます |
-| Cloudflare | `CLOUDFLARE_API_TOKEN` | 読み取りだけ (api.cloudflare.com/client/v4)。デプロイや DNS の変更は提案の承認か **書き込みも許可** で。`CLOUDFLARE_ACCOUNT_ID` は秘密ではないので自分で設定 |
+| Cloudflare | `CLOUDFLARE_API_TOKEN` | 読み取りだけ (api.cloudflare.com/client/v4)。デプロイや DNS の変更は提案の承認で。`CLOUDFLARE_ACCOUNT_ID` は秘密ではないので自分で設定 |
 
 実機で確かめたのは今のところ GitHub と「Atlassian (MCP)」だけです。プロファイルは、mise とエージェント自身の更新機能が置く場所のエージェントの実行ファイルを指しています (例: Claude Code は `/home/dev/.local/share/claude/versions/*` と、mise の `/home/dev/.local/share/mise/installs/claude/*/claude`)。
 
-種類ごとの OpenShell のプロファイルは「プロファイルを YAML で見る」で見られます。どこから来たものか (Iwato 同梱、プロバイダーの範囲から作ったもの、カスタム、ゲートウェイから) を印で示します。OpenShell の CLI で取り込んだプロファイルはゲートウェイから読み、OpenShell の形式の YAML に書き出すので、元のファイルのコメントや書式は残りません。
+種類ごとの OpenShell のプロファイルは「プロファイルを YAML で見る」で見られます。どこから来たものか (Iwato 同梱、カスタム、ゲートウェイから) を印で示します。OpenShell の CLI で取り込んだプロファイルはゲートウェイから読み、OpenShell の形式の YAML に書き出すので、元のファイルのコメントや書式は残りません。
 
 Iwato にないプロファイルのプロバイダー (OpenShell の CLI で作ったものなど) は「その他」にプロファイルの id とともに並びます。ほかと同じく外したり削除したりできますが、値は Iwato では変えられません。
 
-## 範囲
+## 認証情報の送り先
 
-プロバイダーの認証情報が届く宛先のことは、すべてプロバイダーが決めます ([ADR 0006](../../adr/0006-providers-own-credentialed-hosts.md))。そこで何を許すかはプロバイダーが決め、認証情報の付かない宛先はポリシーで決めます。
+認証情報は、ポリシーの宛先のうち認証情報を付けたものにだけ送られます ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。Iwato の種類は自分の宛先を持たず、プロバイダーを付けるとその規則がサンドボックスのポリシーに加わり (「認証情報: 名前」と表示)、外すとその認証情報を付けた宛先がすべてポリシーから外れます。規則が許すのは種類に要るものです: GitHub は読み取り (API の GET、GraphQL の query) と clone・fetch、Claude Code・Grok Build・OpenRouter はそれぞれの API、「Atlassian (MCP)」は読み取るだけのツール、ほかは表のとおりです。規則はほかの規則と同じように直せます。
 
-GitHub のプロバイダーには範囲があり、「範囲を変更」で決めます:
+書き込みは提案から許可します。認証情報を付けた宛先の下への提案を承認すると、最初から認証情報が付きます。認証情報の宛先のホストへの提案では、承認の画面で付けるかを選べます (最初は付けません)。プロバイダーはどのサンドボックスでも共通ですが、規則はサンドボックスごとです。
 
-- **読み取りだけ** (最初): API の GET、git の clone と fetch、GraphQL の query
-- **指定したリポジトリに書き込む** (`OWNER/REPO`): そのリポジトリへの git push、REST API の書き込み、リリースのアップロード
-- **すべてに書き込む**: トークンが届くところすべて
+プロキシで絞れないものは、認証情報自体で絞ってください:
 
-最初の 2 つでは、名前を書いた **GraphQL のミューテーション** (例: `createPullRequest`) も許せます。GraphQL の引数は見られないので、名前を書いたミューテーションはトークンが届くすべてに対して使えます。
+- GitHub: GraphQL の引数と、push で書き込むブランチは見られません。使うリポジトリと権限に絞った [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-secure/managing-your-personal-access-tokens) を使います。
+- 「Atlassian (MCP)」: ツールの引数 (どのサイト・プロジェクトか) は見られないので、OAuth のスコープで絞ります。MCP はプロバイダーの画面に出るコマンドで登録してください。URL の最後が `?tools=all` なので、どのツールも自分の名前で呼ばれます。付けないと Atlassian はほとんどのツールを `execute` 系のツール経由で呼び、そのツールは引数でツールの名前を渡すので読み取りのツールになりません。付けずに登録したものは `claude mcp remove atlassian` で消して登録し直せます。
 
-細かいところは「YAML で編集」で、作られたプロファイルを直接書けます。その範囲はカスタムと表示され、「簡単な設定に戻す」で簡単な設定に戻ります。範囲を変えても再起動は要りません。動いているサンドボックスは、反映するまで「反映待ち」です。
-
-Iwato の範囲は二重の守りです。トークン自体も絞ってください: 使うリポジトリと権限に絞った [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-secure/managing-your-personal-access-tokens) を使います。
-
-ほかの種類のプロバイダーにも範囲があり、**読み取りだけ** (最初: 同梱のプロファイルのまま) と **書き込みも許可** (その種類の宛先へのすべての要求。Hugging Face へのアップロードや RunPod の Pod の作成など。宛先は増えません) から選びます。プロバイダーは付けているすべてのサンドボックスで共通なので、範囲もそのすべてに効きます。「範囲を変更」にそのサンドボックスが出ます。
-
-Atlassian (MCP) のプロバイダーは、MCP のツールで選びます: **読み取りのツールと、指定したツール** (最初: 読み取るだけのツールと、名前を書いた書き込みのツール。例: `createJiraIssue`) と **すべてのツール**。ツールの引数は見られないので、名前を書いたツールは認可したすべてのサイトとプロジェクトに使えます。OAuth のスコープも絞ってください。MCP はプロバイダーの画面に出るコマンドで登録してください。URL の最後が `?tools=all` なので、どのツールも自分の名前で呼ばれます。付けないと Atlassian はほとんどのツールを `execute` 系のツール経由で呼び、そのツールは引数でツールの名前を渡すので書き込みとして扱われます。付けずに登録したものは `claude mcp remove atlassian` で消して登録し直せます。
-
-エージェントがプロバイダーの宛先への規則を提案したときは、承認するとプロバイダーの範囲が広がります ([通信のポリシーと承認](network-policy.md)、[ADR 0014](../../adr/0014-scopes-for-every-provider-type.md))。
+これより前に作ったプロバイダー (それぞれ自分のプロファイルを持つもの) は、作ったときのまま動き、そう表示されます。規則をポリシーで扱うには追加し直してください。
 
 ## カスタムのプロバイダー
 

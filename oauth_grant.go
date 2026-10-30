@@ -77,13 +77,7 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 		}
 	} else {
 		var err error
-		store, hasStore := s.rt.(profileStore)
-		if prof, ok := builtinProfile(g.profile); ok && prof.Scoped && hasStore {
-			// Its own profile, for its scope (providers_scope.go).
-			name, err = s.createScopedProvider(ctx, rt, store, name, prof, creds)
-		} else {
-			name, err = createProviderNamed(ctx, rt, name, g.profile, creds)
-		}
+		name, err = createProviderNamed(ctx, rt, name, g.profile, creds)
 		if err != nil {
 			log.Printf("%s: %s: create: %v", g.log, label, english(err))
 			return "failed", coded("oauth_create_failed", map[string]any{"detail": safeCLIError(err)}, "プロバイダーを作れませんでした: "+safeCLIError(err)), flowText{}, nil
@@ -95,8 +89,6 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 			log.Printf("%s: %s: configure refresh: %v", g.log, name, english(err))
 			if derr := rt.DeleteProvider(ctx, name); derr != nil {
 				log.Printf("%s: %s: remove the provider again: %v", g.log, name, english(derr))
-			} else if prof, ok := builtinProfile(g.profile); ok && prof.Scoped {
-				s.forgetScope(ctx, ProviderInfo{Name: name, Profile: scopedProfileID(g.profile, name)})
 			}
 			return "failed", coded("oauth_refresh_setup_failed", map[string]any{"detail": safeCLIError(err)}, "ゲートウェイに更新を設定できませんでした: "+safeCLIError(err)), flowText{}, nil
 		}

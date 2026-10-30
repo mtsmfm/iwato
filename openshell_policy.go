@@ -48,9 +48,6 @@ type PolicyRuleView struct {
 	// names it from the attached providers).
 	Provider *RuleProvider `json:"provider,omitempty"`
 	Chunks   []ChunkLink   `json:"chunks,omitempty"`
-	// ProviderHosts are its endpoints where an attached provider's
-	// credential goes (the server marks them: markProviderHosts).
-	ProviderHosts []ProviderHost `json:"providerHosts,omitempty"`
 }
 
 // RuleProvider is the provider behind a _provider_* rule and its profile.
@@ -82,6 +79,9 @@ type EndpointView struct {
 	// Denied are the requests the endpoint denied (and still would), and
 	// the programs its rule refused, from the same log.
 	Denied []ObservedRequest `json:"denied,omitempty"`
+	// Credential is the provider whose credential the endpoint carries
+	// (credential_binding).
+	Credential string `json:"credential,omitempty"`
 }
 
 var accessNames = map[v1.NetworkAccessPreset]string{v1.NetworkAccessPresetReadOnly: "read-only", v1.NetworkAccessPresetReadWrite: "read-write", v1.NetworkAccessPresetFull: "full"}
@@ -159,6 +159,9 @@ func policyView(st *v1.PolicyStatusResult, rules map[string]v1.NetworkPolicyRule
 		}
 		for _, e := range rule.Endpoints {
 			ev := EndpointView{Host: e.Host, Ports: endpointPorts(e), Path: e.Path, Inspect: e.Protocol, AllowedIPs: slices.Clone(e.AllowedIPs)}
+			if e.CredentialBinding != nil {
+				ev.Credential = e.CredentialBinding.Provider
+			}
 			if e.Protocol != "" {
 				ev.Enforcement = map[v1.NetworkEnforcementMode]string{v1.NetworkEnforcementModeEnforce: "enforce", v1.NetworkEnforcementModeAudit: "audit"}[e.Enforcement]
 				if ev.Enforcement == "" {
@@ -261,9 +264,6 @@ type PolicyEdit struct {
 	// Keep (enforce) keeps the endpoint's access and rules: it only
 	// switches it from audit to enforce.
 	Keep bool `json:"keep,omitempty"`
-	// Confirm is the token of the owner's confirmation that providers'
-	// credentials go with the rule (askProviderHosts).
-	Confirm string `json:"confirm,omitempty"`
 }
 
 var (

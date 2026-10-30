@@ -42,11 +42,18 @@
 #                    oidc/protocol.rs, external_auth.rs; the install paths:
 #                    xai-grok-update, xai-grok-pager/scripts/install.sh). Not run
 #                    against xAI.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-grok-subscription.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-grok-subscription
 display_name: Grok Build subscription (Iwato)
 description: Grok Build with an xAI account sign-in the gateway refreshes
 category: agent
+annotations:
+  iwato/credential-hosts: "cli-chat-proxy.grok.com:443,api.x.ai:443"
 credentials:
   - name: access_token
     description: xAI OAuth access token (auth.x.ai)
@@ -67,19 +74,6 @@ credentials:
           description: OAuth refresh token
           required: true
           secret: true
-endpoints:
-  - host: cli-chat-proxy.grok.com
-    port: 443
-    path: /v1/**
-    protocol: rest
-    access: read-write
-    enforcement: enforce
-  - host: api.x.ai
-    port: 443
-    path: /v1/**
-    protocol: rest
-    access: read-write
-    enforcement: enforce
 binaries:
   - /home/dev/.grok/downloads/grok-*
   - /home/dev/.grok/bin/grok-*

@@ -101,7 +101,9 @@ func TestAtlassianProfile(t *testing.T) {
 	if len(r.Material) != 2 || r.Material[0].Name != "client_id" || r.Material[0].Secret || r.Material[1].Name != "refresh_token" || !r.Material[1].Secret {
 		t.Fatal(r.Material)
 	}
-	if e := p.Endpoints; len(e) != 1 || e[0].Host != "mcp.atlassian.com" || e[0].Port != 443 || e[0].Path != "/v2/mcp/**" {
+	e := initialEndpoints(t, atlassianProfileID)
+	if len(e) != 1 || e[0].Host != "mcp.atlassian.com" || e[0].Port != 443 || e[0].Path != "/v2/mcp/**" || e[0].Protocol != "mcp" || e[0].Mcp == nil || e[0].Mcp.AllowAllKnownMcpMethods == nil || !*e[0].Mcp.AllowAllKnownMcpMethods ||
+		len(e[0].Rules) != 1 || e[0].Rules[0].Allow.Method != "tools/call" || !slices.Contains(e[0].Rules[0].Allow.Params["name"].Any, "searchJiraIssuesUsingJql") || slices.Contains(e[0].Rules[0].Allow.Params["name"].Any, "execute") {
 		t.Fatal(e)
 	}
 	if len(p.Binaries) != 2 || p.Binaries[0].Path != "/home/dev/.local/share/claude/versions/*" || p.Binaries[1].Path != "/home/dev/.local/share/mise/installs/claude/*/claude" {

@@ -1,6 +1,6 @@
 # 0014. Every built-in provider type has a scope
 
-- Status: Accepted
+- Status: Superseded by [0022](0022-iwato-owns-the-sandbox-policy.md)
 - Date: 2026-10-18
 
 ## Context

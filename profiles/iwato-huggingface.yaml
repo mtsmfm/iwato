@@ -22,8 +22,8 @@
 #                    git-lfs batch API and git-upload-pack (clone, fetch).
 #                    Uploads, commits, repo creation and Inference Providers
 #                    (router.huggingface.co, not listed) take a policy
-#                    proposal (approving one widens the provider's scope:
-#                    ADR 0006, 0014); the token reaches only the hosts above.
+#                    proposal (approving one can attach the provider's credential:
+#                    ADR 0022); the token reaches only the hosts above.
 # Downloads:         /resolve/ answers with a redirect to a signed URL on
 #                    cdn-lfs*.huggingface.co, cas-bridge.xethub.hf.co or other
 #                    *.hf.co hosts (Xet storage: cas-server.xethub.hf.co with
@@ -38,11 +38,18 @@
 # Verified:          from huggingface_hub's source (main, via GitHub).
 #                    The redirect hosts above are from the source, not
 #                    observed.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-huggingface.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-huggingface
 display_name: Hugging Face (Iwato)
 description: Hugging Face Hub downloads for Iwato's sandbox image
 category: data
+annotations:
+  iwato/credential-hosts: "huggingface.co:443,hf.co:443"
 credentials:
   - name: token
     description: Hugging Face user access token
@@ -52,23 +59,6 @@ credentials:
     header_name: authorization
 discovery:
   credentials: [token]
-endpoints:
-  - host: huggingface.co
-    port: 443
-    protocol: rest
-    enforcement: enforce
-    rules:
-      - allow: { method: GET, path: "**" }
-      - allow: { method: HEAD, path: "**" }
-      - allow: { method: OPTIONS, path: "**" }
-      - allow: { method: POST, path: "/api/**/paths-info/**" }
-      - allow: { method: POST, path: "/**/info/lfs/objects/batch" }
-      - allow: { method: POST, path: "/**/git-upload-pack" }
-  - host: hf.co
-    port: 443
-    protocol: rest
-    access: read-only
-    enforcement: enforce
 binaries:
   - /usr/bin/curl
   - /usr/bin/wget

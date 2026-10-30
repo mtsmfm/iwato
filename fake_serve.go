@@ -43,13 +43,11 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 		dev := newSandbox("dev")
 		dev.LegacyPersist = []string{"/sandbox/work"} // made before the image convention
 		dev.Providers = []string{"github-personal"}   // fake_providers.go
-		// With a GitHub provider of its own profile: proposals to GitHub
-		// widen its scope (proposal_scope.go).
+		// With a GitHub provider made before ADR 0022 (its own profile).
 		exp := newSandbox("experiment")
 		exp.Providers = []string{"github-work"}
 		exp.GPU = true // the resources show its GPU (fake_resources.go)
 		c.Sandboxes = []Sandbox{dev, exp}
-		c.ProviderScopes = fakeProviderScopes()
 		d := NewFake()
 		d.latency = *latency
 		d.gatewayLatency = *gatewayLatency

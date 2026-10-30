@@ -70,10 +70,12 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const rejectedList = panel.locator('.policy-rejected');
     const pendingText = await pending.innerText();
     check(pendingText.startsWith('承認待ち (6)') && pendingText.includes('エージェントの提案') && pendingText.includes('OpenShell の自動提案') && pendingText.includes('37 回') && pendingText.includes('「iwato リポジトリにブランチを push する」'), 'waiting: the agent\'s and OpenShell\'s proposals with their counts and intent');
-    const prov = rule('_provider_github_personal');
-    await open('_provider_github_personal');
+    // The GitHub provider's initial rule (ADR 0022): a rule of the policy,
+    // marked with the credential its endpoints carry.
+    const prov = rule('provider_github_personal');
+    await open('provider_github_personal');
     const provText = await prov.innerText();
-    check(provText.includes('プロバイダー github-personal (GitHub)') && provText.includes('外すにはプロバイダーを外す') && provText.includes('/usr/bin/gh') && await prov.locator('.policy-rule-body > :not(.policy-endpoint) button, .policy-endpoint > .policy-line button').count() === 0, 'a provider\'s rule is labelled and read-only');
+    check((await prov.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal' && provText.includes('api.github.com:443 /** · 検査 (遮断)'), 'the provider\'s initial rule is marked with its credential: ' + provText.slice(0, 200));
     const ghRule = rule('allow_github_example_com_443');
     check(await ghRule.locator('.policy-chunk').count() === 2 && await ghRule.getByRole('button', { name: '規則「allow_github_example_com_443」を外す' }).count() === 0, 'a rule from two proposals lists both, with 取り消す and no 外す');
     await open('allow_registry_npmjs_org_443');
@@ -179,9 +181,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     // Not inspected, to where the attached GitHub provider's token goes
-    // (uploads.github.com): as proposed, or with only the program widened,
-    // OpenShell would refuse it, so Iwato does, with the way out. Reads only
-    // go through.
+    // (uploads.github.com, bound in its initial rule): as proposed, or with
+    // only the program widened, OpenShell would refuse it, so Iwato does,
+    // with the way out. Reads only go through, carrying the credential.
     const ghItem = panel.locator('.proposal-item', { hasText: 'uploads.github.com' });
     const approveOnce = async (prepare) => {
       await ghItem.getByRole('button', { name: '承認', exact: true }).click();
@@ -213,11 +215,13 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const uploads = rule('allow_uploads_github_com_443');
     await uploads.waitFor();
     check(status === 200 && await refusal.count() === 0, 'reads only go through and clear the refusal');
+    await open('allow_uploads_github_com_443');
+    check((await uploads.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'as specific as the provider\'s endpoint, it carries the credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     // OpenShell's proposal for api.github.com, where the attached GitHub
-    // provider's rule enforces: 監査 would make the two disagree, which
-    // OpenShell refuses, so the dialog disables it and says why.
+    // provider's initial rule enforces on /**: 監査 would make the two
+    // disagree, which OpenShell refuses, so the dialog disables it and says why.
     const miseItem = pending.locator('.proposal-item', { hasText: 'lib/mise/mise' });
     // In English first (the page words the reason), then in Japanese again.
     const relist = async (lang) => {
@@ -228,7 +232,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await miseItem.getByRole('button', { name: 'Approve', exact: true }).click();
     await dialog.waitFor();
     const enNote = await page.locator('#approve-blocked').textContent();
-    check(enNote.startsWith('"Audit" is not available: api.github.com:443 has rule _provider_github_personal of provider github-personal (GitHub)') && enNote.includes('Mode: enforce in _provider_github_personal') && !/[\u3040-\u30ff]/.test(enNote), 'the reason in English: ' + enNote);
+    check(enNote.startsWith('"Audit" is not available: api.github.com:443/** has rule provider_github_personal') && enNote.includes('Mode: enforce in provider_github_personal') && !/[\u3040-\u30ff]/.test(enNote), 'the reason in English: ' + enNote);
     await page.locator('#approve-more > summary').click();
     await page.screenshot({ path: path.join(dir, 'approve-blocked-en.png') });
     await page.click('#confirm-cancel');
@@ -237,7 +241,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await dialog.waitFor();
     const blockedNote = await page.locator('#approve-blocked').textContent();
     check(await page.locator('#approve-access-audit').isDisabled() && !(await page.locator('#approve-access-read').isDisabled()) && await page.locator('#approve-access-read').isChecked(), 'the dialog disables 監査 where the provider enforces');
-    check(blockedNote.includes('「監査」は選べません') && blockedNote.includes('プロバイダー github-personal (GitHub) の規則 _provider_github_personal') && blockedNote.includes('遮断 (enforce)'), 'and names the provider\'s rule: ' + blockedNote);
+    check(blockedNote.includes('「監査」は選べません') && blockedNote.includes('規則 provider_github_personal') && blockedNote.includes('遮断 (enforce)'), 'and names the provider\'s rule: ' + blockedNote);
     check(await fits(), 'the dialog with the reason does not scroll sideways');
     // Its only rule, GET /, was seen by no one (OpenShell copied it):
     // no request seen, the list empty (all paths), a hint to narrow.
@@ -255,7 +259,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const miseText = await miseRule.innerText();
     check(miseText.includes('読み取りだけ') && !miseText.includes('GET /'), 'approved: reads on every path, no rule on exactly /');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
-    // A rule by hand auditing it is refused by the server, naming the provider.
+    // A rule by hand enforcing where the policy audits (GitHub Enterprise)
+    // is refused by the server, naming the rules.
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();
     await dialog.waitFor();
     await page.fill('#policy-rule', 'curl_audit');
@@ -270,17 +275,16 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await dialog.waitFor();
     check(await page.inputValue('#policy-rule') === 'curl_audit', 'as キャンセル, it keeps what was typed');
     await page.fill('#policy-binaries', '/usr/bin/curl');
-    await page.fill('#policy-host', 'api.github.com');
+    await page.fill('#policy-host', 'github.example.com');
     await page.fill('#policy-ports', '443');
     await page.check('#approve-scope-full');
-    await page.check('#policy-audit');
     const addAnswer = page.waitForResponse((r) => r.url().endsWith('/policy/add'));
     await page.click('#confirm-ok');
-    check((await addAnswer).status() === 409, 'an audited rule for the provider\'s host is refused');
+    check((await addAnswer).status() === 409, 'an enforced rule where the policy audits is refused');
     const ambError = panel.locator('.panel-error', { hasText: 'この変更は OpenShell に拒否されます' });
     await ambError.waitFor();
     const ambText = await ambError.innerText();
-    check(ambText.includes('プロバイダー github-personal (GitHub) の規則 _provider_github_personal') && ambText.includes('監査 (audit)') && ambText.includes('プロバイダーの規則は変えられないので'), 'the refusal names the rules, the provider and the fix');
+    check(ambText.includes('規則 allow_github_example_com_443') && ambText.includes('監査 (audit)'), 'the refusal names the rules and what differs: ' + ambText);
     check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the refusal does not make the panel scroll sideways');
     await ambError.screenshot({ path: path.join(dir, 'edit-ambiguity.png') });
 
@@ -289,8 +293,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await gitItem.getByRole('button', { name: '承認', exact: true }).click();
     await dialog.waitFor();
     check(await page.locator('#approve-access-rules').isChecked() && await page.locator('#approve-path-rows select').first().isVisible(), 'writes seen start with methods and paths');
-    // dev's GitHub provider is the shared legacy one: a policy rule, warned.
-    check((await page.locator('#approve-head').innerText()).includes('github-personal (GitHub) のトークンがこの通信に付きます') && await gitItem.locator('.proposal-provider[data-kind=rule]').count() === 1, 'a proposal on a legacy provider\'s host says why it stays a rule and that the token rides along');
+    // Under the GitHub provider's github.com/**: its credential by default.
+    check((await page.locator('#approve-grant').innerText()).includes('プロバイダーの認証情報を付ける: github-personal → github.com/mtsmfm/iwato.git/') && await page.locator('#approve-attach').isChecked() && (await gitItem.locator('.proposal-provider[data-kind=rule]').innerText()).includes('github-personal の認証情報が付きます'), 'a proposal under a provider\'s endpoint carries its credential by default, said in the list and the dialog');
     const gitChips = await page.locator('#approve-binary-chips .approve-chip').evaluateAll((els) => els.map((e) => e.dataset.path));
     check(gitChips.join(' ') === '/usr/lib/git-core/git-remote-http /usr/lib/git-core/* /**', 'no version: no version candidates');
     check(await page.locator('#approve-writes').isVisible() && (await page.locator('#approve-writes').innerText()).includes('POST /mtsmfm/iwato.git/git-receive-pack') && await page.locator('#approve-summary').getAttribute('data-write') === 'true', 'a write is spelled out and the summary is marked');
@@ -329,7 +333,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(true, 'it turns 反映済み once the sandbox loaded it');
     await open('allow_github_com_443');
     check((await github.innerText()).includes('POST /mtsmfm/iwato.git/git-receive-pack'), 'the push was approved with the methods and paths seen');
-    check(await github.locator('.policy-src[data-source=provider-host]').innerText() === 'プロバイダー github-personal の宛先' && (await github.locator('.policy-provider-host-note').innerText()).includes('github.com には github-personal (GitHub) の認証情報が付きます'), 'a rule on a provider\'s host is marked as the provider\'s');
+    check(await github.locator('.policy-src[data-source=provider-host]').innerText() === '認証情報: github-personal', 'the approved rule carries the provider\'s credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
     check(true, 'and fades away');
 
@@ -435,25 +439,15 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await ciRule.getByText('POST /api/builds').waitFor();
     const ciText = await ciRule.innerText();
     check(ciText.includes('GET ** (すべて)') && ciText.includes('OPTIONS ** (すべて)') && !ciText.includes('読み取りだけ') && await ciRule.locator('.policy-denied').count() === 0, 'a read-only endpoint now lists GET/HEAD/OPTIONS ** and the POST');
-    // The provider's rule cannot change: a rule by hand for the same host.
-    await open('_provider_github_personal');
+    // A denial on the provider's initial rule: allowed on that endpoint,
+    // which keeps the credential.
     const provDenied = prov.locator('.policy-denied');
     await provDenied.locator('.policy-denied-item', { hasText: 'POST /repos/mtsmfm/iwato/releases' }).locator('input').check();
-    await provDenied.getByRole('button', { name: '止められたリクエストから規則を追加' }).click();
+    await provDenied.getByRole('button', { name: '選んだものを許可に追加' }).click();
     await dialog.waitFor();
-    check((await page.locator('#confirm-text').innerText()).includes('プロバイダーの規則「_provider_github_personal」は変えられない') && await page.locator('#policy-host').inputValue() === 'api.github.com' && await page.locator('#policy-ports').inputValue() === '443' && await page.locator('#policy-binaries').inputValue() === '/usr/bin/gh' && await page.locator('#approve-scope-rules').isChecked() && !(await page.locator('#policy-audit').isChecked()), 'a provider\'s denial starts a rule by hand: same host, enforcing, the methods and paths');
-    await page.fill('#policy-rule', 'gh_releases');
-    await page.screenshot({ path: path.join(dir, 'denied-provider-dialog.png') });
     await page.click('#confirm-ok');
-    // The provider's token goes with it: asked once more.
-    await page.locator('#confirm-text', { hasText: 'このまま許可しますか' }).waitFor();
-    check((await page.locator('#confirm-text').innerText()).includes('gh_releases: api.github.com:443 (github-personal)'), 'a rule on a provider\'s host asks first, naming the provider');
-    await page.screenshot({ path: path.join(dir, 'denied-provider-confirm.png') });
-    await page.click('#confirm-ok');
-    const releases = rule('gh_releases');
-    await releases.waitFor();
-    await open('gh_releases');
-    check((await releases.innerText()).includes('POST /repos/mtsmfm/iwato/releases') && await provDenied.count() === 0, 'the rule by hand allows it; the provider\'s list is empty');
+    await prov.getByText('POST /repos/mtsmfm/iwato/releases').waitFor();
+    check(await provDenied.count() === 0 && (await prov.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'the provider\'s endpoint allows it now, still with the credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     await current.getByRole('button', { name: '履歴' }).click();
@@ -485,14 +479,15 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.click('#confirm-ok');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .policy-current')?.innerText.includes('mirror_mtsmfm_iwato'));
     check(await presets.locator('.policy-preset', { hasText: '(mtsmfm/iwato)' }).waitFor({ state: 'detached', timeout: 10000 }).then(() => true, () => false), 'taking the preset out removes its rule');
-    // The owner's presets as YAML: a provider's host is refused inline,
+    // The owner's presets as YAML: a rule a provider's initial rule makes
+    // ambiguous is refused inline,
     // a good one is saved and listed, then deleted.
     await presets.getByRole('button', { name: '新しいプリセット' }).click();
     const yaml = presets.locator('.preset-yaml-editor');
-    await yamlFill(yaml, 'id: check-tool\nlabel: 確認用\nnetwork_policies:\n  r:\n    endpoints:\n      - { host: github.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }\n    binaries: [/usr/bin/curl]\n');
+    await yamlFill(yaml, 'id: check-tool\nlabel: 確認用\nnetwork_policies:\n  r:\n    endpoints:\n      - { host: github.com, port: 443, path: /**, protocol: rest, enforcement: enforce, access: read-only }\n    binaries: [/usr/bin/curl]\n');
     await presets.getByRole('button', { name: '保存' }).click();
     await presets.locator('.preset-editor .preset-error', { hasText: 'github.com:443' }).waitFor();
-    check(true, 'the editor shows why a preset on a provider\'s host is refused');
+    check(true, 'the editor shows why a preset a provider\'s rule disagrees with is refused');
     check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the YAML editor does not make the panel scroll sideways');
     await presets.locator('.preset-editor').screenshot({ path: path.join(dir, 'preset-editor.png') });
     // CodeMirror, highlighted, and what is typed is what is saved.
@@ -500,7 +495,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       const key = [...el.querySelectorAll('.cm-line span')].find((s) => s.textContent === 'id');
       return !!key && getComputedStyle(key).color !== getComputedStyle(key.closest('.cm-line')).color;
     }), 'the preset YAML is CodeMirror with line numbers and highlighting');
-    await yamlFill(yaml, (await yamlValue(yaml)).replace('github.com', 'tools.example.com'));
+    await yamlFill(yaml, (await yamlValue(yaml)).replace('github.com', 'tools.example.com').replace('path: /**, ', ''));
     await yaml.locator('.cm-content').click();
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.type('# 手で入力\n');
@@ -516,7 +511,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(true, 'a deleted preset leaves the list');
     await current.getByRole('button', { name: 'プリセットを閉じる' }).click();
     // The policy as YAML: the view replaces the lists and fills the tab, a
-    // provider's host is refused, a rule is added after the summary, edits
+    // rule the provider's makes ambiguous is refused, a rule is added after the summary, edits
     // survive switching views, and a save against an older version is refused.
     await panel.evaluate((el) => { el.scrollTop = el.scrollHeight; });
     await seg('yaml').click();
@@ -540,15 +535,12 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await yamlBox.locator('.policy-yaml-fixed .cm-content').getAttribute('aria-readonly') === 'true', 'the fixed settings are read-only YAML');
     await yamlBox.locator('details summary').click();
     check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the policy YAML does not make the panel scroll sideways');
-    const withRule = (host) => loaded.replace('network_policies:\n', 'network_policies:\n  yaml_tool:\n    endpoints:\n      - { host: ' + host + ', port: 443, protocol: rest, enforcement: enforce, access: read-only }\n    binaries: [/usr/bin/curl]\n');
-    await yamlFill(yamlArea, withRule('api.github.com'));
+    const withRule = (host, where = '') => loaded.replace('network_policies:\n', 'network_policies:\n  yaml_tool:\n    endpoints:\n      - { host: ' + host + ', port: 443, ' + where + 'protocol: rest, enforcement: enforce, access: read-only }\n    binaries: [/usr/bin/curl]\n');
+    await yamlFill(yamlArea, withRule('api.github.com', 'path: /**, '));
     await yamlBox.getByRole('button', { name: '変更を確認' }).click();
-    await page.locator('#confirm-text', { hasText: 'このまま許可しますか' }).waitFor();
-    check((await page.locator('#confirm-text').innerText()).includes('yaml_tool: api.github.com:443 (github-personal)'), 'a rule on an attached provider\'s host asks first');
+    await yamlBox.locator('.preset-error', { hasText: 'provider_github_personal' }).waitFor();
     await page.screenshot({ path: path.join(dir, 'policy-yaml-provider.png') });
-    await page.click('#confirm-cancel');
-    await yamlBox.locator('.preset-error', { hasText: 'api.github.com:443' }).waitFor();
-    check(true, 'declined, it is not saved and says why');
+    check(true, 'a rule as specific as the provider\'s endpoint without its credential is refused, saying why');
     await yamlFill(yamlArea, withRule('tools.example.com'));
     // Unsaved edits survive switching to 一覧 and back.
     check(await seg('yaml').locator('.policy-view-mark').innerText() === '未保存', 'unsaved edits are marked on the YAML switch');
@@ -603,8 +595,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .policy-current')?.innerText.includes('allow_files_example_org_443'));
     check(true, 'a stopped sandbox\'s rule can be taken out');
     await page.screenshot({ path: path.join(dir, 'stopped-policy.png'), fullPage: true });
-    // experiment has a GitHub provider of its own profile: its proposals
-    // widen the provider's scope, and Iwato closes them once applied.
+    // experiment has a GitHub provider made before ADR 0022 (a profile of
+    // its own): proposals there are plain approvals.
     if (phone) await page.click('#menu-button').catch(() => {});
     await page.locator('#sandbox-nav').getByText('experiment', { exact: true }).first().click();
     const exp = page.locator('.terminal-card.selected');
@@ -615,22 +607,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const expPending = exp.locator('.policy-pending');
     const prItem = expPending.locator('.proposal-item', { hasText: 'octo-org/octo-repo' });
     await prItem.waitFor();
-    check((await prItem.locator('.proposal-provider[data-kind=scope]').innerText()).includes('github-work (GitHub) の宛先 · 承認するとプロバイダーの範囲を広げます (リポジトリ octo-org/octo-repo を追加)'), 'a proposal on a scoped provider\'s host offers to widen the scope');
-    check((await expPending.locator('.proposal-item', { hasText: 'iwato リポジトリにブランチを push する' }).locator('.proposal-provider').innerText()).includes('もう範囲内'), 'a push the scope allows already says so');
-    await prItem.getByRole('button', { name: 'プロバイダーの範囲を広げて承認' }).click();
-    await dialog.waitFor();
-    const scopeText = await page.locator('#approve-grant').innerText();
-    check((await page.locator('#confirm-text').innerText()).includes('プロバイダーの範囲で許可しますか') && (await page.locator('#approve-head .approve-host').innerText()) === 'api.github.com' && scopeText.includes('書き込めるリポジトリに octo-org/octo-repo を加えます') && await page.locator('#approve-grant .approve-grant-line[data-write=true]').count() === 1 && await page.locator('#approve-form').isHidden() && await fits(), 'the dialog says what the scope gains, marked as a write, without the policy form');
-    await page.screenshot({ path: path.join(dir, 'approve-scope.png') });
-    await page.click('#confirm-ok');
-    await prItem.locator('.proposal-provider[data-kind=resolving]').waitFor();
-    check(await prItem.getByRole('button', { name: 'プロバイダーの範囲を広げて承認' }).isDisabled(), 'while the sandbox applies it, the proposal waits with its buttons off');
-    await page.screenshot({ path: path.join(dir, 'approve-scope-resolving.png'), fullPage: true });
-    await prItem.waitFor({ state: 'detached', timeout: 30000 });
-    const expRejected = exp.locator('.policy-rejected');
-    await expRejected.getByText('github-work の範囲を広げて閉じました', { exact: false }).waitFor();
-    check(!(await exp.locator('.policy-current').innerText()).includes('allow_api_github_com_443'), 'closed after the sandbox applied the scope, with no policy rule');
-    await page.screenshot({ path: path.join(dir, 'approve-scope-closed.png'), fullPage: true });
+    check(await prItem.locator('.proposal-provider').count() === 0, 'no credential to attach for a provider made before');
     // Over 128 rules: why it cannot be approved as proposed and what to do,
     // at the top; narrowing says how to get under 16 paths.
     await expPending.locator('.proposal-item', { hasText: 'api.huge.example' }).getByRole('button', { name: '承認', exact: true }).click();

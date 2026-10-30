@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -84,22 +85,15 @@ func withUserPresets(t testing.TB, files map[string]string) string {
 	return dir
 }
 
-// Iwato's presets, all of them together, and every Iwato provider: no
-// endpoint OpenShell would refuse as ambiguous, none that carries a
-// credential uninspected, none (but mise's in packages) on a provider's
-// host. Every endpoint is inspected and enforced, names
-// programs, and none is an agent's API (that is a provider's).
+// Iwato's presets, all of them together, and every Iwato provider's initial
+// rules: no endpoint OpenShell would refuse as ambiguous, none that
+// carries a credential uninspected. Every endpoint is inspected and
+// enforced, names programs, and none is an agent's API (that is a
+// provider's).
 func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 	refs := allBuiltinPresets()
 	if err := validPresetList(refs); err != nil {
 		t.Fatal(err)
-	}
-	// The hosts a provider's credential reaches are the provider's (ADR
-	// 0006): only packages keeps mise's GitHub rules.
-	for _, p := range builtinPresets() {
-		if want := p.ID == "packages"; (len(p.ProviderHosts) > 0) != want {
-			t.Errorf("%s reaches a provider's hosts: %v", p.ID, p.ProviderHosts)
-		}
 	}
 	rules := presetRules(refs)
 	for name, rule := range rules {
@@ -119,10 +113,20 @@ func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 	providersOnly := map[string]v1.NetworkPolicyRule{}
 	var scopes []credScope
 	for _, p := range providerProfiles {
-		composeProviderRule(providersOnly, p.ID, p.proto())
-		scopes = append(scopes, providerScopes(p.ID, p.ID)...)
+		initial, err := providerInitialRules(p.ID, "p")
+		if err != nil || len(initial) == 0 {
+			t.Fatal(p.ID, "has no initial rules:", err)
+		}
+		for k, r := range initial {
+			providersOnly[p.ID+"/"+k] = r
+		}
 	}
-	with := withProviderRules(rules, providersOnly)
+	scopes = boundScopes(providersOnly, nil)
+	if a := findEndpointAmbiguities(providersOnly); len(a) > 0 {
+		t.Fatalf("the providers' rules disagree: %v", a)
+	}
+	with := cloneRules(providersOnly)
+	maps.Copy(with, rules)
 	if a := newAmbiguities(providersOnly, with); len(a) > 0 {
 		t.Fatalf("a provider would be refused: %v", a)
 	}
@@ -224,8 +228,8 @@ network_policies:
 	write("typo.yaml", "id: typo\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: a.example, port: 443, protocoll: rest}]\n    binaries: [/usr/bin/curl]\n")
 	write("unknown.yaml", "id: unknown\nlabel: x\nnetwork_policies:\n  r_${nope}:\n    endpoints: [{host: a.example, port: 443}]\n    binaries: [/usr/bin/curl]\n")
 	write("provider.yaml", "id: provider\nlabel: x\nnetwork_policies:\n  _provider_x:\n    endpoints: [{host: a.example, port: 443}]\n    binaries: [/usr/bin/curl]\n")
-	write("github.yaml", "id: github\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: github.com, port: 443, protocol: rest, enforcement: enforce, rules: [{allow: {method: GET, path: /o/r/releases/**}}]}]\n    binaries: [/usr/bin/curl]\n")
-	write("audit.yaml", "id: audit\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: console.vast.ai, port: 443, path: /api/v0/**, protocol: rest, enforcement: audit, rules: [{allow: {method: GET, path: /other}}]}]\n    binaries: [/usr/bin/curl]\n")
+	write("github.yaml", "id: github\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: github.com, port: 443, path: /**, protocol: rest, enforcement: enforce, rules: [{allow: {method: GET, path: /o/r/releases/**}}]}]\n    binaries: [/usr/bin/curl]\n")
+	write("audit.yaml", "id: audit\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: console.vast.ai, port: 443, path: /api/**, protocol: rest, enforcement: audit, rules: [{allow: {method: GET, path: /other}}]}]\n    binaries: [/usr/bin/curl]\n")
 	write("enforced.yaml", "id: enforced\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: console.vast.ai, port: 443, protocol: rest, enforcement: enforce, rules: [{allow: {method: GET, path: /other}}]}]\n    binaries: [/usr/bin/curl]\n")
 	write("nobin.yaml", "id: nobin\nlabel: x\nnetwork_policies:\n  r:\n    endpoints: [{host: a.example, port: 443}]\n    binaries: []\n")
 	setUserPresetDir(dir)
@@ -238,9 +242,10 @@ network_policies:
 	for _, e := range errs {
 		bad = append(bad, e.File)
 	}
-	// An audited endpoint lets every request through: its rules do not
-	// keep it off the provider's paths, an enforced one's do.
-	if !strings.Contains(errs[0].Error, "console.vast.ai:443") || !strings.Contains(errs[1].Error, "github.com:443 (GitHub)") || findPreset("user:enforced") == nil {
+	// An endpoint of a provider's initial rules' specificity that inspects
+	// otherwise, or carries no credential, makes OpenShell refuse both; a
+	// less specific one does not.
+	if errs[0].Code != "preset_provider_ambiguous" || !strings.Contains(errs[0].Error, "console.vast.ai") || errs[1].Code != "preset_provider_ambiguous" || !strings.Contains(errs[1].Error, "credential_binding") || findPreset("user:enforced") == nil {
 		t.Fatalf("%+v", errs)
 	}
 	if !slices.Equal(bad, []string{"audit.yaml", "github.yaml", "nobin.yaml", "provider.yaml", "typo.yaml", "unknown.yaml"}) {

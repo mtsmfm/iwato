@@ -89,7 +89,7 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gp := got.GetProfile(); len(gp.GetEndpoints()) != 4 || len(gp.GetEndpoints()[2].GetRules()) != 4 || gp.GetEndpoints()[1].GetPath() != "/graphql" || len(gp.GetBinaries()) != 4 {
+	if gp := got.GetProfile(); len(gp.GetEndpoints()) != 0 || gp.GetAnnotations()[credentialHostsKey] != "api.github.com:443,github.com:443,uploads.github.com:443" || len(gp.GetBinaries()) != 4 {
 		t.Fatalf("the gateway's iwato-github lost detail: %v", gp)
 	}
 	// The gateway holds what the YAML files say, and renders back to them.
@@ -99,7 +99,8 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		held := proto.Clone(got.GetProfile()).(*pb.ProviderProfile)
-		held.ResourceVersion, held.Annotations, held.Source, held.Scope = 0, nil, "", ""
+		held.ResourceVersion, held.Source, held.Scope = 0, "", ""
+		delete(held.Annotations, profileHashKey)
 		if !proto.Equal(held, p.proto()) {
 			t.Fatalf("the gateway's %s differs from its YAML:\n%v\n%v", p.ID, prototext.Format(held), prototext.Format(p.proto()))
 		}
@@ -193,7 +194,7 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 		t.Fatalf("attached: %v %v", attached, err)
 	}
 	// The policy tab shows the effective policy (GetSandboxConfig): the
-	// provider's rule, which no revision holds, under OpenShell's name.
+	// provider's initial rule, from the first policy, bound to it (ADR 0022).
 	providerRule := func(name string) *PolicyRuleView {
 		t.Helper()
 		v, err := o.Proposals(ctx, w)
@@ -207,11 +208,11 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 		}
 		return nil
 	}
-	if r := providerRule("_provider_github_e2e"); r == nil || r.Source != "provider" || !slices.Contains(r.Binaries, "/usr/bin/gh") || len(r.Chunks) != 0 {
-		t.Fatalf("the effective policy lacks the provider's rule: %+v", r)
+	if r := providerRule("provider_github_e2e"); r == nil || r.Source == "provider" || len(r.Endpoints) != 4 || r.Endpoints[0].Credential != "github-e2e" {
+		t.Fatalf("the effective policy lacks the provider's initial rule: %+v", r)
 	}
-	if rules, err := o.revisionRules(ctx, w); err != nil || rules["_provider_github_e2e"].Name != "" {
-		t.Fatalf("a revision holds the provider's rule: %v", err)
+	if providerRule("_provider_github_e2e") != nil {
+		t.Fatal("the gateway composed a rule for an endpointless profile")
 	}
 	// UndoDraftChunk reaches the gateway (no chunk can be made here: see
 	// TestOpenShellE2E); an unknown one is refused, nothing changes.
@@ -263,8 +264,8 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if out := env(); !placeholder(out, "CLAUDE", "CLAUDE_CODE_OAUTH_TOKEN") || strings.Contains(out, "SECRET") {
 		t.Fatalf("after attaching:\n%s", out)
 	}
-	if providerRule("_provider_claude_e2e") == nil {
-		t.Fatal("the attached provider's rule is not in the effective policy")
+	if providerRule("_provider_claude_e2e") != nil {
+		t.Fatal("the gateway composed a rule for an endpointless profile")
 	}
 	if err := o.DeleteProvider(ctx, "claude-e2e"); err == nil {
 		t.Fatal("OpenShell deleted an attached provider")

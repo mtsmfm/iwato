@@ -35,8 +35,8 @@
 #                    (/client/v4/graphql, POST: `wrangler d1 info`, `d1
 #                    insights`, `r2 bucket info`). Deploys, uploads, DNS and
 #                    other changes (POST, PUT, PATCH, DELETE), and D1 queries
-#                    (POST), take a policy proposal or the scope's Allow
-#                    writes (ADR 0006, 0014).
+#                    (POST), take a policy proposal
+#                    (ADR 0022).
 #                    Not listed: api.sql.cloudflarestorage.com (`wrangler r2
 #                    sql query` falls back to the token there), the FedRAMP
 #                    API (api.fed.cloudflare.com), the dev preview hosts
@@ -48,11 +48,18 @@
 #                    (master, 8cc81c7fcc52, 2026-10-23), via GitHub;
 #                    cloudflared's mise path by installing cloudflared
 #                    2026.10.3.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-cloudflare.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-cloudflare
 display_name: Cloudflare (Iwato)
 description: Cloudflare API for Iwato's sandbox image
 category: other
+annotations:
+  iwato/credential-hosts: "api.cloudflare.com:443"
 credentials:
   - name: api_token
     description: Cloudflare API token
@@ -62,19 +69,6 @@ credentials:
     header_name: authorization
 discovery:
   credentials: [api_token]
-endpoints:
-  - host: api.cloudflare.com
-    port: 443
-    path: /client/v4/graphql
-    protocol: graphql
-    access: read-only
-    enforcement: enforce
-  - host: api.cloudflare.com
-    port: 443
-    path: /client/v4/**
-    protocol: rest
-    access: read-only
-    enforcement: enforce
 binaries:
   - /home/dev/.local/share/mise/installs/node/*/bin/node
   - /home/dev/.local/share/mise/installs/cloudflared/*/cloudflared

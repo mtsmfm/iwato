@@ -58,9 +58,7 @@ type Server struct {
 	config Config
 	rt     Runtime
 	// fake: serve -fake, the fake backend of the browser checks (fake_hooks.go).
-	fake bool
-	// closings are the proposals Iwato closes once their provider scope applies (proposal_scope.go).
-	closings                            scopeClosings
+	fake                                bool
 	host, origin, bootstrap, cookieName string
 	bootstrapUntil                      time.Time
 	mu                                  sync.Mutex

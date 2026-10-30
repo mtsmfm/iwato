@@ -51,7 +51,6 @@
       case 'ambiguous_attach': return t(vs.every((a) => a.fix === 'enforce') ? 'ambiguity.fix.attachEnforce' : 'ambiguity.fix.attach');
       case 'ambiguous_providers': return t('ambiguity.fix.oneProvider');
       case 'ambiguous_presets': return t('ambiguity.fix.removeOne');
-      case 'ambiguous_scope': return '';
     }
     const a = vs[0];
     return a.provider ? t('ambiguity.fix.provider', { wants: wants(a) }) : t('ambiguity.fix.rule', { wants: wants(a), rule: a.rule });
@@ -108,7 +107,6 @@
       if (!cs.length && !vs.length) return fallback;
       return [cs.length ? credentialText(true, cs) : '', vs.length ? ambiguityMessage('ambiguous_attach', params, vs) : ''].filter(Boolean).join(' ');
     }
-    if (code === 'provider_scope_conflict') return cs.length ? t('error.provider_scope_conflict', { sandbox: plain(params).sandbox || '', message: credentialText(true, cs) }) : fallback;
     if (code === 'proposal_unshown') return Array.isArray(params?.parts) && params.parts.length ? unshown(params.parts.filter((p) => typeof p === 'string').slice(0, 20), 'unshown.refused') : fallback;
     if (code === 'credential_uninspected') return cs.length ? credentialText(false, cs) : fallback;
     if (code === 'credential_uninspected_presets') return cs.length ? t('error.credential_uninspected_presets', { message: credentialText(false, cs) }) : fallback;

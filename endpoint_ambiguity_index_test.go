@@ -167,7 +167,7 @@ func TestAmbiguityIndexMatchesAllPairs(t *testing.T) {
 			if c.Scope != nil {
 				r = c.Scope.apply(cloneRule(rule))
 			}
-			merged, err := simulateMerge(base, approvalOps(name, r))
+			merged, err := simulateMerge(base, approvalPlanOps(base, effective, name, r, nil))
 			if err != nil {
 				continue
 			}

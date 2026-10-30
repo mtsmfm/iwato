@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,10 +45,8 @@ import (
 //
 // Before saving, a rule added or changed is checked as an edit is: its
 // shape, the endpoint ambiguity it would bring with the other rules and
-// the providers' (OpenShell's refusal, predicted), and the providers'
-// hosts (ADR 0006): an endpoint where an attached provider's credential
-// goes may stay as it was (with the same or fewer programs), but no rule
-// may add one, inspected or not. Rules left as they were are sent as the
+// the providers' (OpenShell's refusal, predicted), and the programs of a
+// rule bound to a credential (unchanged). Rules left as they were are sent as the
 // gateway gave them. Without apply the answer is the difference (added,
 // removed and changed rules), which the page shows before applying.
 //
@@ -455,44 +451,6 @@ func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.
 	return out, diff
 }
 
-// ProviderHostHit is an endpoint of an added or changed rule where an
-// attached provider's credential goes.
-type ProviderHostHit struct {
-	Rule     string `json:"rule"`
-	Host     string `json:"host"`
-	Provider string `json:"provider"`
-	Label    string `json:"label"`
-	// Scoped: the provider has a scope (GitHub), the better place to
-	// allow it.
-	Scoped bool `json:"scoped,omitempty"`
-}
-
-// policyYAMLProviderHits are the endpoints of the added and changed rules
-// (names) of rules that reach an attached provider's credential, other
-// than ones the rule had already, as they were, for no more programs.
-func policyYAMLProviderHits(old, rules map[string]v1.NetworkPolicyRule, names []string, targets []scopeTarget) []ProviderHostHit {
-	var out []ProviderHostHit
-	for _, name := range names {
-		r, was := rules[name], old[name]
-		fewer := len(was.Binaries) > 0 && !slices.ContainsFunc(r.Binaries, func(b v1.PolicyNetworkBinary) bool {
-			return !slices.ContainsFunc(was.Binaries, func(x v1.PolicyNetworkBinary) bool { return x.Path == b.Path })
-		})
-		for _, e := range r.Endpoints {
-			kept := fewer && slices.ContainsFunc(was.Endpoints, func(x v1.PolicyNetworkEndpoint) bool { return canonEndpoint(x) == canonEndpoint(e) })
-			if kept {
-				continue
-			}
-			for _, t := range targets {
-				if t.reaches(e) {
-					out = append(out, ProviderHostHit{Rule: name, Host: e.Host + ":" + joinPorts(endpointPorts(e)), Provider: t.name, Label: t.label, Scoped: t.base != ""})
-					break
-				}
-			}
-		}
-	}
-	return out
-}
-
 // checkBoundBinaries refuses changing the programs of a rule with an
 // endpoint bound to a provider's credential (credential_binding): the
 // credential would go to other programs.
@@ -517,78 +475,26 @@ func checkBoundBinaries(old, rules map[string]v1.NetworkPolicyRule, names []stri
 	return nil
 }
 
-// confirmToken binds an owner's confirmation to what it was shown: the
-// same plan gives the same token, another plan another.
-func confirmToken(parts ...any) string {
-	b, _ := json.Marshal(parts)
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:16])
-}
-
-// askProviderHosts answers a change that lets providers' credentials go
-// with it (ADR 0006: their hosts are theirs) with what to confirm: the
-// endpoints and providers, the token the retry carries, and whether a
-// provider's scope would say it better.
-func askProviderHosts(w http.ResponseWriter, hits []ProviderHostHit, token string) {
-	var parts []string
-	scoped := false
-	for _, h := range hits {
-		parts = append(parts, h.Rule+": "+h.Host+" ("+h.Provider+")")
-		scoped = scoped || h.Scoped
-	}
-	jsonResponse(w, 409, map[string]any{"code": "policy_provider_host", "params": map[string]any{"hosts": parts},
-		"error":   "プロバイダーの認証情報が付く宛先です。許可すると、その認証情報がこの通信にも付きます: " + strings.Join(parts, "、"),
-		"confirm": token, "scoped": scoped, "providerHosts": hits})
-}
-
-// credentialTargets are where a provider's credential goes, for checking
-// rules written by hand (ADR 0006, as presets are checked: credentialHits):
-// the attached providers' and every profile Iwato knows, so that a rule
-// written before a provider is attached cannot widen it later.
-func (s *Server) credentialTargets(ctx context.Context, sb Sandbox) ([]scopeTarget, error) {
-	targets, err := s.scopeTargets(ctx, sb)
-	if err != nil {
-		return nil, err
-	}
-	for _, prof := range allProfiles() {
-		if creds := providerScopes(prof.ID, prof.ID); len(creds) > 0 {
-			t := scopeTarget{name: prof.ID, label: prof.Label, creds: creds}
-			for _, b := range scopedBases {
-				if prof.ID == b || strings.HasPrefix(prof.ID, b+"-for-") {
-					t.base = b
-				}
-			}
-			targets = append(targets, t)
-		}
-	}
-	return targets, nil
-}
-
-// editProviderHosts are the endpoints where a provider's credential goes
-// (credentialTargets) that a hand edit adds, or adds requests to, as the
-// YAML editor finds them. A rule bound to a credential keeps its
-// programs. It fails closed: a policy it cannot read is an error.
-func (s *Server) editProviderHosts(ctx context.Context, sb Sandbox, edit PolicyEdit) ([]ProviderHostHit, error) {
+// checkEditBinaries refuses a hand edit that changes the programs of a
+// rule bound to a credential (checkBoundBinaries).
+func (s *Server) checkEditBinaries(ctx context.Context, sb Sandbox, edit PolicyEdit) error {
 	if edit.Op != "add" && edit.Op != "add-allow" {
-		return nil, nil
-	}
-	unverifiable := func(err error) error {
-		return errCode("provider_unverifiable", map[string]any{"detail": safeCLIError(err)}, "プロバイダーを確かめられません: "+safeCLIError(err))
+		return nil
 	}
 	base, _, ok, err := s.policyLayers(ctx, sb)
 	if !ok {
-		return nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, unverifiable(err)
+		return errCode("policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
 	}
 	ops, err := edit.operations(base)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	merged, err := simulateMerge(base, ops)
 	if err != nil {
-		return nil, unverifiable(err)
+		return err
 	}
 	var touched []string
 	for _, name := range slices.Sorted(maps.Keys(merged)) {
@@ -596,14 +502,7 @@ func (s *Server) editProviderHosts(ctx context.Context, sb Sandbox, edit PolicyE
 			touched = append(touched, name)
 		}
 	}
-	if err := checkBoundBinaries(base, merged, touched); err != nil {
-		return nil, err
-	}
-	targets, err := s.credentialTargets(ctx, sb)
-	if err != nil {
-		return nil, unverifiable(err)
-	}
-	return policyYAMLProviderHits(base, merged, touched, targets), nil
+	return checkBoundBinaries(base, merged, touched)
 }
 
 // policyYAMLRuntime reads and replaces a sandbox's network policy as a
@@ -698,9 +597,6 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 		Version uint32 `json:"version"`
 		YAML    string `json:"yaml"`
 		Apply   bool   `json:"apply"`
-		// Confirm: the token of an owner's confirmation that providers'
-		// credentials go with these rules (askProviderHosts).
-		Confirm string `json:"confirm"`
 	}
 	if decodeLimit(w, r, &body, policyYAMLLimit+(16<<10)) != nil || body.Version == 0 {
 		fail(w, 400, "invalid policy")
@@ -751,19 +647,6 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 	if err := checkBoundBinaries(old, rules, touched); err != nil {
 		failErr(w, 409, err)
 		return
-	}
-	// ADR 0006: the providers' hosts are the providers'; the owner may let a
-	// credential go with a rule, once confirmed.
-	targets, err := s.credentialTargets(ctx, sb)
-	if err != nil {
-		failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(err)}, "プロバイダーを確かめられません: "+safeCLIError(err))
-		return
-	}
-	if hits := policyYAMLProviderHits(old, rules, touched, targets); len(hits) > 0 {
-		if token := confirmToken(sb.Name, "yaml", body.Version, rules, hits); body.Confirm != token {
-			askProviderHosts(w, hits, token)
-			return
-		}
 	}
 	// OpenShell's endpoint ambiguity, with the providers' rules.
 	if _, effective, ok, err := s.policyLayers(ctx, sb); ok {

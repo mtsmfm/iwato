@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
 )
 
@@ -180,7 +181,7 @@ func conflictError(list []ProviderInfo, adding, other string) error {
 	label := "同じ種類"
 	for _, p := range list {
 		if p.Name == adding {
-			if prof, ok := profileByID(p.Profile); ok {
+			if prof, ok := profileByID(providerBase(p)); ok {
 				label = prof.Label
 			}
 		}
@@ -201,10 +202,10 @@ type ProviderView struct {
 	// Applying are the sandboxes that have not applied an attach or
 	// detach of the provider yet, or could not.
 	Applying []ApplyView `json:"applying"`
-	// Base is the built-in profile of a provider with its own profile, and
-	// Scope its access scope (providers_scope.go).
-	Base  string     `json:"base,omitempty"`
-	Scope *ScopeView `json:"scope,omitempty"`
+	// Legacy is the built-in profile of a provider made with a profile of
+	// its own before ADR 0022 (providerBase): it works as it is, with its
+	// profile's endpoints; the page asks to add it again.
+	Legacy string `json:"legacy,omitempty"`
 }
 
 // ApplyView is a provider change a sandbox is applying: state pending,
@@ -212,7 +213,6 @@ type ProviderView struct {
 type ApplyView struct {
 	Sandbox string `json:"sandbox"`
 	Attach  bool   `json:"attach"`
-	Scope   bool   `json:"scope,omitempty"`
 	State   string `json:"state"`
 	Reason  string `json:"reason,omitempty"`
 }
@@ -278,7 +278,7 @@ func (s *Server) providerApplying(ctx context.Context, rt providerRuntime) map[s
 			if st == "" {
 				st = "pending"
 			}
-			out[a.Provider] = append(out[a.Provider], ApplyView{Sandbox: sb.Name, Attach: a.Attach, Scope: a.Scope, State: st, Reason: a.Reason})
+			out[a.Provider] = append(out[a.Provider], ApplyView{Sandbox: sb.Name, Attach: a.Attach, State: st, Reason: a.Reason})
 		}
 	}
 	return out
@@ -351,10 +351,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		views := []ProviderView{}
 		for _, p := range list {
 			v := ProviderView{Name: p.Name, Profile: p.Profile, Keys: append([]string{}, p.Keys...), Attached: []string{}, Applying: append([]ApplyView{}, applying[p.Name]...)}
-			if base := scopedBaseOf(p); base != "" {
-				sc, ok := s.providerScope(p.Name)
-				v.Base, v.Scope = base, scopeView(base, sc, ok)
-			}
+			v.Legacy = legacyBase(p)
 			if !p.CreatedAt.IsZero() {
 				v.CreatedAt = p.CreatedAt.UTC().Format(time.RFC3339)
 			}
@@ -391,7 +388,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 	var name, op string
 	if rest != "" {
 		var ok bool
-		if name, op, ok = strings.Cut(rest, "/"); !ok || (op != "update" && op != "delete" && op != "rotate" && op != "scope") {
+		if name, op, ok = strings.Cut(rest, "/"); !ok || (op != "update" && op != "delete" && op != "rotate") {
 			fail(w, 404, "unknown provider route")
 			return
 		}
@@ -399,10 +396,6 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "invalid provider name")
 			return
 		}
-	}
-	if op == "scope" {
-		s.handleProviderScope(w, r, name)
-		return
 	}
 	var body struct {
 		Name    string            `json:"name"`
@@ -448,13 +441,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			failErr(w, 400, err)
 			return
 		}
-		var created string
-		if store, ok := s.rt.(profileStore); ok && prof.Scoped {
-			// Its own profile, for its scope (providers_scope.go).
-			created, err = s.createScopedProvider(ctx, rt, store, body.Name, prof, creds)
-		} else {
-			created, err = createProviderNamed(ctx, rt, body.Name, prof.ID, creds)
-		}
+		created, err := createProviderNamed(ctx, rt, body.Name, prof.ID, creds)
 		if err != nil {
 			fail(w, 409, safeCLIError(err))
 			return
@@ -552,8 +539,13 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			fail(w, 409, safeCLIError(err))
 			return
 		}
-		if i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == name }); i >= 0 {
-			s.forgetScope(ctx, list[i])
+		if i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == name }); i >= 0 && legacyBase(list[i]) != "" {
+			// Its own profile, made before ADR 0022, goes with it.
+			if store, ok := s.rt.(profileStore); ok {
+				if err := store.DeleteProviderProfile(ctx, list[i].Profile); err != nil {
+					log.Printf("provider %s: delete the profile %s: %v", name, list[i].Profile, safeText(english(err)))
+				}
+			}
 		}
 	}
 	jsonResponse(w, 200, map[string]bool{"ok": true})
@@ -577,8 +569,10 @@ func (s *Server) refreshKey(profile string) string {
 
 // handleSandboxProviders attaches a provider to the sandbox or detaches it
 // (POST /api/sandboxes/NAME/providers/attach|detach with {"provider"}).
-// It answers once the gateway took the change; a running sandbox applies
-// it on its next settings poll, which the provider list follows
+// The provider's initial rules go into the policy after the attach, its
+// bound endpoints out of it before the detach (provider_rules.go). It
+// answers once the gateway took the change; a running sandbox applies it
+// on its next settings poll, which the provider list follows
 // (ProviderView.Applying, 反映待ち). Processes that run already keep their
 // environment: the change reaches terminals and processes started
 // afterwards.
@@ -596,10 +590,6 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 		// Mode (fix only): "remove" the conflicting endpoints, or
 		// "enforce" the audited ones (keeping their rules).
 		Mode string `json:"mode"`
-		// Confirm: the token of the owner's confirmation that rules let
-		// the credential go beyond the provider's scope (attach), or that
-		// those endpoints are removed (fix).
-		Confirm string `json:"confirm"`
 	}
 	if decode(w, r, &body) != nil || !providerNamePattern.MatchString(body.Provider) || (body.Mode != "" && body.Mode != "remove" && body.Mode != "enforce") {
 		fail(w, 400, "invalid provider name")
@@ -622,11 +612,12 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 	}
 	current := attached[sb.Name]
 	if parts[2] == "fix" {
-		s.fixCredentialConflicts(w, ctx, sb, list, body.Provider, body.Mode == "enforce", body.Confirm)
+		s.fixCredentialConflicts(w, ctx, sb, list, body.Provider, body.Mode == "enforce")
 		return
 	}
 	attach := parts[2] == "attach"
-	running := s.rt.Status(ctx, sb).State == "running"
+	state := s.rt.Status(ctx, sb).State
+	running := state == "running"
 	var applied bool
 	var receipt string
 	if attach {
@@ -661,24 +652,31 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 			failCheck(w, attachRefusal(body.Provider, conflicts, ambiguities))
 			return
 		}
-		// ADR 0006: a rule that lets the credential reach more than the
-		// provider's own rule would widen its scope once attached: only
-		// with the owner's confirmation.
-		if beyond, berr := s.beyondScopeForAttach(ctx, sb, list[i]); berr != nil {
-			failCode(w, 409, "policy_unverifiable", map[string]any{"detail": safeCLIError(berr)}, "ポリシーを確かめられません: "+safeCLIError(berr))
-			return
-		} else if token := confirmToken(sb.Name, "attach", body.Provider, beyond); len(beyond) > 0 && body.Confirm != token {
-			var where []string
-			for _, b := range beyond {
-				where = append(where, b.Rule+": "+b.Host+":"+joinPorts(b.Ports))
-			}
-			jsonResponse(w, 409, map[string]any{"code": "provider_attach_beyond_scope", "params": map[string]any{"provider": body.Provider, "rules": where},
-				"error":   body.Provider + " を付けると、ポリシーの規則がその認証情報をプロバイダーの範囲より広く届けます: " + strings.Join(where, "、"),
-				"confirm": token, "beyond": beyond})
+		initial, ierr := providerInitialRules(list[i].Profile, body.Provider)
+		if ierr != nil {
+			failErr(w, 500, ierr)
 			return
 		}
 		applied, receipt, err = rt.AttachProvider(ctx, sb.Name, body.Provider)
+		if err == nil && applied && len(initial) > 0 && !slices.Contains(current, body.Provider) {
+			if perr := s.addProviderRules(ctx, sb, body.Provider, initial); perr != nil {
+				// Without its rules the provider would be attached but
+				// reach nothing: taken off again.
+				if _, _, derr := rt.DetachProvider(ctx, sb.Name, body.Provider); derr != nil {
+					log.Printf("sandbox %s: provider %s: detach after the policy failed: %v", sb.Name, body.Provider, safeText(english(derr)))
+				}
+				s.failGateway(ctx, w, sb, perr)
+				return
+			}
+		}
 	} else {
+		// OpenShell refuses detaching a provider the policy binds.
+		if state != "not-created" {
+			if perr := s.removeProviderRules(ctx, sb, body.Provider); perr != nil {
+				s.failGateway(ctx, w, sb, perr)
+				return
+			}
+		}
 		applied, receipt, err = rt.DetachProvider(ctx, sb.Name, body.Provider)
 	}
 	// Saved but not applied in time still changes what restarts get.
@@ -817,10 +815,8 @@ func (s *Server) providerOutdated(sb Sandbox, names []string) []string {
 // Programs of the removed endpoints lose them; the page says which. An
 // endpoint the provider's rule would make ambiguous is removed too. With
 // enforce, one that only audits where the provider enforces is switched
-// to enforce instead, with the requests it allows now. With confirm (the
-// attach's token), the endpoints that carry the credential beyond the
-// provider's scope are removed as well.
-func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Context, sb Sandbox, list []ProviderInfo, provider string, enforce bool, confirm string) {
+// to enforce instead, with the requests it allows now.
+func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Context, sb Sandbox, list []ProviderInfo, provider string, enforce bool) {
 	i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == provider })
 	if i < 0 {
 		failCode(w, 404, "provider_missing", map[string]any{"name": provider}, "プロバイダー "+provider+" がありません")
@@ -867,20 +863,6 @@ func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Conte
 		}
 		add(e)
 	}
-	var beyond []BeyondScope
-	if confirm != "" {
-		if beyond, err = s.beyondScopeForAttach(ctx, sb, list[i]); err != nil {
-			failCode(w, 409, "policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
-			return
-		}
-		if confirmToken(sb.Name, "attach", provider, beyond) != confirm {
-			failCode(w, 409, "provider_fix_changed", nil, "ポリシーが変わりました。もう一度付けてください")
-			return
-		}
-		for _, b := range beyond {
-			add(PolicyEdit{Op: "remove-endpoint", Rule: b.Rule, Host: b.Host, Ports: b.Ports})
-		}
-	}
 	for _, edit := range edits {
 		change, err := pol.EditPolicy(ctx, sb, edit)
 		if err != nil {
@@ -901,7 +883,7 @@ func (s *Server) fixCredentialConflicts(w http.ResponseWriter, ctx context.Conte
 		s.recordPolicyChange(sb.Name, change)
 		log.Printf("sandbox %s: %s %s:%s of rule %s (for provider %s)", sb.Name, edit.Op, edit.Host, joinPorts(edit.Ports), edit.Rule, provider)
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "removed": conflicts, "fixed": ambiguities, "beyond": beyond})
+	jsonResponse(w, 200, map[string]any{"ok": true, "removed": conflicts, "fixed": ambiguities})
 }
 
 // providerProfileReader reads a profile the gateway holds (in Iwato's
@@ -917,9 +899,8 @@ var profileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 // as YAML in OpenShell's format. Iwato's own are its files as shipped
 // (source "iwato"); others, imported with OpenShell's CLI, are read from
 // the gateway and rendered (source "gateway").
-// A scoped provider's own profile is source "scope", a custom one
-// "custom". POSTs add, replace or delete custom profiles
-// (handleCustomProfile).
+// A custom one is source "custom". POSTs add, replace or delete custom
+// profiles (handleCustomProfile).
 func (s *Server) handleProviderProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		s.handleCustomProfile(w, r, strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/api/provider-profiles"), "/"))
@@ -942,15 +923,8 @@ func (s *Server) handleProviderProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p, ok := profileByID(id); ok {
-		// A scoped provider's (rendered from its scope, or the owner's
-		// YAML), or a custom profile (a file in the config folder).
-		resp := map[string]any{"id": id, "yaml": string(p.yaml)}
-		if p.Custom {
-			resp["source"], resp["file"] = "custom", s.customProfileFile(id)
-		} else {
-			resp["source"], resp["base"] = "scope", p.Base
-		}
-		jsonResponse(w, 200, resp)
+		// A custom profile (a file in the config folder).
+		jsonResponse(w, 200, map[string]any{"id": id, "yaml": string(p.yaml), "source": "custom", "file": s.customProfileFile(id)})
 		return
 	}
 	reader, ok := s.rt.(providerProfileReader)
@@ -975,4 +949,33 @@ func (s *Server) handleProviderProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"id": id, "source": "gateway", "scope": m.GetScope(), "yaml": y})
+}
+
+// addProviderRules commits and applies a provider's initial rules.
+func (s *Server) addProviderRules(ctx context.Context, sb Sandbox, provider string, rules map[string]v1.NetworkPolicyRule) error {
+	rt, ok := s.rt.(providerPolicyRuntime)
+	if !ok {
+		return nil
+	}
+	change, err := rt.AddProviderRules(ctx, sb, provider, rules)
+	if err != nil {
+		return err
+	}
+	s.recordPolicyChange(sb.Name, change)
+	return nil
+}
+
+// removeProviderRules commits and applies the policy without the
+// endpoints bound to the provider.
+func (s *Server) removeProviderRules(ctx context.Context, sb Sandbox, provider string) error {
+	rt, ok := s.rt.(providerPolicyRuntime)
+	if !ok {
+		return nil
+	}
+	change, err := rt.RemoveProvider(ctx, sb, provider)
+	if err != nil {
+		return err
+	}
+	s.recordPolicyChange(sb.Name, change)
+	return nil
 }

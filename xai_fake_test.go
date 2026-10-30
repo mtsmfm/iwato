@@ -29,7 +29,7 @@ func TestXAIFlowCreatesTheProvider(t *testing.T) {
 	if done.Status != "done" || done.Name != "grok-subscription-2" || done.Warning != "" || done.UserCode != "" || done.Refresh == nil || done.Refresh.Status != "refreshed" {
 		t.Fatalf("%+v %+v", done, done.Refresh)
 	}
-	want := []string{"create grok-subscription-2 iwato-grok-subscription-for-grok-subscription-2 XAI_OAUTH_TOKEN", "configure grok-subscription-2 XAI_OAUTH_TOKEN", "rotate grok-subscription-2"}
+	want := []string{"create grok-subscription-2 iwato-grok-subscription XAI_OAUTH_TOKEN", "configure grok-subscription-2 XAI_OAUTH_TOKEN", "rotate grok-subscription-2"}
 	if got := o.rt.log(); !slices.Equal(got, want) {
 		t.Fatalf("%q", got)
 	}

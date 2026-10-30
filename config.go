@@ -52,10 +52,10 @@ type Config struct {
 	Timezone string `json:"timezone,omitempty"`
 	// Resources is how the page shows the sandboxes' resources (resources.go).
 	Resources *ResourceSettings `json:"resources,omitempty"`
-	// ProviderScopes are the access scopes of the providers with their own
-	// profile, by provider name (providers_scope.go).
-	ProviderScopes map[string]ProviderScope `json:"providerScopes,omitempty"`
-	Sandboxes      []Sandbox                `json:"sandboxes"`
+	// ProviderScopes were the providers' access scopes before ADR 0022:
+	// read and dropped.
+	ProviderScopes json.RawMessage `json:"providerScopes,omitempty"`
+	Sandboxes      []Sandbox       `json:"sandboxes"`
 }
 
 // Sandbox is one OpenShell sandbox.
@@ -110,8 +110,7 @@ type ProviderApply struct {
 	Attach   bool      `json:"attach"`
 	Receipt  string    `json:"receipt"`
 	At       time.Time `json:"at"`
-	// Scope: the change is of the provider's scope (its profile), not an
-	// attach or detach; running processes need no restart for it.
+	// Scope was a scope change (before ADR 0022): read and ignored.
 	Scope bool `json:"scope,omitempty"`
 	// State is "" while pending, else withheld or failed (with Reason).
 	State  string `json:"state,omitempty"`
@@ -167,6 +166,7 @@ func readConfig(path string) (Config, error) {
 	if e = d.Decode(new(any)); e != io.EOF {
 		return c, errors.New("trailing JSON data")
 	}
+	c.ProviderScopes = nil
 	return c, c.Validate()
 }
 
@@ -197,9 +197,6 @@ func (c Config) Validate() error {
 		return errors.New("invalid timezone")
 	}
 	if e := c.Resources.Validate(); e != nil {
-		return e
-	}
-	if e := validScopes(c.ProviderScopes); e != nil {
 		return e
 	}
 	if len(c.Sandboxes) > 16 {

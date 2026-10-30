@@ -1,0 +1,24 @@
+# The initial rule of a provider of profiles/iwato-vastai.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+id: iwato-vastai
+label: Vast.ai
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - host: console.vast.ai
+        port: 443
+        path: /api/**
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/api/**" }
+          - allow: { method: HEAD, path: "/api/**" }
+          - allow: { method: OPTIONS, path: "/api/**" }
+          - allow: { method: PUT, path: /api/v0/search/asks/ }
+          - allow: { method: POST, path: /api/v0/bundles/ }

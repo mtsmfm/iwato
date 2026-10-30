@@ -62,7 +62,7 @@ func profileEndpoint(e *sbv1.NetworkEndpoint) v1.PolicyNetworkEndpoint {
 		}
 	}
 	if m := e.GetMcp(); m != nil {
-		x.Mcp = &types.McpOptions{StrictToolNames: m.StrictToolNames}
+		x.Mcp = &types.McpOptions{Versions: slices.Clone(m.GetVersions()), StrictToolNames: m.StrictToolNames, AllowAllKnownMcpMethods: m.AllowAllKnownMcpMethods}
 	}
 	if b := e.GetCredentialBinding(); b != nil {
 		x.CredentialBinding = &types.NetworkCredentialBinding{Provider: b.GetProvider()}
@@ -82,8 +82,12 @@ func queryMatchers(in map[string]*sbv1.L7QueryMatcher) map[string]v1.L7QueryMatc
 }
 
 // composeProviderRule adds a provider's rule to rules as OpenShell does
-// (compose.rs: _provider_NAME, then _2, _3 when taken) and returns its key.
+// (compose.rs: _provider_NAME, then _2, _3 when taken) and returns its key;
+// a profile without endpoints (Iwato's: ADR 0022) has none ("").
 func composeProviderRule(rules map[string]v1.NetworkPolicyRule, provider string, m *pb.ProviderProfile) string {
+	if len(m.GetEndpoints()) == 0 {
+		return ""
+	}
 	key := providerRuleName(provider)
 	for n := 2; ; n++ {
 		if _, taken := rules[key]; !taken {
@@ -352,6 +356,13 @@ func approvalOps(name string, rule v1.NetworkPolicyRule) []v1.PolicyMergeOperati
 	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: rule}}}
 }
 
+// approvalPlanOps add the rule an approval writes (approvedRule,
+// inheritShadowed) under a free name.
+func approvalPlanOps(base, effective map[string]v1.NetworkPolicyRule, name string, rule v1.NetworkPolicyRule, attach *bool) []v1.PolicyMergeOperation {
+	plan := inheritShadowed(approvedRule(freeRuleName(base, name), rule), withProviderRules(base, effective), attach)
+	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: plan.Name, Rule: plan}}}
+}
+
 // approveChoices are the approve dialog's choices as scopes (the methods
 // and paths do not matter to the check, nor do the programs).
 var approveChoices = []struct {
@@ -375,7 +386,7 @@ func proposalFit(ctx context.Context, before *ambiguityIndex, base, effective ma
 		if c.Scope != nil {
 			r = c.Scope.apply(cloneRule(rule))
 		}
-		merged, err := simulateMerge(base, approvalOps(name, r))
+		merged, err := simulateMerge(base, approvalPlanOps(base, effective, name, r, nil))
 		if err != nil {
 			continue
 		}
@@ -762,6 +773,9 @@ func ruleProvidersOf(list []ProviderInfo, attached []string) map[string]RuleProv
 		if i < 0 {
 			continue
 		}
+		if _, endpointless := builtinProfile(list[i].Profile); endpointless {
+			continue
+		}
 		key := providerRuleName(name)
 		for n := 2; ; n++ {
 			if _, taken := byRule[key]; !taken {
@@ -917,10 +931,11 @@ func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rul
 		return errCode("policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
 	}
 	r := rule
+	var attach *bool
 	if scope != nil {
-		r = scope.apply(cloneRule(rule))
+		r, attach = scope.apply(cloneRule(rule)), scope.Attach
 	}
-	list, err := predictAmbiguities(base, effective, approvalOps(name, r))
+	list, err := predictAmbiguities(base, effective, approvalPlanOps(base, effective, name, r, attach))
 	if err != nil || len(list) == 0 {
 		return nil
 	}
@@ -969,35 +984,53 @@ func (s *Server) checkEdit(ctx context.Context, sb Sandbox, edit PolicyEdit) err
 }
 
 // attachAmbiguities are the endpoints of the sandbox's policy that the
-// provider's rule would make ambiguous (OpenShell refuses the attach:
-// grpc/policy.rs validate_candidate_provider_attachments). None when it
-// is attached already.
+// provider's rules would make ambiguous: the rule of a profile with
+// endpoints (OpenShell refuses the attach: grpc/policy.rs
+// validate_candidate_provider_attachments) and the initial rules Iwato
+// adds (provider_rules.go). None when it is attached already.
 func (s *Server) attachAmbiguities(ctx context.Context, sb Sandbox, p ProviderInfo) ([]AmbiguityView, error) {
 	_, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok || err != nil {
 		return nil, err
 	}
-	m := s.providerProfile(ctx, p)
-	if m == nil {
-		return nil, nil
-	}
-	providers := s.ruleProviders(ctx, sb)
-	for _, rp := range providers {
-		if rp.Name == p.Name {
+	if prt, ok := s.rt.(providerRuntime); ok {
+		_, attached, err := s.providerState(ctx, prt)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(attached[sb.Name], p.Name) {
 			return nil, nil
 		}
 	}
+	providers := s.ruleProviders(ctx, sb)
 	candidate := maps.Clone(effective)
 	if candidate == nil {
 		candidate = map[string]v1.NetworkPolicyRule{}
 	}
-	key := composeProviderRule(candidate, p.Name, m)
-	providers[key] = providerLabel(p)
+	var keys []string
+	if m := s.providerProfile(ctx, p); m != nil {
+		if key := composeProviderRule(candidate, p.Name, m); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	initial, err := providerInitialRules(p.Profile, p.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range slices.Sorted(maps.Keys(initial)) {
+		r := initial[k]
+		r.Name = freeRuleName(candidate, k)
+		candidate[r.Name] = r
+		keys = append(keys, r.Name)
+	}
+	for _, k := range keys {
+		providers[k] = providerLabel(p)
+	}
 	list := newAmbiguities(effective, candidate)
 	if len(list) == 0 {
 		return nil, nil
 	}
-	return ambiguityViews(list, []string{key}, candidate, providers), nil
+	return ambiguityViews(list, keys, candidate, providers), nil
 }
 
 // providersAmbiguities are the ambiguities among providers chosen
@@ -1007,7 +1040,13 @@ func (s *Server) providersAmbiguities(ctx context.Context, list []ProviderInfo) 
 	providers := map[string]RuleProvider{}
 	for _, p := range list {
 		if m := s.providerProfile(ctx, p); m != nil {
-			providers[composeProviderRule(rules, p.Name, m)] = providerLabel(p)
+			if key := composeProviderRule(rules, p.Name, m); key != "" {
+				providers[key] = providerLabel(p)
+			}
+		}
+		initial, _ := providerInitialRules(p.Profile, p.Name)
+		for k, r := range initial {
+			rules[k], providers[k] = r, providerLabel(p)
 		}
 	}
 	if a := findEndpointAmbiguities(rules); len(a) > 0 {

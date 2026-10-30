@@ -184,8 +184,10 @@ func TestUserPresetEditor(t *testing.T) {
 	if code, body := post("POST", "/api/presets/user", mirrorPreset); code != 409 {
 		t.Fatal("a second mirror:", code, body)
 	}
-	github := strings.ReplaceAll(mirrorPreset, "git.example.com", "github.com")
-	if code, body := post("PUT", "/api/presets/user/mirror.yaml", github); code != 400 || !strings.Contains(body, "github.com:443") {
+	// As specific as the GitHub provider's initial rule, without its
+	// credential: OpenShell would refuse the two together.
+	github := strings.ReplaceAll(strings.ReplaceAll(mirrorPreset, "git.example.com", "github.com"), `"/${repo}/**"`, `"/**"`)
+	if code, body := post("PUT", "/api/presets/user/mirror.yaml", github); code != 400 || !strings.Contains(body, "preset_provider_ambiguous") {
 		t.Fatal("a provider's host:", code, body)
 	}
 	if code, body := do("GET", "/api/presets/user/mirror.yaml", ""); code != 200 || !strings.Contains(body, "git.example.com") {

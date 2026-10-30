@@ -410,7 +410,15 @@ func (s *Server) presetsAmbiguities(ctx context.Context, refs []PresetRef, provi
 	byRule := map[string]RuleProvider{}
 	for _, p := range providers {
 		if m := s.providerProfile(ctx, p); m != nil {
-			byRule[composeProviderRule(rules, p.Name, m)] = providerLabel(p)
+			if key := composeProviderRule(rules, p.Name, m); key != "" {
+				byRule[key] = providerLabel(p)
+			}
+		}
+		initial, _ := providerInitialRules(p.Profile, p.Name)
+		for k, r := range initial {
+			if _, taken := rules[k]; !taken {
+				rules[k], byRule[k] = r, providerLabel(p)
+			}
 		}
 	}
 	if list := findEndpointAmbiguities(rules); len(list) > 0 {

@@ -343,28 +343,27 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(JSON.parse(mutations(push)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/usr/bin/git'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}, {method: 'POST', path: '/o/r.git/git-receive-pack'}]}}, 'the program is always sent');
   ok('writes seen start with their methods and paths; an invalid program blocks the approval');
 
-  // On a provider's host (ADR 0006): widening its scope posts only the
-  // request ID to /scope; one it cannot widen approves as a rule, warned.
-  const scoped = {...proposal, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], protocol: 'rest'}], rules: [{method: 'POST', path: '/o/r.git/git-receive-pack'}],
-    providerScope: {provider: 'gh-work', label: 'GitHub', repos: ['o/r', 7], mutations: []}};
-  const scopeEnv = await environment({fake: false}); scopeEnv.setProposalHandler((path) => /\/(approve|reject|scope)$/.test(path) ? response({ok: true, closed: false}) : response({...proposalItem, pending: [scoped]})); await readPolicy(scopeEnv);
-  const scopeRow = pendingItems(scopeEnv)[0];
-  assert.match(texts(scopeRow), /gh-work \(GitHub\) の宛先 · 承認するとプロバイダーの範囲を広げます \(リポジトリ o\/r を追加\)/);
-  let scopeForm = null;
-  let scopeGrant = null;
-  scopeEnv.setConfirmHandler(() => { scopeForm = scopeEnv.els['approve-form'].hidden; scopeGrant = [scopeEnv.els['approve-grant'].hidden, texts(scopeEnv.els['approve-grant']), scopeEnv.els['approve-grant'].children[1].dataset.write, texts(scopeEnv.els['approve-head'])]; return true; });
-  find(scopeRow, '範囲を広げる').click(); await flush();
-  assert.equal(scopeForm, true, 'no policy form'); assert.match(scopeEnv.confirmations.at(-1), /プロバイダーの範囲で許可しますか/);
-  assert.equal(scopeGrant[0], false); assert.match(scopeGrant[1], /gh-work \(GitHub\) の範囲に加えるもの\n書き込み\n書き込めるリポジトリに o\/r を加えます/); assert.equal(scopeGrant[2], 'true', 'a repository is a write'); assert.match(scopeGrant[1], /要求: POST \/o\/r\.git\/git-receive-pack/); assert.match(scopeGrant[3], /^github\.com/);
-  assert.equal(scopeEnv.els['approve-grant'].hidden, true, 'hidden after the dialog');
-  assert.equal(mutations(scopeEnv)[0].path, '/api/sandboxes/api/proposals/scope'); assert.deepEqual(JSON.parse(mutations(scopeEnv)[0].body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64)});
-  const ruleEnv = await approveEnv({...scoped, providerScope: {provider: 'gh-old', label: 'GitHub', reason: '範囲を設定できるようになる前に作った'}});
-  ruleEnv.setConfirm(true); await approveFirst(ruleEnv);
-  assert.match(texts(ruleEnv.els['approve-head']), /gh-old \(GitHub\) のトークンがこの通信に付きます\nプロバイダーの範囲にできない理由: 範囲を設定できるようになる前に作った/);
-  assert.equal(mutations(ruleEnv)[0].path, '/api/sandboxes/api/proposals/approve');
-  const waitEnv = await approveEnv({...scoped, providerScope: {...scoped.providerScope, resolving: true}});
-  assert.equal(find(pendingItems(waitEnv)[0], '範囲を広げる').disabled, true, 'closing: no second decision'); assert.match(texts(pendingItems(waitEnv)[0]), /範囲を広げました/);
-  ok('a proposal on a provider\'s host widens its scope, or approves as a rule with the token warning');
+  // A provider's credential (ADR 0022): on by default where the approved
+  // endpoint takes requests from a bound one, offered off for a host it is
+  // meant for; the choice goes as scope.attach.
+  const bound = {...proposal, binaries: ['/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], protocol: 'rest'}], rules: [{method: 'POST', path: '/o/r.git/git-receive-pack'}],
+    attach: [{provider: 'gh', host: 'github.com', path: '/o/r.git/git-receive-pack'}, {host: 7}]};
+  const boundEnv = await approveEnv(bound);
+  assert.match(texts(pendingItems(boundEnv)[0]), /承認すると gh の認証情報が付きます/);
+  let grant = null;
+  boundEnv.setConfirmHandler(() => { const g = boundEnv.els['approve-grant']; grant = [g.hidden, texts(g), g.children[0].children[0].checked]; return true; });
+  await approveFirst(boundEnv);
+  assert.equal(grant[0], false); assert.match(grant[1], /プロバイダーの認証情報を付ける: gh → github\.com\/o\/r\.git\/git-receive-pack/); assert.equal(grant[2], true, 'on by default');
+  assert.equal(boundEnv.els['approve-grant'].hidden, true, 'hidden after the dialog');
+  assert.equal(JSON.parse(mutations(boundEnv)[0].body).scope.attach, true);
+  const offerEnv = await approveEnv({...bound, attach: [], offer: [{provider: 'gh', host: 'github.com', path: ''}]});
+  offerEnv.setConfirmHandler(() => { grant = offerEnv.els['approve-grant'].children[0].children[0].checked; return true; });
+  await approveFirst(offerEnv);
+  assert.equal(grant, false, 'offered off'); assert.equal(JSON.parse(mutations(offerEnv)[0].body).scope.attach, false);
+  const plainEnv = await approveEnv({...bound, attach: []});
+  plainEnv.setConfirm(true); await approveFirst(plainEnv);
+  assert.equal('attach' in JSON.parse(mutations(plainEnv)[0].body).scope, false, 'nothing to attach: not sent');
+  ok('an approval carries a provider\'s credential by default where it shadows a bound endpoint, offered off elsewhere');
 
   // Nothing seen: an empty list (all paths) and the audit hint; audit approves to record.
   const seedEnv = await approveEnv({...proposal, binaries: ['/usr/bin/curl'], endpoints: [{host: 'api.example.com', ports: [443]}]});
@@ -585,13 +584,6 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual([...A.writes({access: 'rules', binary: '/usr/bin/curl', proposed: ['/usr/bin/curl'], rows: [{method: 'GET', path: '/a'}, {method: 'POST', path: '/y'}]})], ['POST /y'], 'only the writes');
   assert.equal(sum({access: 'rules', rows: [{method: 'HEAD', path: '/a'}]}).access, '読み取りだけ (指定したメソッド)');
   assert.equal(line({access: 'audit'}), 'a.example:443,8443 | 監査: すべての要求を通して記録 |  | プログラム: /usr/bin/curl | true');
-  const ps = {provider: 'gh', label: 'GitHub', repos: [], mutations: ['createPullRequest']};
-  assert.deepEqual([...A.scopeLines(ps).map((l) => l.text + ' ' + l.write)], ['GraphQL のミューテーション createPullRequest を許可します。OpenShell は引数を見ないので、トークンが届くすべてのリポジトリに効きます true']);
-  assert.match(A.scopeLines({...ps, mutations: []})[0].text, /もうこの提案を許可/); assert.equal(A.scopeLines({...ps, mutations: []})[0].write, false); assert.match(A.scopeNote({...ps, mutations: []}), /もう範囲内/);
-  const hf = {provider: 'hf', label: 'Hugging Face', repos: [], mutations: [], write: true};
-  assert.deepEqual([...A.scopeLines(hf).map((l) => l.text)], ['範囲を「書き込みも許可」にします (hf (Hugging Face) の宛先へのすべての要求)']); assert.equal(A.scopeNote(hf), 'hf (Hugging Face) の宛先 · 承認すると範囲を「書き込みも許可」にします');
-  const atl = {provider: 'at', label: 'Atlassian', repos: [], mutations: [], tools: ['createJiraIssue']};
-  assert.match(A.scopeLines(atl)[0].text, /MCP のツール createJiraIssue を許可します/); assert.match(A.scopeNote(atl), /ツール createJiraIssue を追加/);
   ok('approve.js: program candidates narrow to wide, glob semantics, read-only x paths, the 16 limit, the summary');
   }
   }
@@ -1405,82 +1397,35 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
 
   {
-  // Provider scopes: the simple editor, the YAML editor (custom, reset), the shared GitHub profile's note, custom profiles.
+  // Providers made before ADR 0022 (a profile of their own) are listed under their type and marked; GitHub's group says what the proxy cannot narrow; custom profiles.
   const find = (node, pred) => { if (pred(node)) return node; for (const c of node.children) { const f = find(c, pred); if (f) return f; } return null; };
   const byText = (node, t) => find(node, (n) => n.tagName === 'button' && n.textContent === t);
-  const profiles = [{id: 'iwato-github', label: 'GitHub', group: 'ソース管理', scoped: true, credentials: [{name: 'token', label: 'トークン'}]},
-    {id: 'iwato-huggingface', label: 'Hugging Face', group: 'モデル配布', scoped: true, credentials: [{name: 'token', label: 'トークン'}]},
+  const profiles = [{id: 'iwato-github', label: 'GitHub', group: 'ソース管理', credentials: [{name: 'token', label: 'トークン'}]},
     {id: 'my-api', label: 'My API', group: 'カスタム', custom: true, credentials: [{name: 'api_key', label: 'API キー'}]}];
-  let scope = {mode: 'repos', repos: ['o/r'], mutations: [], custom: false};
   const posts = [];
   let reply = null;
   const handler = (path, opt) => {
     if (opt?.method === 'POST') {
       posts.push({path, body: JSON.parse(opt.body)});
       if (reply) { const r = reply; reply = null; return r; }
-      return response({ok: true, pending: ['api'], id: 'my-api'});
+      return response({ok: true, id: 'my-api'});
     }
-    if (path.startsWith('/api/provider-profiles/')) return response({id: 'x', source: 'scope', base: 'iwato-github', yaml: 'id: iwato-github-for-github-work\n'});
+    if (path.startsWith('/api/provider-profiles/')) return response({id: 'my-api', source: 'custom', yaml: 'id: my-api\n'});
     return response({profiles, providers: [{name: 'github-personal', profile: 'iwato-github', keys: ['GH_TOKEN'], attached: []},
-      {name: 'github-work', profile: 'iwato-github-for-github-work', base: 'iwato-github', scope, keys: ['GH_TOKEN'], attached: ['api'], applying: [{sandbox: 'api', attach: true, scope: true, state: 'pending'}]},
-      {name: 'huggingface', profile: 'iwato-huggingface', keys: ['HF_TOKEN'], attached: []},
-      {name: 'hf', profile: 'iwato-huggingface-for-hf', base: 'iwato-huggingface', scope: {mode: 'read-only', modes: ['read-only', 'full'], repos: [], mutations: []}, keys: ['HF_TOKEN'], attached: ['api', 'dev']}]});
+      {name: 'github-work', profile: 'iwato-github-for-github-work', legacy: 'iwato-github', keys: ['GH_TOKEN'], attached: ['api'], applying: [{sandbox: 'api', attach: true, state: 'pending'}]}]});
   };
   const pv = await environment({fake: false, status: 'running'}); pv.setProviderHandler(handler);
   pv.els['provider-button'].listeners.click(); await flush();
   const group = pv.els['provider-list'].children[0];
-  const [, personal, , work, , access] = group.children;
-  assert.match(personal.children[0].children[2].textContent, /範囲: 読み取りだけ \(範囲を決められるようになる前/);
-  assert.equal(byText(personal, '範囲を変更'), null, 'the shared iwato-github provider has no scope editor');
-  assert.equal(work.children[0].children[2].textContent, '範囲: 書き込み: o/r');
-  assert.match(work.children[0].children[3].textContent, /api: 範囲の変更の反映待ち/);
-  assert.equal(access.hidden, true); byText(work, '範囲を変更').click(); assert.equal(access.hidden, false);
-  const radios = access.children[0].children.map((l) => l.children[0]);
-  const repos = access.children[1], mutations = access.children[3];
-  assert.deepEqual(radios.map((r) => r.checked), [false, true, false]); assert.equal(repos.value, 'o/r'); assert.equal(repos.disabled, false);
-  radios[1].checked = false; radios[2].checked = true; radios[2].listeners.change();
-  assert.equal(repos.disabled, true); assert.equal(mutations.disabled, true, 'full write takes no mutations');
-  radios[2].checked = false; radios[1].checked = true; radios[1].listeners.change();
-  repos.value = 'o/r\n a/b \n'; mutations.value = 'createPullRequest, addComment';
-  access.listeners.submit({preventDefault() {}}); await flush();
-  assert.deepEqual(posts[0], {path: '/api/providers/github-work/scope', body: {mode: 'repos', repos: ['o/r', 'a/b'], mutations: ['createPullRequest', 'addComment']}});
-  assert.match(pv.els['provider-status'].textContent, /github-work の範囲を変更しました。.*\(api\).*反映待ち/);
-  // A refusal stays in the form.
-  const access2 = pv.els['provider-list'].children[0].children[5];
-  reply = response({error: 'リポジトリは OWNER/REPO の形で'}, 400);
-  access2.listeners.submit({preventDefault() {}}); await flush();
-  assert.match(access2.children.at(-1).textContent, /変更できませんでした: リポジトリは OWNER\/REPO/);
-  // The YAML editor (a textarea without CodeMirror): the profile, saved as the provider's.
-  byText(access2, 'YAML で編集').click(); await flush();
-  const box = pv.els['provider-yaml']; assert.equal(box.hidden, false);
-  const area = box.children[2].children[0]; assert.equal(box.children[2].className, 'code-field provider-yaml-editor'); assert.equal(area.tagName, 'textarea'); assert.equal(area.value, 'id: iwato-github-for-github-work\n');
-  area.value = 'id: iwato-github-for-github-work\n# mine\n';
-  reply = response({error: 'credentials は iwato-github のままに'}, 400);
-  byText(box, '保存').click(); await flush();
-  assert.match(box.children.at(-1).textContent, /保存できませんでした: credentials は/); assert.equal(box.hidden, false, 'a refusal keeps the editor open');
-  byText(box, '保存').click(); await flush();
-  assert.deepEqual(posts.at(-1), {path: '/api/providers/github-work/scope', body: {yaml: 'id: iwato-github-for-github-work\n# mine\n'}}); assert.equal(box.hidden, true);
-  // Custom: the simple editor is off, with a reset.
-  scope = {mode: 'repos', repos: ['o/r'], mutations: [], custom: true};
-  pv.els['provider-close'].listeners.click(); pv.els['provider-button'].listeners.click(); await flush();
-  const custom = pv.els['provider-list'].children[0].children[5];
-  assert.equal(pv.els['provider-list'].children[0].children[3].children[0].children[2].textContent, '範囲: YAML で編集したプロファイル');
-  assert.equal(custom.children[1].children[0].children[0].disabled, true); assert.equal(find(custom, (n) => n.tagName === 'button' && n.type === 'submit').disabled, true);
-  byText(custom, '簡単な設定に戻す').click(); await flush();
-  assert.deepEqual(posts.at(-1).body, {reset: true});
-  // Another type: read-only or writes allowed, where it applies.
-  const hfGroup = pv.els['provider-list'].children[1];
-  const [, legacyHF, , hf, , hfAccess] = hfGroup.children;
-  assert.match(legacyHF.children[0].children[2].textContent, /範囲を決められるようになる前/); assert.equal(byText(legacyHF, '範囲を変更'), null);
-  assert.equal(hf.children[0].children[2].textContent, '範囲: 読み取りだけ');
-  const hfRadios = hfAccess.children[0].children;
-  assert.deepEqual(hfRadios.map((l) => l.children[1].textContent), ['読み取りだけ', '書き込みも許可']);
-  assert.equal(find(hfAccess, (n) => n.className === 'text-input provider-access-repos'), null, 'no repositories outside GitHub');
-  assert.equal(hfAccess.children[1].textContent, '反映するサンドボックス: api, dev');
-  hfRadios[0].children[0].checked = false; hfRadios[1].children[0].checked = true; hfRadios[1].children[0].listeners.change();
-  hfAccess.listeners.submit({preventDefault() {}}); await flush();
-  assert.deepEqual(posts.at(-1), {path: '/api/providers/hf/scope', body: {mode: 'full', repos: [], mutations: []}});
-  ok('a provider\'s scope: the simple editor, inline refusals, the YAML editor, custom and reset, 反映待ち');
+  const [, personal, , work] = group.children;
+  const limit = group.children.at(-1);
+  assert.match(limit.textContent, /GraphQL の引数と push するブランチを絞れません/);
+  assert.equal(personal.children[0].children.length, 2, 'a current provider has no mark');
+  assert.match(work.children[0].children[2].textContent, /追加し直してください/);
+  assert.match(work.children[0].children[3].textContent, /api: .*反映待ち/);
+  assert.ok(byText(personal, '値を変更')); assert.equal(byText(work, '値を変更'), null, 'a provider made before keeps its values');
+  ok('a provider made before ADR 0022 is marked, under its type; GitHub notes what the proxy cannot narrow');
+  const box = pv.els['provider-yaml'];
 
   // Custom profiles: added as YAML (refusals inline), edited from the selector.
   pv.els['provider-custom-add'].listeners.click();
@@ -1538,7 +1483,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   pv.els['provider-form'].listeners.submit({preventDefault() {}}); await flush();
   assert.deepEqual(posts[0], {path: '/api/providers', body: {name: 'github-new', profile: 'iwato-github', values: {token: 'ghp_SECRET'}}, csrf: 'csrf123'});
   assert.equal(valueInput.value, '', 'the value is cleared'); assert.equal(pv.els['provider-name'].value, '');
-  assert.equal(pv.els['provider-list'].children[0].children.length, 1 + 3 * 2, 'the list is read again (rows and their hidden edit forms)');
+  assert.equal(pv.els['provider-list'].children[0].children.length, 1 + 3 * 2 + 1, 'the list is read again (rows and their hidden edit forms, and the note)');
   // The type selector: the server's groups as optgroups, in its order.
   const kinds = pv.els['provider-profile'].children.map((g) => g.tagName === 'optgroup' ? g.label + ':' + g.children.map((o) => o.value).join('+') : g.value);
   assert.deepEqual(kinds, ['ソース管理:iwato-github', 'エージェント・推論:iwato-claude', 'モデル配布:iwato-huggingface+iwato-civitai', 'other-type']);
@@ -2023,45 +1968,6 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   conflictBox.children[2].children[0].click(); await flush();
   assert.deepEqual(posts.map((p) => p[0].split('/').pop() + (p[1].mode ? ':' + p[1].mode : '')), ['attach', 'fix:remove', 'attach']);
   ok('an endpoint the provider would make ambiguous is named; it is switched to enforce or removed, then the provider attached');
-  }
-
-  {
-  // A rule that would carry the credential beyond the provider's scope
-  // (409 with a confirm token): named, not silent; removed with the token,
-  // or attached anyway with it.
-  const profiles = [{id: 'iwato-runpod', label: 'RunPod', note: '', credentials: [{name: 'api_key', label: 'k'}]}];
-  let attached = []; let beyond = true; const posts = [];
-  const handler = (path, opt) => {
-    if (opt?.method === 'POST') {
-      const body = JSON.parse(opt.body); posts.push(path.split('/').pop() + (body.mode ? ':' + body.mode : '') + (body.confirm ? ':' + body.confirm : ''));
-      if (path.endsWith('/providers/attach')) {
-        if (beyond && body.confirm !== 'tok') return response({code: 'provider_attach_beyond_scope', params: {provider: 'runpod', rules: ['gql: api.runpod.io:443']}, error: 'runpod を付けると…', confirm: 'tok',
-          beyond: [{rule: 'gql', host: 'api.runpod.io', ports: [443], binaries: ['/usr/bin/python3']}]}, 409);
-        attached = ['api']; return response({ok: true, restart: false});
-      }
-      if (path.endsWith('/providers/fix')) { beyond = false; return response({ok: true}); }
-    }
-    return response({profiles, providers: [{name: 'runpod', profile: 'iwato-runpod', keys: ['RUNPOD_API_KEY'], attached, applying: []}]});
-  };
-  const bf = await environment({fake: false, status: 'running'}); bf.setProviderHandler(handler);
-  const menuItem = (card, key) => { let found; const w = (n) => { if (n.dataset?.action === key) found = n; n.children.forEach(w); }; w(card); return found; };
-  menuItem(bf.card(), 'providers').click(); await flush();
-  const panel = bf.side('provider-panel'); const [, , , conflictBox, status, list] = panel.children;
-  list.children[0].children[1].children[1].click(); await flush();
-  assert.equal(conflictBox.hidden, false); assert.match(status.textContent, /runpod はまだ付けていません/);
-  assert.match(conflictBox.children[0].textContent, /^runpod を付けると、次の宛先の規則がその値をプロバイダーの範囲より広く届けます/);
-  assert.equal(conflictBox.children[1].children[0].textContent, '規則 gql: api.runpod.io:443 · /usr/bin/python3 はこの宛先に出られなくなります');
-  assert.deepEqual(conflictBox.children[2].children.map((b) => b.textContent), ['この宛先を規則から外して付ける', 'このまま付ける', 'やめる']);
-  conflictBox.children[2].children[0].click(); await flush();
-  assert.deepEqual(posts, ['attach', 'fix:remove:tok', 'attach'], 'removed with the token, then attached');
-  assert.equal(conflictBox.hidden, true); assert.match(status.textContent, /runpod を付けました/);
-  // Attached anyway: the token goes with the attach.
-  attached = []; beyond = true; posts.length = 0;
-  menuItem(bf.card(), 'providers').click(); await flush(); menuItem(bf.card(), 'providers').click(); await flush();
-  list.children[0].children[1].children[1].click(); await flush();
-  conflictBox.children[2].children[1].click(); await flush();
-  assert.deepEqual(posts, ['attach', 'attach:tok']); assert.match(status.textContent, /runpod を付けました/);
-  ok('a rule reaching beyond the provider\'s scope is named; removed or attached anyway with the token');
   }
 
   {
@@ -2678,8 +2584,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const B = load({languages: ['ja'], storage: false});
   assert.equal(B.preference(), 'auto'); B.setPreference('en');
   assert.equal(B.language(), 'en'); assert.equal(B.preference(), 'en', 'without storage the choice lasts for the page');
-  assert.equal(I.serverError('scope_many_providers', {providers: ['a', 'b']}, 'x'), '複数のプロバイダー (a、b) の宛先に当たります', 'a list param is joined in Japanese');
-  assert.equal(D.serverError('scope_many_providers', {providers: ['a', 'b']}, 'x'), 'It reaches the destinations of several providers (a, b)', 'and in English');
+  assert.equal(I.serverError('provider_attached', {sandboxes: ['a', 'b']}, 'x'), 'サンドボックス a、b に付いています。先に外してください', 'a list param is joined in Japanese');
+  assert.equal(D.serverError('provider_attached', {sandboxes: ['a', 'b']}, 'x'), 'Attached to a, b. Detach it first', 'and in English');
   assert.equal(D.localized('profile.iwato-github.credential.token', 'トークン'), 'Token'); assert.equal(I.localized('profile.iwato-github.credential.token', 'トークン'), 'トークン', 'Japanese keeps the server\'s text');
   ok('i18n: Japanese fallback, debug logging, server error codes, blocked storage');
   }
@@ -2697,10 +2603,6 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const c = {rule: 'allow_api', host: 'api.github.com', ports: [443], mode: 'L4-only', provider: 'gh', label: 'GitHub', profile: 'iwato-github'};
   assert.match(E.message('credential_uninspected', null, {conflicts: [c]}, 'x'), /^This would allow the destinations that get the value of gh \(GitHub\), attached to this sandbox, uninspected: rule allow_api: api\.github\.com:443 \(L4-only\)\./);
   assert.match(E.message('provider_attach_refused', {provider: 'gh'}, {conflicts: [c], ambiguities: [a]}, 'x'), /^The policy allows .* OpenShell would refuse attaching gh: at api\.github\.com:443/);
-  assert.equal(J.message('ambiguous_scope', {sandbox: 'dev'}, {ambiguities: [a]}, 'x'), 'サンドボックス dev のポリシーと食い違うので変えられません: api.github.com:443 で プロバイダー github (GitHub) の規則 _provider_github と 規則 allow_x の設定が食い違います (検査のモード: _provider_github は 遮断 (enforce)、allow_x は 監査 (audit))。OpenShell は、同じ宛先 (ホスト・ポート・パス) に当たる規則どうしで、検査のしかたがそろっていることを求めます (network endpoint ambiguity)。', 'a scope change: no fix, as the server words it');
-  assert.match(E.message('ambiguous_scope', {sandbox: 'dev'}, {ambiguities: [a]}, 'x'), /^Cannot change it: it would disagree with the policy of sandbox dev: at api\.github\.com:443, .*\(network endpoint ambiguity\)\.$/);
-  assert.match(E.message('provider_scope_conflict', {sandbox: 'dev'}, {conflicts: [c]}, 'x'), /^Sandbox dev: The policy allows the destinations that get the value of gh \(GitHub\) uninspected: rule allow_api: api\.github\.com:443 \(L4-only\)\./);
-  assert.equal(J.message('provider_scope_conflict', {sandbox: 'dev'}, {conflicts: []}, 'サーバーの文'), 'サーバーの文');
   assert.equal(J.blocked('audit', [a], 'x'), '「監査」は選べません: api.github.com:443 には プロバイダー github (GitHub) の規則 _provider_github があり、設定が食い違います (検査のモード: _provider_github は 遮断 (enforce)、allow_x は 監査 (audit))。OpenShell は同じ宛先の規則どうしで検査のしかたがそろっていることを求めます。');
   assert.deepEqual([...J.details({...a, diffs: []})], ['サーバーの文'], 'no diffs: the server\'s details');
   assert.equal(J.unshown(['rules > 128', 'binaries > 8']), '提案どおりには承認できません。許可する条件 (メソッドとパス) が 128 個を超えています。プログラムが 8 個を超えています。却下すると、項目を減らして (パスを * や ** でまとめる、提案を分けるなど) 提案し直すようエージェントに伝えます。または「ポリシー」タブの「YAML」で規則を書いてください');

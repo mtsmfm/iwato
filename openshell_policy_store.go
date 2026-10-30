@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -424,12 +425,17 @@ func shadowedSource(e v1.PolicyNetworkEndpoint, rules map[string]v1.NetworkPolic
 // inheritShadowed keeps what an approval's path-specific endpoints would
 // take away: each gets the allow and deny rules of the endpoint it shadows
 // (shadowedSource) that can match requests on its path, and that
-// endpoint's credential binding as the default (attach false drops it).
+// endpoint's credential binding as the default (attach false drops it),
+// or the binding of a bound endpoint as specific as it (equalBinding).
 // An uninspected or audited source let every request through, so the
 // endpoint allows every method on its path.
 func inheritShadowed(plan v1.NetworkPolicyRule, rules map[string]v1.NetworkPolicyRule, attach *bool) v1.NetworkPolicyRule {
 	for i := range plan.Endpoints {
 		e := &plan.Endpoints[i]
+		if e.Path == "" && bindable(*e) && wholePathEndpoint(*e, rules) {
+			// Without a path it would be shadowed by that endpoint.
+			e.Path = "/**"
+		}
 		if e.Path == "" {
 			continue
 		}
@@ -460,7 +466,49 @@ func inheritShadowed(plan v1.NetworkPolicyRule, rules map[string]v1.NetworkPolic
 			e.CredentialBinding = &b
 		}
 	}
+	for i := range plan.Endpoints {
+		e := &plan.Endpoints[i]
+		if e.CredentialBinding != nil || attach != nil && !*attach {
+			continue
+		}
+		if b := equalBinding(*e, rules); b != nil {
+			e.CredentialBinding = b
+		}
+	}
 	return plan
+}
+
+// wholePathEndpoint: an endpoint on e's host and port has the path /**
+// (a provider's initial rules have it), which would take every request
+// from e without a path.
+func wholePathEndpoint(e v1.PolicyNetworkEndpoint, rules map[string]v1.NetworkPolicyRule) bool {
+	for _, r := range rules {
+		for _, x := range r.Endpoints {
+			if x.Path == "/**" && strings.EqualFold(x.Host, e.Host) && len(sharedPorts(effectivePorts(x), effectivePorts(e))) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// equalBinding is the binding of a bound endpoint that overlaps e with the
+// same path specificity: OpenShell refuses the two unless they bind the
+// same provider, so e carries it by default too.
+func equalBinding(e v1.PolicyNetworkEndpoint, rules map[string]v1.NetworkPolicyRule) *types.NetworkCredentialBinding {
+	if !bindable(e) {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(rules)) {
+		for _, x := range rules[name].Endpoints {
+			if x.CredentialBinding != nil && strings.EqualFold(x.Host, e.Host) && len(sharedPorts(effectivePorts(x), effectivePorts(e))) > 0 &&
+				pathSpecificity(x.Path) == pathSpecificity(e.Path) && pathPatternsOverlap(x.Path, e.Path) {
+				b := *x.CredentialBinding
+				return &b
+			}
+		}
+	}
+	return nil
 }
 
 // ApprovalAttach is the credential an approved endpoint carries by

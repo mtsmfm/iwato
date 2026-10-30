@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,8 +77,9 @@ func TestOpenShellPresetsE2E(t *testing.T) {
 			t.Fatalf("the first policy lacks %s: %v", name, base)
 		}
 	}
-	if _, ok := effective[providerRuleName("github-pre")]; !ok {
-		t.Fatalf("the provider's rule is not in the effective policy: %v", effective)
+	// The provider's initial rule, bound to it, in the first policy.
+	if r, ok := base["provider_github_pre"]; !ok || len(r.Endpoints) == 0 || r.Endpoints[0].CredentialBinding == nil || r.Endpoints[0].CredentialBinding.Provider != "github-pre" {
+		t.Fatalf("the provider's rule is not in the first policy: %+v (effective %v)", r, slices.Sorted(maps.Keys(effective)))
 	}
 
 	c.Sandboxes = []Sandbox{w}

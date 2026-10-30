@@ -180,7 +180,8 @@ func TestProfileYAMLRendersGatewayProfiles(t *testing.T) {
 		t.Fatalf("%v\n%s", err, y)
 	}
 	want := proto.Clone(gw).(*pb.ProviderProfile)
-	want.ResourceVersion, want.Annotations, want.Source, want.Scope = 0, nil, "", ""
+	want.ResourceVersion, want.Source, want.Scope = 0, "", ""
+	delete(want.Annotations, profileHashKey)
 	if !proto.Equal(back, want) {
 		t.Fatalf("%s\n got %v\nwant %v", y, prototext.Format(back), prototext.Format(want))
 	}
@@ -191,7 +192,7 @@ func TestProfileYAMLRendersGatewayProfiles(t *testing.T) {
 			t.Errorf("no %q in\n%s", line, y)
 		}
 	}
-	if strings.Contains(y, "resource_version") || strings.Contains(y, "annotations") || strings.Contains(y, "\nsource:") || strings.Contains(y, "\nscope:") {
+	if strings.Contains(y, "resource_version") || strings.Contains(y, profileHashKey) || strings.Contains(y, "\nsource:") || strings.Contains(y, "\nscope:") {
 		t.Errorf("the gateway's bookkeeping is rendered:\n%s", y)
 	}
 
@@ -204,7 +205,7 @@ func TestProfileYAMLRendersGatewayProfiles(t *testing.T) {
 	if back, err := parseProfileYAML([]byte(y)); err != nil || !proto.Equal(back, gh.proto()) {
 		t.Fatal(err, y)
 	}
-	for _, line := range []string{"category: source_control\n", "    env_vars: [GITHUB_TOKEN, GH_TOKEN]\n", "    access: read-only\n", "      - allow: {method: GET, path: '**'}\n"} {
+	for _, line := range []string{"category: source_control\n", "    env_vars: [GITHUB_TOKEN, GH_TOKEN]\n", "  iwato/credential-hosts: api.github.com:443,github.com:443,uploads.github.com:443\n"} {
 		if !strings.Contains(y, line) {
 			t.Errorf("no %q in\n%s", line, y)
 		}

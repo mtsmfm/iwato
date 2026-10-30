@@ -565,6 +565,15 @@ func enumName[T comparable](names map[string]T, v T, num int32) string {
 // bookkeeping and are left out too.
 func profileYAML(p *pb.ProviderProfile) (string, error) {
 	d := profileDoc{ID: p.GetId(), DisplayName: p.GetDisplayName(), Description: p.GetDescription(), InferenceCapable: p.GetInferenceCapable()}
+	// Annotations other than Iwato's hash (the gateway's bookkeeping).
+	for k, v := range p.GetAnnotations() {
+		if k != profileHashKey {
+			if d.Annotations == nil {
+				d.Annotations = map[string]string{}
+			}
+			d.Annotations[k] = v
+		}
+	}
 	d.Category = enumName(profileCategories, p.GetCategory(), int32(p.GetCategory()))
 	if p.GetCategory() == pb.ProviderProfileCategory_PROVIDER_PROFILE_CATEGORY_UNSPECIFIED {
 		d.Category = "other"

@@ -349,3 +349,4 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .shortcut-list{display:flex;flex-direction:column;gap:2px;padding:6px;max-height:calc(100% - 24px);font-size:13px}
 .shortcut-item{padding:4px 12px;border-radius:4px;overflow:hidden;text-overflow:ellipsis}
 .shortcut-item.current{background:#2f6f55;color:#fff}
+.approve-attach{display:flex;gap:8px;align-items:flex-start}.approve-attach input{margin-top:3px}

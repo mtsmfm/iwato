@@ -173,7 +173,7 @@ func TestProviderAPIValidation(t *testing.T) {
 		t.Fatal("the list carries a value:", body)
 	}
 	p, ok := provider(listProviders(t, do), "github-new")
-	if !ok || p.Profile != "iwato-github-for-github-new" || !slices.Equal(p.Keys, []string{"GH_TOKEN", "GITHUB_TOKEN"}) || len(p.Attached) != 0 {
+	if !ok || p.Profile != "iwato-github" || !slices.Equal(p.Keys, []string{"GH_TOKEN", "GITHUB_TOKEN"}) || len(p.Attached) != 0 {
 		t.Fatalf("%+v", p)
 	}
 	if code, body := do("POST", "/api/providers", `{"name":"github-new","profile":"iwato-github","values":{"token":"x"}}`); code != 409 {
@@ -394,17 +394,11 @@ func TestRestartPendingEndsWithAnUnseenRestart(t *testing.T) {
 	}
 }
 
-// A provider of a type Iwato no longer ships (retiredBases) is listed,
-// attached, detached and deleted with its scope.
+// A provider with its own profile made before ADR 0022, of a type Iwato
+// no longer ships, is listed as such, attached, detached and deleted.
 func TestRetiredProvider(t *testing.T) {
-	s, _, do := providerServer(t)
-	if err := s.updateConfig(func(c *Config) error {
-		c.ProviderScopes = map[string]ProviderScope{"claude-token": {Base: "iwato-claude", Mode: scopeReadOnly}}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if p, ok := provider(listProviders(t, do), "claude-token"); !ok || p.Base != "" || p.Scope != nil || len(p.Keys) != 1 {
+	_, _, do := providerServer(t)
+	if p, ok := provider(listProviders(t, do), "claude-token"); !ok || p.Legacy != "iwato-claude" || len(p.Keys) != 1 {
 		t.Fatalf("%+v", p)
 	}
 	for _, op := range []string{"attach", "detach"} {
@@ -414,8 +408,5 @@ func TestRetiredProvider(t *testing.T) {
 	}
 	if code, body := do("POST", "/api/providers/claude-token/delete", `{}`); code != 200 {
 		t.Fatal(code, body)
-	}
-	if _, ok := s.providerScope("claude-token"); ok {
-		t.Fatal("the scope stayed")
 	}
 }

@@ -6,13 +6,12 @@
 # later (GitHub's included) never makes an endpoint ambiguous. HEAD is
 # allowed wherever GET is (OpenShell matches a HEAD against GET rules).
 # Ubuntu's apt mirrors are left out: the sandbox has no root. github.com and
-# api.github.com are left out for other programs (ADR 0006): the GitHub
-# provider's token goes to every path there, so what is allowed on them is
-# the provider's to say. Downloads from github.com (release assets,
-# archives) need that provider, or a proposal, for their first request; the
-# redirects they lead to (objects/release-assets.githubusercontent.com,
-# codeload.github.com) carry no credential and are here. The exception is
-# mise's own read-only rules there (the list marks them).
+# api.github.com are read for mise only: downloads from github.com (release
+# assets, archives) need the GitHub provider, whose initial rule reads them
+# with its token (its /** endpoints are more specific than these), or a
+# proposal, for their first request; the redirects they lead to
+# (objects/release-assets.githubusercontent.com, codeload.github.com) carry
+# no credential and are here.
 id: packages
 label: パッケージと Claude Code・Grok Build のダウンロード
 note: npm・PyPI (uv の Python も)・crates.io・Rust のツールチェーン・Go・RubyGems・mise・Node.js と Go の本体・GitHub のリリース・アーカイブの転送先と raw (github.com と api.github.com そのものは GitHub のプロバイダーの宛先なので、後述の mise の分のほかは含みません)・Docker Hub と ghcr.io のイメージを、どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS。POST は読むだけの npm の audit とレジストリーのトークンだけ) 許可します。公開・アップロードは通りません。mise で入れる Claude Code と Grok Build のインストールと更新も、mise・claude・grok 自身にだけ許可します (mise の GitHub からの読み取りと mise-versions.jdx.dev への版の問い合わせ、downloads.claude.ai、platform.claude.com、x.ai の /cli/、storage.googleapis.com の grok-build-public-artifacts/cli)。api.anthropic.com と api.x.ai はそれぞれのプロバイダーで通します

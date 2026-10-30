@@ -10,29 +10,25 @@
 #                    fetch, no node); the same paths as iwato-claude-subscription.yaml.
 # Credential scope:  ATLASSIAN_ACCESS_TOKEN, sent as a bearer authorization
 #                    header to the MCP endpoint only.
-# Endpoint access:   https://mcp.atlassian.com/v2/mcp and below (Streamable
-#                    HTTP uses POST, GET for SSE, and DELETE), every tool.
-#                    A provider's own profile (iwato-atlassian-for-NAME,
-#                    providers_scope_atlassian.go) keeps that in mode full;
-#                    in mode tools (the default) it inspects the endpoint
-#                    as protocol: mcp and calls only the read tools and the
-#                    tools the owner names. The read
-#                    tools are from Atlassian's list of supported tools
-#                    (https://support.atlassian.com/atlassian-ai-gateway/docs/supported-tools/,
-#                    2026-10-18); a tool whose effect is unclear counts as a
-#                    write. The execute meta-tools (execute, executeRead,
-#                    executeWrite, executeDestructive) run another tool
-#                    named in their arguments, so they are writes too, and
-#                    the sandbox registers the MCP with ?tools=all, which
-#                    lists every tool under its own name.
+# Endpoint access:   https://mcp.atlassian.com/v2/mcp and below, inspected
+#                    as MCP: the read tools only (presets/providers/
+#                    iwato-atlassian.yaml, which says where the list comes
+#                    from); write tools take a proposal.
 # Refresh:           at auth.atlassian.com, with the grant's scopes (none
 #                    named here). Iwato refuses an authorization server
 #                    whose token endpoint is not this token_url.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-atlassian.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-atlassian
 display_name: Atlassian MCP (Iwato)
 description: Atlassian's remote MCP server with an OAuth grant the gateway refreshes
 category: agent
+annotations:
+  iwato/credential-hosts: "mcp.atlassian.com:443"
 credentials:
   - name: access_token
     description: Atlassian MCP OAuth access token
@@ -53,14 +49,6 @@ credentials:
           description: OAuth refresh token
           required: true
           secret: true
-endpoints:
-  # /v2/mcp/** matches /v2/mcp and below.
-  - host: mcp.atlassian.com
-    port: 443
-    path: /v2/mcp/**
-    protocol: rest
-    access: full
-    enforcement: enforce
 binaries:
   - /home/dev/.local/share/claude/versions/*
   - /home/dev/.local/share/mise/installs/claude/*/claude

@@ -94,6 +94,8 @@ type OpenShell struct {
 	// sandboxConfig replaces reading the sandbox's effective config
 	// (GetSandboxConfig) in tests.
 	sandboxConfig func(context.Context, Sandbox) (*v1.SandboxConfig, error)
+	// providerList replaces listing the providers (the fake's).
+	providerList func(context.Context) ([]ProviderInfo, map[string][]string, error)
 	// profilesDone is set once Iwato's provider profiles are in the
 	// gateway; profileAPI replaces the gateway's profile API in tests.
 	profilesDone bool
@@ -600,13 +602,26 @@ func (o *OpenShell) Start(ctx context.Context, w Sandbox) error {
 		if image == "" {
 			image = sandboxImage
 		}
+		policy := sandboxPolicy(w)
+		if len(providers) > 0 {
+			// The providers' initial rules, bound to them (ADR 0022): the
+			// gateway checks the bindings against the providers created
+			// with the sandbox.
+			list, _, err := o.ListProviders(ctx)
+			if err != nil {
+				return err
+			}
+			if policy.NetworkPolicies, err = withProviderInitialRules(policy.NetworkPolicies, list, providers); err != nil {
+				return err
+			}
+		}
 		spec := &v1.SandboxSpec{
 			Template: &v1.SandboxTemplate{
 				Image:        image,
 				DriverConfig: o.driverConfig(w),
 			},
 			Environment: sandboxEnv(w),
-			Policy:      sandboxPolicy(w),
+			Policy:      policy,
 			Providers:   providers,
 			GPU:         w.GPU,
 			TTY:         true,

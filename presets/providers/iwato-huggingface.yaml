@@ -1,0 +1,26 @@
+# The initial rule of a provider of profiles/iwato-huggingface.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+id: iwato-huggingface
+label: Hugging Face
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - host: huggingface.co
+        port: 443
+        path: "/**"
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+          - allow: { method: POST, path: "/api/**/paths-info/**" }
+          - allow: { method: POST, path: "/**/info/lfs/objects/batch" }
+          - allow: { method: POST, path: "/**/git-upload-pack" }
+      - { host: hf.co, port: 443, path: "/**", protocol: rest, access: read-only, enforcement: enforce }

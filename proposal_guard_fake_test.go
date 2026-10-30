@@ -43,13 +43,10 @@ func TestDecisionRefusesAChangedProposal(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`","digest":"`+strings.Repeat("0", 64)+`"}`); code != 409 || !strings.Contains(body, `"code":"proposal_changed"`) {
 		t.Fatal(code, body)
 	}
-	for _, op := range []string{"approve", "reject", "scope"} {
+	for _, op := range []string{"approve", "reject"} {
 		if code, body := do("POST", "/api/sandboxes/dev/proposals/"+op, `{"requestId":"`+id+`"}`); code != 400 || !strings.Contains(body, `"code":"proposal_digest_missing"`) {
 			t.Fatal(op, code, body)
 		}
-	}
-	if code, body := do("POST", "/api/sandboxes/dev/proposals/scope", `{"requestId":"`+id+`","digest":"`+strings.Repeat("0", 64)+`"}`); code != 409 || !strings.Contains(body, `"code":"proposal_changed"`) {
-		t.Fatal(code, body)
 	}
 	if code, body := do("POST", "/api/sandboxes/dev/proposals/reject", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`}`); code != 200 {
 		t.Fatal(code, body)

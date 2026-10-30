@@ -65,7 +65,7 @@ func TestOpenShellGrokSubscriptionE2E(t *testing.T) {
 	gp := got.GetProfile()
 	r := gp.GetCredentials()[0].GetRefresh()
 	if r.GetTokenUrl() != xaiTokenURL || r.GetStrategy() != pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_OAUTH2_REFRESH_TOKEN || len(r.GetMaterial()) != 2 ||
-		len(gp.GetEndpoints()) != 2 || gp.GetEndpoints()[0].GetHost() != "cli-chat-proxy.grok.com" {
+		len(gp.GetEndpoints()) != 0 || gp.GetAnnotations()[credentialHostsKey] != "cli-chat-proxy.grok.com:443,api.x.ai:443" {
 		t.Fatalf("the gateway's %s lost detail: %v", grokSubscriptionProfileID, gp)
 	}
 

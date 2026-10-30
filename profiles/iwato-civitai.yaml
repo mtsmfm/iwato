@@ -20,8 +20,7 @@
 #                    /api/download/models/ID. orchestration.civitai.com
 #                    read-only (workflow status); submitting a workflow is a
 #                    POST that spends Buzz, so it takes a policy proposal;
-#                    approving it widens the provider's scope (ADR 0006,
-#                    0014; the host is listed for that).
+#                    approving it can attach the provider's credential (ADR 0022; the host is listed for that).
 # Downloads:         /api/download/models/ID redirects to a short-lived signed
 #                    URL on Civitai's storage (a delivery worker in front of
 #                    Cloudflare R2 / Backblaze B2; the host is configuration,
@@ -35,11 +34,18 @@
 #                    (the civitai/civitai wiki, now deprecated) and civitai-py.
 #                    Not checked against developer.civitai.com; the storage
 #                    redirect host is unverified.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-civitai.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-civitai
 display_name: Civitai (Iwato)
 description: Civitai API and model downloads for Iwato's sandbox image
 category: data
+annotations:
+  iwato/credential-hosts: "civitai.com:443,orchestration.civitai.com:443"
 credentials:
   - name: api_key
     description: Civitai API key
@@ -49,18 +55,6 @@ credentials:
     header_name: authorization
 discovery:
   credentials: [api_key]
-endpoints:
-  - host: civitai.com
-    port: 443
-    path: /api/**
-    protocol: rest
-    access: read-only
-    enforcement: enforce
-  - host: orchestration.civitai.com
-    port: 443
-    protocol: rest
-    access: read-only
-    enforcement: enforce
 binaries:
   - /usr/bin/curl
   - /usr/bin/wget

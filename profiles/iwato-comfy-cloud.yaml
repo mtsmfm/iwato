@@ -40,11 +40,18 @@
 #                    GitHub). Not verified: OpenShell resolving a
 #                    placeholder in a WebSocket upgrade's query, and choosing
 #                    the /api/prompt endpoint (more specific) over /api/**.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-comfy-cloud.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-comfy-cloud
 display_name: Comfy Cloud (Iwato)
 description: Comfy Cloud API and Partner Nodes for Iwato's sandbox image
 category: inference
+annotations:
+  iwato/credential-hosts: "cloud.comfy.org:443,api.comfy.org:443"
 credentials:
   - name: api_key
     description: Comfy API key (platform.comfy.org)
@@ -54,34 +61,6 @@ credentials:
     header_name: x-api-key
 discovery:
   credentials: [api_key]
-endpoints:
-  - host: cloud.comfy.org
-    port: 443
-    path: /api/**
-    protocol: rest
-    access: read-write
-    enforcement: enforce
-  # Partner Nodes: the key again in extra_data.api_key_comfy_org.
-  - host: cloud.comfy.org
-    port: 443
-    path: /api/prompt
-    protocol: rest
-    enforcement: enforce
-    request_body_credential_rewrite: true
-    rules:
-      - allow: { method: POST, path: /api/prompt }
-  # Progress: wss://cloud.comfy.org/ws?clientId=...&token=KEY.
-  - host: cloud.comfy.org
-    port: 443
-    path: /ws
-    protocol: websocket
-    access: read-only
-    enforcement: enforce
-  - host: api.comfy.org
-    port: 443
-    protocol: rest
-    access: read-write
-    enforcement: enforce
 binaries:
   - /usr/bin/curl
   - /usr/bin/wget

@@ -106,24 +106,24 @@ func TestProfilesMatchTheImage(t *testing.T) {
 	for _, b := range p.Binaries {
 		paths = append(paths, b.Path)
 	}
-	for _, e := range p.Endpoints {
+	for _, e := range initialEndpoints(t, "iwato-github") {
 		hosts = append(hosts, e.Host+e.Path)
 	}
 	if !slices.Equal(paths, []string{"/usr/bin/gh", "/usr/bin/git", "/usr/lib/git-core/git-remote-http", "/usr/lib/git-core/git-remote-https"}) {
 		t.Fatal(paths)
 	}
-	if !slices.Equal(hosts, []string{"api.github.com", "api.github.com/graphql", "github.com", "uploads.github.com"}) {
+	if !slices.Equal(hosts, []string{"api.github.com/**", "api.github.com/graphql", "github.com/**", "uploads.github.com/**"}) {
 		t.Fatal(hosts)
 	}
 	// Push stays a policy proposal.
-	for _, r := range p.Endpoints[2].Rules {
+	for _, r := range initialEndpoints(t, "iwato-github")[2].Rules {
 		if r.Allow.Method == "POST" && r.Allow.Path != "/**/git-upload-pack" {
 			t.Fatal("github.com allows", r.Allow)
 		}
 	}
 	cl, _ := profileByID(claudeSubscriptionProfileID)
 	c := cl.proto()
-	if len(c.Binaries) != 2 || c.Binaries[0].Path != "/home/dev/.local/share/claude/versions/*" || c.Endpoints[0].Host != "api.anthropic.com" || c.Credentials[0].EnvVars[0] != "CLAUDE_CODE_OAUTH_TOKEN" || c.Credentials[0].AuthStyle != "bearer" {
+	if len(c.Binaries) != 2 || c.Binaries[0].Path != "/home/dev/.local/share/claude/versions/*" || initialEndpoints(t, claudeSubscriptionProfileID)[0].Host != "api.anthropic.com" || c.Credentials[0].EnvVars[0] != "CLAUDE_CODE_OAUTH_TOKEN" || c.Credentials[0].AuthStyle != "bearer" {
 		t.Fatal(c)
 	}
 	if profileHash(gh.proto()) != profileHash(gh.proto()) || profileHash(gh.proto()) == profileHash(c) {

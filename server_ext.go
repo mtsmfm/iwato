@@ -131,25 +131,23 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 			v = ProposalView{Error: safeCLIError(e), Pending: []PendingProposal{}, Rejected: []RejectedProposal{}, Unlinked: []UnlinkedProposal{}}
 		}
 		providers := map[string]RuleProvider{}
-		var targets []scopeTarget
+		var list []ProviderInfo
+		var attached []string
 		if prt, ok := s.rt.(providerRuntime); ok {
-			if list, attached, err := s.providerState(ctx, prt); err != nil {
+			if l, a, err := s.providerState(ctx, prt); err != nil {
 				log.Printf("sandbox %s: providers for the proposals: %v", sb.Name, safeText(english(err)))
 			} else {
-				providers, targets = ruleProvidersOf(list, attached[sb.Name]), s.scopeTargetsOf(list, attached[sb.Name])
+				list, attached = l, a[sb.Name]
+				providers = ruleProvidersOf(list, attached)
 			}
 		}
 		nameProviderRules(v.Policy, providers)
 		for i := range v.Pending {
 			v.Pending[i].Blocked = blockedChoices(v.Pending[i].fit, v.Pending[i].Rule, providers)
-			if r := v.Pending[i].rule; r != nil {
-				if wd := widenScope(*r, targets); wd != nil {
-					wd.Resolving = s.closings.has(sb.Name, v.Pending[i].ID)
-					v.Pending[i].ProviderScope = wd
-				}
+			if p := v.Pending[i].plan; p != nil {
+				v.Pending[i].Offer = credentialOffers(*p, list, attached)
 			}
 		}
-		markProviderHosts(v.Policy, targets)
 		v.Changes = s.policyChangesFor(sb.Name, v.Policy)
 		v.Limits, v.HostGateways, v.ListenPort = proposalLimits, hostGateways, s.listenPort()
 		jsonResponse(w, 200, v)
@@ -167,33 +165,19 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 		RequestID string `json:"requestId"`
 		// Scope (approve only) narrows the proposal before it is approved.
 		Scope *ProposalScope `json:"scope"`
-		// Digest (approve, reject, scope) is the proposal as the page
-		// showed it (proposalDigest).
+		// Digest (approve, reject) is the proposal as the page showed it
+		// (proposalDigest).
 		Digest string `json:"digest"`
 	}
 	if decode(w, r, &body) != nil || !ownerID.MatchString(body.RequestID) {
 		fail(w, 400, "invalid pending request ID")
 		return
 	}
-	if parts[2] == "approve" || parts[2] == "reject" || parts[2] == "scope" {
+	if parts[2] == "approve" || parts[2] == "reject" {
 		if !digestPattern.MatchString(body.Digest) {
 			failCode(w, 400, "proposal_digest_missing", nil, "表示した提案がわかりません。表示し直してください")
 			return
 		}
-	}
-	if parts[2] == "scope" {
-		if body.Scope != nil {
-			fail(w, 400, "scope applies to approve only")
-			return
-		}
-		if !hasRT {
-			fail(w, 409, "proposals unavailable")
-			return
-		}
-		ctx, cancel := timeout(s.ctx, 60*time.Second)
-		defer cancel()
-		s.widenProposal(ctx, w, sb, body.RequestID, body.Digest)
-		return
 	}
 	if body.Scope != nil {
 		if parts[2] != "approve" {
@@ -274,9 +258,8 @@ var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // proposalOps are the owner's actions on a proposal: approve (pending or
 // rejected), reject (pending), undo (approved: back to pending), restore
-// (approved, its rule gone: put the rule back, then undo), and scope
-// (pending, on a provider's host: widen the provider's scope instead).
-var proposalOps = map[string]bool{"approve": true, "reject": true, "undo": true, "restore": true, "scope": true}
+// (approved, its rule gone: put the rule back, then undo).
+var proposalOps = map[string]bool{"approve": true, "reject": true, "undo": true, "restore": true}
 
 // undoRuntime undoes approved proposals (openshell_policy_lists.go).
 type undoRuntime interface {
@@ -328,7 +311,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []st
 		s.handlePolicyYAML(w, r, parts)
 		return
 	}
-	if len(parts) >= 3 && (parts[2] == "store" || parts[2] == "commits") {
+	if len(parts) >= 3 && (parts[2] == "store" || parts[2] == "commits" || parts[2] == "binding") {
 		s.handlePolicyStore(w, r, parts)
 		return
 	}
@@ -427,18 +410,9 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []st
 		failCheck(w, e)
 		return
 	}
-	hits, e := s.editProviderHosts(ctx, sb, edit)
-	if e != nil {
+	if e := s.checkEditBinaries(ctx, sb, edit); e != nil {
 		failErr(w, 409, e)
 		return
-	}
-	if len(hits) > 0 {
-		plan := edit
-		plan.Confirm = ""
-		if token := confirmToken(sb.Name, "edit", plan, hits); edit.Confirm != token {
-			askProviderHosts(w, hits, token)
-			return
-		}
 	}
 	change, e := rt.EditPolicy(ctx, sb, edit)
 	if e != nil {

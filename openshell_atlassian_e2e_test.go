@@ -94,7 +94,7 @@ func TestOpenShellAtlassianE2E(t *testing.T) {
 	}
 	gp := got.GetProfile()
 	r := gp.GetCredentials()[0].GetRefresh()
-	if r.GetTokenUrl() != atlassianTokenURL || r.GetStrategy() != pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_OAUTH2_REFRESH_TOKEN || len(r.GetMaterial()) != 2 || gp.GetEndpoints()[0].GetPath() != "/v2/mcp/**" {
+	if r.GetTokenUrl() != atlassianTokenURL || r.GetStrategy() != pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_OAUTH2_REFRESH_TOKEN || len(r.GetMaterial()) != 2 || gp.GetAnnotations()[credentialHostsKey] != "mcp.atlassian.com:443" {
 		t.Fatalf("the gateway's iwato-atlassian lost detail: %v", gp)
 	}
 	// A provider of the real profile takes the refresh configuration (the

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,13 +28,12 @@ func (s *Server) lookupSandbox(name string) (Sandbox, bool) {
 }
 
 // updateConfig changes the configuration as updateSandboxes does (the
-// ingress settings, the provider scopes, the time zone and the resource view).
+// ingress settings, the time zone and the resource view).
 func (s *Server) updateConfig(change func(*Config) error) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	s.mu.Lock()
 	next := s.config
-	next.ProviderScopes = maps.Clone(s.config.ProviderScopes)
 	s.mu.Unlock()
 	if err := change(&next); err != nil {
 		return err
@@ -50,7 +48,6 @@ func (s *Server) updateConfig(change func(*Config) error) error {
 	}
 	s.mu.Lock()
 	s.config.Ingress = next.Ingress
-	s.config.ProviderScopes = next.ProviderScopes
 	s.config.Timezone = next.Timezone
 	s.config.Resources = next.Resources
 	s.mu.Unlock()

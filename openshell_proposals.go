@@ -161,7 +161,8 @@ func (o *OpenShell) Proposals(ctx context.Context, w Sandbox) (ProposalView, err
 					if len(fit) > 0 {
 						v.Pending[j].fit = fit
 					}
-					v.Pending[j].Attach = approvalAttach(inheritShadowed(approvedRule(c.RuleName, *c.ProposedRule), composed, nil))
+					plan := inheritShadowed(approvedRule(c.RuleName, *c.ProposedRule), composed, nil)
+					v.Pending[j].Attach, v.Pending[j].plan = approvalAttach(plan), &plan
 				}
 			}
 		}
@@ -289,6 +290,14 @@ func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyIn
 		attach = scope.Attach
 	}
 	plan := inheritShadowed(approvedRule(freeRuleName(sync.rules, name), proposed), composed, attach)
+	if attach != nil && *attach {
+		// The credentials offered for the hosts they are meant for.
+		list, attached, err := o.listProvidersFor(ctx)
+		if err != nil {
+			return none, err
+		}
+		plan = bindOffers(plan, list, attached[w.Name])
+	}
 	planned := cloneRules(sync.rules)
 	planned[plan.Name] = plan
 	if err := o.checkWithProviders(ctx, w, sync.rules, planned); err != nil {
@@ -397,7 +406,8 @@ type ProposalScope struct {
 	Rules    []ProposalRule `json:"rules"`
 	Binaries []string       `json:"binaries"`
 	// Attach: whether the approved endpoints carry the credential of the
-	// endpoints they shadow (nil: that default, PendingProposal.Attach).
+	// endpoints they shadow (nil: that default, PendingProposal.Attach),
+	// and, when true, the credentials offered (PendingProposal.Offer).
 	Attach *bool `json:"attach,omitempty"`
 }
 
@@ -629,11 +639,6 @@ type PendingProposal struct {
 	// provider's, say) overlaps the proposal's with other settings
 	// (endpoint_ambiguity.go). The server fills it from fit.
 	Blocked map[string]BlockedChoice `json:"blocked,omitempty"`
-	// ProviderScope: the rule reaches an attached provider's credential,
-	// and approving widens the provider's scope instead, or (with a
-	// reason) adds the rule with the credential riding along
-	// (proposal_scope.go). The server fills it from rule.
-	ProviderScope *ScopeWidening `json:"providerScope,omitempty"`
 	// Digest is what a decision sends back (proposalDigest): the server
 	// refuses it when the proposal changed since.
 	Digest string `json:"digest"`
@@ -643,8 +648,12 @@ type PendingProposal struct {
 	// Attach are the approved rule's endpoints that carry a credential by
 	// default, approved as proposed (inheritShadowed).
 	Attach []ApprovalAttach `json:"attach,omitempty"`
-	fit     map[string][]EndpointAmbiguity
-	rule    *v1.NetworkPolicyRule
+	// Offer are its endpoints without one that could carry an attached
+	// provider's (credentialOffers): scope.attach true binds them too.
+	Offer []ApprovalAttach `json:"offer,omitempty"`
+	plan  *v1.NetworkPolicyRule
+	fit   map[string][]EndpointAmbiguity
+	rule  *v1.NetworkPolicyRule
 }
 
 // BlockedChoice says why an approve choice cannot be taken.
@@ -713,9 +722,6 @@ type RejectedProposal struct {
 	HitsAfter int32  `json:"hitsAfter"`
 	SeenAfter bool   `json:"seenAfter"`
 	Auto      string `json:"auto,omitempty"`
-	// ScopeProvider: Iwato closed it after widening this provider's
-	// scope instead (proposal_scope.go).
-	ScopeProvider string `json:"scopeProvider,omitempty"`
 }
 
 // rejectReason is the reason Iwato gives a rejection: a note for the agent,
@@ -756,9 +762,6 @@ func rejectedProposal(c v1.PolicyChunk) RejectedProposal {
 		r.Auto = "superseded"
 	case strings.HasPrefix(c.RejectionReason, "already covered by approved chunk "):
 		r.Auto = "covered"
-	}
-	if m := scopeReason.FindStringSubmatch(c.RejectionReason); m != nil {
-		r.ScopeProvider = m[1]
 	}
 	if m := rejectedHits.FindStringSubmatch(c.RejectionReason); m != nil {
 		if n, err := strconv.ParseInt(m[1], 10, 32); err == nil && c.HitCount >= int32(n) {

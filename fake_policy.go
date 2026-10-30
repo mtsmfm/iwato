@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -86,6 +87,15 @@ func (d *Fake) fakePolicy(name string) []fakeRevision {
 		if name == "dev" && d.seedPolicy != nil {
 			second = cloneRules(d.seedPolicy)
 		}
+		// The attached providers' initial rules (provider_rules.go), as
+		// the sandbox was created with them.
+		var list []ProviderInfo
+		for _, p := range d.prov.list {
+			list = append(list, p)
+		}
+		if withInitial, err := withProviderInitialRules(second, list, d.prov.attached[name]); err == nil {
+			second = withInitial
+		}
 		now := time.Now()
 		d.policies[name] = []fakeRevision{{at: now.Add(-2 * time.Hour), rules: first}, {at: now.Add(-time.Hour), rules: second}}
 	}
@@ -129,9 +139,7 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 	chunks := []v1.PolicyChunk{
 		// Waiting.
 		c("fake-git", "pending", "allow_github_com_443", fakeGitRemote, "iwato リポジトリにブランチを push する", 3, ago(16), ago(12), rule("allow_github_com_443", []string{fakeGitRemote}, git)),
-		// A REST write under a repository, by the GitHub provider's gh:
-		// a provider with its own profile (github-work) takes it as a
-		// repository to write to (proposal_scope.go).
+		// A REST write under a repository, by the GitHub provider's gh.
 		c("fake-pr", "pending", "allow_api_github_com_443", "/usr/bin/gh", "octo-org/octo-repo に PR を作る", 1, ago(14), ago(14), rule("allow_api_github_com_443", []string{"/usr/bin/gh"}, pr)),
 		c("fake-downloads", "pending", "allow_downloads_claude_ai_443", fakeClaudeBin, auto(fakeClaudeBin, "downloads.claude.ai", 443), 4, ago(174), ago(23), rule("allow_downloads_claude_ai_443", []string{fakeClaudeBin}, downloads)),
 		c("fake-datadog", "pending", "allow_http_intake_logs_us5_datadoghq_com_443", fakeClaudeBin, auto(fakeClaudeBin, "http-intake.logs.us5.datadoghq.com", 443), 37, ago(302), ago(10), rule("allow_http_intake_logs_us5_datadoghq_com_443", []string{fakeClaudeBin}, l4Endpoint("http-intake.logs.us5.datadoghq.com", 443))),
@@ -228,6 +236,20 @@ func fakeValidate(rules map[string]v1.NetworkPolicyRule) error {
 	return errors.New("network endpoint ambiguity validation failed:\n" + strings.Join(lines, "\n"))
 }
 
+// fakeBindings refuses bindings as the gateway does: to a provider that is
+// not attached, or whose profile has endpoints. The caller holds d.mu.
+func (d *Fake) fakeBindings(name string, rules map[string]v1.NetworkPolicyRule) error {
+	for _, p := range boundProviders(rules) {
+		if !slices.Contains(d.prov.attached[name], p) {
+			return fmt.Errorf("credential_binding references provider '%s', but that provider is not attached to the sandbox", p)
+		}
+		if _, ok := builtinProfile(d.prov.list[p].Profile); !ok {
+			return fmt.Errorf("credential_binding provider '%s' profile already defines endpoints; profile endpoints remain the credential boundary", p)
+		}
+	}
+	return nil
+}
+
 // fakeCompose is rules with the attached providers' rules, as the gateway
 // composes them. The caller holds d.mu.
 func (d *Fake) fakeCompose(name string, rules map[string]v1.NetworkPolicyRule) map[string]v1.NetworkPolicyRule {
@@ -235,6 +257,9 @@ func (d *Fake) fakeCompose(name string, rules map[string]v1.NetworkPolicyRule) m
 	for _, p := range d.prov.attached[name] {
 		if prof, ok := profileByID(d.prov.list[p].Profile); ok {
 			composeProviderRule(rules, p, prof.proto())
+		} else if d.prov.list[p].Profile == "openai" {
+			m, _ := parseProfileYAML([]byte(fakeGatewayProfile))
+			composeProviderRule(rules, p, m)
 		}
 	}
 	return rules
@@ -342,7 +367,7 @@ func fakeLogs() []v1.LogLine {
 	deny := func(method, host, path, rule, reason string) {
 		add(fmt.Sprintf("HTTP:%s [MED] DENIED %s http://%s:443%s [policy:%s engine:l7] [reason:L7_REQUEST deny %s %s:443%s reason=%s]", method, method, host, path, rule, method, host, path, reason))
 	}
-	const api, ci, gh = "allow_api_example_com_443", "allow_ci_tailnet_example_443", "_provider_github_personal"
+	const api, ci, gh = "allow_api_example_com_443", "allow_ci_tailnet_example_443", "provider_github_personal"
 	connect("/usr/bin/curl", 301, "api.example.com", api)
 	deny("PUT", "api.example.com", "/v1/items/42", api, "PUT /v1/items/42 not permitted by policy")
 	deny("GET", "api.example.com", "/v2/status", api, "GET /v2/status not permitted by policy")
@@ -520,7 +545,7 @@ func (d *Fake) openShell() *OpenShell {
 }
 
 func (d *Fake) newOpenShell() *OpenShell {
-	return &OpenShell{pol: fakeGateway{d: d}, sandboxConfig: d.fakeConfig,
+	return &OpenShell{pol: fakeGateway{d: d}, sandboxConfig: d.fakeConfig, providerList: d.ListProviders,
 		logs: func(context.Context, Sandbox) ([]v1.LogLine, error) { d.gatewayCall("GetLogs"); return fakeLogs(), nil },
 		updateConfig: func(_ context.Context, u *v1.ConfigUpdate) (*v1.ConfigUpdateResult, error) {
 			d.gatewayCall("UpdateConfig")
@@ -530,6 +555,9 @@ func (d *Fake) newOpenShell() *OpenShell {
 				// A whole policy: its rules replace the latest revision's.
 				rules := cloneRules(u.Policy.NetworkPolicies)
 				if err := fakeValidate(d.fakeCompose(u.Name, rules)); err != nil {
+					return nil, err
+				}
+				if err := d.fakeBindings(u.Name, rules); err != nil {
 					return nil, err
 				}
 				d.policies[u.Name] = append(d.fakePolicy(u.Name), fakeRevision{at: time.Now(), rules: rules, provenance: maps.Clone(u.Annotations)})
@@ -641,8 +669,16 @@ func (d *Fake) ApplyPolicyChange(ctx context.Context, w Sandbox, ops []v1.Policy
 	return d.openShell().ApplyPolicyChange(ctx, w, ops)
 }
 
-func (d *Fake) CloseProposal(ctx context.Context, w Sandbox, request, reason string) error {
-	return d.openShell().CloseProposal(ctx, w, request, reason)
+func (d *Fake) AddProviderRules(ctx context.Context, w Sandbox, provider string, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {
+	return d.openShell().AddProviderRules(ctx, w, provider, rules)
+}
+
+func (d *Fake) RemoveProvider(ctx context.Context, w Sandbox, provider string) (PolicyChange, error) {
+	return d.openShell().RemoveProvider(ctx, w, provider)
+}
+
+func (d *Fake) SetBinding(ctx context.Context, w Sandbox, b PolicyBinding) (PolicyChange, error) {
+	return d.openShell().SetBinding(ctx, w, b)
 }
 
 // fakePreset is the fake's owner preset (a folder of its own each run).

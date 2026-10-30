@@ -319,31 +319,5 @@
     return out;
   }
 
-  // A proposal on a provider's host (the server's providerScope, ADR 0006):
-  // approving widens the provider's scope, or (with a reason) adds the
-  // policy rule with the provider's token riding along.
-  const providerName = (ps) => ps.provider + (ps.label ? ' (' + ps.label + ')' : '');
-
-  // What approving adds to the provider's scope, line by line, each a
-  // write or not.
-  function scopeLines(ps) {
-    const lines = [];
-    if (ps.repos.length) lines.push({ text: t('approve.scope.repos', { repos: ps.repos.join(', ') }), write: true });
-    if (ps.mutations.length) lines.push({ text: t('approve.scope.mutations', { mutations: ps.mutations.join(', ') }), write: true });
-    if (ps.tools?.length) lines.push({ text: t('approve.scope.tools', { tools: ps.tools.join(', ') }), write: true });
-    if (ps.write) lines.push({ text: t('approve.scope.write', { provider: providerName(ps) }), write: true });
-    if (!lines.length) lines.push({ text: t('approve.scope.covered'), write: false });
-    return lines;
-  }
-
-  // The proposal's line in the waiting list.
-  function scopeNote(ps) {
-    if (ps.resolving) return t('approve.scopeNote.resolving', { provider: providerName(ps) });
-    if (ps.reason) return t('approve.scopeNote.rule', { provider: providerName(ps), reason: ps.reason });
-    if (ps.write) return t('approve.scopeNote.write', { provider: providerName(ps) });
-    const what = [ps.repos.length && t('approve.scopeNote.repos', { repos: ps.repos.join(', ') }), ps.mutations.length && t('approve.scopeNote.mutations', { mutations: ps.mutations.join(', ') }), ps.tools?.length && t('approve.scopeNote.tools', { tools: ps.tools.join(', ') })].filter(Boolean).join(t('common.listSep'));
-    return t('approve.scopeNote.scope', { provider: providerName(ps), what: what ? t('approve.scopeNote.adds', { what }) : t('approve.scopeNote.within') });
-  }
-
-  window.IwatoApprove = { globMatch, binaryError, binaryCandidates, looksHTTP, defaultAccess, pickAccess, pathLabel, pathHint, toggleSegment, pathSuggestion, buildScope, destParts, writes, summary, risks, details, gatewayHit, allPrograms, scopeLines, providerName, scopeNote };
+  window.IwatoApprove = { globMatch, binaryError, binaryCandidates, looksHTTP, defaultAccess, pickAccess, pathLabel, pathHint, toggleSegment, pathSuggestion, buildScope, destParts, writes, summary, risks, details, gatewayHit, allPrograms };
 })();

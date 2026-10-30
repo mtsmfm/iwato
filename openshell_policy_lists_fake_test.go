@@ -156,8 +156,11 @@ func TestProviderRulesNameTheirProvider(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/dev/start", `{}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`); code != 200 {
-		t.Fatal(code, body)
+	// Iwato's profiles have no endpoints (ADR 0022): a CLI-imported one's.
+	for _, p := range []string{"github-personal", "openai"} {
+		if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"`+p+`"}`); code != 200 {
+			t.Fatal(code, body)
+		}
 	}
 	sb, _ := s.lookupSandbox("dev")
 	v, err := s.rt.(proposalRuntime).Proposals(context.Background(), sb)
@@ -165,12 +168,15 @@ func TestProviderRulesNameTheirProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	nameProviderRules(v.Policy, s.ruleProviders(context.Background(), sb))
-	i := slices.IndexFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "_provider_github_personal" })
+	if slices.ContainsFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "_provider_github_personal" }) {
+		t.Fatal("an endpointless profile's rule")
+	}
+	i := slices.IndexFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "_provider_openai" })
 	if i < 0 {
 		t.Fatalf("%+v", v.Policy.Rules)
 	}
 	r := v.Policy.Rules[i]
-	if r.Source != "provider" || r.Provider == nil || *r.Provider != (RuleProvider{Name: "github-personal", Profile: "iwato-github", Label: "GitHub"}) || !slices.Contains(r.Binaries, "/usr/bin/gh") {
+	if r.Source != "provider" || r.Provider == nil || *r.Provider != (RuleProvider{Name: "openai", Profile: "openai"}) || !slices.Contains(r.Binaries, "/usr/bin/curl") {
 		t.Fatalf("%+v %+v", r, r.Provider)
 	}
 	for in, want := range map[string]string{"github-personal": "_provider_github_personal", "Claude.Work": "_provider_claude_work", "--": "_provider_unnamed", "_x_": "_provider_x"} {

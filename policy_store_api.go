@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 )
 
@@ -14,6 +15,7 @@ import (
 //	GET  /api/sandboxes/NAME/policy/commits                the history, newest first
 //	GET  /api/sandboxes/NAME/policy/commits/SHA            one commit and its diff
 //	POST /api/sandboxes/NAME/policy/commits/SHA/revert     undo one commit as a new one
+//	POST /api/sandboxes/NAME/policy/binding                attach a provider's credential to an endpoint, or remove it (PolicyBinding)
 
 // policyStoreRuntime is the repository's side of the runtime. OpenShell
 // and Fake implement it.
@@ -49,6 +51,8 @@ func (s *Server) handlePolicyStore(w http.ResponseWriter, r *http.Request, parts
 		route = "commit"
 	case post && len(parts) == 5 && parts[2] == "commits" && parts[4] == "revert":
 		route = "revert"
+	case post && len(parts) == 3 && parts[2] == "binding":
+		route = "binding"
 	default:
 		fail(w, 404, "unknown sandbox route")
 		return
@@ -96,6 +100,8 @@ func (s *Server) handlePolicyStore(w http.ResponseWriter, r *http.Request, parts
 			return
 		}
 		jsonResponse(w, 200, map[string]any{"commit": c, "diff": diff})
+	case "binding":
+		s.setPolicyBinding(ctx, w, r, sb)
 	case "overwrite", "revert":
 		var version uint32
 		var err error
@@ -111,4 +117,45 @@ func (s *Server) handlePolicyStore(w http.ResponseWriter, r *http.Request, parts
 		s.recordPolicyChange(sb.Name, PolicyChange{Version: version, Kind: "edit", At: time.Now().Unix()})
 		jsonResponse(w, 200, map[string]any{"ok": true, "version": version})
 	}
+}
+
+// setPolicyBinding attaches an attached provider's credential to an
+// endpoint (a provider of Iwato's profiles: the others' profiles have
+// endpoints, and OpenShell refuses binding them), or removes it.
+func (s *Server) setPolicyBinding(ctx context.Context, w http.ResponseWriter, r *http.Request, sb Sandbox) {
+	var b PolicyBinding
+	if decode(w, r, &b) != nil || !ruleNamePattern.MatchString(b.Rule) || !hostPattern.MatchString(b.Host) || len(b.Ports) == 0 || len(b.Path) > 512 ||
+		b.Provider != "" && !providerNamePattern.MatchString(b.Provider) {
+		fail(w, 400, "invalid binding")
+		return
+	}
+	rt, ok := s.rt.(providerPolicyRuntime)
+	prt, hasProviders := s.rt.(providerRuntime)
+	if !ok || !hasProviders {
+		fail(w, 409, "policy unavailable")
+		return
+	}
+	if b.Provider != "" {
+		list, attached, err := s.providerState(ctx, prt)
+		if err != nil {
+			failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(err)}, "プロバイダーを確かめられません: "+safeCLIError(err))
+			return
+		}
+		i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == b.Provider })
+		if !slices.Contains(attached[sb.Name], b.Provider) || i < 0 {
+			failCode(w, 409, "binding_not_attached", map[string]any{"provider": b.Provider}, b.Provider+" はこのサンドボックスに付いていません")
+			return
+		}
+		if _, ok := builtinProfile(list[i].Profile); !ok {
+			failCode(w, 409, "binding_profile_endpoints", map[string]any{"provider": b.Provider}, b.Provider+" のプロファイルは宛先を持つので、OpenShell が自分で認証情報を付けます")
+			return
+		}
+	}
+	change, err := rt.SetBinding(ctx, sb, b)
+	if err != nil {
+		s.failGateway(ctx, w, sb, err)
+		return
+	}
+	s.recordPolicyChange(sb.Name, change)
+	jsonResponse(w, 200, map[string]any{"ok": true, "version": change.Version})
 }

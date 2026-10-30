@@ -158,8 +158,10 @@ func TestOpenShellRecreateE2E(t *testing.T) {
 			t.Errorf("rule %s after the recreate: %+v, was %+v", name, after[name], r)
 		}
 	}
-	if _, ok := effective[providerRuleName(provider)]; !ok {
-		t.Errorf("the provider's rule is not in the effective policy: %v", slices.Sorted(maps.Keys(effective)))
+	// Attached without its rules before (in OpenShell only): the new
+	// sandbox gets them in its first policy.
+	if r, ok := after["provider_github_recreate"]; !ok || len(r.Endpoints) == 0 || r.Endpoints[0].CredentialBinding == nil {
+		t.Errorf("the provider's rule is not in the policy: %v (effective %v)", slices.Sorted(maps.Keys(after)), slices.Sorted(maps.Keys(effective)))
 	}
 	if sb, _ := s.lookupSandbox(w.Name); sb.Carry != nil || !slices.Equal(sb.Providers, []string{provider}) || sb.LegacyPersist != nil {
 		t.Fatalf("configuration after the recreate: carry %v, providers %v, persist %v", sb.Carry != nil, sb.Providers, sb.LegacyPersist)

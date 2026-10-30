@@ -18,7 +18,8 @@ import (
 
 // TestOpenShellCredentialConflictE2E reproduces, against the gateway that
 // internal/openshell/wslc/e2e.sh starts (MODE=tls), an L4 rule for
-// api.anthropic.com approved before the Claude provider. It
+// api.anthropic.com approved before the Claude provider, whose initial rule
+// binds its credential there (ADR 0022). It
 // shows what OpenShell does with it and that Iwato refuses the attach,
 // fixes it, and keeps the conflict from coming back.
 func TestOpenShellCredentialConflictE2E(t *testing.T) {
@@ -118,16 +119,12 @@ func TestOpenShellCredentialConflictE2E(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "credentialed endpoint") {
 		t.Fatal("OpenShell took the L4 rule:", err)
 	}
-	// Inspected too, Iwato refuses it: the provider's host is the
-	// provider's (ADR 0006).
-	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/policy/add", `{"rule":"","binaries":["/usr/bin/curl"],"host":"api.anthropic.com","ports":[443],"access":"read-only"}`); code != 409 || !strings.Contains(body, `"code":"policy_provider_host"`) {
-		t.Fatal("an inspected rule:", code, body)
-	}
 
 	// OpenShell's gap (why Iwato checks before attaching): its attach
-	// checks the creation policy only, not the approved revisions.
-	if ok, _, err := o.DetachProvider(ctx, w.Name, "claude-conflict"); !ok || err != nil {
-		t.Fatal(ok, err)
+	// checks the creation policy only, not the approved revisions. (Iwato
+	// detaches: the bound endpoints go first.)
+	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/providers/detach", `{"provider":"claude-conflict"}`); code != 200 {
+		t.Fatal("detach:", code, body)
 	}
 	if _, err := o.EditPolicy(ctx, w, PolicyEdit{Op: "add", Rule: "l4_again", Binaries: []string{"/usr/bin/curl"}, Host: "api.anthropic.com", Ports: []uint32{443}}); err != nil {
 		t.Fatal("the L4 rule without the provider:", err)
