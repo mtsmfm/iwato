@@ -365,6 +365,7 @@ func (s *Server) resetFiles(ownerFiles bool) []resetWarn {
 	if s.configPath != "" {
 		dir := filepath.Dir(s.configPath)
 		warnTo("tailscale_states", nil, "could not delete the Tailscale node states", os.RemoveAll(filepath.Join(dir, "ingress")))
+		warnTo("folder", map[string]any{"folder": "policies"}, "could not delete the policies folder", os.RemoveAll(filepath.Join(dir, "policies")))
 		if ownerFiles {
 			for _, d := range []string{"presets", "profiles"} {
 				warnTo("folder", map[string]any{"folder": d}, "could not delete the "+d+" folder", os.RemoveAll(filepath.Join(dir, d)))

@@ -175,7 +175,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await raw.waitFor();
     await open('allow_downloads_claude_ai_443');
     const rawText = await raw.innerText();
-    check(rawText.includes('2.1.293 を /sandbox/.local/share/claude/versions/* に広げて承認') && ['GET', 'HEAD', 'OPTIONS'].every((m) => rawText.includes(m + ' /claude-code-releases/2.1.294/*')) && !rawText.includes('linux-x64'), 'the approved rule has the glob and reads on the path, from its proposal');
+    check(rawText.includes('2.1.293 を /** に広げて承認') && ['GET', 'HEAD', 'OPTIONS'].every((m) => rawText.includes(m + ' /claude-code-releases/2.1.294/*')) && !rawText.includes('linux-x64'), 'the approved rule is for every program, with reads on the path, from its proposal: ' + rawText);
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     // Not inspected, to where the attached GitHub provider's token goes

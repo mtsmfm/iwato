@@ -135,7 +135,7 @@ func TestApprovalRefusesUninspectedCredentialRule(t *testing.T) {
 	sb, _ := s.lookupSandbox("dev")
 	rules, _ := d.PolicyRules(context.Background(), sb)
 	r := rules["allow_uploads_github_com_443"]
-	if e := r.Endpoints; len(e) != 1 || e[0].Protocol != "rest" || e[0].Access != v1.NetworkAccessPresetReadOnly || len(r.Binaries) != 1 || r.Binaries[0].Path != "/usr/bin/*" {
+	if e := r.Endpoints; len(e) != 1 || e[0].Protocol != "rest" || e[0].Access != v1.NetworkAccessPresetReadOnly || len(r.Binaries) != 1 || r.Binaries[0].Path != "/**" {
 		t.Fatalf("%+v", r)
 	}
 }

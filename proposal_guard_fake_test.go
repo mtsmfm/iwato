@@ -16,7 +16,7 @@ import (
 func TestDecisionRefusesAChangedProposal(t *testing.T) {
 	rule := &v1.NetworkPolicyRule{Name: "gh", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/gh"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.github.com", Port: 443}}}
 	f := &fakePolicy{chunks: []v1.PolicyChunk{{ID: "c1", Status: "pending", ReviewToken: "t1", Binary: "/usr/bin/gh", ProposedRule: rule}}}
-	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}, newSandbox("dev"), context.Background()
+	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}, newSandbox("dev"), context.Background()
 	v, _ := o.Proposals(ctx, w)
 	shown := v.Pending[0].Digest
 	if shown != testDigest(o, ctx, w, requestID("c1")) || len(shown) != 64 {

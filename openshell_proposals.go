@@ -246,17 +246,56 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 		}
 		return none, pol.RejectDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, rejectReason(chunk.HitCount, note))
 	}
-	host := ""
-	if chunk.ProposedRule != nil && len(chunk.ProposedRule.Endpoints) > 0 {
-		host = chunk.ProposedRule.Endpoints[0].Host
+	if chunk.ProposedRule == nil {
+		return none, errCode("proposal_empty", nil, "この提案には規則がありません")
 	}
-	change := PolicyChange{Kind: "approve", Rule: chunk.RuleName, Host: host, Summary: chunkSummary(*chunk), At: time.Now().Unix()}
+	return o.approveChunk(ctx, w, pol, chunk, scope, rejected, digest)
+}
+
+// approveChunk approves a proposal as its own rule (ADR 0022): the rule
+// approvedRule makes of the (narrowed) proposal. The proposal is first
+// edited into that rule and approved in OpenShell, which adds it under a
+// rule name of its own (the gateway picks one the policy does not have) and
+// marks the proposal approved, so the agent's /wait answers approved; then
+// the repository's policy with the rule is committed and applied as a
+// whole, which replaces OpenShell's merge with the same rule. A rejected
+// proposal cannot be edited: it is approved as proposed, and the
+// repository still gets approvedRule of it.
+func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyInterface, chunk *v1.PolicyChunk, scope *ProposalScope, rejected bool, digest string) (PolicyChange, error) {
+	none := PolicyChange{}
+	sync, err := o.syncStore(ctx, w)
+	if err != nil {
+		return none, err
+	}
+	proposed := *chunk.ProposedRule
+	if scope != nil {
+		proposed = scope.apply(proposed)
+	}
+	name := chunk.RuleName
+	if name == "" && len(proposed.Endpoints) > 0 && len(endpointPorts(proposed.Endpoints[0])) > 0 {
+		name = generatedRuleName(proposed.Endpoints[0].Host, endpointPorts(proposed.Endpoints[0])[0])
+	}
+	if name == "" {
+		name = "approved"
+	}
+	plan := approvedRule(freeRuleName(sync.rules, name), proposed)
+	planned := cloneRules(sync.rules)
+	planned[plan.Name] = plan
+	if err := o.checkWithProviders(ctx, w, sync.rules, planned); err != nil {
+		return none, fmt.Errorf("proposal is not applicable: candidate invalid: %w", err)
+	}
+	host := ""
+	if len(plan.Endpoints) > 0 {
+		host = plan.Endpoints[0].Host
+	}
+	change := PolicyChange{Kind: "approve", Host: host, Summary: chunkSummary(*chunk), At: time.Now().Unix()}
 	token := chunk.ReviewToken
+	name = ""
 	if rejected {
 		// A rejected chunk's review token is from before the policy moved
 		// on: OpenShell refreshes it on the first try ("evaluation
 		// refreshed"); the proposal itself is unchanged, so try once more.
-		res, err := pol.ApproveDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, token)
+		_, err := pol.ApproveDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, token)
 		if err != nil && strings.Contains(err.Error(), "refetch and review again") {
 			fresh, ferr := pol.GetDraft(ctx, openshellWorkspace, w.Name, v1.WithStatusFilter("rejected"))
 			if ferr != nil {
@@ -264,23 +303,19 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 			}
 			for _, c := range fresh.Chunks {
 				if c.ID == chunk.ID && c.Status == "rejected" && proposalDigest(c) == digest {
-					res, err = pol.ApproveDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, c.ReviewToken)
+					_, err = pol.ApproveDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, c.ReviewToken)
 				}
 			}
 		}
 		if err != nil {
 			return none, err
 		}
-		if res != nil {
-			change.Version = res.PolicyVersion
-		}
-		return change, nil
-	}
-	if scope != nil && chunk.ProposedRule != nil {
-		// The owner narrows the rule first; the edit gives the chunk a new
-		// review token, which the approval then binds to.
-		rule := scope.apply(*chunk.ProposedRule)
-		if err := pol.EditDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, &rule); err != nil {
+	} else {
+		// The edit gives the chunk a new review token (and rule name),
+		// which the approval then binds to.
+		edit := cloneRule(plan)
+		edit.Name = ""
+		if err := pol.EditDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, &edit); err != nil {
 			return none, err
 		}
 		draft, err := pol.GetDraft(ctx, openshellWorkspace, w.Name, v1.WithStatusFilter("pending"))
@@ -290,22 +325,37 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 		token = ""
 		for _, c := range draft.Chunks {
 			// The edited chunk, with the programs sent (not changed since).
-			if c.ID == chunk.ID && c.Status == "pending" && c.ProposedRule != nil && slices.Equal(binaryPaths(*c.ProposedRule), binaryPaths(rule)) {
-				token = c.ReviewToken
-				change.Summary = chunkSummary(c)
+			if c.ID == chunk.ID && c.Status == "pending" && c.ProposedRule != nil && slices.Equal(binaryPaths(*c.ProposedRule), binaryPaths(plan)) {
+				token, name = c.ReviewToken, c.RuleName
 			}
 		}
 		if token == "" {
 			return none, errCode("narrowed_unverified", nil, "絞った提案を確認できません")
 		}
+		if _, err := pol.ApproveDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, token); err != nil {
+			return none, err
+		}
 	}
-	res, err := pol.ApproveDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID, token)
+	// The name OpenShell gave the approved rule: the policy tab ties the
+	// rule to the proposal by it.
+	o.forgetDraft(w.Name)
+	if rejected {
+		if approved, _, err := draftChunk(ctx, pol, w.Name, requestID(chunk.ID), "approved"); err == nil && approved != nil {
+			name = approved.RuleName
+		}
+	}
+	if _, taken := sync.rules[name]; name != "" && name != plan.Name && !taken {
+		delete(planned, plan.Name)
+		plan.Name = name
+		planned[name] = plan
+	}
+	change.Rule = plan.Name
+	message := fmt.Sprintf("Approve proposal %s as rule %s\n\n%s", chunk.ID, plan.Name, change.Summary)
+	v, err := o.commitPolicy(ctx, w, sync, planned, PolicyNote{Kind: "approve", Message: message})
 	if err != nil {
-		return none, err
+		return none, fmt.Errorf("OpenShell は提案を承認しましたが、Iwato の規則として適用できませんでした: %w", err)
 	}
-	if res != nil {
-		change.Version = res.PolicyVersion
-	}
+	change.Version = v
 	return change, nil
 }
 

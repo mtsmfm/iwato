@@ -11,14 +11,9 @@ import (
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 )
 
-// The policy tab's lists come from OpenShell alone: Iwato keeps nothing.
-// An approved proposal (chunk) added its rule under its rule name
-// (ApproveDraftChunk merges proposed_rule with AddRule: openshell-server
-// grpc/policy.rs merge_chunk_into_policy_with_validation), so a rule
-// "comes from" the approved chunks of its name whose program it still
-// holds. Undoing one (UndoDraftChunk) takes that program out of the rule
-// (RemoveBinary of the chunk's rule name and binary: remove_chunk_from_policy;
-// the rule goes with its last program) and puts the chunk back to pending.
+// The policy tab's lists come from OpenShell: an approved proposal (chunk)
+// added its rule under its rule name (approveChunk), so a rule "comes from"
+// the approved chunks of its name whose program it still holds.
 
 // ChunkLink is an approved proposal a rule came from. ID is its request ID.
 // Binary is the program that asked; Binaries the ones approved (Widened:
@@ -188,18 +183,16 @@ func linkChunks(p *CurrentPolicy, chunks []v1.PolicyChunk) []UnlinkedProposal {
 	return unlinked
 }
 
-// UndoProposal undoes an approved proposal: OpenShell takes its program out
-// of its rule and puts it back to pending (UndoDraftChunk); the programs it
-// was approved with besides (a widened glob) that no other approved
-// proposal of the rule holds go in the same action (RemoveBinary through
-// UpdateConfig). Nothing is kept: the chunk's proposed rule says what it
-// put in.
+// UndoProposal undoes an approved proposal: its program goes out of its
+// rule with the programs it was approved with that no other approved
+// proposal of the rule holds (the rule goes with its last program), as a
+// commit applied as a whole; then OpenShell puts it back to pending
+// (UndoDraftChunk, whose own removal of the program then finds nothing to
+// remove).
 //
-// With restore, the proposal's rule is gone (taken out by hand): its
-// proposed rule is put back first (AddRule, as the approval did), so that
-// the undo takes it out again. A rule of the same name that is still there
-// (without the proposal's programs) is left as it is: merging the proposal
-// into it would leave its endpoints behind.
+// With restore, the proposal's rule is gone already (taken out by hand):
+// only the proposal goes back to pending. A rule of the same name that is
+// still there (without the proposal's programs) is left as it is.
 func (o *OpenShell) UndoProposal(ctx context.Context, w Sandbox, request string, restore bool) (PolicyChange, error) {
 	none := PolicyChange{}
 	pol, err := o.policy(ctx)
@@ -220,7 +213,7 @@ func (o *OpenShell) UndoProposal(ctx context.Context, w Sandbox, request string,
 		}
 		return none, errCode("proposal_not_found", nil, "この提案は見つかりません")
 	}
-	rules, err := o.revisionRules(ctx, w)
+	sync, err := o.syncStore(ctx, w)
 	if err != nil {
 		return none, err
 	}
@@ -228,56 +221,39 @@ func (o *OpenShell) UndoProposal(ctx context.Context, w Sandbox, request string,
 	if chunk.ProposedRule != nil && len(chunk.ProposedRule.Endpoints) > 0 {
 		change.Host = chunk.ProposedRule.Endpoints[0].Host
 	}
-	isLinked := linked(*chunk, rules)
+	isLinked := linked(*chunk, sync.rules)
 	if restore && isLinked {
 		return none, errCode("proposal_rule_exists", nil, "この提案の規則はあります。「取り消す」を使ってください")
 	}
 	if !restore && !isLinked {
 		return none, errCode("proposal_rule_missing", nil, "この提案の規則がありません。「規則を戻して取り消す」を使ってください")
 	}
-	if _, exists := rules[chunk.RuleName]; restore && !exists && chunk.ProposedRule != nil {
-		rule := *chunk.ProposedRule
-		rule.Name = chunk.RuleName
-		res, err := o.applyOps(ctx, w, []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: chunk.RuleName, Rule: rule}}})
-		if err != nil {
-			return none, fmt.Errorf("規則を戻せませんでした: %w", err)
-		}
-		if res != nil {
-			change.Version = res.Version
-		}
-		if rules, err = o.revisionRules(ctx, w); err != nil {
-			return none, err
-		}
-	}
-	leftovers, _ := undoPlan(rules[chunk.RuleName], *chunk, approved)
-	res, err := pol.UndoDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID)
-	if err != nil {
-		return none, err
-	}
-	if res != nil && res.PolicyVersion > change.Version {
-		change.Version = res.PolicyVersion
-	}
-	if len(leftovers) > 0 {
-		// The rule as the undo left it: the programs still there go.
-		rules, err := o.revisionRules(ctx, w)
-		if err != nil {
-			return none, err
-		}
+	if rule := sync.rules[chunk.RuleName]; !restore {
+		leftovers, _ := undoPlan(rule, *chunk, approved)
 		var ops []v1.PolicyMergeOperation
-		for _, b := range leftovers {
-			if rule, ok := rules[chunk.RuleName]; ok && ruleHasBinary(rule, b) {
+		for _, b := range append([]string{chunk.Binary}, leftovers...) {
+			if ruleHasBinary(rule, b) {
 				ops = append(ops, v1.PolicyMergeOperation{RemoveBinary: &v1.RemoveNetworkBinary{RuleName: chunk.RuleName, BinaryPath: b}})
 			}
 		}
+		rules, err := simulateMerge(sync.rules, ops)
+		if err != nil {
+			return none, err
+		}
+		message := fmt.Sprintf("Undo proposal %s\n\n%s\n%s", chunk.ID, chunkSummary(*chunk), opsMessage(ops))
 		if len(ops) > 0 {
-			res, err := o.applyOps(ctx, w, ops)
-			if err != nil {
-				return none, fmt.Errorf("提案は承認待ちに戻りましたが、規則に残った %s を外せませんでした: %w", strings.Join(leftovers, ", "), err)
-			}
-			if res != nil && res.Version > change.Version {
-				change.Version = res.Version
+			if change.Version, err = o.commitPolicy(ctx, w, sync, rules, PolicyNote{Kind: "undo", Message: message}); err != nil {
+				return none, err
 			}
 		}
+	}
+	if _, err := pol.UndoDraftChunk(ctx, openshellWorkspace, w.Name, chunk.ID); err != nil {
+		return none, err
+	}
+	if v, err := o.reassert(ctx, w, "undo"); err != nil {
+		return none, err
+	} else if v > change.Version {
+		change.Version = v
 	}
 	return o.withVersion(ctx, w, change), nil
 }
@@ -293,22 +269,4 @@ func (o *OpenShell) revisionRules(ctx context.Context, w Sandbox) (map[string]v1
 		return map[string]v1.NetworkPolicyRule{}, nil
 	}
 	return st.Revision.Policy.NetworkPolicies, nil
-}
-
-// applyOps sends merge operations as `openshell policy update` does.
-func (o *OpenShell) applyOps(ctx context.Context, w Sandbox, ops []v1.PolicyMergeOperation) (*v1.ConfigUpdateResult, error) {
-	defer forgetPolicy(ctx, w.Name)
-	update := &v1.ConfigUpdate{Name: w.Name, MergeOperations: ops}
-	if o.updateConfig != nil {
-		return o.updateConfig(ctx, update)
-	}
-	sdk, _, err := o.clients(ctx)
-	if err != nil {
-		return nil, err
-	}
-	res, err := sdk.Config().Update(ctx, openshellWorkspace, update)
-	if err != nil {
-		return nil, fmt.Errorf("ポリシーを変えられませんでした: %w", err)
-	}
-	return res, nil
 }

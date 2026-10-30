@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,12 +14,14 @@ import (
 	"time"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
 )
 
 // fakeRevision is one version of a fake sandbox's network policy.
 type fakeRevision struct {
-	at    time.Time
-	rules map[string]v1.NetworkPolicyRule
+	at         time.Time
+	rules      map[string]v1.NetworkPolicyRule
+	provenance map[string]string
 }
 
 // fakeLoadDelay stands in for the sandbox's settings poll.
@@ -204,6 +207,10 @@ func (d *Fake) fakeMerge(name string, ops []v1.PolicyMergeOperation) error {
 	if err := fakeValidate(d.fakeCompose(name, rules)); err != nil {
 		return err
 	}
+	if rulesKey(rules) == rulesKey(revs[len(revs)-1].rules) {
+		// As the gateway: the same policy makes no revision.
+		return nil
+	}
 	d.policies[name] = append(revs, fakeRevision{at: time.Now(), rules: rules})
 	return nil
 }
@@ -258,7 +265,7 @@ func (d *Fake) fakeStatus(name string, version int) (*v1.PolicyStatusResult, err
 	// The parts fixed at creation, as Iwato creates them.
 	policy := sandboxPolicy(Sandbox{Name: name})
 	policy.NetworkPolicies = rev.rules
-	return &v1.PolicyStatusResult{ActiveVersion: uint32(active), Revision: v1.SandboxPolicyRevision{Version: uint32(version), Status: status, CreatedAt: rev.at, Policy: policy}}, nil
+	return &v1.PolicyStatusResult{ActiveVersion: uint32(active), Revision: v1.SandboxPolicyRevision{Version: uint32(version), Status: status, CreatedAt: rev.at, Policy: policy, Provenance: maps.Clone(rev.provenance)}}, nil
 }
 
 func (d *Fake) EditPolicy(ctx context.Context, w Sandbox, edit PolicyEdit) (PolicyChange, error) {
@@ -407,11 +414,12 @@ func (g fakeGateway) GetDraft(_ context.Context, _, sandbox string, opts ...v1.G
 	return &v1.DraftPolicy{Chunks: chunks, DraftVersion: version}, nil
 }
 
-func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, _ ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {
+func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, opts ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {
 	g.d.gatewayCall("GetStatus")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
-	return g.d.fakeStatus(sandbox, 0)
+	cfg := types.ApplyGetStatusOptions(opts)
+	return g.d.fakeStatus(sandbox, int(cfg.Version()))
 }
 
 // ApproveDraftChunk merges the chunk's rule (AddRule under its rule name),
@@ -465,6 +473,10 @@ func (g fakeGateway) EditDraftChunk(_ context.Context, _, sandbox, id string, ru
 	if c.Status != "pending" {
 		return fmt.Errorf("chunk status is '%s', expected 'pending'", c.Status)
 	}
+	// As the gateway's evaluation: a rule name the policy does not have.
+	revs := g.d.fakePolicy(sandbox)
+	composed := g.d.fakeCompose(sandbox, revs[len(revs)-1].rules)
+	c.RuleName = freeRuleName(composed, c.RuleName)
 	c.ProposedRule, c.ReviewToken = rule, c.ReviewToken+"-edited"
 	return nil
 }
@@ -520,7 +532,7 @@ func (d *Fake) newOpenShell() *OpenShell {
 				if err := fakeValidate(d.fakeCompose(u.Name, rules)); err != nil {
 					return nil, err
 				}
-				d.policies[u.Name] = append(d.fakePolicy(u.Name), fakeRevision{at: time.Now(), rules: rules})
+				d.policies[u.Name] = append(d.fakePolicy(u.Name), fakeRevision{at: time.Now(), rules: rules, provenance: maps.Clone(u.Annotations)})
 				return &v1.ConfigUpdateResult{Version: uint32(len(d.policies[u.Name]))}, nil
 			}
 			if err := d.fakeMerge(u.Name, u.MergeOperations); err != nil {
@@ -587,6 +599,37 @@ func (d *Fake) LatestPolicy(ctx context.Context, w Sandbox) (*v1.PolicyStatusRes
 		return nil, errors.New("サンドボックスがありません")
 	}
 	return d.openShell().LatestPolicy(ctx, w)
+}
+
+func (d *Fake) PolicyStore(ctx context.Context, w Sandbox) (PolicyStoreState, error) {
+	if !d.created(w) {
+		return PolicyStoreState{}, errors.New("サンドボックスがありません")
+	}
+	return d.openShell().PolicyStore(ctx, w)
+}
+
+func (d *Fake) ImportPolicy(ctx context.Context, w Sandbox) (PolicyStoreState, error) {
+	return d.openShell().ImportPolicy(ctx, w)
+}
+
+func (d *Fake) OverwritePolicy(ctx context.Context, w Sandbox) (uint32, error) {
+	return d.openShell().OverwritePolicy(ctx, w)
+}
+
+func (d *Fake) PolicyCommits(ctx context.Context, w Sandbox, limit int) ([]PolicyCommit, error) {
+	return d.openShell().PolicyCommits(ctx, w, limit)
+}
+
+func (d *Fake) PolicyCommitDiff(ctx context.Context, w Sandbox, sha string) (PolicyCommit, string, error) {
+	return d.openShell().PolicyCommitDiff(ctx, w, sha)
+}
+
+func (d *Fake) RevertPolicyCommit(ctx context.Context, w Sandbox, sha string) (uint32, error) {
+	return d.openShell().RevertPolicyCommit(ctx, w, sha)
+}
+
+func (d *Fake) ForgetPolicyStore(name string) error {
+	return d.openShell().ForgetPolicyStore(name)
 }
 
 func (d *Fake) ReplacePolicyRules(ctx context.Context, w Sandbox, version uint32, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {

@@ -232,8 +232,8 @@ func endpointPorts(e v1.PolicyNetworkEndpoint) []uint32 {
 }
 
 // PolicyEdit is one change to a sandbox's network policy, made as
-// `openshell policy update` makes it: merge operations that the gateway
-// applies to its latest revision. Op is
+// `openshell policy update` makes it: merge operations, which Iwato
+// applies to the policy it keeps (applyOps). Op is
 //
 //   - "add": an endpoint for Binaries (or any binary) into rule Rule
 //     (allow_HOST_PORT when empty, as the CLI names it); an existing rule

@@ -19,10 +19,9 @@ func codeOf(err error) string {
 	return ""
 }
 
-// The programs approved are exactly the page's: a proposal naming several
-// gets the one sent, a scope without programs is refused, and the
-// proposal's own programs alone approve it unchanged.
-func TestApprovalAppliesThePagesPrograms(t *testing.T) {
+// An approved rule allows every program (ADR 0022) whatever the page sends;
+// a scope without programs is still refused.
+func TestApprovalAllowsEveryProgram(t *testing.T) {
 	rule := func() *v1.NetworkPolicyRule {
 		return &v1.NetworkPolicyRule{Name: "gh", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/gh"}, {Path: "/**"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.github.com", Port: 443}}}
 	}
@@ -31,7 +30,7 @@ func TestApprovalAppliesThePagesPrograms(t *testing.T) {
 		{ID: "c2", Status: "pending", ReviewToken: "t2", Binary: "/usr/bin/gh", ProposedRule: rule()},
 		{ID: "c3", Status: "pending", ReviewToken: "t3", Binary: "/usr/bin/gh", ProposedRule: &v1.NetworkPolicyRule{Name: "one", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/gh"}}}},
 	}}
-	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}, newSandbox("dev"), context.Background()
+	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}, newSandbox("dev"), context.Background()
 	decide := func(id string, scope *ProposalScope) error {
 		_, err := o.DecideProposal(ctx, w, "approve", requestID(id), testDigest(o, ctx, w, requestID(id)), scope)
 		return err
@@ -42,20 +41,19 @@ func TestApprovalAppliesThePagesPrograms(t *testing.T) {
 	if err := decide("c1", &ProposalScope{Binaries: []string{"/usr/bin/gh"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.chunks[0].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/usr/bin/gh" {
-		t.Fatal("the proposal's other programs were kept:", got)
+	if got := f.chunks[0].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/**" {
+		t.Fatal("not every program:", got)
 	}
 	if err := decide("c2", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/*"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.chunks[1].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/usr/bin/*" {
+	if got := f.chunks[1].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/**" {
 		t.Fatal("narrowed:", got)
 	}
-	// A single program sent as it is proposed: approved unchanged, no edit.
 	if err := decide("c3", &ProposalScope{Binaries: []string{"/usr/bin/gh"}}); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"c1 t1-edited", "c2 t2-edited", "c3 t3"}; !slices.Equal(f.approved, want) {
+	if want := []string{"c1 t1-edited", "c2 t2-edited", "c3 t3-edited"}; !slices.Equal(f.approved, want) {
 		t.Fatal(f.approved)
 	}
 }
@@ -94,7 +92,7 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 		{ID: "rules", RuleName: "rules", Status: "pending", ReviewToken: "t", ProposedRule: rules("rules", proposalLimits.Rules)},
 		{ID: "rules1", RuleName: "rules1", Status: "pending", ReviewToken: "t", ProposedRule: rules("rules1", proposalLimits.Rules+1)},
 	}}
-	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}, newSandbox("dev"), context.Background()
+	o, w, ctx := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}, newSandbox("dev"), context.Background()
 	v, _ := o.Proposals(ctx, w)
 	unshown := map[string][]string{}
 	for _, p := range v.Pending {

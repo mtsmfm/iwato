@@ -20,7 +20,7 @@ func TestProposalsReadDecidedChunksOnlyWhenTheyMayHaveChanged(t *testing.T) {
 		{ID: "p1", Status: "pending", ProposedRule: rule("a.example"), ReviewToken: "t1", CreatedAt: time.Unix(100, 0)},
 		{ID: "r1", Status: "rejected", ProposedRule: rule("b.example"), DecidedAt: time.Unix(150, 0)},
 	}}
-	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}
+	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}
 	w := newSandbox("dev")
 	ctx := context.Background()
 	view := func() ProposalView {

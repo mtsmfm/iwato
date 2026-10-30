@@ -175,7 +175,7 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 			return
 		}
 	}
-	version, err := rt.ApplyPolicyChange(ctx, sb, ops)
+	version, err := rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Apply preset "+ref.label()), sb, ops)
 	if err != nil {
 		s.failGateway(ctx, w, sb, err)
 		return
@@ -189,7 +189,7 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 	if folded := foldedPresetRules(after, rules); len(folded) > 0 {
 		msg := ref.label() + " の規則を OpenShell が既存の規則にまとめたので、元に戻しました: " + strings.Join(folded, "、") + "。重なる規則を外してから入れてください。"
 		if undo := rollbackOps(before, after); len(undo) > 0 {
-			if v, err := rt.ApplyPolicyChange(ctx, sb, undo); err != nil {
+			if v, err := rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Take preset "+ref.label()+" out again: its rules were folded into others"), sb, undo); err != nil {
 				msg = ref.label() + " の規則を OpenShell が既存の規則にまとめ、元に戻せませんでした: " + strings.Join(folded, "、") + "。ポリシーのタブで、まとめられた規則から許可を外してください: " + safeCLIError(err)
 			} else {
 				s.recordPolicyChange(sb.Name, PolicyChange{Version: v, Kind: "edit", Rule: opsRule(undo), At: time.Now().Unix()})
@@ -245,7 +245,7 @@ func (s *Server) removePreset(ctx context.Context, w http.ResponseWriter, rt pre
 	ops, kept := presetRemoval(base, mine, presetRules(sb.Presets), presetRules(rest))
 	var version uint32
 	if len(ops) > 0 {
-		if version, err = rt.ApplyPolicyChange(ctx, sb, ops); err != nil {
+		if version, err = rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Remove preset "+ref.label()), sb, ops); err != nil {
 			s.failGateway(ctx, w, sb, err)
 			return
 		}

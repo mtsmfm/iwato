@@ -36,15 +36,14 @@ import (
 // holds network_policies alone, and fixed shows the rest read-only; the
 // providers' rules (_provider_*) are no revision's, and are not in it.
 //
-// Saving replaces the latest revision's network_policies (UpdateConfig
-// with the whole policy, its other parts as they are), so the rules are
-// exactly the YAML's: the merge operations of an edit would fold a new
-// rule into an existing one with the same endpoint (merge.rs add_rule).
-// A save names the version it was loaded at and is refused once the
-// policy moved on (an approval, an edit elsewhere). The gateway's own
-// concurrency check (expected_resource_version) is the sandbox object's
-// version, which a policy revision does not change, so Iwato compares the
-// versions itself, and serialises its own saves.
+// Saving commits the rules and applies them as a whole
+// (openshell_policy_store.go), so the rules are exactly the YAML's: the
+// merge operations of an edit would fold a new rule into an existing one
+// with the same endpoint (merge.rs add_rule). A save names the version it
+// was loaded at and is refused once the policy moved on (an approval, an
+// edit elsewhere). expected_resource_version does not see revisions made
+// outside Iwato, so Iwato compares the versions itself, and serialises its
+// own saves.
 //
 // Before saving, a rule added or changed is checked as an edit is: its
 // shape, the endpoint ambiguity it would bring with the other rules and
@@ -628,45 +627,32 @@ func (o *OpenShell) LatestPolicy(ctx context.Context, w Sandbox) (*v1.PolicyStat
 }
 
 func (o *OpenShell) ReplacePolicyRules(ctx context.Context, w Sandbox, version uint32, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {
-	forgetPolicy(ctx, w.Name)
-	st, err := o.latestPolicy(ctx, w)
+	sync, err := o.syncStore(ctx, w)
 	if err != nil {
 		return PolicyChange{}, err
 	}
-	if st.Revision.Version != version {
-		return PolicyChange{}, errPolicyStale(version, st.Revision.Version)
+	if now := sync.latest.Revision.Version; now != version {
+		return PolicyChange{}, errPolicyStale(version, now)
 	}
-	p := v1.SandboxPolicy{}
-	if st.Revision.Policy != nil {
-		p = *st.Revision.Policy
-	}
-	p.NetworkPolicies = rules
-	defer forgetPolicy(ctx, w.Name)
-	if p.NetworkPolicies == nil {
-		p.NetworkPolicies = map[string]v1.NetworkPolicyRule{}
-	}
-	update := &v1.ConfigUpdate{Name: w.Name, Policy: &p}
-	var res *v1.ConfigUpdateResult
-	if o.updateConfig != nil {
-		res, err = o.updateConfig(ctx, update)
-	} else {
-		sdk, _, cerr := o.clients(ctx)
-		if cerr != nil {
-			return PolicyChange{}, cerr
-		}
-		res, err = sdk.Config().Update(ctx, openshellWorkspace, update)
-		if err != nil {
-			err = fmt.Errorf("ポリシーを変えられませんでした: %w", err)
-		}
-	}
+	v, err := o.commitPolicy(ctx, w, sync, rules, noteOf(ctx, "Edit the policy as YAML"))
 	if err != nil {
 		return PolicyChange{}, err
 	}
-	c := PolicyChange{Kind: "edit", At: time.Now().Unix()}
-	if res != nil {
-		c.Version = res.Version
+	return o.withVersion(ctx, w, PolicyChange{Kind: "edit", Version: v, At: time.Now().Unix()}), nil
+}
+
+// yamlNote is a YAML save's commit message.
+func yamlNote(d PolicyYAMLDiff) string {
+	lines := []string{"Edit the policy as YAML", ""}
+	for _, x := range []struct {
+		verb  string
+		rules []PolicyYAMLRule
+	}{{"Add", d.Added}, {"Change", d.Changed}, {"Remove", d.Removed}} {
+		for _, r := range x.rules {
+			lines = append(lines, fmt.Sprintf("%s rule %s (%s)", x.verb, r.Name, strings.Join(r.Hosts, ", ")))
+		}
 	}
-	return o.withVersion(ctx, w, c), nil
+	return strings.Join(lines, "\n")
 }
 
 // handlePolicyYAML serves the editor (GET) and checks or applies a save
@@ -797,7 +783,7 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 		jsonResponse(w, 200, map[string]any{"diff": diff, "gateways": gatewayRules(changed)})
 		return
 	}
-	change, err := rt.ReplacePolicyRules(ctx, sb, body.Version, rules)
+	change, err := rt.ReplacePolicyRules(withPolicyNote(ctx, "yaml", yamlNote(diff)), sb, body.Version, rules)
 	if err != nil {
 		s.failGateway(ctx, w, sb, err)
 		return

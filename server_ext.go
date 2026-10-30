@@ -289,40 +289,6 @@ func (s *Server) undoProposal(ctx context.Context, w http.ResponseWriter, sb San
 		fail(w, 409, "proposals unavailable")
 		return
 	}
-	// Restoring puts the proposal's rule back for a moment: as an
-	// approval, it may not carry an attached provider's credential
-	// uninspected (OpenShell would refuse it).
-	if pr, ok := s.rt.(proposedRuleRuntime); ok && restore {
-		rule, _, e := pr.ProposedRule(ctx, sb, request)
-		if e != nil {
-			s.failGateway(ctx, w, sb, e)
-			return
-		}
-		if rule != nil {
-			if e := s.iwatoPortRefusal(map[string]v1.NetworkPolicyRule{orDefault(rule.Name, "proposal"): *rule}); e != nil {
-				failErr(w, 409, e)
-				return
-			}
-			scopes, e := s.attachedScopes(ctx, sb)
-			if e != nil {
-				failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(e)}, "プロバイダーを確かめられません: "+safeCLIError(e))
-				return
-			}
-			if cs := credentialConflicts(map[string]v1.NetworkPolicyRule{orDefault(rule.Name, "proposal"): *rule}, scopes); len(cs) > 0 {
-				failCheck(w, conflictRefusal(cs))
-				return
-			}
-			// Put back by hand (a merge, not an approval).
-			name := orDefault(rule.Name, "proposal")
-			r := cloneRule(*rule)
-			r.Name = name
-			ops := []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: r}}}
-			if e := s.checkOps(ctx, sb, ops, "ambiguous_restore", map[string]any{"rule": name}, "規則 "+name+" を戻すと OpenShell に拒否されます"); e != nil {
-				failCheck(w, e)
-				return
-			}
-		}
-	}
 	change, e := rt.UndoProposal(ctx, sb, request, restore)
 	if e != nil {
 		s.failGateway(ctx, w, sb, e)
@@ -360,6 +326,10 @@ var policyOps = map[string]bool{"add": true, "add-allow": true, "remove": true, 
 func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []string) {
 	if len(parts) == 3 && parts[2] == "yaml" {
 		s.handlePolicyYAML(w, r, parts)
+		return
+	}
+	if len(parts) >= 3 && (parts[2] == "store" || parts[2] == "commits") {
+		s.handlePolicyStore(w, r, parts)
 		return
 	}
 	rt, hasRT := s.rt.(policyRuntime)
@@ -764,6 +734,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, parts []st
 		s.files.Forget(sb.Name)
 	}
 	s.ingress.forget(sb.Name)
+	if st, ok := s.rt.(policyStoreRuntime); ok {
+		if e := st.ForgetPolicyStore(sb.Name); e != nil {
+			log.Printf("sandbox %s: could not delete its policy history: %v", sb.Name, e)
+		}
+	}
 	s.mu.Lock()
 	delete(s.policyChanges, sb.Name)
 	s.mu.Unlock()

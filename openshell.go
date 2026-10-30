@@ -116,11 +116,15 @@ type OpenShell struct {
 	// engineErr refuses at once while the engine is unusable (serve waits
 	// for it before Prepare: checks.go); nil in tests.
 	engineErr func() error
+	// store keeps each sandbox's policy (policy_store.go); nil keeps it in
+	// memory.
+	store     *policyStore
+	storeOnce sync.Once
 }
 
 func NewOpenShell(e *Engine, configDir string) *OpenShell {
 	return &OpenShell{e: e, dir: filepath.Join(configDir, "openshell"), ready: make(chan struct{}), env: termEnv, timezone: e.config.Timezone, terms: map[string]map[string]*hostterm.Session{},
-		legacyPlaced: !e.docker && termbin.Binary() != nil}
+		legacyPlaced: !e.docker && termbin.Binary() != nil, store: &policyStore{dir: filepath.Join(configDir, "policies")}}
 }
 
 // Prepare serves the compute driver on Windows' loopback (WSLc; with a
