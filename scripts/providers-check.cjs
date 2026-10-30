@@ -260,7 +260,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     }
     // Codex's ChatGPT sign-in: a device code entered at the fake's page.
     await page.selectOption('#provider-profile', 'iwato-codex-subscription');
-    check((await page.locator('#provider-submit').innerText()) === 'ChatGPT でログイン' && (await page.innerText('#provider-note')).includes('chatgpt.com'), 'the Codex sign-in profile takes no value');
+    check((await page.locator('#provider-submit').innerText()) === 'ChatGPT でログイン' && /\bchatgpt\.com\b/.test(await page.innerText('#provider-note')), 'the Codex sign-in profile takes no value');
     await page.click('#provider-submit');
     {
       const box = panel.locator('#provider-oauth');
