@@ -6,7 +6,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Setup
 
-1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
+1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-codex-subscription`, `iwato-atlassian`, `iwato-openai`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
 2. Check that the key is on the volume (so values stay readable after the gateway is recreated):
 
        wslc container exec iwato-personal-gateway ls -l /var/lib/openshell/credentials
@@ -238,3 +238,22 @@ Iwato.exe signs in with Claude Code's public OAuth client (authorization code wi
 2. `CLOUDFLARE_API_TOKEN` is a placeholder, and `wrangler whoami` and `wrangler deployments list` work (GETs). `wrangler d1 info DB` checks GraphQL queries (POST `/client/v4/graphql`)
 3. `wrangler deploy` is proposed (it needs writes, including the assets upload with its own JWT). Approving widens the provider to **Allow writes**
 4. To check: cloudflared (`mise use -g cloudflared`) after `cloudflared tunnel login` (its token is in cert.pem, not the variable): `cloudflared tunnel list` passes and `cloudflared tunnel create` is proposed. See denied requests in the policy tab
+
+## (n) Codex with a ChatGPT sign-in (iwato-codex-subscription, experimental)
+
+Iwato.exe signs in at `auth.openai.com` with Codex's device code login (Codex's public client `app_EMoamEEZ73f0CkXaXp7hrann`; not RFC 8628: `POST /api/accounts/deviceauth/usercode`, the owner enters the code at `/codex/device`, `POST /api/accounts/deviceauth/token` answers an authorization code and its PKCE verifier, exchanged at `/oauth/token`) and hands the refresh token to the gateway. The provider has two credentials: `CODEX_CHATGPT_ACCESS_TOKEN` (refreshed) and `CODEX_CHATGPT_ACCOUNT_ID` (the id token's `chatgpt_account_id`, Codex's `chatgpt-account-id` header). Codex reads neither from the environment: the terminals' `~/.config/iwato/env` writes `~/.codex/auth.json` with their placeholders (only when absent or Iwato's, marked by the refresh token `iwato-gateway-refreshes`), and points Codex's own refresh at a closed local port (`CODEX_REFRESH_TOKEN_URL_OVERRIDE`).
+
+### Open points on OpenAI's side
+
+- The device code login must be turned on for the account (ChatGPT's settings, Security); otherwise the start fails with `oauth_codex_device_disabled`
+- Refresh: Codex sends JSON; the gateway sends a form (`grant_type`, `client_id`, `refresh_token`). The token endpoint takes a form for the code exchange; the refresh is not verified. Refresh tokens are single use
+- Placeholders in `~/.codex/auth.json`: OpenShell resolves the revisioned placeholder of the shell that wrote it while the provider stays the same; a reconnect needs a restart and a new terminal
+
+### Steps
+
+1. Menu **Providers** → type **Codex (sign in with ChatGPT)** → **Sign in with ChatGPT**. Enter the code at OpenAI's page; Iwato shows "Connected as codex-subscription"
+2. Press **Refresh now** twice; both succeed
+3. Attach it and restart; install codex with mise (`mise use -g codex`, the development template)
+4. In a new terminal: `sh providers-check.sh codex` (both variables are placeholders, `auth.json` is Iwato's, `codex exec` replies)
+5. Interactive `codex` starts without a login screen and answers; `/status` shows the ChatGPT account
+6. Denied requests (apps `/backend-api/ps/mcp`, plugins, telemetry on `ab.chatgpt.com`) show in the policy tab; decide whether they are needed

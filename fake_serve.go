@@ -15,13 +15,17 @@ func init() {
 		routes: func(s *Server, mux *http.ServeMux) {
 			mux.HandleFunc("/fake/atlassian/authorize", s.handleFakeAuthorize)
 			mux.HandleFunc("/fake/xai/device", s.handleFakeDevice)
+			mux.HandleFunc("/fake/codex/device", s.handleFakeDevice)
 			mux.HandleFunc("/fake/claude/authorize", s.handleFakeClaude)
 			mux.HandleFunc("/fake/claude/code", s.handleFakeClaude)
 		},
 		oauth:  func(_ *Server, origin string) oauthBackend { return fakeOAuth{origin: origin} },
 		claude: func(_ *Server, origin string) claudeBackend { return fakeClaudeOAuth{origin: origin} },
 		xai: func(s *Server, origin string) deviceBackend {
-			return fakeXAIBackend{d: s.fakeDevices(), origin: origin}
+			return fakeXAIBackend{d: s.fakeDevices(), origin: origin, service: "xai"}
+		},
+		codex: func(s *Server, origin string) deviceBackend {
+			return fakeXAIBackend{d: s.fakeDevices(), origin: origin, service: "codex"}
 		},
 	}
 }

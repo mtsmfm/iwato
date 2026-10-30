@@ -55,7 +55,8 @@ type providerProfile struct {
 	// xai.go, claude_oauth.go) and the gateway refreshes it; the owner enters no value.
 	OAuth bool `json:"oauth,omitempty"`
 	// OAuthFlow names the flow of an OAuth profile: "atlassian" (the
-	// authorization code with a loopback redirect), "xai" (device code) or
+	// authorization code with a loopback redirect), "xai" and "codex"
+	// (device code: device_flow.go) or
 	// "claude" (Claude Code's client: a loopback redirect or a pasted code).
 	OAuthFlow string `json:"oauthFlow,omitempty"`
 	// Guide is a command to run in the sandbox to use the provider.
@@ -180,6 +181,8 @@ const (
 func oauthCredentialKey(profile string) string {
 	if p, ok := profileByID(profile); ok && p.OAuthFlow == "xai" {
 		return grokOAuthCredentialKey
+	} else if ok && p.OAuthFlow == "codex" {
+		return codexOAuthCredentialKey
 	} else if ok && p.OAuthFlow == "claude" {
 		return claudeOAuthCredentialKey
 	}
@@ -216,6 +219,20 @@ var providerProfiles = []providerProfile{
 		OAuth:       true,
 		OAuthFlow:   "xai",
 		Hint:        "Iwato がターミナルに GROK_AUTH_PROVIDER_COMMAND を設定し、grok はそれでこのトークンを使います (XAI_API_KEY より優先)。前に grok login していたら grok logout してください。付け外しは再起動で反映されます。確かめるには grok -p 'hello'。",
+	},
+	{
+		ID: codexSubscriptionProfileID, Label: "Codex (ChatGPT でログイン)", Group: groupAgent,
+		Note:        "CODEX_CHATGPT_ACCESS_TOKEN と CODEX_CHATGPT_ACCOUNT_ID。ChatGPT のアカウントでログインし、サンドボックスの codex が chatgpt.com/backend-api/codex と /backend-api/wham に送ります。",
+		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}, {Name: "account_id", Label: "アカウント ID"}},
+		OAuth:       true,
+		OAuthFlow:   "codex",
+		Hint:        "Iwato がターミナルで ~/.codex/auth.json をこのプロバイダーのプレースホルダーで書きます (中身を表示しないでください)。前に codex login していたら codex logout してから新しいターミナルを開きます。付け外しと再接続は再起動で反映されます。ログインは ChatGPT の設定 (セキュリティ) で Codex のデバイスコードのログインを有効にしてから。確かめるには codex exec 'hello'。",
+	},
+	{
+		ID: "iwato-openai", Label: "OpenAI API", Group: groupAgent,
+		Note:        "OPENAI_API_KEY。api.openai.com/v1 に送ります (推論の POST も可)。",
+		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
+		Hint:        "OpenAI の SDK は OPENAI_API_KEY を読みます。codex を API キーで使うときは printenv OPENAI_API_KEY | codex login --with-api-key (プレースホルダーが ~/.codex/auth.json に入ります)。",
 	},
 	{
 		ID: "iwato-openrouter", Label: "OpenRouter", Group: groupAgent,

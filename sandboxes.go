@@ -137,6 +137,8 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		Persist []string `json:"persist"`
 		// Presets are network presets (presets.go) the first policy has.
 		Presets []PresetRef `json:"presets"`
+		// Template names a template (presets.go) whose presets go first.
+		Template string `json:"template"`
 		// Providers are attached when OpenShell creates the sandbox.
 		Providers []string `json:"providers"`
 		// GPU requests the machine's GPU (resources.gpu).
@@ -162,6 +164,11 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.GPU && !s.gpuAvailable(r.Context()) {
 		failCode(w, 400, "gpu_unavailable", nil, "この環境では GPU を使えません")
+		return
+	}
+	var err error
+	if body.Presets, err = withTemplate(body.Template, body.Presets); err != nil {
+		failErr(w, 400, err)
 		return
 	}
 	if err := validPresetList(body.Presets); err != nil {
@@ -232,14 +239,14 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		failCheck(w, err)
 		return
 	}
-	err := s.updateSandboxes(func(list []Sandbox) ([]Sandbox, error) {
+	err = s.updateSandboxes(func(list []Sandbox) ([]Sandbox, error) {
 		for _, sb := range list {
 			if sb.Name == body.Name {
 				return nil, errSandboxExists
 			}
 		}
 		sb := newSandbox(body.Name)
-		sb.Image, sb.Providers, sb.Presets, sb.GPU = body.Image, body.Providers, body.Presets, body.GPU
+		sb.Image, sb.Providers, sb.Presets, sb.Template, sb.GPU = body.Image, body.Providers, body.Presets, body.Template, body.GPU
 		return append(list, sb), nil
 	})
 	if errors.Is(err, errSandboxExists) {

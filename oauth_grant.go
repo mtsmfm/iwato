@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"log"
+	"maps"
 	"strings"
 	"time"
 )
 
-// oauthGrant is what an OAuth flow (atlassian_flow.go, xai.go,
+// oauthGrant is what an OAuth flow (atlassian_flow.go, device_flow.go,
 // claude_oauth.go) hands to the gateway once it has the tokens.
 type oauthGrant struct {
 	// log prefixes the log lines ("atlassian oauth").
@@ -19,6 +20,8 @@ type oauthGrant struct {
 	// profile and key: the provider's profile and the credential the
 	// gateway refreshes; clientID the OAuth client the refresh uses.
 	profile, key, clientID string
+	// extra are the provider's other credentials (not refreshed).
+	extra map[string]string
 	// noRefresh is the failure without a refresh token; refreshCode and
 	// refreshHint the warning's code and what it adds when the gateway's
 	// first refresh fails.
@@ -49,6 +52,7 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 	}
 	material := map[string]string{"client_id": g.clientID, "refresh_token": tokens.RefreshToken}
 	creds := map[string]string{g.key: tokens.AccessToken}
+	maps.Copy(creds, g.extra)
 	// Iwato keeps neither: the gateway owns the grant (and rotates it).
 	tokens = oauthTokens{}
 	defer clear(material)
@@ -161,15 +165,7 @@ func (s *Server) cancelOAuthFlows(wait bool) {
 		s.claude.current = nil
 	}
 	s.claude.mu.Unlock()
-	s.xai.mu.Lock()
-	if f := s.xai.current; f != nil {
-		if f.status == "waiting" || f.status == "exchanging" {
-			f.status, f.message = "canceled", canceled
-		}
-		f.cancel()
-		s.xai.current = nil
-	}
-	s.xai.mu.Unlock()
+	s.cancelDeviceFlows(canceled)
 	if wait {
 		s.providerMu.Lock()
 		//lint:ignore SA2001 a barrier: a handover in progress ends first

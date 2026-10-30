@@ -1,0 +1,92 @@
+# Iwato's network preset for the research template (ADR 0022): common
+# references and documentation, read only (GET and HEAD) from any program.
+# No search engines: their forms post. No hosts that take a credential.
+id: research
+label: よく読む参照先
+note: Wikipedia (英語・日本語)・arXiv・MDN・Python・Go・Rust・Node.js・Ruby の文書・GitHub Docs・man7.org (Linux の man)・RFC・Read the Docs・Stack Overflow・Hacker News を、どのプログラムからも読み取りだけ (GET・HEAD) 許可します
+network_policies:
+  # Wikipedia and its images.
+  preset_research_en_wikipedia_org:
+    endpoints:
+      - { host: "en.wikipedia.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_ja_wikipedia_org:
+    endpoints:
+      - { host: "ja.wikipedia.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_upload_wikimedia_org:
+    endpoints:
+      - { host: "upload.wikimedia.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  # arXiv: the site, and export.arxiv.org for its API.
+  preset_research_arxiv_org:
+    endpoints:
+      - { host: "arxiv.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_export_arxiv_org:
+    endpoints:
+      - { host: "export.arxiv.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  # Languages' and tools' documentation.
+  preset_research_developer_mozilla_org:
+    endpoints:
+      - { host: "developer.mozilla.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_docs_python_org:
+    endpoints:
+      - { host: "docs.python.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_go_dev:
+    endpoints:
+      - { host: "go.dev", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_pkg_go_dev:
+    endpoints:
+      - { host: "pkg.go.dev", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_doc_rust_lang_org:
+    endpoints:
+      - { host: "doc.rust-lang.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_docs_rs:
+    endpoints:
+      - { host: "docs.rs", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_nodejs_org:
+    endpoints:
+      - { host: "nodejs.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_docs_ruby_lang_org:
+    endpoints:
+      - { host: "docs.ruby-lang.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_ruby_doc_org:
+    endpoints:
+      - { host: "ruby-doc.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_docs_github_com:
+    endpoints:
+      - { host: "docs.github.com", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_man7_org:
+    endpoints:
+      - { host: "man7.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_www_rfc_editor_org:
+    endpoints:
+      - { host: "www.rfc-editor.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  # Projects' documentation on Read the Docs (one label: PROJECT.readthedocs.io).
+  preset_research_readthedocs_io:
+    endpoints:
+      - { host: "*.readthedocs.io", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  # Q&A and news.
+  preset_research_stackoverflow_com:
+    endpoints:
+      - { host: "stackoverflow.com", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]
+  preset_research_news_ycombinator_com:
+    endpoints:
+      - { host: "news.ycombinator.com", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
+    binaries: ["/**"]

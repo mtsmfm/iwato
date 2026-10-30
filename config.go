@@ -77,6 +77,9 @@ type Sandbox struct {
 	// it was created with (their rules are in its first policy) and those
 	// put into its policy later. A recreate creates it with them all.
 	Presets []PresetRef `json:"presets,omitempty"`
+	// Template is the template (presets.go) the sandbox was created from;
+	// its presets are in Presets.
+	Template string `json:"template,omitempty"`
 	// Providers are the OpenShell providers attached to the sandbox.
 	// OpenShell keeps them once it has the sandbox; this list is what
 	// it is created with (at the first start, or again after a failure).

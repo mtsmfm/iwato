@@ -1,0 +1,14 @@
+# The initial rule of a provider of profiles/iwato-openai.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+id: iwato-openai
+label: OpenAI API
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - { host: api.openai.com, port: 443, path: /v1/**, protocol: rest, access: read-write, enforcement: enforce }

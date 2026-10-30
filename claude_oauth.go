@@ -407,7 +407,7 @@ func (s *Server) claudeStart(w http.ResponseWriter, r *http.Request) {
 	v := f.view()
 	s.claude.mu.Unlock()
 	go func() { _ = srv.Serve(ln) }()
-	log.Printf("claude oauth: %s: waiting on %s for %s", xaiLabel(body.Name), f.redirectURI, oauthFlowTTL)
+	log.Printf("claude oauth: %s: waiting on %s for %s", nameLabel(body.Name), f.redirectURI, oauthFlowTTL)
 	jsonResponse(w, 200, v)
 }
 
@@ -422,7 +422,7 @@ func (s *Server) finishClaude(f *claudeFlow, code, redirectURI string) {
 	defer cancel()
 	tokens, err := f.backend.Exchange(ctx, code, f.verifier, f.state, redirectURI)
 	if err != nil {
-		log.Printf("claude oauth: %s: %v", xaiLabel(f.name), english(err))
+		log.Printf("claude oauth: %s: %v", nameLabel(f.name), english(err))
 		result("failed", coded("oauth_token_failed", map[string]any{"detail": err.Error()}, "トークンを受け取れませんでした: "+err.Error()), flowText{}, nil)
 		return
 	}

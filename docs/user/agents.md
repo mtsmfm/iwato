@@ -6,11 +6,9 @@ The standard image contains no agent CLI and no agent settings. Install each age
 
 ## Network for installing
 
-A new sandbox allows no network. To avoid approving each download, pick a preset at creation, or later in the policy tab ([presets](network-policy.md#presets)):
+The Development template (the create form's default) allows installing and updating the agents from the start ([templates](network-policy.md#templates)). It is the preset "Package, Claude Code, Grok Build and Codex downloads", which you can also put into a sandbox of another template from the policy tab.
 
-- Package, Claude Code and Grok Build downloads
-
-Besides read-only package downloads for any program, it adds narrow rules (program, method, path) for mise, Claude Code and Grok Build on their download hosts, which carry no credentials, including the agents' own updates. The agents' API hosts (`api.anthropic.com`, `api.x.ai`, …) are not in the presets: attach the agent's provider, or approve the agent's proposals ([providers](providers.md)). Anything else an agent needs, it proposes ([proposals](network-policy.md#how-rules-get-proposed)).
+The agents' API hosts (`api.anthropic.com`, `api.x.ai`, `chatgpt.com`, …) are not in the presets: attach the agent's provider, or approve the agent's proposals ([providers](providers.md)). With the provider attached, `claude` works right after `mise use -g claude`. Anything else an agent needs, it proposes ([proposals](network-policy.md#how-rules-get-proposed)).
 
 ## Claude Code
 
@@ -28,9 +26,17 @@ mise use -g grok
 
 It installs into `~/.local/share/mise/installs/grok/<version>`; grok's own updates go into `~/.grok/downloads`. Use the provider Grok Build (xAI subscription) (sign in with a personal xAI account such as SuperGrok). See [providers](providers.md#xai-subscription-for-grok-build).
 
-## Codex and other agents
+## Codex
 
-Iwato has no provider for Codex yet: approve its proposals. Other agents work the same way.
+```sh
+mise use -g codex
+```
+
+mise installs it from openai/codex's GitHub releases. codex only tells about new versions and does not update itself (update with `mise use -g codex@latest`). Use the provider Codex (sign in with ChatGPT) for a ChatGPT account, or OpenAI API for an API key. See [providers](providers.md#chatgpt-sign-in-for-codex).
+
+## Other agents
+
+Approve their proposals.
 
 ## The sandbox's instructions for agents (`/AGENTS.md`)
 

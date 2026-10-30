@@ -144,7 +144,7 @@ func TestProviderChangeIsAppliedInTheBackground(t *testing.T) {
 func TestProviderAPIValidation(t *testing.T) {
 	s, _, do, cookie := providerServerCookie(t)
 	l := listProviders(t, do)
-	if len(l.Profiles) != len(providerProfiles) || l.Profiles[0].ID != claudeSubscriptionProfileID || !l.Profiles[0].OAuth || !l.Profiles[1].OAuth || !l.Profiles[3].OAuth || l.Profiles[4].ID != "iwato-github" || l.Profiles[5].Group != groupModels || len(l.Providers) != 11 {
+	if len(l.Profiles) != len(providerProfiles) || l.Profiles[0].ID != claudeSubscriptionProfileID || !l.Profiles[0].OAuth || !l.Profiles[1].OAuth || !l.Profiles[2].OAuth || !l.Profiles[5].OAuth || l.Profiles[6].ID != "iwato-github" || l.Profiles[7].Group != groupModels || len(l.Providers) != 11 {
 		t.Fatalf("%+v", l)
 	}
 	for _, c := range []struct{ body, want string }{

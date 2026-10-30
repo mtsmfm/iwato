@@ -186,7 +186,11 @@ func (o *OpenShell) syncStore(ctx context.Context, w Sandbox) (*storeSync, error
 	}
 	switch st.State {
 	case "none":
-		return o.importPolicy(ctx, w, sync, fmt.Sprintf("Import the policy from OpenShell (version %d)", st.Version))
+		message := fmt.Sprintf("Import the policy from OpenShell (version %d)", st.Version)
+		if t := findTemplate(w.Template); t != nil {
+			message = fmt.Sprintf("Start from the template %s (OpenShell version %d)", t.Label, st.Version)
+		}
+		return o.importPolicy(ctx, w, sync, message)
 	case "drift":
 		return o.importPolicy(ctx, w, sync, fmt.Sprintf("Import changes made outside Iwato (OpenShell version %d)", st.Version))
 	}

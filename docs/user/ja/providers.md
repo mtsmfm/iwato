@@ -16,6 +16,8 @@ Iwato のプロバイダーの種類:
 |---|---|---|
 | 「Claude Code (Claude でログイン)」 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude のアカウントでログイン (下記)。api.anthropic.com に送ります |
 | 「Grok Build (xAI のサブスクリプション)」 | `XAI_OAUTH_TOKEN` | xAI のアカウントでログイン (下記) |
+| 「Codex (ChatGPT でログイン)」 | `CODEX_CHATGPT_ACCESS_TOKEN`、`CODEX_CHATGPT_ACCOUNT_ID` | ChatGPT のアカウントでログイン (下記)。chatgpt.com/backend-api/codex と /backend-api/wham に送ります |
+| 「OpenAI API」 | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
 | 「Atlassian (MCP)」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。送れるのは `claude` だけで、送り先は mcp.atlassian.com/v2/mcp |
 | GitHub | `GH_TOKEN`、`GITHUB_TOKEN` | `gh` と HTTPS の git が使います。読み取りと clone・fetch。書き込みと push は提案の承認で |
@@ -65,6 +67,10 @@ Iwato が `claude auth login` と同じく、Claude Code 自身の公開クラ�
 サブスクリプション (Free、Pro、Max) の OAuth トークンの扱いは Anthropic の規約が定めています: [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)。トークンを使うのはサンドボックスの Claude Code だけですが、ログインは Iwato が Claude Code のクライアント ID で行います。ゲートウェイの最初の更新が失敗すると Iwato がそう表示します。
 
 「Claude Code (セットアップトークン)」の種類はなくなりました。この種類で作ったプロバイダーはそのまま使え、「その他」に表示されます。外すことも削除することもできます。
+
+### Codex の ChatGPT でのログイン
+
+Iwato が auth.openai.com に Codex のデバイスコードのログインでログインします (PC でもスマホでも同じ手順)。ログインには Codex 自身の公開クライアント ID を使います。先に ChatGPT の設定 (セキュリティ) で Codex のデバイスコードのログインを有効にしてください。サンドボックスでは、ターミナルが `~/.codex/auth.json` をプロバイダーのプレースホルダーで書くので (ないとき、または Iwato が書いたものだけ)、`codex` はログインした状態で起動します。トークンはゲートウェイが更新します。このファイルの中身は表示しないでください (エージェントの会話にプレースホルダーが入るとその会話は止まります)。前に `codex login` していたら `codex logout` してから新しいターミナルを開きます。確かめるには `codex exec 'hello'`。Codex のアプリ (コネクター)・プラグイン・テレメトリーはプロバイダーの規則に含まないので、その提案は承認するか拒否します。
 
 ### Grok Build の xAI のサブスクリプション
 

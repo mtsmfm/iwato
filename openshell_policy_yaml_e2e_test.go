@@ -99,7 +99,7 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	// A copy of the rule for mise-versions.jdx.dev under another name and
 	// program, and the one for release assets taken out.
 	edited := cloneRules(rules)
-	copied := cloneRule(edited["preset_packages_mise_versions_jdx_dev_mise"])
+	copied := cloneRule(edited["preset_packages_mise_versions_jdx_dev"])
 	copied.Name, copied.Binaries = "mise_versions_curl", []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}
 	edited[copied.Name] = copied
 	delete(edited, "preset_packages_release_assets_githubusercontent_com")
@@ -114,7 +114,7 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	if _, ok := p.NetworkPolicies["preset_packages_release_assets_githubusercontent_com"]; ok {
 		t.Fatal("the removed rule stayed")
 	}
-	if r, ok := p.NetworkPolicies[copied.Name]; !ok || !samePresetRule(r, copied) || !samePresetRule(p.NetworkPolicies["preset_packages_mise_versions_jdx_dev_mise"], rules["preset_packages_mise_versions_jdx_dev_mise"]) {
+	if r, ok := p.NetworkPolicies[copied.Name]; !ok || !samePresetRule(r, copied) || !samePresetRule(p.NetworkPolicies["preset_packages_mise_versions_jdx_dev"], rules["preset_packages_mise_versions_jdx_dev"]) {
 		t.Fatalf("the copy was not kept under its own name: %+v", p.NetworkPolicies)
 	}
 	if !reflect.DeepEqual(p.Filesystem, before.Revision.Policy.Filesystem) || !reflect.DeepEqual(p.Landlock, before.Revision.Policy.Landlock) || !reflect.DeepEqual(p.Process, before.Revision.Policy.Process) {

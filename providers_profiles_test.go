@@ -130,6 +130,7 @@ func TestServiceProfiles(t *testing.T) {
 		env              []string
 		hosts, binaries  []string
 	}{
+		{"iwato-openai", "bearer", "authorization", []string{"OPENAI_API_KEY"}, []string{"api.openai.com/v1/**"}, append(append(slices.Clone(python), node), "/home/dev/.local/share/mise/installs/codex/*/bin/codex")},
 		{"iwato-openrouter", "bearer", "authorization", []string{"OPENROUTER_API_KEY"}, []string{"openrouter.ai/api/**"}, append(slices.Clone(python), node)},
 		{"iwato-huggingface", "bearer", "authorization", []string{"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"}, []string{"huggingface.co/**", "hf.co/**"}, append(append(slices.Clone(python), node), git...)},
 		{"iwato-civitai", "bearer", "authorization", []string{"CIVITAI_API_TOKEN", "CIVITAI_TOKEN"}, []string{"civitai.com/api/**", "orchestration.civitai.com/**"}, python},

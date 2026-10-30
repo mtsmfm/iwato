@@ -78,7 +78,7 @@ type Server struct {
 	providerMu               sync.Mutex  // serializes provider changes and their checks
 	policyLocks              policyLocks // one per sandbox: Iwato's policy writes (policy_lock.go)
 	oauth                    oauthFlows  // the Atlassian OAuth flow (atlassian_flow.go)
-	xai                      xaiFlows    // the xAI device code flow (xai.go)
+	xai, codex               deviceFlows // the device code sign-ins (device_flow.go)
 	claude                   claudeFlows // the Claude sign-in (claude_oauth.go)
 	checks                   *checkState // the startup checks (checks.go); nil in tests
 	images                   *imageManager
@@ -196,6 +196,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/oauth/atlassian", s.handleOAuth)
 	mux.HandleFunc("/api/oauth/atlassian/", s.handleOAuth)
 	mux.HandleFunc("/api/oauth/xai/", s.handleXAIOAuth)
+	mux.HandleFunc("/api/oauth/codex/", s.handleCodexOAuth)
 	mux.HandleFunc("/api/oauth/claude/", s.handleClaudeOAuth)
 	if s.fake {
 		fakeHooks.routes(s, mux)

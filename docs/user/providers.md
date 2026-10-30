@@ -16,6 +16,8 @@ Iwato's provider types:
 |---|---|---|
 | Claude Code (sign in with Claude) | `CLAUDE_CODE_OAUTH_TOKEN` | sign in with a Claude account (below), sent to api.anthropic.com |
 | Grok Build (xAI subscription) | `XAI_OAUTH_TOKEN` | sign in with an xAI account (below) |
+| Codex (sign in with ChatGPT) | `CODEX_CHATGPT_ACCESS_TOKEN`, `CODEX_CHATGPT_ACCOUNT_ID` | sign in with a ChatGPT account (below), sent to chatgpt.com/backend-api/codex and /backend-api/wham |
+| OpenAI API | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
 | Atlassian (MCP) | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); only `claude` may send it, to mcp.atlassian.com/v2/mcp |
 | GitHub | `GH_TOKEN`, `GITHUB_TOKEN` | used by `gh` and git over HTTPS. Reads, clone and fetch; writes and push need approved proposals |
@@ -65,6 +67,10 @@ Iwato signs in with Claude Code's own public client id (not one Anthropic issued
 Anthropic's terms govern subscription (Free, Pro, Max) OAuth tokens: see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance). Here only Claude Code in the sandbox uses the token, but Iwato signs in with Claude Code's client id. If the gateway's first refresh fails, Iwato says so.
 
 Iwato no longer offers the "Claude Code (setup token)" type. A provider made with it keeps working and shows under "Other", where it can still be detached and deleted.
+
+### ChatGPT sign-in for Codex
+
+Iwato signs in to auth.openai.com with Codex's device code login (the same steps on a PC and a phone), using Codex's own public client id. Turn on device code authorization for Codex in ChatGPT's settings (Security) first. In the sandbox, the terminals write `~/.codex/auth.json` with the provider's placeholders (only when there is none, or it is Iwato's), so `codex` starts signed in; the gateway refreshes the token. Do not print that file: a placeholder in an agent's conversation stops it. If you ran `codex login` before, run `codex logout` and open a new terminal. Check with `codex exec 'hello'`. Codex's apps (connectors), plugins and telemetry are not in the provider's rule: approve or reject their proposals.
 
 ### xAI subscription for Grok Build
 

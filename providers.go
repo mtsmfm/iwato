@@ -430,6 +430,8 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			connect := "Atlassian に接続"
 			if prof.OAuthFlow == "xai" {
 				connect = "xAI に接続"
+			} else if prof.OAuthFlow == "codex" {
+				connect = "ChatGPT でログイン"
 			} else if prof.OAuthFlow == "claude" {
 				connect = "Claude にログイン"
 			}

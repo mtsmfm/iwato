@@ -600,12 +600,56 @@ func presetRules(refs []PresetRef) map[string]v1.NetworkPolicyRule {
 	return out
 }
 
+// A sandbox template is a named set of Iwato's presets a new sandbox
+// starts from (ADR 0022). The page words the labels (template.ID.*).
+type sandboxTemplate struct {
+	ID      string   `json:"id"`
+	Label   string   `json:"label"`
+	Presets []string `json:"presets"`
+}
+
+var sandboxTemplates = []sandboxTemplate{
+	{ID: "development", Label: "Development", Presets: []string{"packages"}},
+	{ID: "research", Label: "Research", Presets: []string{"packages", "research"}},
+}
+
+func findTemplate(id string) *sandboxTemplate {
+	i := slices.IndexFunc(sandboxTemplates, func(t sandboxTemplate) bool { return t.ID == id })
+	if i < 0 {
+		return nil
+	}
+	return &sandboxTemplates[i]
+}
+
+// withTemplate is the template's presets, then the others of refs.
+func withTemplate(id string, refs []PresetRef) ([]PresetRef, error) {
+	if id == "" {
+		return refs, nil
+	}
+	t := findTemplate(id)
+	if t == nil {
+		return nil, errCodeEn("template_unknown", map[string]any{"id": id},
+			fmt.Sprintf("%q というテンプレートはありません", id), fmt.Sprintf("No template %q", id), nil)
+	}
+	var out []PresetRef
+	for _, p := range t.Presets {
+		out = append(out, PresetRef{ID: p})
+	}
+	for _, r := range refs {
+		if !slices.ContainsFunc(out, r.same) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
 // presetView is what GET /api/presets answers: the presets, the owner's
-// files that could not be read, and the owner's folder.
+// files that could not be read, the owner's folder and the templates.
 type presetView struct {
-	Presets []networkPreset   `json:"presets"`
-	Errors  []presetFileError `json:"errors"`
-	Folder  string            `json:"folder"`
+	Templates []sandboxTemplate `json:"templates"`
+	Presets   []networkPreset   `json:"presets"`
+	Errors    []presetFileError `json:"errors"`
+	Folder    string            `json:"folder"`
 }
 
 // handlePresets serves GET /api/presets (the owner's folder read again).
@@ -625,5 +669,5 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	if errs == nil {
 		errs = []presetFileError{}
 	}
-	jsonResponse(w, 200, presetView{Presets: list, Errors: errs, Folder: dir})
+	jsonResponse(w, 200, presetView{Templates: sandboxTemplates, Presets: list, Errors: errs, Folder: dir})
 }

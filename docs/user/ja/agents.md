@@ -6,11 +6,9 @@
 
 ## インストールの通信
 
-新しいサンドボックスは通信を許していません。ダウンロードのたびに承認しなくて済むよう、作成時か、あとから「ポリシー」タブでプリセットを選びます ([プリセット](network-policy.md)):
+テンプレート「開発用」(作成フォームの既定) で、エージェントのインストールと更新の通信が最初から許されます ([テンプレート](network-policy.md#テンプレート))。中身は「パッケージと Claude Code・Grok Build・Codex のダウンロード」のプリセットで、ほかのテンプレートのサンドボックスにも、あとから「ポリシー」タブで入れられます。
 
-- 「パッケージと Claude Code・Grok Build のダウンロード」
-
-どのプログラムにも許すパッケージの読み取りのほか、mise・Claude Code・Grok Build に、認証情報の付かないダウンロード先 (エージェント自身の更新を含む) を狭い規則 (プログラム・メソッド・パス) で入れます。エージェントの API の宛先 (`api.anthropic.com`、`api.x.ai` など) はプリセットに含まず、エージェントのプロバイダーを付けるか、エージェントの提案を承認します ([プロバイダー](providers.md))。ほかに要る通信は、エージェントが提案します ([提案](network-policy.md#規則の提案))。
+エージェントの API の宛先 (`api.anthropic.com`、`api.x.ai`、`chatgpt.com` など) はプリセットに含まず、エージェントのプロバイダーを付けるか、エージェントの提案を承認します ([プロバイダー](providers.md))。プロバイダーを付けておけば、`mise use -g claude` のあとすぐ `claude` が使えます。ほかに要る通信は、エージェントが提案します ([提案](network-policy.md#規則の提案))。
 
 ## Claude Code
 
@@ -28,9 +26,17 @@ mise use -g grok
 
 `~/.local/share/mise/installs/grok/<版>` に入ります。grok 自身の更新は `~/.grok/downloads` に入ります。プロバイダーは「Grok Build (xAI のサブスクリプション)」(SuperGrok など個人の xAI のアカウントでログイン) を使います ([プロバイダー](providers.md))。
 
-## Codex とそのほかのエージェント
+## Codex
 
-Codex のプロバイダーはまだありません。提案を承認して使います。ほかのエージェントも同じです。
+```sh
+mise use -g codex
+```
+
+mise は GitHub の openai/codex のリリースから入れます。codex は新しい版を知らせるだけで、自分では更新しません (`mise use -g codex@latest` で更新します)。プロバイダーは「Codex (ChatGPT でログイン)」(ChatGPT のアカウント) か、API キーなら「OpenAI API」を使います ([プロバイダー](providers.md#codex-の-chatgpt-でのログイン))。
+
+## そのほかのエージェント
+
+提案を承認して使います。
 
 ## エージェント向けのサンドボックスの説明 (`/AGENTS.md`)
 

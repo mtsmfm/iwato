@@ -53,8 +53,10 @@ type oauthMetadata struct {
 type oauthTokens struct {
 	AccessToken  string
 	RefreshToken string
-	ExpiresIn    int64
-	Scope        string
+	// IDToken is OpenID Connect's (Codex reads its account from it).
+	IDToken   string
+	ExpiresIn int64
+	Scope     string
 	// Fields are the answer's field names (for the log: what Atlassian
 	// sends, e.g. refresh_expires_in), Lifetimes its *expires_in values.
 	Fields    []string
@@ -312,7 +314,7 @@ func parseTokens(r io.Reader) (oauthTokens, error) {
 		}
 	}
 	slices.Sort(t.Fields)
-	t.AccessToken, t.RefreshToken, t.Scope = str("access_token"), str("refresh_token"), str("scope")
+	t.AccessToken, t.RefreshToken, t.IDToken, t.Scope = str("access_token"), str("refresh_token"), str("id_token"), str("scope")
 	t.ExpiresIn = t.Lifetimes["expires_in"]
 	if tt := str("token_type"); tt != "" && !strings.EqualFold(tt, "bearer") {
 		return oauthTokens{}, fmt.Errorf("token request: token_type %s, not Bearer", safeCode(tt))

@@ -2,7 +2,7 @@
 
 [English](../network-policy.md)
 
-サンドボックスの通信は **既定ですべて拒否** されます ([ADR 0008](../../adr/0008-default-deny-network-with-policy-advisor.md))。新しいサンドボックスが通れるのはプリセットで許したものだけです。ほかは規則を承認するまで止められます。
+サンドボックスの通信は **既定ですべて拒否** されます ([ADR 0008](../../adr/0008-default-deny-network-with-policy-advisor.md))。新しいサンドボックスが通れるのはテンプレートとプリセットで許したものだけです。ほかは規則を承認するまで止められます。
 
 ## 規則の提案
 
@@ -59,6 +59,18 @@ OpenShell が拒否する選択肢は選べません (1 行で示し、理由は
 
 プロバイダーの認証情報を付けた宛先の下への提案 (たとえば GitHub の `github.com` の下への `git push`) は、最初からその認証情報が付きます。一覧と承認の画面にそう出て、承認の画面で外せます。付いているプロバイダーの認証情報の宛先のホストへの提案では、承認の画面で付けるかを選べます (最初は付けません)。[プロバイダー](providers.md)
 
+## テンプレート
+
+新しいサンドボックスは、作成フォームで選んだテンプレートから始まります。テンプレートは Iwato のプリセット (下記) に名前を付けたまとまりです。フォームではそのプリセットに印が付き、ほかのプリセットも足せます。
+
+| テンプレート | プリセット |
+|---|---|
+| 「開発用」(既定) | 「パッケージと Claude Code・Grok Build・Codex のダウンロード」 |
+| 「調査用」 | 「パッケージと Claude Code・Grok Build・Codex のダウンロード」「よく読む参照先」 |
+| 「なし」 | なし。宛先はすべて提案から承認します |
+
+サンドボックスのポリシーの履歴の最初のコミットに、テンプレートの名前が入ります。
+
 ## プリセット
 
 プリセットは名前の付いた規則のまとまりです。作成フォームで選ぶか、あとから「ポリシー」タブの「プリセット」で「入れる」「外す」ができます。外すと、プリセットが入れたままの規則だけを外します。作り直しても残ります。なくなったプリセット (Iwato から外されたもの、消した自分のファイル) には「プリセットが見つかりません」と出ます。その規則はふつうの規則としてポリシーに残り、「外す」は一覧から外すだけです。
@@ -67,9 +79,10 @@ Iwato のプリセット:
 
 | プリセット | 許すもの |
 |---|---|
-| 「パッケージと Claude Code・Grok Build のダウンロード」 | どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS と、読むだけの POST: npm の audit、レジストリーのトークン): npm、PyPI (uv の Python も)、crates.io、Rust のツールチェーン (rustup)、Go のプロキシ、RubyGems、mise、Node.js と Go の本体、GitHub のリリース・アーカイブの転送先と raw、Docker Hub と ghcr.io のイメージ。公開・アップロードは通りません。mise・claude・grok にだけ: mise のダウンロード (GitHub、mise-versions.jdx.dev)、Claude Code の更新・設定の取得 (downloads.claude.ai、platform.claude.com)、grok の版の確認・ダウンロード・更新 (x.ai、storage.googleapis.com) |
+| 「パッケージと Claude Code・Grok Build・Codex のダウンロード」 | どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS と、読むだけの POST: npm の audit、レジストリーのトークン、mise の版の問い合わせ): npm、PyPI (uv の Python も)、crates.io、Rust のツールチェーン (rustup)、Go のプロキシ、RubyGems、mise、Node.js と Go の本体、GitHub (github.com、api.github.com、リリース・アーカイブの転送先と raw)、Docker Hub と ghcr.io のイメージ。公開・アップロードは通りません。エージェントのインストールと更新: Claude Code (downloads.claude.ai、platform.claude.com)、grok (x.ai、storage.googleapis.com)、Codex (GitHub のリリース) |
+| 「よく読む参照先」 | どのプログラムからも読み取りだけ (GET・HEAD): Wikipedia (英語・日本語・画像)、arXiv (export.arxiv.org も)、MDN、docs.python.org、go.dev と pkg.go.dev、doc.rust-lang.org と docs.rs、nodejs.org、docs.ruby-lang.org と ruby-doc.org、GitHub Docs、man7.org、rfc-editor.org、`*.readthedocs.io`、Stack Overflow、Hacker News |
 
-プリセットは認証情報を付けません。エージェントの API はプロバイダーとともに付きます。パッケージのプリセットは mise にだけ GitHub の読み取りを許します (mise が GitHub からダウンロードする)。
+プリセットは認証情報を付けません。エージェントの API はプロバイダーとともに付きます。プリセットの規則はどのプログラムにも許します ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。パッケージのプリセットは github.com と api.github.com を認証情報なしで読みます。GitHub のプロバイダーを付けると、そのトークンで読みます。
 
 ### 自分のプリセット
 

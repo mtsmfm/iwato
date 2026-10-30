@@ -350,3 +350,5 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .shortcut-item{padding:4px 12px;border-radius:4px;overflow:hidden;text-overflow:ellipsis}
 .shortcut-item.current{background:#2f6f55;color:#fff}
 .approve-attach{display:flex;gap:8px;align-items:flex-start}.approve-attach input{margin-top:3px}
+.create-provider>span.panel-meta{flex:1 1 auto;min-width:0}.create-template{align-items:baseline}.create-template>span:not(.panel-meta){flex:0 0 7em}
+@media(max-width:720px){.create-template{flex-direction:row;flex-wrap:wrap;gap:3px 8px}.create-template>span.panel-meta{flex-basis:100%;padding-left:24px}}

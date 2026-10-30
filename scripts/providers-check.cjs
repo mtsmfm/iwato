@@ -258,6 +258,28 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       check(true, 'the Claude provider is listed');
       await box.getByRole('button', { name: '閉じる' }).click();
     }
+    // Codex's ChatGPT sign-in: a device code entered at the fake's page.
+    await page.selectOption('#provider-profile', 'iwato-codex-subscription');
+    check((await page.locator('#provider-submit').innerText()) === 'ChatGPT でログイン' && (await page.innerText('#provider-note')).includes('chatgpt.com'), 'the Codex sign-in profile takes no value');
+    await page.click('#provider-submit');
+    {
+      const box = panel.locator('#provider-oauth');
+      const link = box.getByRole('link', { name: 'OpenAI でコードを入力' });
+      await link.waitFor();
+      const code = await box.locator('.provider-user-code').innerText();
+      check(/^[A-Z0-9-]+$/.test(code) && await panel.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the Codex flow shows the code without scrolling sideways');
+      await shot('codex-waiting.png');
+      const popupP = page.waitForEvent('popup');
+      await link.click();
+      const popup = await popupP;
+      await popup.click('#approve');
+      await popup.close();
+      await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
+      check(!/fake-(access|refresh)/.test(await page.content()), 'Codex: done, no token on the page');
+      await byName('Codex (ChatGPT でログイン)', 'codex-subscription').waitFor();
+      check(true, 'the Codex provider is listed');
+      await box.getByRole('button', { name: '閉じる' }).click();
+    }
     await page.keyboard.press('Escape');
     check(await panel.isHidden(), 'Escape closes the providers');
 
@@ -267,6 +289,14 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const options = await page.locator('#create-providers select[data-profile=iwato-github]').locator('option').allInnerTexts();
     check(options.join(',') === 'なし,github-personal,github-work', 'the create form offers one GitHub provider at most (' + options.join(', ') + ')');
     await page.locator('#create-providers select[data-profile=iwato-github]').selectOption('github-work');
+    // The template: development by default; research fixes its presets.
+    const templates = page.locator('#create-presets input[name=create-template]');
+    check(await templates.count() === 3 && await page.locator('#create-presets input[name=create-template][value=development]').isChecked(), 'the create form offers the templates, development chosen');
+    const research = page.locator('#create-presets input[data-preset=research]');
+    check(!(await research.isChecked()) && await research.isEnabled() && await page.locator('#create-presets input[data-preset=packages]').isDisabled(), 'development fixes packages only');
+    await page.locator('#create-presets label', { hasText: '調査用' }).click();
+    check(await research.isChecked() && await research.isDisabled(), 'research fixes its presets');
+    check(await page.locator('#create-panel').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the create form does not scroll sideways');
     await shot('create-providers.png');
     await page.keyboard.press('Escape');
     check(await page.locator('#create-panel').isHidden(), 'Escape closes the create form');

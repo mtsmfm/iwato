@@ -1051,7 +1051,7 @@
     window.IwatoI18n.bind($('provider-submit'), profile?.oauth ? connectKey(profile) : 'providers.add');
     window.IwatoI18n.bind($('provider-profile-yaml'), profile?.custom ? 'providers.yaml.edit' : 'providers.yaml.view');
   }
-  const connectKey = (profile) => profile?.oauthFlow === 'xai' ? 'providers.connect.xai' : profile?.oauthFlow === 'claude' ? 'providers.connect.claude' : 'providers.connect.atlassian';
+  const connectKey = (profile) => profile?.oauthFlow === 'xai' || profile?.oauthFlow === 'codex' ? 'providers.connect.' + profile.oauthFlow : profile?.oauthFlow === 'claude' ? 'providers.connect.claude' : 'providers.connect.atlassian';
   // The gateway's refresh of an OAuth provider, in words.
   const shortTime = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? window.IwatoI18n.date(t, { dateStyle: 'short', timeStyle: 'short' }) : ''; };
   function needsReauthorization(r) {
@@ -1242,7 +1242,7 @@
   // then the authorization in Atlassian's page, which comes back to
   // Iwato's own 127.0.0.1 listener or, from another device, as a pasted
   // URL. The page never sees a token; it polls the flow's state.
-  const oauthFlow = { id: '', timer: 0 };
+  const oauthFlow = { id: '', timer: 0, device: '' };
   function oauthBox(title) {
     const box = $('provider-oauth');
     box.hidden = false;
@@ -1256,13 +1256,13 @@
   function endOAuth() {
     if (oauthFlow.timer) clearTimeout(oauthFlow.timer);
     const id = oauthFlow.id;
-    const base = oauthFlow.xai ? '/api/oauth/xai' : oauthFlow.claude ? '/api/oauth/claude' : '/api/oauth/atlassian';
+    const base = oauthFlow.device ? '/api/oauth/' + oauthFlow.device : oauthFlow.claude ? '/api/oauth/claude' : '/api/oauth/atlassian';
     oauthFlow.id = ''; oauthFlow.timer = 0;
     $('provider-oauth').hidden = true;
     $('provider-oauth').replaceChildren();
     if (id && oauthFlow.waiting) api(base + '/flows/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '{}' }).catch(() => {});
     oauthFlow.waiting = false;
-    oauthFlow.xai = false;
+    oauthFlow.device = '';
     oauthFlow.claude = false;
   }
   async function beginOAuth(name, reconnect) {
@@ -1408,56 +1408,57 @@
       }, 1500);
     }
   }
-  // Connecting a Grok Build subscription (/api/oauth/xai): Iwato asks
-  // auth.x.ai for a device code; the owner opens xAI's page (on this or any
-  // device), enters or confirms the code and approves, while Iwato polls.
-  // The page shows the code and polls the flow's state, never a token.
-  async function beginXAI(name, reconnect) {
+  // Signing in by device code (/api/oauth/xai for Grok Build,
+  // /api/oauth/codex for Codex): Iwato asks the service for a device code;
+  // the owner opens its page (on this or any device), enters or confirms
+  // the code and approves, while Iwato polls. The page shows the code and
+  // polls the flow's state, never a token.
+  async function beginDevice(kind, name, reconnect) {
     if (!state.authorized) return;
     endOAuth();
-    const title = reconnect ? t('providers.oauth.reconnectTitle', { name }) : name ? t('providers.connect.xaiNamed', { name }) : t('providers.connect.xai');
+    const title = reconnect ? t('providers.oauth.reconnectTitle', { name }) : name ? t('providers.connect.' + kind + 'Named', { name }) : t('providers.connect.' + kind);
     const box = oauthBox(title);
-    const status = element('p', 'panel-meta', t('providers.oauth.xai.loading'));
+    const status = element('p', 'panel-meta', t('providers.oauth.' + kind + '.loading'));
     status.setAttribute('role', 'status');
     box.append(status);
     try {
-      const flow = await api('/api/oauth/xai/start', { method: 'POST', body: JSON.stringify({ name, reconnect }), timeoutMs: 60000 });
+      const flow = await api('/api/oauth/' + kind + '/start', { method: 'POST', body: JSON.stringify({ name, reconnect }), timeoutMs: 60000 });
       oauthFlow.id = text(flow.id, 64);
-      oauthFlow.xai = true;
-      renderXAIFlow(flow, title);
+      oauthFlow.device = kind;
+      renderDeviceFlow(kind, flow, title);
     } catch (error) {
       status.textContent = t('providers.oauth.startFailed', { message: error.message });
       if (error.status === 401 || error.status === 403) invalidateSession();
     }
   }
-  // Only xAI's https page (or the fake's own) is offered to open.
-  function verificationLink(url) {
+  // Only the service's https page (or the fake's own) is offered to open.
+  function verificationLink(kind, url) {
     url = text(url, 2048);
-    return /^https:\/\/[^\s]+$/.test(url) || (url.startsWith(location.origin + '/fake/xai/') && !/\s/.test(url)) ? url : '';
+    return /^https:\/\/[^\s]+$/.test(url) || (url.startsWith(location.origin + '/fake/' + kind + '/') && !/\s/.test(url)) ? url : '';
   }
-  function renderXAIFlow(flow, title) {
+  function renderDeviceFlow(kind, flow, title) {
     if (!oauthFlow.id || flow.id !== oauthFlow.id) return;
     const status = text(flow.status, 32);
     const named = typeof flow.name === 'string' && providerNamePattern.test(flow.name) ? flow.name : '';
-    if (named && !flow.reconnect) title = t('providers.connect.xaiNamed', { name: named });
+    if (named && !flow.reconnect) title = t('providers.connect.' + kind + 'Named', { name: named });
     oauthFlow.waiting = status === 'waiting';
     const box = oauthBox(title);
     const message = element('p', 'panel-meta provider-oauth-status', '');
     message.setAttribute('role', 'status');
     if (status === 'waiting') {
       const code = /^[A-Za-z0-9-]{1,32}$/.test(String(flow.userCode || '')) ? flow.userCode : '';
-      const url = verificationLink(flow.verificationURIComplete) || verificationLink(flow.verificationURI);
-      message.textContent = t('providers.oauth.xai.waiting');
+      const url = verificationLink(kind, flow.verificationURIComplete) || verificationLink(kind, flow.verificationURI);
+      message.textContent = t('providers.oauth.' + kind + '.waiting');
       const shown = element('p', 'provider-user-code', code);
       shown.setAttribute('aria-label', t('providers.oauth.xai.code'));
-      const open = element('a', 'button button-primary provider-authorize', t('providers.oauth.xai.open'));
+      const open = element('a', 'button button-primary provider-authorize', t('providers.oauth.' + kind + '.open'));
       open.href = url;
       open.target = '_blank';
       open.rel = 'noopener noreferrer';
       const copy = button('button-subtle', t('providers.oauth.xai.copyCode'), () => { if (typeof navigator !== 'undefined' && navigator.clipboard) navigator.clipboard.writeText(code).then(() => { copy.textContent = t('common.copied'); }, () => {}); });
       const links = element('div', 'login-form');
       links.append(open, copy);
-      const where = verificationLink(flow.verificationURI);
+      const where = verificationLink(kind, flow.verificationURI);
       const cancel = button('button-subtle', t('providers.oauth.cancel'), () => endOAuth());
       box.append(message, shown, links, element('p', 'panel-meta', (where ? t('providers.oauth.xai.where', { url: where }) : '') + t('providers.oauth.xai.expires', { time: shortTime(text(flow.expiresAt, 64)) || t('providers.oauth.xai.soon') })), cancel);
     } else if (status === 'exchanging') {
@@ -1467,7 +1468,7 @@
       message.textContent = flowMessage(flow) + (flow.refresh ? refreshText({ status: text(flow.refresh.status, 64), recovery: text(flow.refresh.recovery, 64), failureCode: text(flow.refresh.failureCode, 64), expiresAt: text(flow.refresh.expiresAt, 64), nextRefreshAt: text(flow.refresh.nextRefreshAt, 64) }) : '');
       box.append(message);
       if (flow.warning) box.append(element('p', 'panel-meta provider-warning', window.IwatoI18n.serverError(flow.warningCode, flow.warningParams, text(flow.warning, 500))));
-      const hint = providerView.profiles.find((p) => p.oauthFlow === 'xai')?.hint;
+      const hint = providerView.profiles.find((p) => p.oauthFlow === kind)?.hint;
       if (hint) box.append(element('p', 'panel-meta', hint));
       refreshProviders();
     } else {
@@ -1482,7 +1483,7 @@
         oauthFlow.timer = 0;
         if (oauthFlow.id !== id) return;
         try {
-          renderXAIFlow(await api('/api/oauth/xai/flows/' + encodeURIComponent(id)), title);
+          renderDeviceFlow(kind, await api('/api/oauth/' + kind + '/flows/' + encodeURIComponent(id)), title);
         } catch (error) {
           message.textContent = t('providers.oauth.stateFailed', { message: error.message });
         }
@@ -1615,7 +1616,7 @@
         const actions = element('div', 'provider-actions');
         if (profile.oauth) {
           if (!needsReauthorization(p.refresh)) actions.append(button('button-subtle', t('providers.rotate'), () => rotateProvider(p)));
-          actions.append(button(needsReauthorization(p.refresh) ? 'button-primary' : 'button-subtle', t('nav.reconnect'), () => profile.oauthFlow === 'xai' ? beginXAI(p.name, true) : profile.oauthFlow === 'claude' ? beginClaude(p.name, true) : beginOAuth(p.name, true)));
+          actions.append(button(needsReauthorization(p.refresh) ? 'button-primary' : 'button-subtle', t('nav.reconnect'), () => profile.oauthFlow === 'xai' || profile.oauthFlow === 'codex' ? beginDevice(profile.oauthFlow, p.name, true) : profile.oauthFlow === 'claude' ? beginClaude(p.name, true) : beginOAuth(p.name, true)));
         }
         const edit = element('form', 'login-form provider-edit');
         edit.hidden = true;
@@ -1651,7 +1652,7 @@
       if (name && providerView.list.some((p) => p.name === name)) { $('provider-form-status').textContent = t('providers.exists', { name }); return; }
       $('provider-form-status').textContent = '';
       $('provider-name').value = '';
-      if (oauthProfile.oauthFlow === 'xai') beginXAI(name, false);
+      if (oauthProfile.oauthFlow === 'xai' || oauthProfile.oauthFlow === 'codex') beginDevice(oauthProfile.oauthFlow, name, false);
       else if (oauthProfile.oauthFlow === 'claude') beginClaude(name, false);
       else beginOAuth(name, false);
       return;
@@ -1761,7 +1762,12 @@
         params: list(p.params, 4).filter((x) => x && typeof x.name === 'string').map((x) => ({ name: text(x.name, 20), label: text(x.label, 200), placeholder: text(x.placeholder, 100) }))
       })),
       errors: list(data?.errors, 50).filter((e) => e && typeof e.file === 'string').map((e) => ({ file: text(e.file, 300), error: text(e.error, 1000), code: e.code, params: e.params })),
-      folder: text(data?.folder, 1000)
+      folder: text(data?.folder, 1000),
+      templates: list(data?.templates, 10).filter((x) => x && typeof x.id === 'string' && x.id).map((x) => ({
+        id: text(x.id, 40), label: window.IwatoI18n.localized('template.' + text(x.id, 40) + '.label', text(x.label, 200)),
+        note: window.IwatoI18n.localized('template.' + text(x.id, 40) + '.note', ''),
+        presets: list(x.presets, 20).filter((id) => typeof id === 'string').map((id) => text(id, 60))
+      }))
     };
   }
   // A preset's parameter inputs (one text box each).
@@ -1786,12 +1792,27 @@
     for (const input of inputs) params[input.dataset.param] = String(input.value || '').trim();
     return { id: preset.id, params };
   }
+  // The template (a named set of Iwato's presets, presets.go) and the
+  // presets: a template's presets show checked and fixed.
   function renderCreatePresets() {
     const holder = $('create-presets');
     const list = presetView.presets;
-    holder.hidden = !list.length;
+    const templates = presetView.templates || [];
+    holder.hidden = !list.length && !templates.length;
     holder.choices = [];
-    holder.replaceChildren(...(list.length ? [element('p', 'panel-meta', t('create.presets'))] : []), ...list.map((preset) => {
+    holder.template = templates.length ? 'development' : '';
+    const radios = [...templates, { id: '', label: t('template.none.label'), note: t('template.none.note'), presets: [] }].map((tpl) => {
+      const label = element('label', 'create-provider create-template');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'create-template';
+      radio.value = tpl.id;
+      radio.checked = tpl.id === holder.template;
+      radio.addEventListener('change', () => { if (radio.checked) { holder.template = tpl.id; sync(); } });
+      label.append(radio, element('span', '', tpl.label), element('span', 'panel-meta', tpl.note));
+      return label;
+    });
+    const rows = list.map((preset) => {
       const row = element('div', 'create-preset');
       const label = element('label', 'create-provider');
       const box = document.createElement('input');
@@ -1802,10 +1823,21 @@
       row.append(label, ...inputs);
       holder.choices.push({ box, ref: () => presetRef(preset, inputs) });
       return row;
-    }));
+    });
+    function sync() {
+      const fixed = templates.find((x) => x.id === holder.template)?.presets || [];
+      for (const c of holder.choices) {
+        const inTemplate = fixed.includes(c.box.dataset.preset);
+        if (c.box.disabled && !inTemplate) c.box.checked = false;
+        c.box.disabled = inTemplate;
+        if (inTemplate) c.box.checked = true;
+      }
+    }
+    holder.replaceChildren(...(templates.length ? [element('p', 'panel-meta', t('create.template')), ...radios] : []), ...(list.length ? [element('p', 'panel-meta', t('create.presets'))] : []), ...rows);
+    sync();
   }
   function createPresetChoice() {
-    return ($('create-presets').choices || []).filter((c) => c.box.checked).map((c) => c.ref());
+    return ($('create-presets').choices || []).filter((c) => c.box.checked && !c.box.disabled).map((c) => c.ref());
   }
   function createProviderChoice() {
     const out = [];
@@ -1914,6 +1946,7 @@
       const body = {
         name,
         image: String($('create-image').value || '').trim(),
+        template: $('create-presets').template ?? 'development',
         presets: createPresetChoice(),
         providers: createProviderChoice(),
         gpu: !$('create-gpu-label').hidden && $('create-gpu').checked

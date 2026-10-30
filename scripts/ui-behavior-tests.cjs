@@ -123,7 +123,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       if (path === '/api/sandboxes' && opt?.method === 'POST') { created.push(JSON.parse(opt.body)); return response({ok: true}); }
       if (path === '/api/sandboxes') return sandboxHandler ? sandboxHandler() : response({fake, sandboxes: noSandboxes ? created.map(w => ({name: w.name, status: w.status || 'not-created', detail: ''})) : [{...sandbox}], server: {version: '0.3.0', commit: '98cb328-dirty', built: '2026-10-04T03:04:00Z'}});
       if (path.endsWith('/paste-image')) return pasteHandler ? pasteHandler(path, opt) : response({path: '/home/dev/.cache/iwato/paste/20261010T000000Z-0123abcd.png'});
-      if (path === '/api/presets') return response({presets: [{id: 'packages', label: 'パッケージのダウンロード', note: 'npm など', source: 'builtin', hosts: ['registry.npmjs.org'], params: []}, {id: 'user:mirror', label: 'ミラーに書き込む', note: 'push', source: 'user', file: 'mirror.yaml', hosts: ['git.example.com'], params: [{name: 'repo', label: 'リポジトリ', placeholder: 'OWNER/REPO'}]}], errors: [{file: 'bad.yaml', error: 'field x not found'}, {file: 'odd.yaml', error: 'server text', code: 'preset_param_unknown', params: {rule: 'r', name: 'x'}}], folder: 'C:\\iwato\\presets'});
+      if (path === '/api/presets') return response({templates: [{id: 'development', label: 'Development', presets: ['packages']}, {id: 'research', label: 'Research', presets: ['packages', 'research']}], presets: [{id: 'packages', label: 'パッケージのダウンロード', note: 'npm など', source: 'builtin', hosts: ['registry.npmjs.org'], params: []}, {id: 'user:mirror', label: 'ミラーに書き込む', note: 'push', source: 'user', file: 'mirror.yaml', hosts: ['git.example.com'], params: [{name: 'repo', label: 'リポジトリ', placeholder: 'OWNER/REPO'}]}], errors: [{file: 'bad.yaml', error: 'field x not found'}, {file: 'odd.yaml', error: 'server text', code: 'preset_param_unknown', params: {rule: 'r', name: 'x'}}], folder: 'C:\\iwato\\presets'});
       if (/\/api\/sandboxes\/[^/]+\/presets$/.test(path)) return response({presets: [{id: 'packages', label: 'パッケージのダウンロード'}]});
       if (/\/presets\/(apply|remove)$/.test(path)) return response({ok: true, kept: path.endsWith('remove') ? ['allow_x_443'] : undefined});
       if (path.includes('/proposals') || path.includes('/policy/')) return proposalHandler ? proposalHandler(path, opt) : response({available: false, pending: [], recent: []});
@@ -1040,7 +1040,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   fresh.els['create-name'].value = 'Bad ID'; fresh.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
   assert.equal(fresh.requests.filter(r => r.path === '/api/sandboxes' && r.method === 'POST').length, 0); assert.match(fresh.els['create-status'].textContent, /英小文字/);
   fresh.els['create-name'].value = ' web '; fresh.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
-  const createReq = fresh.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST'); assert.deepEqual(JSON.parse(createReq.body), {name: 'web', image: '', presets: [], providers: []}); assert.equal(createReq.headers['X-CSRF-Token'], 'csrf123');
+  const createReq = fresh.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST'); assert.deepEqual(JSON.parse(createReq.body), {name: 'web', image: '', template: 'development', presets: [], providers: []}); assert.equal(createReq.headers['X-CSRF-Token'], 'csrf123');
   assert.equal(fresh.els['create-panel'].hidden, true); assert.equal(fresh.els['empty-state'].hidden, true); assert.equal(fresh.card().children[0].children[0].children[1].children[0].textContent, 'web');
   assert(fresh.requests.some((r) => r.path === '/api/sandboxes/web/start' && r.method === 'POST'), 'a new sandbox starts right away'); assert(fresh.sockets.some((ws) => /\/ws\/web/.test(ws.url)), 'and its terminal connects');
   ok('first sandbox is created explicitly from the UI with name validation and CSRF');
@@ -1102,7 +1102,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   sandbox.els['create-name'].value = 'box'; sandbox.els['create-image'].value = ' ubuntu:24.04 ';
   sandbox.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
   const sandboxReq = sandbox.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST');
-  assert.deepEqual(JSON.parse(sandboxReq.body), {name: 'box', image: 'ubuntu:24.04', presets: [], providers: []});
+  assert.deepEqual(JSON.parse(sandboxReq.body), {name: 'box', image: 'ubuntu:24.04', template: 'development', presets: [], providers: []});
   assert.equal(sandbox.els['create-image'].value, '');
   ok('a sandbox is created with its image (no paths to persist: only the home does)');
 

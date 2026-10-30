@@ -103,8 +103,8 @@ func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 				t.Fatalf("%s: %+v", name, e)
 			}
 		}
-		if len(rule.Binaries) == 0 {
-			t.Fatalf("%s has no program", name)
+		if len(rule.Binaries) != 1 || rule.Binaries[0].Path != "/**" {
+			t.Fatalf("%s does not allow every program (ADR 0022): %v", name, rule.Binaries)
 		}
 	}
 	if a := findEndpointAmbiguities(rules); len(a) > 0 {
@@ -146,7 +146,7 @@ func TestPresetsOfOneRuleNameJoin(t *testing.T) {
 	for _, b := range rule.Binaries {
 		paths = append(paths, b.Path)
 	}
-	for _, want := range []string{"/usr/bin/curl", "/home/dev/.local/share/claude/versions/*", "/home/dev/.local/share/mise/installs/claude/*/claude"} {
+	for _, want := range []string{"/**", "/usr/bin/curl", "/home/dev/.local/share/claude/versions/*"} {
 		if !slices.Contains(paths, want) {
 			t.Fatalf("%s missing: %v", want, paths)
 		}

@@ -75,8 +75,8 @@ func (r *staleList) CreateProvider(ctx context.Context, name, profile string, cr
 func TestProviderAPICreatesWithoutAName(t *testing.T) {
 	_, _, do, _ := providerServerCookie(t)
 	l := listProviders(t, do)
-	if l.Profiles[4].DefaultName != "github" || l.Profiles[3].DefaultName != "atlassian" || l.Profiles[7].DefaultName != "comfy-cloud" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" {
-		t.Fatalf("%+v", l.Profiles)
+	if l.Profiles[6].DefaultName != "github" || l.Profiles[5].DefaultName != "atlassian" || l.Profiles[9].DefaultName != "comfy-cloud" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" || l.Profiles[2].DefaultName != "codex-subscription" {
+		t.Fatalf("%d profiles", len(l.Profiles))
 	}
 	for _, want := range []string{"github", "github-2"} {
 		code, body := do("POST", "/api/providers", `{"name":"  ","profile":"iwato-github","values":{"token":"x"}}`)
