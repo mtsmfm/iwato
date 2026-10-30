@@ -146,8 +146,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // a phone. What it allows, narrowed by unchecking; the host checks;
     // the rule it adds as YAML.
     const reviewBox = pending.locator('.review-detail');
-    // A host as a whole word (not a substring of another host).
-    const hostRE = (host) => new RegExp('^' + host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9.-])');
+    // A host (a regex, dots escaped) as a whole word, not a substring of
+    // another host.
+    const hostRE = (host) => new RegExp('^' + host.source + '(?![a-z0-9.-])');
     const item = (host, also) => { const l = pending.locator('.review-item').filter({ hasText: hostRE(host) }); return also ? l.filter({ hasText: also }) : l; };
     const openItem = async (host, also) => { await item(host, also).click(); await reviewBox.locator('.review-host').filter({ hasText: hostRE(host) }).waitFor(); };
     const rows = () => reviewBox.locator('.review-rule').evaluateAll((els) => els.map((e) => (e.querySelector('input').checked ? '+ ' : '- ') + e.innerText.replace(/\s+/g, ' ').trim()));
@@ -158,7 +159,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       return (await answer).status();
     };
     const settled = () => page.waitForFunction(() => { const b = document.querySelector('.terminal-card.selected .review-detail'); return b && !b.querySelector('.review-warn[data-level=wait]'); });
-    await openItem('downloads.claude.ai');
+    await openItem(/downloads\.claude\.ai/);
     await settled();
     check((await rows()).join(' | ') === '+ GET /claude-code-releases/2.1.294/manifest.json | + GET /claude-code-releases/2.1.294/linux-x64/claude', 'the rules seen, checked: ' + (await rows()).join(' | '));
     const reviewText = await reviewBox.innerText();
@@ -185,12 +186,12 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // (uploads.github.com, bound in its initial rule): GET and HEAD to
     // start with; L4 would carry the credential uninspected, which OpenShell
     // refuses, so the preview says so and 承認 waits.
-    await openItem('uploads.github.com');
+    await openItem(/uploads\.github\.com/);
     await settled();
     check((await rows()).join(' | ') === '+ GET /** (すべて) | + HEAD /** (すべて) | - POST /** (すべて) | - PUT /** (すべて) | - PATCH /** (すべて) | - DELETE /** (すべて) | - 検査せずにすべての通信を通す (L4) — uploads.github.com', 'an L4 proposal starts with GET and HEAD: ' + (await rows()).join(' | '));
     check((await reviewBox.locator('.review-warn[data-level=amber]').allInnerTexts()).some((w) => w.includes('提案は L4')), 'the L4 proposal is noted');
-    await reviewBox.locator('.review-grant').waitFor();
-    check(await reviewBox.locator('.review-grant input').isChecked() && (await reviewBox.locator('.review-grant').innerText()).includes('github-personal のトークンを付ける'), 'narrowed under the provider\'s endpoint, the token is on');
+    await reviewBox.locator('.review-grant').first().waitFor();
+    check(await reviewBox.locator('.review-grant input').first().isChecked() && (await reviewBox.locator('.review-grant').first().innerText()).includes('github-personal のトークンを付ける'), 'narrowed under the provider\'s endpoint, the token is on');
     await reviewBox.locator('.review-rule[data-kind=l4] input').check();
     check(await reviewBox.locator('.review-rule', { hasText: 'POST' }).locator('input').isDisabled(), 'L4 makes the methods moot');
     await reviewBox.locator('.review-error', { hasText: 'github-personal' }).waitFor();
@@ -207,7 +208,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
 
     // OpenShell's proposal for api.github.com whose only rule is a GET /
     // nobody saw: the methods on every path, reads checked.
-    await openItem('api.github.com', 'OpenShell の自動提案');
+    await openItem(/api\.github\.com/, 'OpenShell の自動提案');
     check((await rows()).slice(0, 3).join(' | ') === '+ GET /** (すべて) | + HEAD /** (すべて) | - POST /** (すべて)', 'a placeholder GET / opens as reads on every path');
     // In English, then in Japanese again.
     const relist = async (lang) => {
@@ -257,9 +258,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
 
     // Writes seen (git push), under the GitHub provider's github.com/**:
     // its credential by default, said in the list.
-    await openItem('github.com');
+    await openItem(/github\.com/);
     check((await rows()).join(' | ') === '+ GET /mtsmfm/iwato.git/info/refs | + POST /mtsmfm/iwato.git/git-receive-pack', 'writes seen: as seen');
-    check(await reviewBox.locator('.review-grant input').isChecked() && (await item('github.com').locator('.review-chip').allInnerTexts()).includes('トークン'), 'the token is on by default, marked in the list');
+    check(await reviewBox.locator('.review-grant input').first().isChecked() && (await item(/github\.com/).locator('.review-chip').allInnerTexts()).includes('トークン'), 'the token is on by default, marked in the list');
     check((await reviewBox.locator('.review-rule[data-write=true] .review-method').innerText()) === 'POST', 'a write is marked');
     await reviewBox.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(dir, 'review-push.png') });
@@ -270,7 +271,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const github = rule('allow_github_com_443');
     const ruleBadge = github.locator('.apply-badge');
     await ruleBadge.waitFor();
-    check(await ruleBadge.innerText() === '承認済み · 反映待ち' && await item('git-remote-http').count() === 0, 'an approval shows 反映待ち on its rule; the proposal left the waiting list');
+    check(await ruleBadge.innerText() === '承認済み · 反映待ち' && await item(/git-remote-http/).count() === 0, 'an approval shows 反映待ち on its rule; the proposal left the waiting list');
     await page.screenshot({ path: path.join(dir, 'pending-badge.png'), fullPage: true });
     await github.locator('.apply-badge[data-state=applied]').waitFor({ timeout: 10000 });
     check(true, 'it turns 反映済み once the sandbox loaded it');
@@ -305,19 +306,19 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await page.waitForTimeout(300);
     }
     await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
-    await item('cdn-x7k2q.top').waitFor();
+    await item(/cdn-x7k2q\.top/).waitFor();
     await settled();
     const chipsOf = (text) => item(text).locator('.review-chip').evaluateAll((els) => els.map((e) => e.dataset.level + ' ' + e.textContent));
-    await page.waitForFunction(() => [...document.querySelectorAll('.terminal-card.selected .review-item')].some((n) => n.textContent.includes('cdn-x7k2q.top') && n.textContent.includes('危険ドメイン')));
-    check((await chipsOf('cdn-x7k2q.top')).join(', ') === 'red 危険ドメイン, amber 新しいドメイン, amber 検査なし', 'the list marks the dangerous domain: ' + (await chipsOf('cdn-x7k2q.top')).join(', '));
-    await openItem('cdn-x7k2q.top');
+    await page.waitForFunction(() => [...document.querySelectorAll('.terminal-card.selected .review-item')].some((n) => /(^|[^a-z0-9.-])cdn-x7k2q\.top(?![a-z0-9.-])/.test(n.textContent) && n.textContent.includes('危険ドメイン')));
+    check((await chipsOf(/cdn-x7k2q\.top/)).join(', ') === 'red 危険ドメイン, amber 新しいドメイン, amber 検査なし', 'the list marks the dangerous domain: ' + (await chipsOf(/cdn-x7k2q\.top/)).join(', '));
+    await openItem(/cdn-x7k2q\.top/);
     await settled();
     const warns = await reviewBox.locator('.review-warn').evaluateAll((els) => els.map((e) => e.dataset.level + ' ' + e.innerText.replace(/\s+/g, ' ')));
     check(warns[0].startsWith('red ! 危険ドメイン: 1.1.1.2 が cdn-x7k2q.top に 0.0.0.0 を返しました') && warns[1].startsWith('amber ▲ cdn-x7k2q.top は登録から 6 日のドメインです') && !warns.some((w) => w.startsWith('ok')), 'red, then amber: ' + warns.join(' / '));
     check(await reviewBox.getByRole('button', { name: '承認', exact: true }).isEnabled(), 'warnings never block');
     await reviewBox.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(dir, 'review-danger.png') });
-    await openItem('webhook.site');
+    await openItem(/webhook\.site/);
     await settled();
     check(/外部送信サービス: webhook\.site は webhook\.site です/.test(await reviewBox.locator('.review-warn[data-level=red]').innerText()), 'an exfiltration service is red');
     // Rejecting with a reason; then まとめて却下 asks in the page.
@@ -325,7 +326,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const rejectAnswer = page.waitForRequest((r) => r.url().endsWith('/proposals/reject'));
     await reviewBox.getByRole('button', { name: '却下', exact: true }).click();
     check(JSON.parse((await rejectAnswer).postData()).reason === '使いません', 'the reason goes with the rejection');
-    await item('webhook.site').waitFor({ state: 'detached' });
+    await item(/webhook\.site/).waitFor({ state: 'detached' });
     const waitingNow = await pending.locator('.review-item').count();
     await pending.getByRole('button', { name: 'まとめて却下' }).click();
     await dialog.waitFor();
@@ -645,15 +646,15 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     if (await expStart.isVisible() && await expStart.isEnabled()) { await expStart.click(); await page.waitForTimeout(1500); }
     await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
     const expPending = exp.locator('.policy-pending');
-    const expItem = (host) => expPending.locator('.review-item').filter({ hasText: new RegExp('^' + host.replace(/[.]/g, '\\.') + '(?![a-z0-9.-])') });
+    const expItem = (host) => expPending.locator('.review-item').filter({ hasText: hostRE(host) });
     const expReview = expPending.locator('.review-detail');
-    await expItem('api.github.com').filter({ hasText: 'エージェントの提案' }).waitFor();
-    await expItem('api.github.com').filter({ hasText: 'エージェントの提案' }).click();
+    await expItem(/api\.github\.com/).filter({ hasText: 'エージェントの提案' }).waitFor();
+    await expItem(/api\.github\.com/).filter({ hasText: 'エージェントの提案' }).click();
     await expReview.locator('.review-host', { hasText: /^api\.github\.com/ }).waitFor();
     await page.waitForTimeout(800);
-    check(await expReview.locator('.review-grant').isHidden(), 'no credential to attach for a provider made before');
+    check(await expReview.locator('.review-grant:visible').count() === 0, 'no credential to attach for a provider made before');
     // Over 128 rules: why it cannot be approved as proposed and what to do.
-    await expItem('api.huge.example').click();
+    await expItem(/api\.huge\.example/).click();
     await expReview.locator('.review-host', { hasText: /^api\.huge\.example/ }).waitFor();
     const hugeError = expReview.locator('.review-error');
     await hugeError.waitFor();
@@ -663,7 +664,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(/16 個までです \(いま 127 個\)/.test(await hugeError.innerText()), 'narrowed, the 16 limit says how many');
     await page.screenshot({ path: path.join(dir, 'review-huge.png') });
     // 100 rules over four endpoints, all kept: approved as proposed.
-    await expItem('api1.many.example').click();
+    await expItem(/api1\.many\.example/).click();
     await expReview.locator('.review-host', { hasText: /^api1\.many\.example/ }).waitFor();
     check(await expReview.locator('.review-rule').count() === 100 && await fits(), 'all 100 rules are rows');
     const manyApprove = expReview.getByRole('button', { name: '承認', exact: true });
@@ -692,7 +693,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await policyBadge.isVisible() && (await page.title()).startsWith('(' + (titleBefore + 1) + ') ') && (await exp.locator('.proposal-bar-text').innerText()).startsWith('提案 ' + (waitingBefore + 1) + ' 件'), 'a proposal raised with the policy tab hidden shows in the badge, the title and the bar');
     check(fullReads.length === 0, 'with the policy tab hidden the page does not read the whole policy: ' + fullReads.length);
     await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
-    await expItem('new.example').waitFor();
+    await expItem(/new\.example/).waitFor();
     check(fullReads.length > 0, 'showing the tab reads it, with the new proposal');
 
     if (!phone) {
