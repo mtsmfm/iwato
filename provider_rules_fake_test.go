@@ -47,6 +47,20 @@ func TestProviderAttachCommitsItsRules(t *testing.T) {
 	if len(commits) != 1 || commits[0].Subject != "Attach provider runpod" {
 		t.Fatalf("%+v", commits)
 	}
+	// A detach that took the rules out but did not detach: attaching again
+	// puts them back, once.
+	if _, err := d.RemoveProvider(ctx, sb, "runpod"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"runpod"}`); code != 200 {
+			t.Fatal(code, body)
+		}
+		rules, _ = d.PolicyRules(ctx, sb)
+		if got := boundTo(rules, "runpod"); len(got) != 5 {
+			t.Fatal(got)
+		}
+	}
 	// One endpoint unbound: it stays when the provider goes.
 	if _, err := d.SetBinding(ctx, sb, PolicyBinding{Rule: "provider_runpod", Host: "rest.runpod.io", Ports: []uint32{443}, Path: "/v1/**"}); err != nil {
 		t.Fatal(err)

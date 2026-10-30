@@ -242,7 +242,8 @@ func setBinding(rules map[string]v1.NetworkPolicyRule, b PolicyBinding) (map[str
 // OpenShell and Fake implement it.
 type providerPolicyRuntime interface {
 	// AddProviderRules commits and applies the rules (a provider's
-	// initial rules) under free names.
+	// initial rules) under free names, unless an endpoint of the policy is
+	// bound to the provider already (nothing then).
 	AddProviderRules(ctx context.Context, w Sandbox, provider string, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error)
 	// RemoveProvider commits and applies the policy without the endpoints
 	// bound to the provider (nothing when there are none).
@@ -263,7 +264,10 @@ func (o *OpenShell) listProvidersFor(ctx context.Context) ([]ProviderInfo, map[s
 var errNoChange = errors.New("no change")
 
 func (o *OpenShell) AddProviderRules(ctx context.Context, w Sandbox, provider string, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {
-	return o.providerChange(ctx, w, "provider", "Attach provider "+provider, func(cur map[string]v1.NetworkPolicyRule) (map[string]v1.NetworkPolicyRule, error) {
+	change, err := o.providerChange(ctx, w, "provider", "Attach provider "+provider, func(cur map[string]v1.NetworkPolicyRule) (map[string]v1.NetworkPolicyRule, error) {
+		if _, bound := withoutProvider(cur, provider); bound {
+			return nil, errNoChange
+		}
 		for _, k := range slices.Sorted(maps.Keys(rules)) {
 			r := cloneRule(rules[k])
 			r.Name = freeRuleName(cur, k)
@@ -271,6 +275,10 @@ func (o *OpenShell) AddProviderRules(ctx context.Context, w Sandbox, provider st
 		}
 		return cur, nil
 	})
+	if errors.Is(err, errNoChange) {
+		return PolicyChange{}, nil
+	}
+	return change, err
 }
 
 func (o *OpenShell) RemoveProvider(ctx context.Context, w Sandbox, provider string) (PolicyChange, error) {

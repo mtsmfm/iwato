@@ -660,12 +660,16 @@ func (s *Server) handleSandboxProviders(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		applied, receipt, err = rt.AttachProvider(ctx, sb.Name, body.Provider)
-		if err == nil && applied && len(initial) > 0 && !slices.Contains(current, body.Provider) {
+		// Attached already, it gets its rules again when none is left (a
+		// detach that took them out but failed to detach).
+		if err == nil && applied && len(initial) > 0 {
 			if perr := s.addProviderRules(ctx, sb, body.Provider, initial); perr != nil {
 				// Without its rules the provider would be attached but
-				// reach nothing: taken off again.
-				if _, _, derr := rt.DetachProvider(ctx, sb.Name, body.Provider); derr != nil {
-					log.Printf("sandbox %s: provider %s: detach after the policy failed: %v", sb.Name, body.Provider, safeText(english(derr)))
+				// reach nothing: taken off again (unless it was before).
+				if !slices.Contains(current, body.Provider) {
+					if _, _, derr := rt.DetachProvider(ctx, sb.Name, body.Provider); derr != nil {
+						log.Printf("sandbox %s: provider %s: detach after the policy failed: %v", sb.Name, body.Provider, safeText(english(derr)))
+					}
 				}
 				s.failGateway(ctx, w, sb, perr)
 				return
