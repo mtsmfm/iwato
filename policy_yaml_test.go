@@ -88,6 +88,35 @@ func TestPolicyYAMLPlan(t *testing.T) {
 	if _, ok := rules["drop"]; ok {
 		t.Fatal("a removed rule stayed")
 	}
+
+	// A credential binding (not in the YAML) stays with an edited
+	// endpoint in the same place (host, ports, path); one that moves
+	// loses it, and the save says so.
+	boundEp := func(host, path string) v1.PolicyNetworkEndpoint {
+		e := ep(host)
+		e.Path = path
+		e.CredentialBinding = &types.NetworkCredentialBinding{Provider: "work"}
+		return e
+	}
+	plain := func(host, path string) v1.PolicyNetworkEndpoint {
+		e := ep(host)
+		e.Path, e.Access = path, v1.NetworkAccessPresetFull
+		return e
+	}
+	old = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{boundEp("api.example.com", "/v1/**"), boundEp("up.example.com", "/**")}}}
+	edited = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{plain("API.example.com", "/v1/**"), plain("up.example.com", "/v2/**"), plain("new.example.com", "/v1/**")}}}
+	rules, diff = policyYAMLPlan(old, edited)
+	got := rules["b"].Endpoints
+	if got[0].CredentialBinding == nil || got[0].CredentialBinding.Provider != "work" || got[1].CredentialBinding != nil || got[2].CredentialBinding != nil {
+		t.Fatalf("bindings: %+v", got)
+	}
+	if len(diff.Unbound) != 1 || diff.Unbound[0].Host != "up.example.com:443" || diff.Unbound[0].Path != "/**" || diff.Unbound[0].Provider != "work" {
+		t.Fatalf("unbound: %+v", diff.Unbound)
+	}
+	// A rule taken out lists its bindings too.
+	if _, d := policyYAMLPlan(old, map[string]v1.NetworkPolicyRule{}); len(d.Unbound) != 2 {
+		t.Fatalf("%+v", d)
+	}
 }
 
 // A rule bound to a provider's credential keeps its programs.

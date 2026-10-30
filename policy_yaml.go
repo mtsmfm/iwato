@@ -86,11 +86,23 @@ type PolicyYAMLRule struct {
 	Hosts []string `json:"hosts"`
 }
 
-// PolicyYAMLDiff is what a save changes.
+// PolicyYAMLDiff is what a save changes. Unbound are the credentials
+// bound to endpoints (credential_binding) that the save takes away: the
+// YAML does not show bindings, so an edited endpoint keeps its own as long
+// as its host, ports and path stay; one that changes or goes loses it.
 type PolicyYAMLDiff struct {
-	Added   []PolicyYAMLRule `json:"added"`
-	Removed []PolicyYAMLRule `json:"removed"`
-	Changed []PolicyYAMLRule `json:"changed"`
+	Added   []PolicyYAMLRule    `json:"added"`
+	Removed []PolicyYAMLRule    `json:"removed"`
+	Changed []PolicyYAMLRule    `json:"changed"`
+	Unbound []PolicyYAMLBinding `json:"unbound"`
+}
+
+// PolicyYAMLBinding is a credential binding in the difference a save makes.
+type PolicyYAMLBinding struct {
+	Rule     string `json:"rule"`
+	Host     string `json:"host"`
+	Path     string `json:"path,omitempty"`
+	Provider string `json:"provider"`
 }
 
 func (d PolicyYAMLDiff) empty() bool {
@@ -407,12 +419,22 @@ func yamlNorm(r v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 	return r
 }
 
+// sameEndpointPlace: the same host, ports and path (an endpoint's
+// identity, which a credential binding stays with).
+func sameEndpointPlace(a, b v1.PolicyNetworkEndpoint) bool {
+	pa, pb := slices.Sorted(slices.Values(effectivePorts(a))), slices.Sorted(slices.Values(effectivePorts(b)))
+	return strings.EqualFold(a.Host, b.Host) && a.Path == b.Path && slices.Equal(slices.Compact(pa), slices.Compact(pb))
+}
+
 // policyYAMLPlan is the policy a save makes from the YAML's rules: the
 // rules left as they were are the gateway's, as it gave them; a changed
-// rule keeps the gateway's markers on the endpoints it did not change.
+// rule keeps the gateway's markers on the endpoints it did not change, and
+// the credential binding of an endpoint in the same place (host, ports and
+// path; the YAML does not show bindings, nor add them). The bindings that
+// go are listed (Unbound).
 func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.NetworkPolicyRule, PolicyYAMLDiff) {
 	out := map[string]v1.NetworkPolicyRule{}
-	diff := PolicyYAMLDiff{Added: []PolicyYAMLRule{}, Removed: []PolicyYAMLRule{}, Changed: []PolicyYAMLRule{}}
+	diff := PolicyYAMLDiff{Added: []PolicyYAMLRule{}, Removed: []PolicyYAMLRule{}, Changed: []PolicyYAMLRule{}, Unbound: []PolicyYAMLBinding{}}
 	view := func(name string, r v1.NetworkPolicyRule) PolicyYAMLRule {
 		v := PolicyYAMLRule{Name: name, Hosts: []string{}}
 		for _, e := range r.Endpoints {
@@ -436,8 +458,13 @@ func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.
 			diff.Changed = append(diff.Changed, view(name, r))
 			r = cloneRule(r)
 			for i, e := range r.Endpoints {
+				r.Endpoints[i].CredentialBinding = nil
 				if j := slices.IndexFunc(was.Endpoints, func(x v1.PolicyNetworkEndpoint) bool { return canonEndpoint(x) == canonEndpoint(e) }); j >= 0 {
-					r.Endpoints[i].AdvisorProposed, r.Endpoints[i].CredentialBinding = was.Endpoints[j].AdvisorProposed, was.Endpoints[j].CredentialBinding
+					r.Endpoints[i].AdvisorProposed = was.Endpoints[j].AdvisorProposed
+				}
+				if j := slices.IndexFunc(was.Endpoints, func(x v1.PolicyNetworkEndpoint) bool { return x.CredentialBinding != nil && sameEndpointPlace(x, e) }); j >= 0 {
+					b := *was.Endpoints[j].CredentialBinding
+					r.Endpoints[i].CredentialBinding = &b
 				}
 			}
 		}
@@ -446,6 +473,17 @@ func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.
 	for _, name := range slices.Sorted(maps.Keys(old)) {
 		if _, ok := edited[name]; !ok {
 			diff.Removed = append(diff.Removed, view(name, old[name]))
+		}
+		for _, e := range old[name].Endpoints {
+			if e.CredentialBinding == nil {
+				continue
+			}
+			kept := slices.ContainsFunc(out[name].Endpoints, func(x v1.PolicyNetworkEndpoint) bool {
+				return x.CredentialBinding != nil && x.CredentialBinding.Provider == e.CredentialBinding.Provider && sameEndpointPlace(x, e)
+			})
+			if !kept {
+				diff.Unbound = append(diff.Unbound, PolicyYAMLBinding{Rule: name, Host: endpointLabel(e.Host, endpointPorts(e)), Path: e.Path, Provider: e.CredentialBinding.Provider})
+			}
 		}
 	}
 	return out, diff

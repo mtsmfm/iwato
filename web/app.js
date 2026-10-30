@@ -3348,10 +3348,13 @@
         const diff = res?.diff || {};
         const changes = [['added', diff.added], ['removed', diff.removed], ['changed', diff.changed]].filter(([, l]) => Array.isArray(l) && l.length)
           .map(([k, l]) => t('policy.yaml.' + k, { rules: rules(l).join(', ') })).join('\n');
+        // Credentials the save unbinds (the YAML does not show bindings).
+        const unbound = (Array.isArray(diff.unbound) ? diff.unbound.slice(0, 50) : []).filter((b) => b && typeof b.rule === 'string')
+          .map((b) => t('policy.yaml.unbound', { rule: text(b.rule, 200), host: text(b.host, 270) + text(b.path, 512), provider: text(b.provider, 200) })).join('\n');
         // Rules that reach the host's loopback (proposal_guard.go).
         const gateways = (Array.isArray(res?.gateways) ? res.gateways.slice(0, 20) : []).filter((g) => g && typeof g.rule === 'string')
           .map((g) => t('policy.yaml.gateway', { rule: text(g.rule, 200), host: text(g.host, 253) || t('policy.anyHost'), gateway: text(g.gateway, 253) })).join('\n');
-        if (!(await askConfirm(t('policy.yaml.confirm', { sandbox: JSON.stringify(this.sandbox.name), changes }) + (gateways ? '\n\n' + gateways : ''), { ok: t('policy.yaml.apply') }))) return;
+        if (!(await askConfirm(t('policy.yaml.confirm', { sandbox: JSON.stringify(this.sandbox.name), changes }) + (unbound ? '\n\n' + unbound : '') + (gateways ? '\n\n' + gateways : ''), { ok: t('policy.yaml.apply') }))) return;
         this.mutating = true;
         const applied = await send(true);
         // The applied YAML is read again (its new version).
