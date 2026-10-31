@@ -34,7 +34,7 @@ func fakeOpenShell(t *testing.T) (*Fake, *OpenShell, Sandbox, *[]string) {
 	return d, o, w, &sent
 }
 
-func TestUndoTakesTheWidenedRuleWithTheProposal(t *testing.T) {
+func TestUndoTakesTheRuleWithTheProposal(t *testing.T) {
 	d, o, w, sent := fakeOpenShell(t)
 	ctx := context.Background()
 	v, err := o.Proposals(ctx, w)
@@ -47,7 +47,7 @@ func TestUndoTakesTheWidenedRuleWithTheProposal(t *testing.T) {
 			npm = r
 		}
 	}
-	if len(npm.Chunks) != 1 || !npm.Chunks[0].Widened || !npm.Chunks[0].RemovesRule || !slices.Equal(npm.Chunks[0].Drops, []string{"npm.pkg.github.com:443"}) {
+	if len(npm.Chunks) != 1 || !npm.Chunks[0].RemovesRule || !slices.Equal(npm.Chunks[0].Drops, []string{"npm.pkg.github.com:443"}) {
 		t.Fatalf("%+v", npm)
 	}
 	// The rule's own program is the glob: Iwato takes it out (the rule goes
@@ -100,7 +100,7 @@ func TestUndoRoutes(t *testing.T) {
 	if code, _ := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"bad"}`); code != 400 {
 		t.Fatal("a bad request ID:", code)
 	}
-	if code, _ := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"`+requestID("fake-gh")+`","scope":{"readOnly":true}}`); code != 400 {
+	if code, _ := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"`+requestID("fake-gh")+`","scope":{}}`); code != 400 {
 		t.Fatal("a scope on undo:", code)
 	}
 	if code, body := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"`+requestID("fake-gh")+`"}`); code != 200 || !strings.Contains(body, `"version":3`) {

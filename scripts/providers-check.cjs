@@ -434,12 +434,12 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.evaluate(() => window.IwatoI18n.setPreference('ja'));
     await openai.getByRole('button', { name: '付ける' }).click();
     await conflict.getByRole('button', { name: '今の許可のまま遮断に切り替えて付ける' }).waitFor();
-    check(await conflict.getByRole('button', { name: '今の許可のまま遮断に切り替えて付ける' }).isVisible() && await conflict.getByRole('button', { name: '記録から選んで遮断に切り替える (ポリシーのタブ)' }).isVisible() && await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).isVisible(), 'it offers to enforce (as is, or from the log) or to remove');
+    check(await conflict.getByRole('button', { name: '今の許可のまま遮断に切り替えて付ける' }).isVisible() && await conflict.getByRole('button', { name: '記録から選んで遮断に切り替える (「ポリシー」タブ)' }).isVisible() && await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).isVisible(), 'it offers to enforce (as is, or from the log) or to remove');
     check(await side.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the conflict does not scroll the panel sideways');
     await conflict.scrollIntoViewIfNeeded();
     await shot('attach-ambiguity.png');
     // From the log: the policy tab, the rule open, what to do next.
-    await conflict.getByRole('button', { name: '記録から選んで遮断に切り替える (ポリシーのタブ)' }).click();
+    await conflict.getByRole('button', { name: '記録から選んで遮断に切り替える (「ポリシー」タブ)' }).click();
     const done = policy.locator('.proposal-done');
     await done.waitFor();
     await policy.locator('.policy-rule[data-rule=allow_api_openai_com_443] .policy-observed').waitFor({ timeout: 5000 }).catch(() => {});

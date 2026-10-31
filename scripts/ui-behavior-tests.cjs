@@ -285,7 +285,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   await approveFirst(eg);
   assert.equal(eg.confirmations.length, 0, 'approving the opened proposal needs no further question');
   assert.equal(mutations(eg).length, 1); const approveReq = mutations(eg)[0]; assert.equal(approveReq.path, '/api/sandboxes/api/proposals/approve'); assert.equal(approveReq.method, 'POST');
-  assert.deepEqual(JSON.parse(approveReq.body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'as proposed: every program, the request ID and the digest shown'); assert.equal(approveReq.headers['X-CSRF-Token'], 'csrf123');
+  assert.deepEqual(JSON.parse(approveReq.body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {}}, 'as proposed: the request ID and the digest shown'); assert.equal(approveReq.headers['X-CSRF-Token'], 'csrf123');
   assert.equal(eg.policy().children[0].children[3].hidden, false); assert.match(eg.policy().children[0].children[3].textContent, /10 秒ほど/, 'an approval says it takes a moment to reach the sandbox');
   eg.card().children[2].children[0].children[1].click(); await flush(); assert(eg.intervals.some((i) => i.ms === 2000 && !i.cleared), 'the policy tab follows closely just after the owner acted');
   ok('the policy tab opens a proposal beside the list and approves it as proposed for every program, with its request ID and digest');
@@ -298,10 +298,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(ruleRows(narrow)[1], [false, 'POST /o/r.git/git-receive-pack', 'true']);
     await runTimers(narrow);
     const preview = narrow.requests.filter((r) => r.path.endsWith('/proposals/preview'));
-    assert.deepEqual(JSON.parse(preview.at(-1).body).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}]}, 'the preview asks about the narrowed rule');
+    assert.deepEqual(JSON.parse(preview.at(-1).body).scope, {rules: [{method: 'GET', path: '/o/r.git/info/refs'}]}, 'the preview asks about the narrowed rule');
     assert.match(texts(review(narrow)), /\+ {3}allow_x:/, 'the diff shows the rule added');
     await approveFirst(narrow);
-    assert.deepEqual(scopeOf(narrow).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}]});
+    assert.deepEqual(scopeOf(narrow).scope, {rules: [{method: 'GET', path: '/o/r.git/info/refs'}]});
     // Nothing checked: nothing to approve.
     const none = await approveEnv(proposal);
     for (const b of boxes(none)) toggle(b);
@@ -316,11 +316,11 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.match(texts(review(l4)), /書き込みをすべてのパスに許可します\nPOST cdn\.example\/\*\*/, 'a write on every path is warned');
     toggle(boxes(l4)[2]);
     await approveFirst(l4);
-    assert.deepEqual(scopeOf(l4).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}]});
+    assert.deepEqual(scopeOf(l4).scope, {rules: [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}]});
     toggle(boxes(l4)[6]);
     assert.equal(boxes(l4)[0].disabled, true, 'L4 makes the methods moot'); assert.match(texts(review(l4)), /検査せずに許可します \(L4\)/);
     await approveFirst(l4);
-    assert.deepEqual(scopeOf(l4).scope, {binaries: ['/**']}, 'L4: as proposed, every program');
+    assert.deepEqual(scopeOf(l4).scope, {}, 'L4: as proposed');
     // Not a web port: L4 checked from the start.
     const ssh = await approveEnv({...proposal, endpoints: [{host: 'github.com', ports: [22]}]});
     assert.equal(ruleRows(ssh).at(-1)[0], true); assert.equal(ruleRows(ssh)[0][0], false);
@@ -420,9 +420,9 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.equal(find(opened(red), '却下'), undefined); assert(find(opened(red), '閉じる')); assert.match(texts(opened(red)), /提案どおりにしか承認できない/);
     assert.match(texts(nodes(opened(red)).find((n) => n.className === 'review-rules')), /^POST\n\/hook$/);
     const previewed = red.requests.filter((r) => r.path.endsWith('/proposals/preview'));
-    assert.deepEqual(JSON.parse(previewed.at(-1).body), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'the preview asks with the digest');
+    assert.deepEqual(JSON.parse(previewed.at(-1).body), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {}}, 'the preview asks with the digest');
     find(opened(red), '承認').click(); await flush();
-    assert.deepEqual(scopeOf(red), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'as proposed, with the digest');
+    assert.deepEqual(scopeOf(red), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {}}, 'as proposed, with the digest');
     // Closed: the list's button again, nothing sent.
     const closed = await openRejected(fine);
     find(opened(closed), '閉じる').click(); await flush();
@@ -433,7 +433,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const box = nodes(opened(tok)).filter((n) => n.type === 'checkbox').find((n) => !n.parent.hidden);
     assert.equal(box.checked, true); assert.match(texts(opened(tok)), /gh のトークン/);
     toggle(box); find(opened(tok), '承認').click(); await flush();
-    assert.deepEqual(scopeOf(tok).scope, {binaries: ['/**'], attach: false}, 'unchecked, the token stays out');
+    assert.deepEqual(scopeOf(tok).scope, {attach: false}, 'unchecked, the token stays out');
   }
   ok('a rejected proposal opens the same review: red host checks, rule warnings, Iwato\'s port refused, read-only rows, the token checkbox, approved as proposed with its digest');
   {
@@ -449,18 +449,18 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(plain(A.reviewScope({placeholder: true, endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/'}]}]}, ph)).scope.rules, [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}], 'never exactly / unless proposed by the agent');
   // Audited as proposed: enforced with its rules.
   const audited = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'audit', rules: [{method: 'GET', path: '/a'}]}]};
-  assert.deepEqual(plain(A.reviewScope(audited, A.reviewRows(audited))).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/a'}]});
+  assert.deepEqual(plain(A.reviewScope(audited, A.reviewRows(audited))).scope, {rules: [{method: 'GET', path: '/a'}]});
   // One L4 row per uninspected endpoint; only the checked ones go uninspected.
   const twoL4 = {endpoints: [{host: 'a.example', ports: [443]}, {host: 'b.example', ports: [5432]}]};
   const l4Rows = A.reviewRows(twoL4);
   assert.deepEqual(plain(l4Rows.filter((r) => r.kind === 'l4').map((r) => r.checked + ' ' + r.ep + ' ' + r.label)), ['false 0 a.example', 'true 1 b.example:5432']);
-  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {binaries: ['/**'], uninspected: [1], rules: [{method: 'GET', path: '/**', host: 'a.example'}, {method: 'HEAD', path: '/**', host: 'a.example'}]});
+  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {uninspected: [1], rules: [{method: 'GET', path: '/**', host: 'a.example'}, {method: 'HEAD', path: '/**', host: 'a.example'}]});
   assert.deepEqual(plain([...A.uninspectedHosts(twoL4, l4Rows)]), ['b.example']);
   for (const r of l4Rows) if (r.kind === 'l4') r.checked = true;
-  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {binaries: ['/**']}, 'every endpoint uninspected: as proposed');
+  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {}, 'every endpoint uninspected: as proposed');
   const many = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: Array.from({length: 20}, (_, i) => ({method: 'GET', path: '/p' + i}))}]};
   const manyRows = A.reviewRows(many);
-  assert.deepEqual(plain(A.reviewScope(many, manyRows)), {scope: {binaries: ['/**']}, error: ''}, 'over 16, all kept: as proposed');
+  assert.deepEqual(plain(A.reviewScope(many, manyRows)), {scope: {}, error: ''}, 'over 16, all kept: as proposed');
   manyRows[0].checked = false;
   assert.match(A.reviewScope(many, manyRows).error, /16 個までです \(いま 19 個\)/);
   const day = 86400, now = Date.UTC(2026, 9, 31) / 1000;
@@ -553,7 +553,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   let seeded;
   den.setConfirmHandler((question) => {
     assert.match(question, /規則「ci」の宛先 ci\.example:443 に、止められたメソッドとパスを許可として追加/);
-    assert.match(question, /「読み取りだけ」は、OpenShell が同じ意味の規則 \(すべてのパスへの GET・HEAD・OPTIONS\) に置き換えてから足します/);
+    assert.match(question, /「読み取りだけ」を同じ意味の規則 \(すべてのパスへの GET・HEAD・OPTIONS\) に置き換えてから足します/);
     assert.equal(den.els['approve-scope'].dataset.mode, 'allow');
     const row = den.els['approve-rules'].children[0];
     seeded = [row.children[0].value, row.children[1].value];
@@ -898,7 +898,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const rec = await environment({fake: false, status: 'running'}); const recButton = rec.buttons()[7]; assert.equal(recButton.textContent, '作り直す'); assert.equal(recButton.disabled, false); recButton.click();
   const recPanel = rec.side('recreate-panel'); assert.equal(recPanel.hidden, false); const [, , kept, lost, recPull, recGpu, recForm, recStatus] = recPanel.children; assert.equal(recPull.hidden, true, 'no pull option for a tag that does not move'); assert.equal(recGpu.hidden, false); assert.equal(recGpu.children[1].textContent, 'GPU を使う'); assert.equal(recGpu.children[0].checked, false); recGpu.children[0].checked = true; const [recInput] = recForm.children;
   const items = box => box.children[1].children.map(li => li.textContent).join(' ');
-  assert.match(items(kept), /ボリューム.*\/home\/dev/); assert.match(items(kept), /プロバイダー/); assert.match(items(kept), /ポリシーの規則/); assert.match(items(kept), /作成時の設定: イメージ・通信のプリセット/); assert.match(items(kept), /ホームの外のパスは引き継がず/); assert.match(items(lost), /ボリューム以外/); assert.match(items(lost), /提案.*履歴/);
+  assert.match(items(kept), /ボリューム.*\/home\/dev/); assert.match(items(kept), /プロバイダー/); assert.match(items(kept), /ポリシーの規則/); assert.match(items(kept), /作成時の設定: イメージ・通信のプリセット/); assert.match(items(kept), /ホームの外のパスは引き継がず/); assert.match(items(lost), /ボリューム以外/); assert.match(items(lost), /承認待ちと却下した提案/);
   recInput.value = 'wrong'; recForm.listeners.submit({preventDefault() {}}); await flush(); assert.equal(rec.requests.filter(r => r.path.endsWith('/recreate')).length, 0); assert.match(recStatus.textContent, /一致しません/);
   recInput.value = 'api'; recForm.listeners.submit({preventDefault() {}}); await flush();
   const recReq = rec.requests.find(r => r.path === '/api/sandboxes/api/recreate'); assert.deepEqual(JSON.parse(recReq.body), {confirm: 'api', gpu: true}); assert.equal(recReq.headers['X-CSRF-Token'], 'csrf123');
@@ -1538,7 +1538,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
       {name: 'allow_api', source: 'proposal', binaries: ['/usr/bin/gh', '/usr/bin/git'], endpoints: [{host: 'api.github.com', ports: [443]}],
         chunks: [{id: id('d'), binary: '/usr/bin/gh', binaries: ['/usr/bin/gh'], source: 'agent', intent: 'PR を見る', decidedAt: now - 86400 * 2, removesRule: false}, {id: id('e'), binary: '/usr/bin/git', binaries: ['/usr/bin/git'], source: 'auto', decidedAt: now - 86400, removesRule: false}]},
       {name: 'allow_npm', source: 'proposal', binaries: ['/n/*/bin/node'], endpoints: [{host: 'registry.npmjs.org', ports: [443]}, {host: 'npm.pkg.github.com', ports: [443]}],
-        chunks: [{id: id('f'), binary: '/n/22/bin/node', binaries: ['/n/*/bin/node'], widened: true, source: 'auto', decidedAt: now - 300, removesRule: true, drops: ['npm.pkg.github.com:443']}]},
+        chunks: [{id: id('f'), binary: '/n/22/bin/node', binaries: ['/n/*/bin/node'], source: 'auto', decidedAt: now - 300, removesRule: true, drops: ['npm.pkg.github.com:443']}]},
       {name: 'allow_pypi', source: 'hand', binaries: ['/usr/bin/python3.*'], endpoints: [{host: 'pypi.org', ports: [443]}]},
       {name: '_provider_github_personal', source: 'provider', provider: {name: 'github-personal', profile: 'iwato-github', label: 'GitHub'}, binaries: ['/usr/bin/gh', '/usr/bin/git'], endpoints: [{host: 'github.com', ports: [443], path: '/**', inspect: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '**'}]}, {host: 'api.github.com', ports: [443]}]}]}};
   const lists = await environment({fake: false, status: 'running'});
@@ -1557,20 +1557,20 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const prov = rule('_provider_github_personal');
   assert.match(texts(prov), /プロバイダー github-personal \(GitHub\)/); assert.match(texts(prov), /外すにはプロバイダーを外す/); assert.match(texts(prov), /github\.com:443 \/\*\* · 検査 \(遮断\)/);
   assert(!nodes(prov).some((n) => n.tagName === 'button' && !['開く'].includes(n.textContent)), 'a provider rule has no edit buttons');
-  // From proposals: no 外す, one 取り消す per proposal; the glob the approval widened to.
+  // From proposals: no 外す, one 取り消す per proposal; the approved glob.
   const api = rule('allow_api');
   assert.equal(find(api, '外す'), undefined); assert.equal(find(api, '規則「allow_api」を外す'), undefined);
   assert.match(texts(api), /提案から\n\/usr\/bin\/gh 「PR を見る」 · \d\d\/\d\d \d\d:\d\d 承認/);
   assert.equal(find(api, 'プログラム /usr/bin/gh を外す'), undefined, 'a proposal\'s program comes out with 取り消す only');
-  assert.match(texts(rule('allow_npm')), /\/n\/22\/bin\/node を \/n\/\*\/bin\/node に広げて承認/);
+  assert.match(texts(rule('allow_npm')), /\/n\/\*\/bin\/node/);
   assert(find(rule('allow_pypi'), '規則「allow_pypi」を外す') && /手で追加/.test(texts(rule('allow_pypi'))), 'by hand: 外す as before');
   lists.setConfirm(false); find(api, '提案 /usr/bin/gh を取り消す').click(); await flush();
   assert.equal(lists.requests.filter((r) => r.path.endsWith('/proposals/undo')).length, 0, 'undoing asks first');
-  assert.match(lists.confirmations.at(-1), /承認待ちに戻り、規則からプログラム \/usr\/bin\/gh が外れます/); assert.doesNotMatch(lists.confirmations.at(-1), /規則ごと/);
+  assert.match(lists.confirmations.at(-1), /承認待ちに戻ります。\n規則からプログラム \/usr\/bin\/gh が外れます/); assert.doesNotMatch(lists.confirmations.at(-1), /規則ごと/);
   lists.setConfirm(true);
   find(rule('allow_npm'), '提案 /n/22/bin/node を取り消す').click(); await flush();
   const asked = lists.confirmations.at(-1);
-  assert.match(asked, /広げたプログラム \(\/n\/\*\/bin\/node\) も外します/); assert.match(asked, /規則ごと消えます/); assert.match(asked, /一緒に消えます: npm\.pkg\.github\.com:443/);
+  assert.doesNotMatch(asked, /プログラム .* が外れます/); assert.match(asked, /規則ごと消えます/); assert.match(asked, /一緒に消えます: npm\.pkg\.github\.com:443/);
   const undo = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/undo');
   assert.equal(undo.length, 1); assert.deepEqual(JSON.parse(undo[0].body), {requestId: id('f')}); assert.equal(undo[0].headers['X-CSRF-Token'], 'csrf123');
   assert.match(lists.policy().children[0].children[3].textContent, /取り消しました。提案は承認待ちに戻りました/);
@@ -1593,7 +1593,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   find(rejItems()[0], '承認する').click(); await flush();
   find(rejItems()[0], '承認').click(); await flush();
   const appr = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/approve');
-  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {binaries: ['/**']}});
+  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {}});
   ok('the rejected list shows the newest 10 then more, the hits since, OpenShell\'s own rejections, and approves as proposed');
   }
 
@@ -1830,7 +1830,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const panel = cf.side('provider-panel'); const [, , restartBox, conflictBox, status, list] = panel.children;
   list.children[0].children[1].children[1].click(); await flush();
   assert.equal(conflictBox.hidden, false); assert.equal(restartBox.hidden, true); assert.match(status.textContent, /claude はまだ付けていません/);
-  assert.equal(conflictBox.children[1].children[0].textContent, '規則 allow_api_anthropic_com_443: api.anthropic.com:443 (L4-only) · /usr/bin/curl はこの宛先に出られなくなります');
+  assert.equal(conflictBox.children[1].children[0].textContent, '規則 allow_api_anthropic_com_443: api.anthropic.com:443 (L4-only) · /usr/bin/curl の検査なしの通信は止まります');
   conflictBox.children[2].children[0].click(); await flush();
   assert.deepEqual(posts, ['/api/sandboxes/api/providers/attach', '/api/sandboxes/api/providers/fix', '/api/sandboxes/api/providers/attach'], 'fix, then attach again');
   assert.equal(conflictBox.hidden, true); assert.equal(restartBox.hidden, false); assert.match(status.textContent, /claude を付けました/);
@@ -1863,7 +1863,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   list.children[0].children[1].children[1].click(); await flush();
   assert.equal(conflictBox.hidden, false); assert.match(status.textContent, /github-personal はまだ付けていません/);
   assert.equal(conflictBox.children[1].children[0].textContent, '規則 gh: api.github.com:443 — 検査のモード: gh は 監査 (audit)、_provider_github_personal は 遮断 (enforce) · 今の許可: GET / (ルートだけ), GET /** (すべて)');
-  assert.deepEqual(conflictBox.children[2].children.map((b) => b.textContent), ['今の許可のまま遮断に切り替えて付ける', '記録から選んで遮断に切り替える (ポリシーのタブ)', 'この宛先を規則から外して付ける', 'やめる']);
+  assert.deepEqual(conflictBox.children[2].children.map((b) => b.textContent), ['今の許可のまま遮断に切り替えて付ける', '記録から選んで遮断に切り替える (「ポリシー」タブ)', 'この宛先を規則から外して付ける', 'やめる']);
   conflictBox.children[2].children[0].click(); await flush();
   assert.deepEqual(posts.map((p) => p[0].split('/').pop() + (p[1].mode ? ':' + p[1].mode : '')), ['attach', 'fix:enforce', 'attach'], 'enforce, then attach again');
   assert.match(status.textContent, /github-personal を付けました/);

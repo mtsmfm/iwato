@@ -73,11 +73,6 @@ func (a EndpointAmbiguity) Fields() []string {
 	return out
 }
 
-// involves says whether the pair includes rule.
-func (a EndpointAmbiguity) involves(rule string) bool {
-	return a.LeftRule == rule || a.RightRule == rule
-}
-
 // key identifies the pair regardless of the endpoints' order.
 func (a EndpointAmbiguity) key() string {
 	l, r := a.LeftRule+"|"+a.LeftSelector, a.RightRule+"|"+a.RightSelector

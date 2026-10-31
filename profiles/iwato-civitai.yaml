@@ -5,10 +5,8 @@
 #
 # Client binaries:   curl and wget (Civitai's own download examples), python3
 #                    (the image's, mise's and uv's interpreters: civitai-py,
-#                    ComfyUI and its model managers, download scripts). Any
-#                    Python program may use the key: OpenShell matches the
-#                    interpreter, not the script. wget is not in the standard
-#                    image (it is listed for images that have it).
+#                    ComfyUI and its model managers, download scripts). wget is
+#                    not in the standard image. Rules allow every program (ADR 0022).
 # Credential scope:  CIVITAI_API_TOKEN (civitai-py) and CIVITAI_TOKEN (used by
 #                    ComfyUI tools and download scripts): the same key. It is
 #                    sent as a bearer authorization header, or as the
@@ -26,10 +24,8 @@
 #                    Cloudflare R2 / Backblaze B2; the host is configuration,
 #                    not in Civitai's source). The URL carries its own
 #                    authorization and no credential is sent there: it is not
-#                    listed (every endpoint of a profile with credentials is
-#                    credentialed, and OpenShell refuses an uninspected rule
-#                    for it). Approve it as an ordinary read-only rule when
-#                    proposed.
+#                    in iwato/credential-hosts. Approve it as an ordinary
+#                    read-only rule when proposed.
 # Verified:          the API key placement from Civitai's REST API reference
 #                    (the civitai/civitai wiki, now deprecated) and civitai-py.
 #                    Not checked against developer.civitai.com; the storage

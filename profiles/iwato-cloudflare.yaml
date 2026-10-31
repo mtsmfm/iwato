@@ -4,12 +4,9 @@
 #   openshell provider profile lint -f profiles/iwato-cloudflare.yaml
 #
 # Client binaries:   mise's node (wrangler is a Node script: `mise use -g
-#                    npm:wrangler` or the project's npx; OpenShell matches
-#                    the interpreter, not the script, so any Node program,
-#                    the cloudflare SDK too, may use the token), cloudflared
-#                    (`mise use -g cloudflared`, aqua: installs/cloudflared/
-#                    VERSION/cloudflared), curl. Python (the cloudflare SDK)
-#                    is not listed and gets a proposal.
+#                    npm:wrangler` or the project's npx), cloudflared (`mise use
+#                    -g cloudflared`, aqua: installs/cloudflared/VERSION/
+#                    cloudflared), curl. Rules allow every program (ADR 0022).
 # Credential scope:  CLOUDFLARE_API_TOKEN (workers-auth credentials.ts
 #                    getCloudflareAPITokenFromEnv), sent by wrangler as a
 #                    bearer authorization header (workers-utils cfetch
@@ -26,8 +23,8 @@
 #                    cloudflared does not read the variable: its tunnel
 #                    commands take the token in cert.pem (`cloudflared tunnel
 #                    login`, TUNNEL_ORIGIN_CERT; credentials/origin_cert.go)
-#                    and send it the same way (cfapi/base_client.go); listing
-#                    it keeps those calls in this provider's scope.
+#                    and send it the same way (cfapi/base_client.go), so the
+#                    provider's rule covers those calls too.
 #                    `cloudflared tunnel run` connects to Cloudflare's edge
 #                    (*.argotunnel.com, port 7844) with a tunnel token and is
 #                    outside this provider.

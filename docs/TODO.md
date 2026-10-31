@@ -25,7 +25,7 @@ Open work. Decisions live in `docs/adr/`; this file lists only the work. Remove 
 ## Presets
 
 - [ ] Import user presets from a URL
-- [ ] Still unverified against real traffic: pip/uv, `gem install`, `docker`/`crane` pulls (with and without credentials), `uv python install` through `releases.astral.sh` (where it redirects). Out of the preset by design: mise's Python and Ruby and other GitHub-backed tools, `uv python install`'s fallback and `curl` of `github.com/…/releases/download` need github.com/api.github.com (the GitHub provider's hosts, whose rules name only `gh` and `git`); yarn's `registry.yarnpkg.com` is not included
+- [ ] Still unverified against real traffic: pip/uv, `gem install`, `uv python install` through `releases.astral.sh` (where it redirects). yarn's `registry.yarnpkg.com` is in no preset
 
 ## Providers
 

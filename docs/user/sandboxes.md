@@ -43,8 +43,8 @@ A sandbox stops as soon as its last terminal exits. Stopping also ends processes
 
 A sandbox keeps the image it was created from. To move it to a newer image (for example a new standard image), use **Recreate**: Iwato deletes it and creates it again with the same name and settings from the current image, then starts it. This takes a few minutes and ends running processes and terminals.
 
-- Kept: the home volume, the attached providers, the policy's rules (approved proposals and rules you added; provider rules come back with the providers), and the creation settings (image, presets, GPU, publishing settings)
-- Lost: files outside the home, pending and rejected proposals, and the policy history (OpenShell keeps those per sandbox)
+- Kept: the home volume, the attached providers, the policy's rules and their history, and the creation settings (image, presets, GPU, publishing settings)
+- Lost: files outside the home, and pending and rejected proposals (OpenShell keeps those per sandbox)
 - Rules OpenShell no longer accepts are not restored; Iwato tells you which
 - "Use the GPU" turns the GPU on or off for the new sandbox (shown where a GPU is available, or while the sandbox has one)
 - Tick "Pull the latest image first" to fetch a newer standard image before recreating (development builds, see below)

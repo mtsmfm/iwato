@@ -225,9 +225,9 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 }
 
 // approvable checks the rule an approval would join the policy with (as
-// proposed, or narrowed: programs alone keep the proposed endpoints): it
-// may carry an attached provider's credential uninspected, which
-// OpenShell refuses, or reach Iwato's own port. It writes the refusal.
+// proposed, or narrowed): it may carry an attached provider's credential
+// uninspected, which OpenShell refuses, or reach Iwato's own port. It
+// writes the refusal.
 func (s *Server) approvable(ctx context.Context, w http.ResponseWriter, sb Sandbox, request, shown string, scope *ProposalScope) bool {
 	if pr, ok := s.rt.(proposedRuleRuntime); ok {
 		rule, digest, e := pr.ProposedRule(ctx, sb, request)
@@ -476,10 +476,6 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []st
 	}
 	if e := s.checkEdit(ctx, sb, edit); e != nil {
 		failCheck(w, e)
-		return
-	}
-	if e := s.checkEditBinaries(ctx, sb, edit); e != nil {
-		failErr(w, 409, e)
 		return
 	}
 	change, e := rt.EditPolicy(ctx, sb, edit)

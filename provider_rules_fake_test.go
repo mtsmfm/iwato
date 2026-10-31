@@ -157,7 +157,7 @@ func TestApprovalOffersTheCredential(t *testing.T) {
 				t.Fatal(code, body)
 			}
 		}
-		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"readOnly":true,"binaries":["/usr/bin/gh"],"attach":true,"offer":`+attach+`}}`)
+		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"rules":[{"method":"GET","path":"/**"}],"attach":true,"offer":`+attach+`}}`)
 		if code != 200 {
 			t.Fatal(attach, code, body)
 		}
@@ -189,7 +189,7 @@ func TestHandRuleInheritsAndApprovalsAreOffered(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	id := requestID("fake-git")
-	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"binaries":["/**"],"attach":false}}`); code != 200 {
+	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"attach":false}}`); code != 200 {
 		t.Fatal(code, body)
 	}
 	_, body := do("GET", "/api/sandboxes/dev/proposals", "")

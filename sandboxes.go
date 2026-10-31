@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// The sandbox list, the ingress settings, the providers' scopes and the
-// time zone are editable while serve runs; the other fields are fixed.
+// The sandbox list, the ingress settings and the time zone are editable
+// while serve runs; the other fields are fixed.
 
 func (s *Server) sandboxList() []Sandbox {
 	s.mu.Lock()

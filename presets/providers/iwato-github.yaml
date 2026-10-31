@@ -6,8 +6,8 @@
 # Reads only: the REST API's GET, HEAD and OPTIONS, GraphQL queries, and git
 # clone and fetch. Writes and push take a proposal, whose approval can attach
 # the credential. Paths are /** (not empty) so that these endpoints are more
-# specific than a rule without a path on the same host (packages' mise
-# rules): OpenShell refuses overlapping endpoints of equal specificity that
+# specific than a rule without a path on the same host (the tools
+# preset's): OpenShell refuses overlapping endpoints of equal specificity that
 # bind differently.
 id: iwato-github
 label: GitHub

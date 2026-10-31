@@ -224,12 +224,20 @@ Not part of OpenShell's guide. The owner reviews every proposal in Iwato and
 wants to be asked as seldom as is safe, without a wider reach than the task
 needs.
 
-- **Versions are `*`.** Write a version number in a path (a URL path, a file
-  name, a binary path) as `*`, so the rule keeps working after an update and
-  the next version does not need another approval:
-  `/go/go*.linux-amd64.tar.gz`, `/home/dev/.local/share/mise/installs/go/*/bin/go`,
-  `/home/dev/.local/share/claude/versions/*`. `*` matches one path component;
-  `**` matches several. Do not use `**` for a version.
+- **Nothing auto-approves.** Automatic approval is off, so "Auto-approval"
+  above does not apply: every proposal waits for the owner, and changing a
+  host or dropping a credential to avoid a finding gains nothing.
+- **Each approval is its own rule, for every program.** It joins no existing
+  rule, carries the approved paths, and allows every program whatever
+  `binaries` says. `binaries` only tells the owner what asked: name the
+  program you are using. Do not look for an exact executable path, and do not
+  write a helper or rebuild anything to fit a rule.
+- **A proposal cannot carry a credential.** The owner attaches a provider's
+  token when approving; say in `intent_summary` when the request needs it.
+- **Versions are `*`.** Write a version number in a URL path as `*`, so the
+  rule keeps working after an update and the next version does not need
+  another approval: `/go/go*.linux-amd64.tar.gz`. `*` matches one path
+  component; `**` matches several. Do not use `**` for a version.
 - **Hosts where anyone can publish files** (`github.com`, `api.github.com`,
   `raw.githubusercontent.com`, `gist.github.com`, `gitlab.com`, `huggingface.co`,
   `storage.googleapis.com`, object-storage buckets, package registries that
@@ -252,18 +260,13 @@ needs.
 - **Read wide, write narrow.** Inside that scope, `GET`, `HEAD` and `OPTIONS`
   may use `**`. `PUT`, `POST`, `PATCH` and `DELETE` name the exact path, with `*`
   only for an id or a number (`/repos/ORG/REPO/pulls/*/merge`).
-- **A binary is the executable that really runs.** The proxy matches the
-  resolved path of the process (`readlink -f`), which can differ from the name
-  you typed: `git-remote-https` runs as `/usr/lib/git-core/git-remote-http`.
-  Read the denial's `binary` and propose that path, with `*` for any version
-  in it.
 - **A changed executable stays denied.** OpenShell pins the hash of each
   executable in a connection (the process and every parent) on first use. A
   denial that says "binary integrity check failed" or "executable changed"
   means a file at a pinned path was rebuilt or replaced; no rule allows it
   until the sandbox restarts. Do not retry it or propose a broader rule. For a
   program you rebuild, follow "Programs you rebuild" in `/AGENTS.md` (build
-  each version to a new path and propose `/home/dev/bin/app-*`).
+  each version to a new path).
 
 ## Local logs (read-only)
 

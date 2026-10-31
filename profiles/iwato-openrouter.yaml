@@ -9,12 +9,8 @@
 #
 # Client binaries:   curl and wget, python3 (the image's, mise's and uv's
 #                    interpreters: the openai SDK and scripts run there) and
-#                    mise's node (the openai and OpenRouter SDKs). OpenShell
-#                    matches the interpreter, not the script, so any Python
-#                    or Node program may use the key: a narrower list is not
-#                    possible for SDK users. wget is not in the standard image
-#                    (it is listed for images that have it). An agent with its
-#                    own executable (e.g. OpenCode) needs its path added.
+#                    mise's node (the openai and OpenRouter SDKs). wget is not
+#                    in the standard image. Rules allow every program (ADR 0022).
 # Credential scope:  OPENROUTER_API_KEY, sent as a bearer authorization header
 #                    to openrouter.ai/api only (OpenRouter's documented auth).
 # Endpoint access:   openrouter.ai/api/** read-write: inference is POST

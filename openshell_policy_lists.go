@@ -16,16 +16,15 @@ import (
 // the approved chunks of its name whose program it still holds.
 
 // ChunkLink is an approved proposal a rule came from. ID is its request ID.
-// Binary is the program that asked; Binaries the ones approved (Widened:
-// the approve dialog widened it to a glob). Undoing it takes out Binary
-// and the approved ones no other approved proposal of the rule holds.
+// Binary is the program that asked; Binaries the ones approved. Undoing it
+// takes out Binary and the approved ones no other approved proposal of the
+// rule holds.
 // RemovesRule says the rule goes with them. Drops are the endpoints that
 // then go too without having come from this proposal.
 type ChunkLink struct {
 	ID          string   `json:"id"`
 	Binary      string   `json:"binary"`
 	Binaries    []string `json:"binaries"`
-	Widened     bool     `json:"widened,omitempty"`
 	Source      string   `json:"source"`
 	Intent      string   `json:"intent,omitempty"`
 	DecidedAt   int64    `json:"decidedAt"`
@@ -82,11 +81,10 @@ func linked(c v1.PolicyChunk, rules map[string]v1.NetworkPolicyRule) bool {
 	return slices.ContainsFunc(ruleBinaries(c, rule), func(b string) bool { return ruleHasBinary(rule, b) })
 }
 
-// undoPlan is what undoing approved chunk c does to its rule: OpenShell
-// takes out c.Binary; leftovers are the other programs c put in that no
-// other approved chunk of the rule holds (a glob the dialog widened it to),
-// which Iwato takes out in the same action. removesRule says no program is
-// left, so the rule goes with its endpoints.
+// undoPlan is what undoing approved chunk c does to its rule: c.Binary goes
+// out; leftovers are the other programs c put in that no other approved
+// chunk of the rule holds (every program, for an approval). removesRule says
+// no program is left, so the rule goes with its endpoints.
 func undoPlan(rule v1.NetworkPolicyRule, c v1.PolicyChunk, approved []v1.PolicyChunk) (leftovers []string, removesRule bool) {
 	claimed := map[string]bool{}
 	for _, o := range approved {
@@ -184,7 +182,6 @@ func linkChunks(p *CurrentPolicy, chunks []v1.PolicyChunk) []UnlinkedProposal {
 		_, removes := undoPlan(rule, c, approved)
 		view := pendingProposal("", c)
 		link := ChunkLink{ID: requestID(c.ID), Binary: c.Binary, Binaries: chunkBinaries(c), Source: view.Source, Intent: view.Intent, DecidedAt: unixOrZero(c.DecidedAt), RemovesRule: removes}
-		link.Widened = c.Binary != "" && !slices.Contains(link.Binaries, c.Binary)
 		if removes {
 			link.Drops = drops(rule, c)
 		}
@@ -271,17 +268,4 @@ func (o *OpenShell) UndoProposal(ctx context.Context, w Sandbox, request string,
 		change.Version = v
 	}
 	return o.withVersion(ctx, w, change), nil
-}
-
-// revisionRules are the latest revision's rules (the ones edits apply to;
-// the providers' are not among them).
-func (o *OpenShell) revisionRules(ctx context.Context, w Sandbox) (map[string]v1.NetworkPolicyRule, error) {
-	st, err := o.latestPolicy(ctx, w)
-	if err != nil {
-		return nil, err
-	}
-	if st.Revision.Policy == nil {
-		return map[string]v1.NetworkPolicyRule{}, nil
-	}
-	return st.Revision.Policy.NetworkPolicies, nil
 }

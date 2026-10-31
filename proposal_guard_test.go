@@ -19,8 +19,7 @@ func codeOf(err error) string {
 	return ""
 }
 
-// An approved rule allows every program (ADR 0022) whatever the page sends;
-// a scope without programs is still refused.
+// An approved rule allows every program (ADR 0022).
 func TestApprovalAllowsEveryProgram(t *testing.T) {
 	rule := func() *v1.NetworkPolicyRule {
 		return &v1.NetworkPolicyRule{Name: "gh", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/gh"}, {Path: "/**"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.github.com", Port: 443}}}
@@ -35,22 +34,19 @@ func TestApprovalAllowsEveryProgram(t *testing.T) {
 		_, err := o.DecideProposal(ctx, w, "approve", requestID(id), testDigest(o, ctx, w, requestID(id)), scope)
 		return err
 	}
-	if err := decide("c1", &ProposalScope{ReadOnly: true}); codeOf(err) != "scope_binaries_missing" {
-		t.Fatal("a scope without programs:", err)
-	}
-	if err := decide("c1", &ProposalScope{Binaries: []string{"/usr/bin/gh"}}); err != nil {
+	if err := decide("c1", &ProposalScope{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.chunks[0].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/**" {
 		t.Fatal("not every program:", got)
 	}
-	if err := decide("c2", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/*"}}); err != nil {
+	if err := decide("c2", &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.chunks[1].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/**" {
 		t.Fatal("narrowed:", got)
 	}
-	if err := decide("c3", &ProposalScope{Binaries: []string{"/usr/bin/gh"}}); err != nil {
+	if err := decide("c3", nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"c1 t1-edited", "c2 t2-edited", "c3 t3-edited"}; !slices.Equal(f.approved, want) {
@@ -68,8 +64,10 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	}
 	many.Endpoints = []v1.PolicyNetworkEndpoint{{Host: "a.example", Port: 443}}
 	var endpoints []v1.PolicyNetworkEndpoint
+	var everyHost []ProposalRule
 	for i := range proposalLimits.Endpoints + 1 {
 		endpoints = append(endpoints, v1.PolicyNetworkEndpoint{Host: fmt.Sprintf("h%d.example", i), Port: 443})
+		everyHost = append(everyHost, ProposalRule{Method: "GET", Path: "/**", Host: endpoints[i].Host})
 	}
 	wide := &v1.NetworkPolicyRule{Name: "wide", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: endpoints}
 	// Rules count across endpoints: the limit is approvable, one more is not.
@@ -104,13 +102,13 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	for _, c := range []struct {
 		id    string
 		scope *ProposalScope
-	}{{"many", nil}, {"wide", nil}, {"wide", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/curl"}}}, {"gql", &ProposalScope{Audit: true, Binaries: []string{"/usr/bin/curl"}}}, {"rules1", nil}} {
+	}{{"many", nil}, {"wide", nil}, {"wide", &ProposalScope{Rules: everyHost}}, {"gql", &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}}}, {"rules1", nil}} {
 		if _, err := o.DecideProposal(ctx, w, "approve", requestID(c.id), testDigest(o, ctx, w, requestID(c.id)), c.scope); codeOf(err) != "proposal_unshown" {
 			t.Errorf("%s %+v: %v", c.id, c.scope, err)
 		}
 	}
-	// Narrowed to programs the page shows, the many-program one goes.
-	if _, err := o.DecideProposal(ctx, w, "approve", requestID("many"), testDigest(o, ctx, w, requestID("many")), &ProposalScope{Binaries: []string{"/bin/p0"}}); err != nil {
+	// Narrowed, the many-program one goes: the rule is for every program.
+	if _, err := o.DecideProposal(ctx, w, "approve", requestID("many"), testDigest(o, ctx, w, requestID("many")), &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := o.DecideProposal(ctx, w, "approve", requestID("rules"), testDigest(o, ctx, w, requestID("rules")), nil); err != nil {

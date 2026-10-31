@@ -242,7 +242,7 @@ var providerProfiles = []providerProfile{
 	},
 	{
 		ID: atlassianProfileID, Label: "Atlassian", Group: groupAgent,
-		Note:        "ATLASSIAN_ACCESS_TOKEN。Atlassian で OAuth の許可を取ります。claude が mcp.atlassian.com/v2/mcp に送るときだけ使い、最初は読み取りのツールだけです。",
+		Note:        "ATLASSIAN_ACCESS_TOKEN。Atlassian で OAuth の許可を取ります。claude が mcp.atlassian.com/v2/mcp に送ります。最初は読み取りのツールだけです。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
 		OAuthFlow:   "atlassian",

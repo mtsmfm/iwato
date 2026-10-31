@@ -2,7 +2,7 @@
 
 [English](../providers.md)
 
-プロバイダーは、認証情報 (トークン、API キー、OAuth の許可) を OpenShell のゲートウェイに預けるものです。プロバイダーを付けたサンドボックスのプログラムには、環境変数に置き換え用の値 (プレースホルダー) だけが渡り、リクエストがプロバイダーの宛先に届くときに OpenShell のプロキシが本物の値に置き換えます。Iwato は値を二度と表示しません。
+プロバイダーは、認証情報 (トークン、API キー、OAuth の許可) を OpenShell のゲートウェイに預けるものです。プロバイダーを付けたサンドボックスのプログラムには、環境変数に置き換え用の値 (プレースホルダー) だけが渡り、リクエストが認証情報を付けた宛先に届くときに OpenShell のプロキシが本物の値に置き換えます。Iwato は値を二度と表示しません。
 
 ## 追加と付け外し
 
@@ -19,7 +19,7 @@ Iwato のプロバイダーの種類:
 | 「Codex」 | `CODEX_CHATGPT_ACCESS_TOKEN`、`CODEX_CHATGPT_ACCOUNT_ID` | ChatGPT のアカウントでログイン (下記)。chatgpt.com/backend-api/codex と /backend-api/wham に送ります |
 | 「OpenAI API」 | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
-| 「Atlassian」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。送れるのは `claude` だけで、送り先は mcp.atlassian.com/v2/mcp |
+| 「Atlassian」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。`claude` が mcp.atlassian.com/v2/mcp に送ります |
 | GitHub | `GH_TOKEN`、`GITHUB_TOKEN` | `gh` と HTTPS の git が使います。読み取りと clone・fetch。書き込みと push は提案の承認で |
 | Hugging Face | `HF_TOKEN`、`HUGGING_FACE_HUB_TOKEN` | ダウンロードだけ。アップロードはポリシーの提案の承認で。ファイルの CDN (`*.hf.co` など) には値を送らないので、その提案は読み取りで承認します |
 | Civitai | `CIVITAI_API_TOKEN`、`CIVITAI_TOKEN` | 読み取りとダウンロードだけ。生成 (Buzz を使う) は提案の承認で。ダウンロードの転送先には値を送らないので、その提案は読み取りで承認します |
@@ -29,7 +29,7 @@ Iwato のプロバイダーの種類:
 | Modal | `MODAL_TOKEN_ID`、`MODAL_TOKEN_SECRET` | `modal` CLI と Python クライアント (api.modal.com と api.modal2.com への HTTP/2 の gRPC)。アプリの実行やデプロイ (費用がかかる) もできます。**注意:** これを付けたサンドボックスは Modal でコードを実行できます。Modal からはインターネットに自由に出られるので、データの行き先はサンドボックスのネットワークポリシーで制限できなくなり、そのコードはワークスペースの Modal Secrets も読めます |
 | Cloudflare | `CLOUDFLARE_API_TOKEN` | 読み取りだけ (api.cloudflare.com/client/v4)。デプロイや DNS の変更は提案の承認で。`CLOUDFLARE_ACCOUNT_ID` は秘密ではないので自分で設定 |
 
-実機で確かめたのは今のところ GitHub と「Atlassian」だけです。プロファイルは、mise とエージェント自身の更新機能が置く場所のエージェントの実行ファイルを指しています (例: Claude Code は `/home/dev/.local/share/claude/versions/*` と、mise の `/home/dev/.local/share/mise/installs/claude/*/claude`)。
+実機で確かめたのは今のところ GitHub と「Atlassian」だけです。
 
 種類ごとの OpenShell のプロファイルは「プロファイルを YAML で見る」で見られます。どこから来たものか (Iwato 同梱、カスタム、ゲートウェイから) を印で示します。OpenShell の CLI で取り込んだプロファイルはゲートウェイから読み、OpenShell の形式の YAML に書き出すので、元のファイルのコメントや書式は残りません。
 
@@ -62,7 +62,7 @@ Atlassian、Claude のアカウントでのログイン、xAI のサブスクリ
 
 ### Claude Code の Claude のアカウントでのログイン
 
-Iwato が `claude auth login` と同じく、Claude Code 自身の公開クライアント ID でログインします (Anthropic が Iwato に発行したものではありません)。PC では「Claude でログイン」で許可すると自動で Iwato に戻ります。スマホでは「スマホなどでログイン (コードを貼る)」で許可し、Claude のページに出たコード (`コード#…`) を貼り付けます。サンドボックスの `claude` は `CLAUDE_CODE_OAUTH_TOKEN` を読みます。`/usage` が使えるよう、Iwato がトークンのスコープ (`CLAUDE_CODE_OAUTH_SCOPES`) も設定します (`~/.config/iwato/env`)。動いているサンドボックスに付けたときは、新しいターミナルを開いてください。claude.ai のコネクターはプロバイダーがそのホストを許可していないので使えません。確かめるには `claude -p 'hello'`。
+Iwato が `claude auth login` と同じく、Claude Code 自身の公開クライアント ID でログインします (Anthropic が Iwato に発行したものではありません)。PC では「Claude でログイン」で許可すると自動で Iwato に戻ります。スマホでは「スマホなどでログイン (コードを貼る)」で許可し、Claude のページに出たコード (`コード#…`) を貼り付けます。サンドボックスの `claude` は `CLAUDE_CODE_OAUTH_TOKEN` を読みます。`/usage` が使えるよう、Iwato がトークンのスコープ (`CLAUDE_CODE_OAUTH_SCOPES`) も設定します (`~/.config/iwato/env`)。動いているサンドボックスに付けたときは、新しいターミナルを開いてください。claude.ai のコネクターはプロバイダーの規則がそのホストを許可していないので使えません。確かめるには `claude -p 'hello'`。
 
 サブスクリプション (Free、Pro、Max) の OAuth トークンの扱いは Anthropic の規約が定めています: [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)。トークンを使うのはサンドボックスの Claude Code だけですが、ログインは Iwato が Claude Code のクライアント ID で行います。ゲートウェイの最初の更新が失敗すると Iwato がそう表示します。
 

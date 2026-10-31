@@ -18,14 +18,15 @@ import (
 // refuses naming the provider's rule, in the preview too; enforced, it
 // goes through.
 func TestApprovalRefusedWhereTheProviderEnforces(t *testing.T) {
-	s, _, do := providerServer(t)
+	s, d, do := providerServer(t)
 	do("POST", "/api/sandboxes/dev/start", `{}`)
 	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`); code != 200 {
 		t.Fatal(code, body)
 	}
+	audited := auditedMiseProposal(d)
 	id := `{"requestId":"` + requestID("fake-mise-gh") + `"` + digestField(s.rt, requestID("fake-mise-gh"))
 	for _, op := range []string{"preview", "approve"} {
-		code, body := do("POST", "/api/sandboxes/dev/proposals/"+op, id+`,"scope":{"audit":true,"binaries":["/**"]}}`)
+		code, body := do("POST", "/api/sandboxes/dev/proposals/"+op, id+`,"scope":{}}`)
 		var resp struct {
 			Error       string
 			Code        string
@@ -37,7 +38,9 @@ func TestApprovalRefusedWhereTheProviderEnforces(t *testing.T) {
 			t.Fatal(op, code, body)
 		}
 	}
-	scope := `,"scope":{"rules":[{"method":"GET","path":"/**"}],"binaries":["/**"]}}`
+	*audited = v1.PolicyNetworkEndpoint{Host: audited.Host, Port: audited.Port}
+	id = `{"requestId":"` + requestID("fake-mise-gh") + `"` + digestField(s.rt, requestID("fake-mise-gh"))
+	scope := `,"scope":{"rules":[{"method":"GET","path":"/**"}]}}`
 	code, body := do("POST", "/api/sandboxes/dev/proposals/preview", id+scope)
 	var preview struct{ YAML string }
 	if code != 200 || json.Unmarshal([]byte(body), &preview) != nil || !strings.Contains(preview.YAML, "path: /**") || !strings.Contains(preview.YAML, "provider: github-personal") {
@@ -48,6 +51,20 @@ func TestApprovalRefusedWhereTheProviderEnforces(t *testing.T) {
 	}
 }
 
+// auditedMiseProposal makes the fake's mise proposal for api.github.com an
+// audited endpoint, and answers it.
+func auditedMiseProposal(d *Fake) *v1.PolicyNetworkEndpoint {
+	for _, c := range d.fakeDraft("dev") {
+		if c.ID == "fake-mise-gh" {
+			e := &c.ProposedRule.Endpoints[0]
+			e.Protocol, e.Enforcement = "rest", v1.NetworkEnforcementModeAudit
+			e.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/"}}}
+			return e
+		}
+	}
+	panic("no mise proposal")
+}
+
 // Without Iwato's check, the fake's gateway refuses as OpenShell does; the
 // prediction and the refusal name the same pair, and Iwato translates it.
 func TestFakeGatewayRefusesWhatIwatoPredicts(t *testing.T) {
@@ -55,13 +72,14 @@ func TestFakeGatewayRefusesWhatIwatoPredicts(t *testing.T) {
 	do("POST", "/api/sandboxes/dev/start", `{}`)
 	do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`)
 	sb := newSandbox("dev")
-	_, err := d.DecideProposal(context.Background(), sb, "approve", requestID("fake-mise-gh"), testDigest(d, context.Background(), sb, requestID("fake-mise-gh")), &ProposalScope{Audit: true, Binaries: []string{fakeMise}})
+	auditedMiseProposal(d)
+	_, err := d.DecideProposal(context.Background(), sb, "approve", requestID("fake-mise-gh"), testDigest(d, context.Background(), sb, requestID("fake-mise-gh")), nil)
 	if err == nil || !strings.Contains(err.Error(), "proposal is not applicable: candidate invalid: network endpoint ambiguity validation failed:") {
 		t.Fatal(err)
 	}
 	base, effective, _ := d.PolicyLayers(context.Background(), sb)
 	rule, _, _ := d.ProposedRule(context.Background(), sb, requestID("fake-mise-gh"))
-	predicted, _ := predictAmbiguities(base, effective, approvalPlanOps(base, effective, rule.Name, (&ProposalScope{Audit: true, Binaries: []string{fakeMise}}).apply(*rule), nil))
+	predicted, _ := predictAmbiguities(base, effective, approvalPlanOps(base, effective, rule.Name, *rule, nil))
 	if len(predicted) != 1 || !strings.Contains(err.Error(), predicted[0].String()) {
 		t.Fatal(predicted, err)
 	}

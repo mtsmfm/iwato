@@ -44,10 +44,9 @@ import (
 // own saves.
 //
 // Before saving, a rule added or changed is checked as an edit is: its
-// shape, the endpoint ambiguity it would bring with the other rules and
-// the providers' (OpenShell's refusal, predicted), and the programs of a
-// rule bound to a credential (unchanged). Rules left as they were are sent as the
-// gateway gave them. Without apply the answer is the difference (added,
+// shape and the endpoint ambiguity it would bring with the other rules and
+// the providers' (OpenShell's refusal, predicted). Rules left as they were
+// are sent as the gateway gave them. Without apply the answer is the difference (added,
 // removed and changed rules), which the page shows before applying.
 //
 // Iwato's records stay as an edit leaves them: Sandbox.Presets keeps the
@@ -489,60 +488,6 @@ func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.
 	return out, diff
 }
 
-// checkBoundBinaries refuses changing the programs of a rule with an
-// endpoint bound to a provider's credential (credential_binding): the
-// credential would go to other programs.
-func checkBoundBinaries(old, rules map[string]v1.NetworkPolicyRule, names []string) error {
-	paths := func(r v1.NetworkPolicyRule) []string {
-		var out []string
-		for _, b := range r.Binaries {
-			out = append(out, b.Path)
-		}
-		slices.Sort(out)
-		return slices.Compact(out)
-	}
-	for _, name := range names {
-		was, ok := old[name]
-		if !ok || !slices.ContainsFunc(was.Endpoints, func(e v1.PolicyNetworkEndpoint) bool { return e.CredentialBinding != nil }) {
-			continue
-		}
-		if !slices.Equal(paths(was), paths(rules[name])) {
-			return errCode("policy_bound_binaries", map[string]any{"rule": name}, "規則 "+name+" にはプロバイダーの認証情報に結び付いた宛先があるので、プログラムは変えられません")
-		}
-	}
-	return nil
-}
-
-// checkEditBinaries refuses a hand edit that changes the programs of a
-// rule bound to a credential (checkBoundBinaries).
-func (s *Server) checkEditBinaries(ctx context.Context, sb Sandbox, edit PolicyEdit) error {
-	if edit.Op != "add" && edit.Op != "add-allow" {
-		return nil
-	}
-	base, effective, ok, err := s.policyLayers(ctx, sb)
-	if !ok {
-		return nil
-	}
-	if err != nil {
-		return errCode("policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
-	}
-	ops, err := edit.operations(base, withProviderRules(base, effective))
-	if err != nil {
-		return err
-	}
-	merged, err := simulateMerge(base, ops)
-	if err != nil {
-		return err
-	}
-	var touched []string
-	for _, name := range slices.Sorted(maps.Keys(merged)) {
-		if was, ok := base[name]; !ok || !sameYAMLRule(was, merged[name]) {
-			touched = append(touched, name)
-		}
-	}
-	return checkBoundBinaries(base, merged, touched)
-}
-
 // policyYAMLRuntime reads and replaces a sandbox's network policy as a
 // whole. OpenShell and Fake implement it.
 type policyYAMLRuntime interface {
@@ -680,10 +625,6 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 	}
 	if err := s.iwatoPortRefusal(changed); err != nil {
 		failErr(w, 400, err)
-		return
-	}
-	if err := checkBoundBinaries(old, rules, touched); err != nil {
-		failErr(w, 409, err)
 		return
 	}
 	// OpenShell's endpoint ambiguity, with the providers' rules.
