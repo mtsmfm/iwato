@@ -2496,6 +2496,15 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(D.serverError('provider_attached', {sandboxes: ['a', 'b']}, 'x'), 'Attached to a, b. Detach it first', 'and in English');
   assert.equal(D.localized('profile.iwato-github.credential.token', 'トークン'), 'Token'); assert.equal(I.localized('profile.iwato-github.credential.token', 'トークン'), 'トークン', 'Japanese keeps the server\'s text');
   ok('i18n: Japanese fallback, debug logging, server error codes, blocked storage');
+  // A key used by name exists: a missing one shows as the key on the page.
+  const known = load({languages: ['ja']}).dictionaries.ja;
+  for (const file of fs.readdirSync(root).filter((f) => /\.(js|html)$/.test(f) && f !== 'i18n.js')) {
+    const text = fs.readFileSync(root + file, 'utf8');
+    for (const re of [/data-i18n(?:-[a-z-]+)?="([^"]+)"/g, /\bt\('([a-z][a-zA-Z0-9_-]*\.[a-zA-Z0-9_.-]*[a-zA-Z0-9_-])'/g]) {
+      for (const m of text.matchAll(re)) assert.ok(m[1] in known, file + ': no string for ' + m[1]);
+    }
+  }
+  ok('i18n: every key the pages name exists');
   }
   {
   // web/refusals.js: OpenShell's refusals worded from the server's codes and pairs, as the server words them in Japanese.
