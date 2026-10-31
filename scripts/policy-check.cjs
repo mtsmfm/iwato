@@ -320,7 +320,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.screenshot({ path: path.join(dir, 'review-danger.png') });
     await openItem(/webhook\.site/);
     await settled();
-    check(/外部送信サービス: webhook\.site は webhook\.site です/.test(await reviewBox.locator('.review-warn[data-level=red]').innerText()), 'an exfiltration service is red');
+    check(/webhook\.site は外部送信サービスです/.test(await reviewBox.locator('.review-warn[data-level=red]').innerText()), 'an exfiltration service is red');
     // Rejecting with a reason; then まとめて却下 asks in the page.
     await reviewBox.locator('.review-reason').fill('使いません');
     const rejectAnswer = page.waitForRequest((r) => r.url().endsWith('/proposals/reject'));

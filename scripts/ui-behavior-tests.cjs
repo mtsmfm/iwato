@@ -372,7 +372,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(warns().slice(0, 2), ['red 危険ドメイン: 1.1.1.2 が bad.example に 0.0.0.0 を返しました', 'amber bad.example は登録から 6 日のドメインです']);
     assert.equal(find(review(env), '承認').disabled, false, 'warnings never block');
     pendingItems(env)[1].click(); await runTimers(env);
-    assert.equal(warns()[0], 'red 外部送信サービス: webhook.site は webhook.site です', 'an exfiltration service');
+    assert.equal(warns()[0], 'red webhook.site は外部送信サービスです', 'an exfiltration service');
     assert(warns().some((w) => w === 'amber webhook.site: 解決先 IP を 10.0.0.0/8 に限定 (内部アドレスも許可)'), 'internal addresses are warned');
     pendingItems(env)[2].click(); await runTimers(env);
     assert.deepEqual(warns(), ['ok 危険ドメインのチェック: 問題なし (ok.example)']);
