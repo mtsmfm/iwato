@@ -1,6 +1,6 @@
 # 0022. Iwato owns each sandbox's policy; providers bind credentials per endpoint
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-30
 
 ## Context
