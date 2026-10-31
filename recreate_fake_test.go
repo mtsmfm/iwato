@@ -69,7 +69,7 @@ func TestRecreateFake(t *testing.T) {
 	if err := d.Delete(ctx, sb, false); err != nil {
 		t.Fatal(err)
 	}
-	bad := v1.PolicyNetworkEndpoint{Host: "api.github.com", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeAudit, Access: v1.NetworkAccessPresetReadOnly}
+	bad := v1.PolicyNetworkEndpoint{Host: "api.github.com", Port: 443, Ports: []uint32{443}, Path: "/**", Protocol: "rest", Enforcement: v1.NetworkEnforcementModeAudit, Access: v1.NetworkAccessPresetReadOnly}
 	carry, err := newCarriedPolicy(map[string]v1.NetworkPolicyRule{
 		"audit_github": {Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: []v1.PolicyNetworkEndpoint{bad}},
 		"kept":         {Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "kept.example", Port: 443, Ports: []uint32{443}}}},
@@ -85,7 +85,7 @@ func TestRecreateFake(t *testing.T) {
 		Failed []CarryFailure `json:"failed"`
 	}
 	if json.Unmarshal(b, &out) != nil || res.StatusCode != 200 || len(out.Failed) != 1 || out.Failed[0].Rule != "audit_github" ||
-		!strings.Contains(out.Failed[0].Error, "_provider_github_personal") || out.Failed[0].Code != "ambiguous_carry" || len(out.Failed[0].Ambiguities) != 1 {
+		!strings.Contains(out.Failed[0].Error, "provider_github_personal") || out.Failed[0].Code != "ambiguous_carry" || len(out.Failed[0].Ambiguities) != 1 {
 		t.Fatalf("recreate with a refused rule: %d %s", res.StatusCode, b)
 	}
 	after, _, _ = d.PolicyLayers(ctx, sb)

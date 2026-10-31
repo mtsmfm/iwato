@@ -105,12 +105,21 @@ type xaiTest struct {
 	t  *testing.T
 	s  *Server
 	do func(method, path, body string) (int, string)
+	// route is the service's (xai when empty).
+	route string
 }
 
-func (x *xaiTest) start(body string) xaiFlowView {
+func (x *xaiTest) base() string {
+	if x.route == "" {
+		return "/api/oauth/xai"
+	}
+	return "/api/oauth/" + x.route
+}
+
+func (x *xaiTest) start(body string) deviceFlowView {
 	x.t.Helper()
-	code, resp := x.do("POST", "/api/oauth/xai/start", body)
-	var v xaiFlowView
+	code, resp := x.do("POST", x.base()+"/start", body)
+	var v deviceFlowView
 	if code != 200 || json.Unmarshal([]byte(resp), &v) != nil {
 		x.t.Fatal(code, resp)
 	}
@@ -118,12 +127,12 @@ func (x *xaiTest) start(body string) xaiFlowView {
 }
 
 // wait polls the flow as the page does; no value may reach the page.
-func (x *xaiTest) wait(id string, statuses ...string) xaiFlowView {
+func (x *xaiTest) wait(id string, statuses ...string) deviceFlowView {
 	x.t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		code, resp := x.do("GET", "/api/oauth/xai/flows/"+id, "")
-		var v xaiFlowView
+		code, resp := x.do("GET", x.base()+"/flows/"+id, "")
+		var v deviceFlowView
 		if code != 200 || json.Unmarshal([]byte(resp), &v) != nil {
 			x.t.Fatal(code, resp)
 		}
@@ -141,7 +150,7 @@ func (x *xaiTest) wait(id string, statuses ...string) xaiFlowView {
 }
 
 func shortXAIPolls(t *testing.T) {
-	old := xaiPollUnit
-	xaiPollUnit = 5 * time.Millisecond
-	t.Cleanup(func() { xaiPollUnit = old })
+	old := devicePollUnit
+	devicePollUnit = 5 * time.Millisecond
+	t.Cleanup(func() { devicePollUnit = old })
 }

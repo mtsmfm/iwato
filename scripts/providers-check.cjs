@@ -3,7 +3,7 @@
 // without values, add, change, delete; Atlassian's OAuth connection and
 // 再接続 through the fake's authorization page, pasting the redirect on a
 // phone), the create form's picker, a refused attach that names the
-// uninspected rule (or one beyond the provider's scope) and its fix, a
+// uninspected or ambiguous rule and its fix, the rules attaching adds, a
 // sandbox's attach/detach with the restart
 // choice, and 再起動待ち on the card and its terminals, after a reload too.
 // Also creating a provider without a name (Iwato names it), and the
@@ -101,7 +101,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await byName('GitHub', 'github-personal').getByRole('button', { name: 'プロファイルを YAML で見る' }).click();
     const view = yamlBox.locator('.provider-yaml-view');
     const shippedYAML = await yamlValue(view);
-    check(shippedYAML.startsWith("# Iwato's GitHub provider profile.") && shippedYAML.includes('\nid: iwato-github\n') && shippedYAML.includes('      - allow: { method: POST, path: "/**/git-upload-pack" }'), 'the shipped YAML is shown verbatim, comments included');
+    check(shippedYAML.startsWith("# Iwato's GitHub provider profile.") && shippedYAML.includes('\nid: iwato-github\n') && shippedYAML.includes('  iwato/credential-hosts: "api.github.com:443,'), 'the shipped YAML is shown verbatim, comments included');
     check((await yamlBox.locator('.tag-source').innerText()) === 'Iwato 同梱', 'it is marked as the shipped file');
     check(/mono|Consolas/i.test(await view.locator('.cm-scroller').evaluate((el) => getComputedStyle(el).fontFamily)) && await view.locator('.cm-content').getAttribute('aria-readonly') === 'true', 'the YAML is read-only monospace');
     check(await panel.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'long YAML lines scroll inside the block, not the panel');
@@ -141,71 +141,16 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check((await group('Hugging Face').innerText()).includes('HF_TOKEN, HUGGING_FACE_HUB_TOKEN'), 'the fake Hugging Face provider is listed with its variables');
     await page.selectOption('#provider-profile', 'iwato-github');
 
-    // A GitHub provider's scope (providers_scope.go): the simple editor
-    // with an inline refusal, the YAML editor (custom, reset), and the
-    // shared iwato-github provider from before the scopes.
-    check((await byName('GitHub', 'github-personal').innerText()).includes('範囲を決められるようになる前'), 'the shared iwato-github provider says it stays read-only');
+    // GitHub: what the proxy cannot narrow, and a provider made with a
+    // profile of its own before ADR 0022 (under GitHub, marked).
+    check((await group('GitHub').locator('.provider-limit').innerText()).includes('GraphQL の引数と push するブランチ'), 'GitHub says what the proxy cannot narrow');
+    check(!(await byName('GitHub', 'github-personal').innerText()).includes('追加し直して'), 'a current GitHub provider has no mark');
     const work = byName('GitHub', 'github-work');
-    check((await work.innerText()).includes('範囲: 書き込み: mtsmfm/iwato'), 'the scope is summed up on the row');
-    await work.getByRole('button', { name: '範囲を変更' }).click();
-    const access = panel.locator('.provider-access-form:visible');
-    await access.waitFor();
-    check(await access.locator('input[value=repos]').isChecked() && !(await access.locator('.provider-access-repos').isDisabled()), 'the editor opens on the current scope');
-    await access.locator('.provider-access-repos').fill('mtsmfm/iwato\nocto-org/*');
-    await access.locator('.provider-access-mutations').fill('createPullRequest');
-    await access.getByRole('button', { name: '保存' }).click();
-    await access.locator('.provider-access-status', { hasText: 'OWNER/REPO' }).waitFor();
-    check(true, 'a glob in a repository is refused in the form');
-    await access.locator('.provider-access-repos').fill('mtsmfm/iwato\nocto-org/octo-repo');
-    await access.scrollIntoViewIfNeeded();
-    await shot('provider-scope.png');
-    check(await panel.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the scope editor does not scroll the panel sideways');
-    await access.locator('input[value=full]').check();
-    check(await access.locator('.provider-access-repos').isDisabled() && await access.locator('.provider-access-mutations').isDisabled(), 'full write takes no repositories or mutations');
-    await access.locator('input[value=repos]').check();
-    await access.getByRole('button', { name: '保存' }).click();
-    await page.locator('#provider-status', { hasText: 'github-work の範囲を変更しました' }).waitFor();
-    check((await work.innerText()).includes('octo-org/octo-repo') && (await work.innerText()).includes('createPullRequest'), 'the saved scope is shown');
-    await work.getByRole('button', { name: '範囲を変更' }).click();
-    await panel.locator('.provider-access-form:visible').getByRole('button', { name: 'YAML で編集' }).click();
+    check((await work.innerText()).includes('追加し直してください') && await work.getByRole('button', { name: '値を変更' }).count() === 0, 'one made before ADR 0022 says to add it again, and keeps its value');
+    check(await panel.locator('.provider-access-form').count() === 0 && await panel.getByRole('button', { name: '範囲を変更' }).count() === 0, 'no scope editor');
+    await work.scrollIntoViewIfNeeded();
+    await shot('provider-legacy.png');
     const editor = yamlBox.locator('.provider-yaml-editor');
-    const generated = await yamlValue(editor);
-    check(generated.includes('id: iwato-github-for-github-work') && generated.includes('/octo-org/octo-repo.git/git-receive-pack') && generated.includes('fields: [createPullRequest]'), 'the YAML editor shows the rendered profile');
-    check(/mono|Consolas/i.test(await editor.locator('.cm-scroller').evaluate((el) => getComputedStyle(el).fontFamily)) && await editor.locator('.cm-content').getAttribute('aria-readonly') === null, 'the YAML editor is monospace and editable');
-    await yamlBox.scrollIntoViewIfNeeded();
-    await shot('provider-scope-yaml.png');
-    await yamlFill(editor, generated.replace('id: iwato-github-for-github-work', 'id: other'));
-    await yamlBox.getByRole('button', { name: '保存' }).click();
-    await yamlBox.locator('.provider-yaml-status', { hasText: 'id は' }).waitFor();
-    check(await yamlBox.isVisible(), 'a refused YAML stays in the editor with the reason');
-    await yamlFill(editor, '# mine\n' + generated);
-    await yamlBox.getByRole('button', { name: '保存' }).click();
-    await yamlBox.waitFor({ state: 'hidden' });
-    await work.locator('.provider-access-summary', { hasText: 'YAML で編集したプロファイル' }).waitFor();
-    await work.getByRole('button', { name: '範囲を変更' }).click();
-    const customForm = panel.locator('.provider-access-form:visible');
-    check(await customForm.locator('input[value=repos]').isDisabled(), 'a custom profile disables the simple editor');
-    await customForm.getByRole('button', { name: '簡単な設定に戻す' }).click();
-    await work.locator('.provider-access-summary', { hasText: '書き込み: mtsmfm/iwato, octo-org/octo-repo' }).waitFor();
-    check(true, '簡単な設定に戻す goes back to the simple scope');
-
-    // Another type: 読み取りだけ or 書き込みも許可, with the sandboxes it
-    // applies to; one from before the scopes says so.
-    check((await byName('Claude Code', 'claude').innerText()).includes('範囲を決められるようになる前'), 'a Claude Code provider from before the scopes says so');
-    const router = byName('OpenRouter', 'openrouter');
-    check((await router.innerText()).includes('範囲: 読み取りだけ'), 'an OpenRouter provider of its own profile is read-only at first');
-    await router.getByRole('button', { name: '範囲を変更' }).click();
-    const routerForm = panel.locator('.provider-access-form:visible');
-    await routerForm.waitFor();
-    const modeLabels = await routerForm.locator('.provider-access-mode').allInnerTexts();
-    check(modeLabels.map((l) => l.trim()).join('/') === '読み取りだけ/書き込みも許可' && await routerForm.locator('.provider-access-repos').count() === 0, 'its editor has 読み取りだけ and 書き込みも許可 only (' + modeLabels.join('/') + ')');
-    check((await routerForm.locator('.provider-access-sandboxes').innerText()) === 'どのサンドボックスにも付いていません', 'the editor says where the scope applies');
-    await routerForm.locator('input[value=full]').check();
-    await routerForm.scrollIntoViewIfNeeded();
-    await shot('provider-scope-write.png');
-    await routerForm.getByRole('button', { name: '保存' }).click();
-    await router.locator('.provider-access-summary', { hasText: '範囲: 書き込みも許可' }).waitFor();
-    check(true, '書き込みも許可 is saved and summed up');
 
     // A custom profile: added as YAML in the page (refusals inline), then
     // offered in the type selector under カスタム.
@@ -275,27 +220,6 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await panel.locator('#provider-oauth strong').first().innerText() === 'Atlassian に接続: atlassian', 'the flow names the created provider');
     await byName('Atlassian', 'atlassian').waitFor();
     check((await byName('Atlassian', 'atlassian').innerText()).includes('ゲートウェイが更新しています'), 'the new provider is listed with its refresh');
-    // Its scope: read tools at first, write tools by name, or every tool.
-    {
-      const atlNew = byName('Atlassian', 'atlassian');
-      check((await atlNew.innerText()).includes('範囲: ツールは読み取りだけ'), 'a new Atlassian provider allows the read tools only');
-      await atlNew.getByRole('button', { name: '範囲を変更' }).click();
-      const form = panel.locator('.provider-access-form:visible');
-      await form.waitFor();
-      const labels = (await form.locator('.provider-access-mode').allInnerTexts()).map((l) => l.trim());
-      check(labels.join('/') === '読み取りのツールと、指定したツール/すべてのツール' && (await form.locator('.provider-access-read-tools').innerText()).includes('getJiraIssue'), 'its editor has the tool modes and lists the read tools (' + labels.join('/') + ')');
-      await form.locator('.provider-access-tools').fill('createJiraIssue, bad*name');
-      await form.getByRole('button', { name: '保存' }).click();
-      await form.locator('.provider-access-status', { hasText: 'MCP のツールの名前ではありません' }).waitFor();
-      check(true, 'a tool name with a glob is refused');
-      await form.locator('.provider-access-tools').fill('createJiraIssue');
-      await form.scrollIntoViewIfNeeded();
-      await shot('provider-scope-tools.png');
-      check(await panel.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the tool editor does not scroll the panel sideways');
-      await form.getByRole('button', { name: '保存' }).click();
-      await atlNew.locator('.provider-access-summary', { hasText: '範囲: ツール: createJiraIssue' }).waitFor();
-      check(true, 'a named write tool is saved and summed up');
-    }
     await oss.getByRole('button', { name: '再接続' }).click();
     await authorize('atlassian-reconnect');
     await page.waitForFunction(() => !document.querySelector('#provider-list').innerText.includes('再認可が必要'));
@@ -330,8 +254,30 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
       check((await box.innerText()).includes('ゲートウェイが更新しています') && !/fake-(access|refresh)/.test(await page.content()), 'Claude: done, refreshed, no token on the page');
       await shot('claude-done.png');
-      await byName('Claude Code (Claude でログイン)', 'claude-subscription').waitFor();
+      await byName('Claude Code', 'claude-subscription').waitFor();
       check(true, 'the Claude provider is listed');
+      await box.getByRole('button', { name: '閉じる' }).click();
+    }
+    // Codex's ChatGPT sign-in: a device code entered at the fake's page.
+    await page.selectOption('#provider-profile', 'iwato-codex-subscription');
+    check((await page.locator('#provider-submit').innerText()) === 'ChatGPT でログイン' && /\bchatgpt\.com\b/.test(await page.innerText('#provider-note')), 'the Codex sign-in profile takes no value');
+    await page.click('#provider-submit');
+    {
+      const box = panel.locator('#provider-oauth');
+      const link = box.getByRole('link', { name: 'OpenAI でコードを入力' });
+      await link.waitFor();
+      const code = await box.locator('.provider-user-code').innerText();
+      check(/^[A-Z0-9-]+$/.test(code) && await panel.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the Codex flow shows the code without scrolling sideways');
+      await shot('codex-waiting.png');
+      const popupP = page.waitForEvent('popup');
+      await link.click();
+      const popup = await popupP;
+      await popup.click('#approve');
+      await popup.close();
+      await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
+      check(!/fake-(access|refresh)/.test(await page.content()), 'Codex: done, no token on the page');
+      await byName('Codex', 'codex-subscription').waitFor();
+      check(true, 'the Codex provider is listed');
       await box.getByRole('button', { name: '閉じる' }).click();
     }
     await page.keyboard.press('Escape');
@@ -343,6 +289,24 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const options = await page.locator('#create-providers select[data-profile=iwato-github]').locator('option').allInnerTexts();
     check(options.join(',') === 'なし,github-personal,github-work', 'the create form offers one GitHub provider at most (' + options.join(', ') + ')');
     await page.locator('#create-providers select[data-profile=iwato-github]').selectOption('github-work');
+    // The presets: defaults, what a preset requires, and its rules behind 詳細.
+    const preset = (id) => page.locator('#create-presets input[data-preset=' + id + ']');
+    check(await page.locator('#create-presets input[type=radio]').count() === 0 && await preset('packages').isChecked() && await preset('tools').isChecked() && await preset('agents').isChecked() && !(await preset('research').isChecked()), 'packages, tools and agents start checked, references not');
+    await preset('tools').uncheck();
+    check(!(await preset('agents').isChecked()), 'unchecking tool installs unchecks the agents');
+    await preset('agents').check();
+    check(await preset('tools').isChecked(), 'checking the agents checks tool installs');
+    const rows = page.locator('#create-presets .create-preset-line');
+    check(await rows.evaluateAll((list) => list.every((el) => el.offsetHeight < 40)), 'each preset is one line');
+    const details = page.locator('#create-presets .create-preset').first().locator('.create-preset-details');
+    check(await details.isHidden(), 'the details start closed');
+    await shot('create-form.png');
+    await page.locator('#create-presets .create-preset-more').first().click();
+    const allowed = await details.innerText();
+    check(await details.isVisible() && /registry\.npmjs\.org:443/.test(allowed) && /POST \/-\/npm\/v1\/security\/advisories\/bulk/.test(allowed), 'the details list the rules: ' + allowed.slice(0, 80));
+    check(await details.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the details fit the width');
+    await shot('create-form-details.png');
+    check(await page.locator('#create-panel').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the create form does not scroll sideways');
     await shot('create-providers.png');
     await page.keyboard.press('Escape');
     check(await page.locator('#create-panel').isHidden(), 'Escape closes the create form');
@@ -355,6 +319,12 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await card.getByRole('button', { name: 'その他の操作' }).click();
       await card.getByRole('menuitem', { name: 'プロバイダー' }).click();
     };
+    // One side panel at a time: delete opens over providers, not under it.
+    await openPanel();
+    await card.getByRole('button', { name: 'その他の操作' }).click();
+    await card.getByRole('menuitem', { name: '削除' }).click();
+    check(await card.locator('.delete-panel').isVisible() && await card.locator('.provider-panel').isHidden(), 'opening delete closes the provider panel');
+    await card.locator('.delete-panel').getByRole('button', { name: '閉じる' }).click();
     await openPanel();
     const side = card.locator('.provider-panel');
     await side.locator('.provider-row').first().waitFor();
@@ -436,36 +406,33 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.waitForTimeout(800);
     check(await card.locator('.term-tab .term-provider').count() === 0 && !(await card.locator('.term-notice[data-kind=provider]').isVisible()), 'after the restart no terminal lacks the change');
 
-    // An endpoint the provider's rule would make ambiguous: with GitHub
-    // detached, a proposal for api.github.com approved in audit mode (a
-    // rule by hand there is the provider's, refused); attaching GitHub
-    // (whose rule enforces there) is refused with the rule named and the fixes.
-    if (!(await side.isVisible())) await openPanel();
-    await side.locator('.provider-row', { hasText: 'github-personal' }).getByRole('button', { name: '外す' }).click();
-    await side.locator('.restart-choice').waitFor();
-    await side.getByRole('button', { name: 'あとで' }).click();
-    await side.getByRole('button', { name: '閉じる' }).click();
-    await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    // An endpoint the provider's rule would make ambiguous: a rule auditing
+    // api.openai.com, added by hand; attaching openai (a profile with
+    // endpoints of its own, which OpenShell composes: it enforces there)
+    // is refused with the rule named and the fixes.
+    const sandboxName = (await card.locator('.card-title').innerText()).trim();
+    const added = await page.evaluate(async (name) => {
+      const { csrf } = await (await fetch('/api/session')).json();
+      const r = await fetch('/api/sandboxes/' + name + '/policy/add', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ rule: 'allow_api_openai_com_443', binaries: ['/usr/bin/curl'], host: 'api.openai.com', ports: [443], rules: [{ method: 'GET', path: '/v1/models' }], audit: true }) });
+      return r.status + ' ' + (await r.text());
+    }, sandboxName);
+    check(added.startsWith('200'), 'an audited rule for api.openai.com is added (' + added + ')');
     const policy = card.locator('.policy-panel');
-    const miseGh = policy.locator('.policy-pending .proposal-item', { hasText: 'api.github.com' }).filter({ hasText: '/usr/local/lib/mise/mise' }).first();
-    await miseGh.getByRole('button', { name: '承認', exact: true }).click();
-    await page.locator('#approve-more').evaluate((el) => { el.open = true; });
-    await page.check('#approve-access-audit');
-    await page.click('#confirm-ok');
-    await policy.locator('.policy-rule[data-rule=allow_api_github_com_443]').waitFor();
-    await openPanel();
-    await side.locator('.provider-row', { hasText: 'github-personal' }).getByRole('button', { name: '付ける' }).click();
+    if (!(await side.isVisible())) await openPanel();
+    const openai = side.locator('.provider-row', { hasText: /^openai/ });
+    await openai.getByRole('button', { name: '付ける' }).click();
     await conflict.waitFor();
     const ambText = await conflict.innerText();
-    check(ambText.includes('規則 allow_api_github_com_443: api.github.com:443') && ambText.includes('検査のモード: allow_api_github_com_443 は 監査 (audit)、_provider_github_personal は 遮断 (enforce)'), 'an ambiguous endpoint is named with what differs: ' + ambText);
+    check(ambText.includes('規則 allow_api_openai_com_443: api.openai.com:443') && ambText.includes('検査のモード: allow_api_openai_com_443 は 監査 (audit)、_provider_openai は 遮断 (enforce)'), 'an ambiguous endpoint is named with what differs: ' + ambText);
     // In English (attached again: the list is worded when shown), then in Japanese again.
     await page.evaluate(() => window.IwatoI18n.setPreference('en'));
-    await side.locator('.provider-row', { hasText: 'github-personal' }).getByRole('button', { name: 'Attach' }).click();
+    await openai.getByRole('button', { name: 'Attach' }).click();
     await conflict.getByRole('button', { name: 'Switch to enforce with the current allowances, and attach' }).waitFor();
     const ambEn = await conflict.innerText();
-    check(ambEn.includes('Rule allow_api_github_com_443: api.github.com:443 — Mode: audit in allow_api_github_com_443, enforce in _provider_github_personal'), 'and in English: ' + ambEn);
+    check(ambEn.includes('Rule allow_api_openai_com_443: api.openai.com:443 — Mode: audit in allow_api_openai_com_443, enforce in _provider_openai'), 'and in English: ' + ambEn);
     await page.evaluate(() => window.IwatoI18n.setPreference('ja'));
-    await side.locator('.provider-row', { hasText: 'github-personal' }).getByRole('button', { name: '付ける' }).click();
+    await openai.getByRole('button', { name: '付ける' }).click();
     await conflict.getByRole('button', { name: '今の許可のまま遮断に切り替えて付ける' }).waitFor();
     check(await conflict.getByRole('button', { name: '今の許可のまま遮断に切り替えて付ける' }).isVisible() && await conflict.getByRole('button', { name: '記録から選んで遮断に切り替える (ポリシーのタブ)' }).isVisible() && await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).isVisible(), 'it offers to enforce (as is, or from the log) or to remove');
     check(await side.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the conflict does not scroll the panel sideways');
@@ -475,50 +442,41 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await conflict.getByRole('button', { name: '記録から選んで遮断に切り替える (ポリシーのタブ)' }).click();
     const done = policy.locator('.proposal-done');
     await done.waitFor();
-    check((await done.innerText()).includes('プロバイダー github-personal をもう一度付けてください') && await policy.locator('.policy-rule[data-rule=allow_api_github_com_443] .policy-observed').isVisible(), 'the policy tab opens the audited rule with its log and says what to do');
+    await policy.locator('.policy-rule[data-rule=allow_api_openai_com_443] .policy-observed').waitFor({ timeout: 5000 }).catch(() => {});
+    check((await done.innerText()).includes('プロバイダー openai をもう一度付けてください') && await policy.locator('.policy-rule[data-rule=allow_api_openai_com_443] .policy-observed').isVisible(), 'the policy tab opens the audited rule with its log and says what to do: ' + (await done.innerText()));
     await shot('attach-ambiguity-policy.png');
     // As is: switched to enforce, then attached.
     await openPanel();
-    await side.locator('.provider-row', { hasText: 'github-personal' }).getByRole('button', { name: '付ける' }).click();
+    await openai.getByRole('button', { name: '付ける' }).click();
     await conflict.getByRole('button', { name: '今の許可のまま遮断に切り替えて付ける' }).click();
-    await side.locator('.panel-meta', { hasText: 'github-personal を付けました' }).waitFor();
-    check(await side.locator('.provider-row', { hasText: 'github-personal' }).getByRole('button', { name: '外す' }).isVisible(), 'switched to enforce, the provider is attached');
+    await side.locator('.panel-meta', { hasText: 'openai を付けました' }).waitFor();
+    check(await openai.getByRole('button', { name: '外す' }).isVisible(), 'switched to enforce, the provider is attached');
     await side.getByRole('button', { name: '閉じる' }).click();
     await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
-    await policy.locator('.policy-rule[data-rule=allow_api_github_com_443]', { hasText: 'api.github.com:443 · 検査 (遮断)' }).waitFor();
+    await policy.locator('.policy-rule[data-rule=allow_api_openai_com_443]', { hasText: 'api.openai.com:443 · 検査 (遮断)' }).waitFor();
     check(true, 'the rule now enforces, keeping its reads');
     await shot('attach-ambiguity-done.png');
 
-    // A rule approved before for RunPod's GraphQL (POST /graphql, REST)
-    // would carry the key beyond the provider's read-only scope: the
-    // attach names the rule and why, and offers to remove it or attach anyway.
-    const sandboxName = (await card.locator('.card-title').innerText()).trim();
-    const added = await page.evaluate(async (name) => {
-      const { csrf } = await (await fetch('/api/session')).json();
-      // A provider's host: confirmed (the token of the first answer).
-      const add = (confirm) => fetch('/api/sandboxes/' + name + '/policy/add', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-        body: JSON.stringify({ rule: 'allow_api_runpod_io_443', binaries: ['/usr/bin/python3'], host: 'api.runpod.io', ports: [443], rules: [{ method: 'POST', path: '/graphql' }], confirm }) });
-      const r = await add((await (await add('')).json()).confirm);
-      return r.status + ' ' + (await r.text());
-    }, sandboxName);
-    check(added.startsWith('200'), 'a REST rule for POST api.runpod.io/graphql is added (' + added + ')');
+    // Attaching one of Iwato's providers adds its initial rule, bound to it
+    // (ADR 0022); detaching takes it out again.
     await openPanel();
     const runpod = side.locator('.provider-row', { hasText: /^runpod/ });
     await runpod.getByRole('button', { name: '付ける' }).click();
-    await conflict.waitFor({ timeout: 5000 }).catch(() => {});
-    const beyondText = await conflict.isVisible() ? await conflict.innerText() : '';
-    check(beyondText.includes('規則 allow_api_runpod_io_443: api.runpod.io:443') && beyondText.includes('runpod'), 'a rule reaching beyond RunPod\'s scope is named with why: ' + beyondText);
-    check(await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).isVisible() && await conflict.getByRole('button', { name: 'このまま付ける' }).isVisible(), 'it offers to remove the rule or to attach anyway');
-    check(await side.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the list does not scroll the panel sideways');
-    await conflict.scrollIntoViewIfNeeded();
-    await shot('attach-beyond.png');
-    await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).click();
     await side.locator('.panel-meta', { hasText: 'runpod を付けました' }).waitFor();
-    check(await runpod.getByRole('button', { name: '外す' }).isVisible(), 'with the rule removed, RunPod is attached');
     await side.getByRole('button', { name: '閉じる' }).click();
     await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
-    await policy.locator('.policy-rule[data-rule=allow_api_runpod_io_443]').waitFor({ state: 'detached' });
-    check(true, 'the rule is gone from the policy');
+    const runpodRule = policy.locator('.policy-rule[data-rule=provider_runpod]');
+    await runpodRule.waitFor();
+    check((await runpodRule.locator('.policy-src[data-source=provider-host]').innerText()) === 'トークン: runpod', 'the rule is marked with the credential it carries');
+    await runpodRule.scrollIntoViewIfNeeded();
+    await shot('attach-rules.png');
+    await openPanel();
+    await runpod.getByRole('button', { name: '外す' }).click();
+    await side.locator('.panel-meta', { hasText: 'runpod を外しました' }).waitFor();
+    await side.getByRole('button', { name: '閉じる' }).click();
+    await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    await runpodRule.waitFor({ state: 'detached' });
+    check(true, 'detaching takes its rule out');
     console.log('screenshots in ' + dir);
   } finally {
     await browser.close();

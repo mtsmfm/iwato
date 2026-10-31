@@ -13,7 +13,7 @@ import (
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 )
 
-// OpenShell (v0.1.5) refuses a policy in which two endpoints can match the
+// OpenShell (v0.1.6) refuses a policy in which two endpoints can match the
 // same connection or request but disagree on how to handle it
 // (crates/openshell-policy/src/ambiguity.rs, find_endpoint_ambiguities;
 // the gateway runs it on every candidate effective policy, the providers'

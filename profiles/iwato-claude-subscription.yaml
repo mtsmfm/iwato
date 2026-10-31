@@ -57,11 +57,18 @@
 #                    against Anthropic. max_lifetime is Claude Code's 8 hours:
 #                    each refresh may revoke the previous access token, which
 #                    sandboxes keep sending until their next poll (about 10 s).
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-claude-subscription.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-claude-subscription
 display_name: Claude Code sign-in (Iwato)
 description: Claude Code with a Claude account sign-in the gateway refreshes
 category: agent
+annotations:
+  iwato/credential-hosts: "api.anthropic.com:443"
 credentials:
   - name: access_token
     description: Claude Code OAuth access token (Claude account sign-in)
@@ -83,12 +90,6 @@ credentials:
           description: OAuth refresh token
           required: true
           secret: true
-endpoints:
-  - host: api.anthropic.com
-    port: 443
-    protocol: rest
-    access: read-write
-    enforcement: enforce
 binaries:
   - /home/dev/.local/share/claude/versions/*
   - /home/dev/.local/share/mise/installs/claude/*/claude

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,8 +77,9 @@ func TestOpenShellPresetsE2E(t *testing.T) {
 			t.Fatalf("the first policy lacks %s: %v", name, base)
 		}
 	}
-	if _, ok := effective[providerRuleName("github-pre")]; !ok {
-		t.Fatalf("the provider's rule is not in the effective policy: %v", effective)
+	// The provider's initial rule, bound to it, in the first policy.
+	if r, ok := base["provider_github_pre"]; !ok || len(r.Endpoints) == 0 || r.Endpoints[0].CredentialBinding == nil || r.Endpoints[0].CredentialBinding.Provider != "github-pre" {
+		t.Fatalf("the provider's rule is not in the first policy: %+v (effective %v)", r, slices.Sorted(maps.Keys(effective)))
 	}
 
 	c.Sandboxes = []Sandbox{w}
@@ -105,15 +108,15 @@ func TestOpenShellPresetsE2E(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/presets/remove", mirror("o/b")); code != 200 || !strings.Contains(body, `"kept":[]`) {
 		t.Fatal("remove:", code, body)
 	}
-	// user:shared shares preset_packages_downloads_claude_ai with packages:
+	// user:shared shares preset_agents_downloads_claude_ai with agents:
 	// taken out, the rule stays as packages makes it.
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/presets/remove", `"user:shared"`); code != 200 || !strings.Contains(body, `"kept":[]`) {
 		t.Fatal("remove a preset sharing a rule:", code, body)
 	}
 	base, _, _ = o.PolicyLayers(ctx, w)
-	mise, _ := presetRefRules(PresetRef{ID: "packages"})
+	mise, _ := presetRefRules(PresetRef{ID: "agents"})
 	oa, _ := presetRefRules(PresetRef{ID: "user:mirror", Params: map[string]string{"repo": "o/a"}})
-	if _, ok := base["mirror_o_b"]; ok || !samePresetRule(base["mirror_o_a"], oa["mirror_o_a"]) || !samePresetRule(base["preset_packages_downloads_claude_ai"], mise["preset_packages_downloads_claude_ai"]) {
+	if _, ok := base["mirror_o_b"]; ok || !samePresetRule(base["mirror_o_a"], oa["mirror_o_a"]) || !samePresetRule(base["preset_agents_downloads_claude_ai"], mise["preset_agents_downloads_claude_ai"]) {
 		t.Fatalf("after the removals: %+v", base)
 	}
 	if _, ok := base["allow_claude_ai_443"]; ok {

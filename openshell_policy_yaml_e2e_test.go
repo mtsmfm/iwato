@@ -21,8 +21,8 @@ import (
 // gateway takes a whole policy whose network_policies changed and whose
 // other parts are as they were, keeps a rule that shares an endpoint with
 // another under its own name (a merge would fold it), and Iwato refuses a
-// stale version and a rule that would carry the GitHub provider's token,
-// while the preset's older rule on GitHub's host passes untouched.
+// stale version. The sandbox is created with the GitHub provider, whose
+// initial rule (bound to it) is in its first policy and passes untouched.
 func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	addr := os.Getenv("OPENSHELL_E2E_ADDR")
 	if addr == "" {
@@ -59,7 +59,7 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	}
 	defer o.DeleteProvider(context.Background(), "github-yaml")
 	w := newSandbox("iwato-yaml-e2e")
-	w.Presets = []PresetRef{{ID: "packages"}}
+	w.Presets = []PresetRef{{ID: "tools"}}
 	w.Providers = []string{"github-yaml"}
 	if err := o.Start(ctx, w); err != nil {
 		t.Fatal(err)
@@ -96,22 +96,13 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A program more on the preset's rule for api.github.com: the token
-	// would go with it.
-	wider := cloneRules(rules)
-	r0 := wider["preset_packages_api_github_com_mise"]
-	r0.Binaries = append(r0.Binaries, v1.PolicyNetworkBinary{Path: "/usr/bin/curl"})
-	wider["preset_packages_api_github_com_mise"] = r0
-	if code, v := post(got.Version, wider, false); code != 409 || v["code"] != "policy_provider_host" {
-		t.Fatal("a program more on a provider's host:", code, v)
-	}
 	// A copy of the rule for mise-versions.jdx.dev under another name and
 	// program, and the one for release assets taken out.
 	edited := cloneRules(rules)
-	copied := cloneRule(edited["preset_packages_mise_versions_jdx_dev_mise"])
+	copied := cloneRule(edited["preset_tools_mise_versions_jdx_dev"])
 	copied.Name, copied.Binaries = "mise_versions_curl", []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}
 	edited[copied.Name] = copied
-	delete(edited, "preset_packages_release_assets_githubusercontent_com")
+	delete(edited, "preset_tools_release_assets_githubusercontent_com")
 	if code, v := post(got.Version, edited, true); code != 200 {
 		t.Fatal("apply:", code, v)
 	}
@@ -120,10 +111,10 @@ func TestOpenShellPolicyYAMLE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := after.Revision.Policy
-	if _, ok := p.NetworkPolicies["preset_packages_release_assets_githubusercontent_com"]; ok {
+	if _, ok := p.NetworkPolicies["preset_tools_release_assets_githubusercontent_com"]; ok {
 		t.Fatal("the removed rule stayed")
 	}
-	if r, ok := p.NetworkPolicies[copied.Name]; !ok || !samePresetRule(r, copied) || !samePresetRule(p.NetworkPolicies["preset_packages_mise_versions_jdx_dev_mise"], rules["preset_packages_mise_versions_jdx_dev_mise"]) {
+	if r, ok := p.NetworkPolicies[copied.Name]; !ok || !samePresetRule(r, copied) || !samePresetRule(p.NetworkPolicies["preset_tools_mise_versions_jdx_dev"], rules["preset_tools_mise_versions_jdx_dev"]) {
 		t.Fatalf("the copy was not kept under its own name: %+v", p.NetworkPolicies)
 	}
 	if !reflect.DeepEqual(p.Filesystem, before.Revision.Policy.Filesystem) || !reflect.DeepEqual(p.Landlock, before.Revision.Policy.Landlock) || !reflect.DeepEqual(p.Process, before.Revision.Policy.Process) {

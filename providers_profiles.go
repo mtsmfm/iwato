@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 
 	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
@@ -35,6 +36,12 @@ var profileFiles embed.FS
 // profile the gateway holds.
 const profileHashKey = "iwato/profile-hash"
 
+// credentialHostsKey is the annotation of Iwato's profiles that lists the
+// hosts their credential is meant for, as host:port separated by commas.
+// The profiles have no endpoints: the sandbox's policy binds the
+// credential to its endpoints (credential_binding, ADR 0022).
+const credentialHostsKey = "iwato/credential-hosts"
+
 // providerProfile is one of Iwato's profiles as the page shows it.
 type providerProfile struct {
 	ID    string `json:"id"`
@@ -48,7 +55,8 @@ type providerProfile struct {
 	// xai.go, claude_oauth.go) and the gateway refreshes it; the owner enters no value.
 	OAuth bool `json:"oauth,omitempty"`
 	// OAuthFlow names the flow of an OAuth profile: "atlassian" (the
-	// authorization code with a loopback redirect), "xai" (device code) or
+	// authorization code with a loopback redirect), "xai" and "codex"
+	// (device code: device_flow.go) or
 	// "claude" (Claude Code's client: a loopback redirect or a pasted code).
 	OAuthFlow string `json:"oauthFlow,omitempty"`
 	// Guide is a command to run in the sandbox to use the provider.
@@ -58,15 +66,13 @@ type providerProfile struct {
 	// DefaultName is the name a provider gets when the owner gives none
 	// (providers_names.go): the page shows it as the placeholder.
 	DefaultName string `json:"defaultName"`
-	// Base is the built-in profile a scoped provider's profile is
-	// rendered from (providers_scope.go).
-	Base string `json:"base,omitempty"`
-	// Scoped: providers of the profile get an access scope (every
-	// built-in profile; TestProfileMetadata).
-	Scoped bool `json:"scoped,omitempty"`
+	// CredentialHosts are the host:port its credential is meant for (the
+	// annotation credentialHostsKey of Iwato's profiles, which have no
+	// endpoints: ADR 0022).
+	CredentialHosts []string `json:"credentialHosts,omitempty"`
 	// Custom: the owner's profile (providers_custom.go).
 	Custom bool `json:"custom,omitempty"`
-	// yaml is profiles/ID.yaml (or the rendered or the owner's YAML).
+	// yaml is profiles/ID.yaml (or the owner's YAML).
 	yaml []byte
 }
 
@@ -84,7 +90,6 @@ func (p providerProfile) proto() *pb.ProviderProfile {
 		panic(fmt.Sprintf("profiles/%s.yaml: %v", p.ID, err))
 	}
 	parsedProfiles.Lock()
-	// Scoped profiles are rendered anew for each scope: kept few.
 	if parsedProfiles.m == nil || len(parsedProfiles.m) >= 64 {
 		parsedProfiles.m = map[string]*pb.ProviderProfile{}
 	}
@@ -125,7 +130,7 @@ const (
 	// a shell would fix the placeholder in its configuration. tools=all
 	// lists every tool by its own name instead of the execute meta-tools,
 	// which take the tool's name as an argument (OpenShell matches only
-	// the name of the tool called: providers_scope_atlassian.go).
+	// the name of the tool called: presets/providers/iwato-atlassian.yaml).
 	atlassianMCPCommand = "claude mcp add --transport http atlassian '" + atlassianResource + "?tools=all' --header 'Authorization: Bearer ${" + atlassianCredentialKey + "}'"
 )
 
@@ -167,7 +172,7 @@ const (
 	// near the expiry and after a 401. The placeholder never expires (the
 	// gateway refreshes behind it); expires_in only bounds how long grok
 	// keeps an old one after a reconnect.
-	grokAuthCommand = `[ -n "$` + grokOAuthCredentialKey + `" ] || { echo "` + grokOAuthCredentialKey + ` is not set: attach the Grok Build (xAI subscription) provider in Iwato and restart the sandbox" >&2; exit 1; }; ` +
+	grokAuthCommand = `[ -n "$` + grokOAuthCredentialKey + `" ] || { echo "` + grokOAuthCredentialKey + ` is not set: attach the Grok Build provider in Iwato and restart the sandbox" >&2; exit 1; }; ` +
 		`printf "{\"access_token\":\"%s\",\"expires_in\":900,\"issuer\":\"` + xaiIssuer + `\"}\n" "$` + grokOAuthCredentialKey + `"`
 )
 
@@ -176,6 +181,8 @@ const (
 func oauthCredentialKey(profile string) string {
 	if p, ok := profileByID(profile); ok && p.OAuthFlow == "xai" {
 		return grokOAuthCredentialKey
+	} else if ok && p.OAuthFlow == "codex" {
+		return codexOAuthCredentialKey
 	} else if ok && p.OAuthFlow == "claude" {
 		return claudeOAuthCredentialKey
 	}
@@ -198,7 +205,7 @@ var profileGroups = []string{groupAgent, groupSource, groupModels, groupCloud, g
 // profileGroups: TestProfileMetadata).
 var providerProfiles = []providerProfile{
 	{
-		ID: claudeSubscriptionProfileID, Label: "Claude Code (Claude でログイン)", Group: groupAgent, Scoped: true,
+		ID: claudeSubscriptionProfileID, Label: "Claude Code", Group: groupAgent,
 		Note:        "CLAUDE_CODE_OAUTH_TOKEN。Claude のアカウントでログインし、サンドボックスの claude が api.anthropic.com に送ります。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
@@ -206,7 +213,7 @@ var providerProfiles = []providerProfile{
 		Hint:        "claude は CLAUDE_CODE_OAUTH_TOKEN があればそれを使います。サンドボックスで /login していたら、その記録より環境変数が優先されます。確かめるには claude -p 'hello'。",
 	},
 	{
-		ID: grokSubscriptionProfileID, Label: "Grok Build (xAI のサブスクリプション)", Group: groupAgent, Scoped: true,
+		ID: grokSubscriptionProfileID, Label: "Grok Build", Group: groupAgent,
 		Note:        "XAI_OAUTH_TOKEN。xAI のアカウントでログインします。grok が cli-chat-proxy.grok.com/v1 と api.x.ai/v1 に送ります。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
@@ -214,65 +221,79 @@ var providerProfiles = []providerProfile{
 		Hint:        "Iwato がターミナルに GROK_AUTH_PROVIDER_COMMAND を設定し、grok はそれでこのトークンを使います (XAI_API_KEY より優先)。前に grok login していたら grok logout してください。付け外しは再起動で反映されます。確かめるには grok -p 'hello'。",
 	},
 	{
-		ID: "iwato-openrouter", Label: "OpenRouter", Group: groupAgent, Scoped: true,
+		ID: codexSubscriptionProfileID, Label: "Codex", Group: groupAgent,
+		Note:        "CODEX_CHATGPT_ACCESS_TOKEN と CODEX_CHATGPT_ACCOUNT_ID。ChatGPT のアカウントでログインし、サンドボックスの codex が chatgpt.com/backend-api/codex と /backend-api/wham に送ります。",
+		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}, {Name: "account_id", Label: "アカウント ID"}},
+		OAuth:       true,
+		OAuthFlow:   "codex",
+		Hint:        "Iwato がターミナルで ~/.codex/auth.json をこのプロバイダーのプレースホルダーで書きます (中身を表示しないでください)。前に codex login していたら codex logout してから新しいターミナルを開きます。付け外しと再接続は再起動で反映されます。ログインは ChatGPT の設定 (セキュリティ) で Codex のデバイスコードのログインを有効にしてから。確かめるには codex exec 'hello'。",
+	},
+	{
+		ID: "iwato-openai", Label: "OpenAI API", Group: groupAgent,
+		Note:        "OPENAI_API_KEY。api.openai.com/v1 に送ります (推論の POST も可)。",
+		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
+		Hint:        "OpenAI の SDK は OPENAI_API_KEY を読みます。codex を API キーで使うときは printenv OPENAI_API_KEY | codex login --with-api-key (プレースホルダーが ~/.codex/auth.json に入ります)。",
+	},
+	{
+		ID: "iwato-openrouter", Label: "OpenRouter", Group: groupAgent,
 		Note:        "OPENROUTER_API_KEY。openrouter.ai/api に送ります (推論の POST も可)。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
 		Hint:        "OpenAI 互換の SDK は base_url を https://openrouter.ai/api/v1 にし、キーに OPENROUTER_API_KEY を渡します。",
 	},
 	{
-		ID: atlassianProfileID, Label: "Atlassian (MCP)", Group: groupAgent, Scoped: true,
-		Note:        "ATLASSIAN_ACCESS_TOKEN。Atlassian で OAuth の許可を取ります。claude が mcp.atlassian.com/v2/mcp に送るときだけ使います。",
+		ID: atlassianProfileID, Label: "Atlassian", Group: groupAgent,
+		Note:        "ATLASSIAN_ACCESS_TOKEN。Atlassian で OAuth の許可を取ります。claude が mcp.atlassian.com/v2/mcp に送るときだけ使い、最初は読み取りのツールだけです。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
 		OAuthFlow:   "atlassian",
 		Guide:       atlassianMCPCommand,
 	},
 	{
-		ID: githubProfileID, Label: "GitHub", Group: groupSource, Scoped: true,
-		Note:        "GH_TOKEN と GITHUB_TOKEN。最初は読み取りだけです。書き込めるリポジトリは追加した後に「範囲」で決めます。",
+		ID: githubProfileID, Label: "GitHub", Group: groupSource,
+		Note:        "GH_TOKEN と GITHUB_TOKEN。読み取りと clone・fetch だけで、書き込みと push はポリシーの提案を承認するときに認証情報を付けて許可します。",
 		Credentials: []profileCredential{{Name: "token", Label: "トークン"}},
 	},
 	{
-		ID: "iwato-huggingface", Label: "Hugging Face", Group: groupModels, Scoped: true,
+		ID: "iwato-huggingface", Label: "Hugging Face", Group: groupModels,
 		Note:        "HF_TOKEN と HUGGING_FACE_HUB_TOKEN。huggingface.co と hf.co に送ります。読み取りだけで、アップロードはポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "token", Label: "アクセストークン (hf_...)"}},
 		Hint:        "hf (huggingface-cli)、huggingface_hub、transformers は HF_TOKEN をそのまま読みます。確かめるには hf auth whoami。",
 	},
 	{
-		ID: "iwato-civitai", Label: "Civitai", Group: groupModels, Scoped: true,
+		ID: "iwato-civitai", Label: "Civitai", Group: groupModels,
 		Note:        "CIVITAI_API_TOKEN と CIVITAI_TOKEN。civitai.com/api と orchestration.civitai.com に送ります。読み取りとダウンロードだけで、生成 (Buzz を使う) はポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
 		Hint:        "ダウンロードは curl -fLOJ \"https://civitai.com/api/download/models/ID?token=$CIVITAI_TOKEN\" のように送ります。",
 	},
 	{
-		ID: "iwato-comfy-cloud", Label: "Comfy Cloud", Group: groupCloud, Scoped: true,
+		ID: "iwato-comfy-cloud", Label: "Comfy Cloud", Group: groupCloud,
 		Note:        "COMFY_CLOUD_API_KEY と COMFY_API_KEY。cloud.comfy.org/api と api.comfy.org に送ります。ワークフローの実行 (クレジットを使う) もできます。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー (platform.comfy.org)"}},
 		Hint:        "Comfy の SDK は COMFY_API_KEY を読みます。出力の保存先 (署名付き URL) には値を送らないので、提案が出たら読み取りで承認します。",
 	},
 	{
-		ID: "iwato-vastai", Label: "Vast.ai", Group: groupCloud, Scoped: true,
+		ID: "iwato-vastai", Label: "Vast.ai", Group: groupCloud,
 		Note:        "VAST_API_KEY。console.vast.ai/api に送ります。読み取りとオファーの検索だけで、インスタンスの作成・削除 (費用がかかる) はポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
 		Hint:        "vastai は VAST_API_KEY を読みます (vastai set api-key は不要)。確かめるには vastai show user。",
 	},
 	{
-		ID: "iwato-runpod", Label: "RunPod", Group: groupCloud, Scoped: true,
+		ID: "iwato-runpod", Label: "RunPod", Group: groupCloud,
 		Note:        "RUNPOD_API_KEY。api.runpod.io、rest.runpod.io、api.runpod.ai (サーバーレス)、hapi.runpod.net に送ります。読み取りだけで、Pod の作成・起動とサーバーレスの実行 (費用がかかる) はポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
 		Hint:        "runpodctl (mise use -g github:runpod/runpodctl) と runpod の Python SDK は RUNPOD_API_KEY を読みます (runpodctl doctor は不要)。確かめるには runpodctl user。",
 	},
 	{
-		ID: "iwato-modal", Label: "Modal", Group: groupCloud, Scoped: true,
+		ID: "iwato-modal", Label: "Modal", Group: groupCloud,
 		Note:        "MODAL_TOKEN_ID と MODAL_TOKEN_SECRET。api.modal.com と api.modal2.com の gRPC (HTTP/2) に送ります。アプリの実行 (費用がかかる) もできます。注意: このプロバイダーを付けたサンドボックスは Modal でコードを実行できます。Modal からはインターネットに自由に出られるので、データの行き先はサンドボックスのネットワークポリシーで制限できなくなります。そのコードはワークスペースの Modal Secrets も読めます。",
 		Credentials: []profileCredential{{Name: "token_id", Label: "トークン ID (ak-...)"}, {Name: "token_secret", Label: "トークンシークレット (as-...)"}},
 		Hint:        "modal (uv tool install modal) は MODAL_TOKEN_ID と MODAL_TOKEN_SECRET を読みます (modal token new は不要)。grpclib は certifi の証明書しか信頼しないので、先に modal の Python で ln -sf \"$SSL_CERT_FILE\" \"$(python -m certifi)\" します。確かめるには modal token info か小さな modal run。ファイルのアップロード (署名付き URL) や *.modal.run はポリシーの提案で許可します。modal run や modal deploy で送ったコードは Modal で動き、サンドボックスのネットワークポリシーの外でインターネットに出られ、Modal Secrets も読めます。",
 	},
 	{
-		ID: "iwato-cloudflare", Label: "Cloudflare", Group: groupHosting, Scoped: true,
-		Note:        "CLOUDFLARE_API_TOKEN。api.cloudflare.com/client/v4 に送ります。読み取りだけで、デプロイや DNS の変更はポリシーの提案か、範囲の「書き込みも許可」で許可します。",
+		ID: "iwato-cloudflare", Label: "Cloudflare", Group: groupHosting,
+		Note:        "CLOUDFLARE_API_TOKEN。api.cloudflare.com/client/v4 に送ります。読み取りだけで、デプロイや DNS の変更はポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "api_token", Label: "API トークン"}},
-		Hint:        "wrangler (mise use -g npm:wrangler) は CLOUDFLARE_API_TOKEN を読みます (wrangler login は不要)。アカウント ID は秘密ではないので、CLOUDFLARE_ACCOUNT_ID か wrangler の設定の account_id に自分で書きます。wrangler deploy には「範囲を変更」で「書き込みも許可」にします。確かめるには wrangler whoami。",
+		Hint:        "wrangler (mise use -g npm:wrangler) は CLOUDFLARE_API_TOKEN を読みます (wrangler login は不要)。アカウント ID は秘密ではないので、CLOUDFLARE_ACCOUNT_ID か wrangler の設定の account_id に自分で書きます。wrangler deploy にはその提案を、認証情報を付けて承認します。確かめるには wrangler whoami。",
 	},
 }
 
@@ -294,6 +315,17 @@ func init() {
 		if len(m.Credentials) != len(p.Credentials) {
 			panic(fmt.Sprintf("profiles/%s.yaml: %d credentials, %d labels", p.ID, len(m.Credentials), len(p.Credentials)))
 		}
+		if len(m.Endpoints) > 0 {
+			panic(fmt.Sprintf("profiles/%s.yaml has endpoints: the policy binds the credential (ADR 0022)", p.ID))
+		}
+		for _, hp := range strings.Split(m.Annotations[credentialHostsKey], ",") {
+			if hp = strings.TrimSpace(hp); hp != "" {
+				p.CredentialHosts = append(p.CredentialHosts, strings.ToLower(hp))
+			}
+		}
+		if len(p.CredentialHosts) == 0 {
+			panic(fmt.Sprintf("profiles/%s.yaml: no %s", p.ID, credentialHostsKey))
+		}
 		for j, c := range m.Credentials {
 			if c.Name != p.Credentials[j].Name {
 				panic(fmt.Sprintf("profiles/%s.yaml: credential %s, label for %s", p.ID, c.Name, p.Credentials[j].Name))
@@ -303,8 +335,8 @@ func init() {
 	}
 }
 
-// profileByID finds a built-in profile, a scoped provider's
-// (providers_scope.go) or a custom one (providers_custom.go).
+// profileByID finds a built-in profile or a custom one
+// (providers_custom.go).
 func profileByID(id string) (providerProfile, bool) {
 	if p, ok := builtinProfile(id); ok {
 		return p, true
@@ -336,9 +368,14 @@ func profileHash(p *pb.ProviderProfile) string {
 	return "sha256:" + hex.EncodeToString(h[:])
 }
 
-// importedProfile is the profile as Iwato imports it: with its hash.
+// importedProfile is the profile as Iwato imports it: with its hash among
+// its annotations.
 func importedProfile(p providerProfile) *pb.ProviderProfile {
 	m := p.proto()
-	m.Annotations = map[string]string{profileHashKey: profileHash(m)}
+	h := profileHash(m)
+	if m.Annotations == nil {
+		m.Annotations = map[string]string{}
+	}
+	m.Annotations[profileHashKey] = h
 	return m
 }

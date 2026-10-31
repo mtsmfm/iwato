@@ -1,0 +1,80 @@
+# Iwato's Codex sign-in profile: OpenAI's coding agent CLI (`codex`) with
+# the owner's ChatGPT account (Plus, Pro, Business, ...).
+# Iwato.exe signs in at auth.openai.com with Codex's device code login
+# (Codex's public client; codex.go) and gives the gateway the refresh
+# token; the gateway refreshes the access token (oauth2_refresh_token) and
+# the sandbox gets placeholders. Iwato imports it into the gateway
+# (platform scope) when it prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-codex-subscription.yaml
+#
+# Client binaries:   mise installs codex with its aqua backend (openai/codex's
+#                    GitHub releases): installs/codex/VERSION/bin/codex. Not
+#                    checked on disk.
+# Credential scope:  CODEX_CHATGPT_ACCESS_TOKEN (bearer authorization) and
+#                    CODEX_CHATGPT_ACCOUNT_ID (Codex's chatgpt-account-id
+#                    header). Codex takes neither from the environment: it
+#                    reads ~/.codex/auth.json, which Iwato's terminal
+#                    environment writes with their placeholders
+#                    (codexAuthLines, term_env.go).
+# Endpoint access:   chatgpt.com/backend-api/codex (inference: POST
+#                    /responses or its WebSocket, GET /models, analytics) and
+#                    /backend-api/wham (usage, rate limits, cloud tasks),
+#                    read-write. Apps (connectors: /backend-api/ps/mcp),
+#                    plugins and telemetry (ab.chatgpt.com) take a proposal.
+# Sign-in:           client_id app_EMoamEEZ73f0CkXaXp7hrann; POST
+#                    /api/accounts/deviceauth/usercode {client_id} (404: device
+#                    login is off for the account), the owner enters the code
+#                    at /codex/device, POST /api/accounts/deviceauth/token
+#                    {device_auth_id, user_code} (403/404 while pending) gives
+#                    authorization_code and code_verifier, exchanged at
+#                    /oauth/token (form) with redirect_uri
+#                    https://auth.openai.com/deviceauth/callback.
+# Refresh:           at /oauth/token, a public client: client_id and
+#                    refresh_token, no scope. Codex sends JSON; the gateway
+#                    sends a form, which is not verified. Refresh tokens are
+#                    single use (rotation); the gateway stores the new one.
+#                    max_lifetime is a guess (the access token's lifetime is
+#                    not documented; Codex refreshes after 8 days).
+# Verified:          from openai/codex's source (codex-rs/login: device_code_auth.rs,
+#                    auth/manager.rs, token_data.rs, oauth/client.rs;
+#                    model-provider-info). Not run against OpenAI.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-codex-subscription.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
+
+id: iwato-codex-subscription
+display_name: Codex sign-in (Iwato)
+description: Codex with a ChatGPT account sign-in the gateway refreshes
+category: agent
+annotations:
+  iwato/credential-hosts: "chatgpt.com:443"
+credentials:
+  - name: access_token
+    description: ChatGPT OAuth access token (Codex sign-in)
+    env_vars: [CODEX_CHATGPT_ACCESS_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://auth.openai.com/oauth/token
+      refresh_before: "300s"
+      max_lifetime: "28800s"
+      material:
+        - name: client_id
+          description: OAuth client ID (Codex's public client)
+          required: true
+        - name: refresh_token
+          description: OAuth refresh token
+          required: true
+          secret: true
+  - name: account_id
+    description: ChatGPT account (workspace) ID
+    env_vars: [CODEX_CHATGPT_ACCOUNT_ID]
+    required: true
+    auth_style: header
+    header_name: chatgpt-account-id
+binaries:
+  - /home/dev/.local/share/mise/installs/codex/*/bin/codex

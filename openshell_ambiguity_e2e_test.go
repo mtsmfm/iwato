@@ -57,10 +57,16 @@ func viewPairs(vs []AmbiguityView) []string {
 }
 
 // TestOpenShellAmbiguityE2E checks, against the gateway that
-// internal/openshell/wslc/e2e.sh starts (MODE=tls), that Iwato's
-// prediction of OpenShell's endpoint ambiguity check matches the gateway's
-// own refusal: a hand rule auditing api.github.com while the GitHub
-// provider's rule enforces it, and the provider attached over such a rule.
+// internal/openshell/wslc/e2e.sh starts (MODE=tls), the providers' rules
+// in the policy (ADR 0022) and that Iwato's prediction of OpenShell's
+// endpoint ambiguity check matches the gateway's own refusal:
+//   - attaching Iwato's GitHub provider adds its initial rule bound to it
+//     (the gateway takes the bindings), an endpoint as specific without the
+//     binding is refused alike, and detaching takes the bound endpoints out
+//     first (the gateway refuses a detach while bound);
+//   - a profile with endpoints of its own (OpenShell composes its rule): a
+//     hand rule auditing its host is refused alike, and the provider
+//     attached over such a rule.
 func TestOpenShellAmbiguityE2E(t *testing.T) {
 	addr := os.Getenv("OPENSHELL_E2E_ADDR")
 	if addr == "" {
@@ -90,12 +96,26 @@ func TestOpenShellAmbiguityE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.profilesDone = true
-	gh, _ := profileByID("iwato-github")
-	creds, _ := profileCredentials(gh, map[string]string{"token": "ghp_e2eSECRETambiguity"})
-	if err := o.CreateProvider(ctx, "github-amb", "iwato-github", creds); err != nil {
+	ghProf, _ := profileByID(githubProfileID)
+	creds, _ := profileCredentials(ghProf, map[string]string{"token": "ghp_e2eSECRETambiguity"})
+	if err := o.CreateProvider(ctx, "github-amb", githubProfileID, creds); err != nil {
 		t.Fatal(err)
 	}
 	defer o.DeleteProvider(context.Background(), "github-amb")
+	// A profile with endpoints: api.openai.com enforced, as OpenShell's
+	// own example.
+	m, err := parseProfileYAML([]byte("id: amb-e2e\ndisplay_name: Ambiguity e2e\ncategory: inference\ncredentials:\n  - name: api_key\n    env_vars: [AMB_E2E_KEY]\n    required: true\n    auth_style: bearer\n    header_name: authorization\nendpoints:\n  - host: api.openai.com\n    port: 443\n    protocol: rest\n    access: read-only\n    enforcement: enforce\nbinaries: [/usr/bin/curl]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.PutProviderProfile(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	defer o.DeleteProviderProfile(context.Background(), "amb-e2e")
+	if err := o.CreateProvider(ctx, "amb", "amb-e2e", map[string]string{"AMB_E2E_KEY": "e2eSECRETamb"}); err != nil {
+		t.Fatal(err)
+	}
+	defer o.DeleteProvider(context.Background(), "amb")
 
 	w := newSandbox("iwato-ambiguity-e2e")
 	if err := o.Start(ctx, w); err != nil {
@@ -109,13 +129,54 @@ func TestOpenShellAmbiguityE2E(t *testing.T) {
 		r := reviewRequest(s, method, path, body, s.origin, "same-origin", s.host, cookie, csrf)
 		return r.Code, r.Body.String()
 	}
+
+	// Iwato's GitHub provider: its initial rule, bound.
 	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"github-amb"}`); code != 200 {
 		t.Fatal("attach:", code, body)
 	}
+	rules, err := o.PolicyRules(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := boundProviders(rules); !slices.Equal(got, []string{"github-amb"}) || len(rules["provider_github_amb"].Endpoints) != 4 {
+		t.Fatalf("the initial rule: %v %+v", got, rules["provider_github_amb"])
+	}
+	// As specific as the provider's api.github.com/**, without its
+	// credential: predicted and refused alike.
+	bad := restEndpoint("api.github.com", 443)
+	bad.Path, bad.Access = "/**", v1.NetworkAccessPresetReadOnly
+	withBad := cloneRules(rules)
+	withBad["gh_unbound"] = v1.NetworkPolicyRule{Name: "gh_unbound", Binaries: policyBinaries("/**"), Endpoints: []v1.PolicyNetworkEndpoint{bad}}
+	predicted := newAmbiguities(rules, withBad)
+	_, err = o.changePolicy(ctx, w, PolicyNote{Kind: "edit", Message: "e2e: an unbound endpoint as specific as a bound one"}, func(cur map[string]v1.NetworkPolicyRule) (map[string]v1.NetworkPolicyRule, error) {
+		cur["gh_unbound"] = withBad["gh_unbound"]
+		return cur, nil
+	})
+	t.Logf("OpenShell's answer to the unbound endpoint: %v", err)
+	if err == nil || len(predicted) != 1 || !strings.Contains(err.Error(), "credential_binding") {
+		t.Fatal("the unbound endpoint:", predicted, err)
+	}
+	if got, want := gatewayPairs(err.Error()), viewPairs(ambiguityViews(predicted, []string{"gh_unbound"}, withBad, nil)); !slices.Equal(got, want) {
+		t.Fatalf("the gateway refused %v, Iwato predicted %v", got, want)
+	}
+	// OpenShell refuses detaching it while bound; Iwato takes the rule out first.
+	if _, _, err := o.DetachProvider(ctx, w.Name, "github-amb"); err == nil {
+		t.Fatal("OpenShell detached a provider the policy binds")
+	}
+	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/providers/detach", `{"provider":"github-amb"}`); code != 200 {
+		t.Fatal("detach:", code, body)
+	}
+	if rules, _ := o.PolicyRules(ctx, w); len(boundProviders(rules)) != 0 {
+		t.Fatal("still bound:", boundProviders(rules))
+	}
 
-	// A rule auditing api.github.com: Iwato refuses it, and so does the
+	// A profile with endpoints: OpenShell composes its rule.
+	if code, body := do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"amb"}`); code != 200 {
+		t.Fatal("attach:", code, body)
+	}
+	// A rule auditing api.openai.com: Iwato refuses it, and so does the
 	// gateway, for the same pair and fields.
-	audited := PolicyEdit{Op: "add", Rule: "gh_audit", Binaries: []string{"/usr/bin/curl"}, Host: "api.github.com", Ports: []uint32{443}, Access: "full", Audit: true}
+	audited := PolicyEdit{Op: "add", Rule: "amb_audit", Binaries: []string{"/usr/bin/curl"}, Host: "api.openai.com", Ports: []uint32{443}, Access: "full", Audit: true}
 	body, _ := json.Marshal(audited)
 	code, resp := do("POST", "/api/sandboxes/"+w.Name+"/policy/add", string(body))
 	var refused struct {
@@ -133,42 +194,27 @@ func TestOpenShellAmbiguityE2E(t *testing.T) {
 	if got, want := gatewayPairs(err.Error()), viewPairs(refused.Ambiguities); !slices.Equal(got, want) {
 		t.Fatalf("the gateway refused %v, Iwato predicted %v", got, want)
 	}
-	if msg, ok := translateGatewayError(safeCLIError(err), s.ruleProviders(ctx, w)); !ok || !strings.Contains(msg.text, "プロバイダー github-amb (GitHub) の規則 _provider_github_amb") {
+	if msg, ok := translateGatewayError(safeCLIError(err), s.ruleProviders(ctx, w)); !ok || !strings.Contains(msg.text, "プロバイダー amb") || !strings.Contains(msg.text, "_provider_amb") {
 		t.Fatal("translation:", msg)
-	}
-	// Enforced, the gateway takes it; Iwato refuses it all the same, as
-	// the provider's host is the provider's (ADR 0006).
-	enforced := audited
-	enforced.Rule, enforced.Audit = "gh_enforce", false
-	body, _ = json.Marshal(enforced)
-	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/policy/add", string(body)); code != 409 || !strings.Contains(resp, `"code":"policy_provider_host"`) {
-		t.Fatal("the enforced rule:", code, resp)
-	}
-	if _, err := o.EditPolicy(ctx, w, enforced); err != nil {
-		t.Fatal("the gateway refused the enforced rule:", err)
 	}
 
 	// The provider attached over an audited rule: refused by Iwato and by
 	// the gateway's attachment preflight alike; switched to enforce, on.
-	if ok, _, err := o.DetachProvider(ctx, w.Name, "github-amb"); !ok || err != nil {
-		t.Fatal(ok, err)
-	}
-	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/policy/remove", `{"rule":"gh_enforce"}`); code != 200 {
+	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/providers/detach", `{"provider":"amb"}`); code != 200 {
 		t.Fatal(code, resp)
 	}
-	// A rule from before (by hand Iwato refuses it, provider or not).
 	if _, err := o.EditPolicy(ctx, w, audited); err != nil {
 		t.Fatal("the audited rule without the provider:", err)
 	}
-	code, resp = do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"github-amb"}`)
+	code, resp = do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"amb"}`)
 	refused.Ambiguities = nil
 	if code != 409 || json.Unmarshal([]byte(resp), &refused) != nil || len(refused.Ambiguities) == 0 || refused.Ambiguities[0].Fix != "enforce" {
 		t.Fatal("Iwato attached over the audited rule:", code, resp)
 	}
-	_, _, err = o.AttachProvider(ctx, w.Name, "github-amb")
+	_, _, err = o.AttachProvider(ctx, w.Name, "amb")
 	t.Logf("OpenShell's own attach over the audited rule: %v", err)
 	if err == nil {
-		o.DetachProvider(context.Background(), w.Name, "github-amb")
+		o.DetachProvider(context.Background(), w.Name, "amb")
 		t.Fatal("OpenShell attached over the audited rule")
 	}
 	var plain interface{ Error() string } = err
@@ -178,18 +224,10 @@ func TestOpenShellAmbiguityE2E(t *testing.T) {
 	if got, want := gatewayPairs(plain.Error()), viewPairs(refused.Ambiguities); !slices.Equal(got, want) {
 		t.Fatalf("the gateway refused %v, Iwato predicted %v", got, want)
 	}
-	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/providers/fix", `{"provider":"github-amb","mode":"enforce"}`); code != 200 {
+	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/providers/fix", `{"provider":"amb","mode":"enforce"}`); code != 200 {
 		t.Fatal("fix:", code, resp)
 	}
-	// Enforced, it still gives the token full access, beyond the
-	// provider's read-only rule: Iwato refuses until it is gone.
-	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"github-amb"}`); code != 409 || !strings.Contains(resp, `"code":"provider_attach_beyond_scope"`) {
-		t.Fatal("attach over a rule beyond the scope:", code, resp)
-	}
-	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/policy/remove", `{"rule":"gh_audit"}`); code != 200 {
-		t.Fatal(code, resp)
-	}
-	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"github-amb"}`); code != 200 {
+	if code, resp := do("POST", "/api/sandboxes/"+w.Name+"/providers/attach", `{"provider":"amb"}`); code != 200 {
 		t.Fatal("attach after the fix:", code, resp)
 	}
 }

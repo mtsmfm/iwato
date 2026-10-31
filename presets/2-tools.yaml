@@ -1,0 +1,96 @@
+# Iwato's network preset for installing tools with mise (ADR 0022): runtimes
+# and GitHub's releases, read only. github.com and api.github.com are read
+# without a credential here; with the GitHub provider attached, its initial
+# rule (/** endpoints, more specific than these) reads them with its token.
+id: tools
+label: ツールのインストール
+note: mise と Node.js・Go・Rust・uv の Python の本体、GitHub のリリースとソースを読み取りだけで取得できます
+default: true
+network_policies:
+  # mise asks for claude's version by POST.
+  preset_tools_mise_versions_jdx_dev:
+    endpoints:
+      - host: mise-versions.jdx.dev
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+          - allow: { method: POST, path: /api/tools/claude }
+    binaries: ["/**"]
+  preset_tools_mise_jdx_dev:
+    endpoints:
+      - { host: mise.jdx.dev, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  # Shared with research under one name (see storage.googleapis.com in
+  # packages).
+  preset_nodejs_org:
+    endpoints:
+      - host: nodejs.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/dist/**" }
+    binaries: ["/**"]
+  preset_tools_dl_google_com:
+    endpoints:
+      - host: dl.google.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/go/**" }
+    binaries: ["/**"]
+  # Rust's toolchains (mise's rust, rustup): the installer, then rustup
+  # and the toolchains from static.rust-lang.org.
+  preset_tools_sh_rustup_rs:
+    endpoints:
+      - { host: sh.rustup.rs, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_tools_static_rust_lang_org:
+    endpoints:
+      - { host: static.rust-lang.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  # uv python install (and uv's own downloads) try Astral's mirror of the
+  # GitHub releases first, then github.com.
+  preset_tools_releases_astral_sh:
+    endpoints:
+      - { host: releases.astral.sh, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  # mise reads GitHub's releases (mise use -g claude, grok, codex: Codex's
+  # aqua backend downloads them; its update check reads
+  # api.github.com/repos/openai/codex/releases/latest and only tells).
+  preset_tools_api_github_com:
+    endpoints:
+      - { host: api.github.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_tools_github_com:
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+    binaries: ["/**"]
+  preset_tools_codeload_github_com:
+    endpoints:
+      - { host: codeload.github.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_tools_objects_githubusercontent_com:
+    endpoints:
+      - { host: objects.githubusercontent.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_tools_release_assets_githubusercontent_com:
+    endpoints:
+      - { host: release-assets.githubusercontent.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_tools_raw_githubusercontent_com:
+    endpoints:
+      - { host: raw.githubusercontent.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]

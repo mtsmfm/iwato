@@ -82,13 +82,9 @@ func (s *Server) customProfileFile(id string) string {
 	return filepath.Join(dir, file)
 }
 
-// loadProfiles registers the scoped providers' profiles and the custom
-// ones before Iwato prepares OpenShell (which imports them).
+// loadProfiles registers the custom profiles before Iwato prepares
+// OpenShell (which imports them).
 func (s *Server) loadProfiles() {
-	s.mu.Lock()
-	scopes := s.config.ProviderScopes
-	s.mu.Unlock()
-	registerScopes(scopes)
 	dir := s.profileDir()
 	if dir == "" {
 		return

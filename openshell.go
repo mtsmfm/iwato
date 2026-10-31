@@ -94,6 +94,8 @@ type OpenShell struct {
 	// sandboxConfig replaces reading the sandbox's effective config
 	// (GetSandboxConfig) in tests.
 	sandboxConfig func(context.Context, Sandbox) (*v1.SandboxConfig, error)
+	// providerList replaces listing the providers (the fake's).
+	providerList func(context.Context) ([]ProviderInfo, map[string][]string, error)
 	// profilesDone is set once Iwato's provider profiles are in the
 	// gateway; profileAPI replaces the gateway's profile API in tests.
 	profilesDone bool
@@ -116,11 +118,15 @@ type OpenShell struct {
 	// engineErr refuses at once while the engine is unusable (serve waits
 	// for it before Prepare: checks.go); nil in tests.
 	engineErr func() error
+	// store keeps each sandbox's policy (policy_store.go); nil keeps it in
+	// memory.
+	store     *policyStore
+	storeOnce sync.Once
 }
 
 func NewOpenShell(e *Engine, configDir string) *OpenShell {
 	return &OpenShell{e: e, dir: filepath.Join(configDir, "openshell"), ready: make(chan struct{}), env: termEnv, timezone: e.config.Timezone, terms: map[string]map[string]*hostterm.Session{},
-		legacyPlaced: !e.docker && termbin.Binary() != nil}
+		legacyPlaced: !e.docker && termbin.Binary() != nil, store: &policyStore{dir: filepath.Join(configDir, "policies")}}
 }
 
 // Prepare serves the compute driver on Windows' loopback (WSLc; with a
@@ -596,13 +602,26 @@ func (o *OpenShell) Start(ctx context.Context, w Sandbox) error {
 		if image == "" {
 			image = sandboxImage
 		}
+		policy := sandboxPolicy(w)
+		if len(providers) > 0 {
+			// The providers' initial rules, bound to them (ADR 0022): the
+			// gateway checks the bindings against the providers created
+			// with the sandbox.
+			list, _, err := o.ListProviders(ctx)
+			if err != nil {
+				return err
+			}
+			if policy.NetworkPolicies, err = withProviderInitialRules(policy.NetworkPolicies, list, providers); err != nil {
+				return err
+			}
+		}
 		spec := &v1.SandboxSpec{
 			Template: &v1.SandboxTemplate{
 				Image:        image,
 				DriverConfig: o.driverConfig(w),
 			},
 			Environment: sandboxEnv(w),
-			Policy:      sandboxPolicy(w),
+			Policy:      policy,
 			Providers:   providers,
 			GPU:         w.GPU,
 			TTY:         true,

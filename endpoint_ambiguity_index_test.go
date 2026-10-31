@@ -120,7 +120,7 @@ func randomPolicy(rnd *rand.Rand) map[string]v1.NetworkPolicyRule {
 }
 
 // The indexed check finds the same ambiguities, in the same order, as the
-// plain all-pairs one: for policies, changes to them and proposals.
+// plain all-pairs one: for policies and changes to them.
 func TestAmbiguityIndexMatchesAllPairs(t *testing.T) {
 	rnd := rand.New(rand.NewSource(1))
 	for n := range 500 {
@@ -149,71 +149,14 @@ func TestAmbiguityIndexMatchesAllPairs(t *testing.T) {
 		if got, want := newAmbiguities(base, after), refNewAmbiguities(base, after); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%d: new\ngot  %v\nwant %v", n, got, want)
 		}
-
-		effective := withProviderRules(base, randomPolicy(rnd))
-		name := fmt.Sprintf("rule%d", rnd.Intn(14))
-		rule := randomRule(rnd, name)
-		before, err := indexAmbiguities(context.Background(), withProviderRules(base, effective))
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := proposalFit(context.Background(), before, base, effective, name, rule)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := map[string][]EndpointAmbiguity{}
-		for _, c := range approveChoices {
-			r := rule
-			if c.Scope != nil {
-				r = c.Scope.apply(cloneRule(rule))
-			}
-			merged, err := simulateMerge(base, approvalOps(name, r))
-			if err != nil {
-				continue
-			}
-			if a := refNewAmbiguities(withProviderRules(base, effective), withProviderRules(merged, effective)); len(a) > 0 {
-				want[c.Name] = a
-			}
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("%d: fit\ngot  %v\nwant %v", n, got, want)
-		}
 	}
 }
 
-func TestProposalFitStopsWhenCancelled(t *testing.T) {
+func TestAmbiguityIndexStopsWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	base := ambPolicy(ambEndpoint("api.example.com", 443), ambEndpoint("api.example.com", 443))
 	if _, err := indexAmbiguities(ctx, base); err == nil {
 		t.Fatal("index ran on")
-	}
-	before, _ := indexAmbiguities(context.Background(), base)
-	if _, err := proposalFit(ctx, before, base, base, "new", v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{restEndpoint("a.example", 443)}}); err == nil {
-		t.Fatal("fit ran on")
-	}
-}
-
-// 150 rules and 40 pending proposals, as the proposals view checks them.
-func BenchmarkProposalFit(b *testing.B) {
-	base := map[string]v1.NetworkPolicyRule{}
-	for i := range 150 {
-		name := fmt.Sprintf("allow_rule%d_perf_example_443", i)
-		ep := restEndpoint(fmt.Sprintf("rule%d.perf.example", i), 443)
-		ep.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/**"}}}
-		base[name] = v1.NetworkPolicyRule{Name: name, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{ep}}
-	}
-	var pending []v1.NetworkPolicyRule
-	for i := range 40 {
-		ep := restEndpoint(fmt.Sprintf("svc%d.perf.example", i), 443)
-		ep.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: fmt.Sprintf("/v1/x/%d", i)}}}
-		pending = append(pending, v1.NetworkPolicyRule{Name: fmt.Sprintf("allow_svc%d_perf_example_443", i), Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{ep}})
-	}
-	b.ResetTimer()
-	for range b.N {
-		before, _ := indexAmbiguities(context.Background(), base)
-		for _, r := range pending {
-			proposalFit(context.Background(), before, base, base, r.Name, r)
-		}
 	}
 }

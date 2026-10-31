@@ -12,7 +12,8 @@ import (
 )
 
 // fakeOpenShell is the fake's gateway behind OpenShell's code, with the
-// merge operations it was sent.
+// updates it was sent: a whole policy as its change's kind, merge
+// operations as they are.
 func fakeOpenShell(t *testing.T) (*Fake, *OpenShell, Sandbox, *[]string) {
 	d := NewFake()
 	w := newSandbox("dev")
@@ -23,7 +24,11 @@ func fakeOpenShell(t *testing.T) (*Fake, *OpenShell, Sandbox, *[]string) {
 	var sent []string
 	update := o.updateConfig
 	o.updateConfig = func(ctx context.Context, u *v1.ConfigUpdate) (*v1.ConfigUpdateResult, error) {
-		sent = append(sent, opsString(u.MergeOperations))
+		if u.Policy != nil {
+			sent = append(sent, "policy "+u.Annotations[provenanceChange])
+		} else {
+			sent = append(sent, opsString(u.MergeOperations))
+		}
 		return update(ctx, u)
 	}
 	return d, o, w, &sent
@@ -45,8 +50,8 @@ func TestUndoTakesTheWidenedRuleWithTheProposal(t *testing.T) {
 	if len(npm.Chunks) != 1 || !npm.Chunks[0].Widened || !npm.Chunks[0].RemovesRule || !slices.Equal(npm.Chunks[0].Drops, []string{"npm.pkg.github.com:443"}) {
 		t.Fatalf("%+v", npm)
 	}
-	// The rule's own program is the glob: OpenShell's undo takes nothing
-	// out (it removes the path that asked); Iwato takes the glob.
+	// The rule's own program is the glob: Iwato takes it out (the rule goes
+	// with it), and OpenShell's undo then finds nothing to take out.
 	before := len(d.policies[w.Name])
 	change, err := o.UndoProposal(ctx, w, npm.Chunks[0].ID, false)
 	if err != nil {
@@ -56,10 +61,10 @@ func TestUndoTakesTheWidenedRuleWithTheProposal(t *testing.T) {
 	if _, ok := rules["allow_registry_npmjs_org_443"]; ok {
 		t.Fatalf("the rule stayed: %+v", rules["allow_registry_npmjs_org_443"])
 	}
-	if strings.Join(*sent, "|") != "remove-binary allow_registry_npmjs_org_443 "+fakeNodeGlob || chunkStatus(t, o, w, "fake-npm") != "pending" {
+	if strings.Join(*sent, "|") != "policy undo" || chunkStatus(t, o, w, "fake-npm") != "pending" {
 		t.Fatal(*sent, chunkStatus(t, o, w, "fake-npm"))
 	}
-	if change.Kind != "edit" || change.Rule != "allow_registry_npmjs_org_443" || change.Version != uint32(before+2) {
+	if change.Kind != "edit" || change.Rule != "allow_registry_npmjs_org_443" || change.Version != uint32(before+1) {
 		t.Fatalf("%+v (from %d)", change, before)
 	}
 	v, _ = o.Proposals(ctx, w)
@@ -67,13 +72,13 @@ func TestUndoTakesTheWidenedRuleWithTheProposal(t *testing.T) {
 		t.Fatal("the undone proposal is not pending again")
 	}
 	// One of two proposals of a rule: the rule stays for the other's
-	// program, nothing more is sent.
+	// program.
 	*sent = nil
 	if _, err := o.UndoProposal(ctx, w, requestID("fake-gh"), false); err != nil {
 		t.Fatal(err)
 	}
 	rules, _ = d.PolicyRules(ctx, w)
-	if r := rules[fakeGHERule]; len(r.Binaries) != 1 || r.Binaries[0].Path != "/usr/bin/git" || len(*sent) != 0 {
+	if r := rules[fakeGHERule]; len(r.Binaries) != 1 || r.Binaries[0].Path != "/usr/bin/git" || strings.Join(*sent, "|") != "policy undo" {
 		t.Fatalf("%+v %v", r, *sent)
 	}
 	// Undo is for an approved proposal with its rule.
@@ -117,7 +122,7 @@ func TestUndoRoutes(t *testing.T) {
 	}
 }
 
-func TestRestoreAndUndoPutsTheProposalBack(t *testing.T) {
+func TestRestorePutsTheProposalBack(t *testing.T) {
 	d, o, w, sent := fakeOpenShell(t)
 	ctx := context.Background()
 	v, _ := o.Proposals(ctx, w)
@@ -130,18 +135,13 @@ func TestRestoreAndUndoPutsTheProposalBack(t *testing.T) {
 	if _, err := o.UndoProposal(ctx, w, requestID("fake-mise"), true); err != nil {
 		t.Fatal(err)
 	}
-	// The rule came back and went again with the undo: the policy is as
-	// before, the proposal waits again.
+	// The rule is gone already: the policy stays, the proposal waits again.
 	rules, _ := d.PolicyRules(ctx, w)
 	if _, ok := rules["allow_mise_versions_jdx_dev_443"]; ok || chunkStatus(t, o, w, "fake-mise") != "pending" {
 		t.Fatal(rules, chunkStatus(t, o, w, "fake-mise"))
 	}
-	if len(*sent) != 1 || !strings.HasPrefix((*sent)[0], "add allow_mise_versions_jdx_dev_443 [/usr/local/bin/mise] mise-versions.jdx.dev [443] ") {
+	if len(*sent) != 0 {
 		t.Fatal(*sent)
-	}
-	revs := d.policies[w.Name]
-	if _, ok := revs[len(revs)-2].rules["allow_mise_versions_jdx_dev_443"]; !ok {
-		t.Fatal("the rule was not put back before the undo")
 	}
 	v, _ = o.Proposals(ctx, w)
 	if len(v.Unlinked) != 0 || !slices.ContainsFunc(v.Pending, func(p PendingProposal) bool { return p.ID == requestID("fake-mise") }) {
@@ -156,8 +156,11 @@ func TestProviderRulesNameTheirProvider(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/dev/start", `{}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`); code != 200 {
-		t.Fatal(code, body)
+	// Iwato's profiles have no endpoints (ADR 0022): a CLI-imported one's.
+	for _, p := range []string{"github-personal", "openai"} {
+		if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"`+p+`"}`); code != 200 {
+			t.Fatal(code, body)
+		}
 	}
 	sb, _ := s.lookupSandbox("dev")
 	v, err := s.rt.(proposalRuntime).Proposals(context.Background(), sb)
@@ -165,12 +168,15 @@ func TestProviderRulesNameTheirProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	nameProviderRules(v.Policy, s.ruleProviders(context.Background(), sb))
-	i := slices.IndexFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "_provider_github_personal" })
+	if slices.ContainsFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "_provider_github_personal" }) {
+		t.Fatal("an endpointless profile's rule")
+	}
+	i := slices.IndexFunc(v.Policy.Rules, func(r PolicyRuleView) bool { return r.Name == "_provider_openai" })
 	if i < 0 {
 		t.Fatalf("%+v", v.Policy.Rules)
 	}
 	r := v.Policy.Rules[i]
-	if r.Source != "provider" || r.Provider == nil || *r.Provider != (RuleProvider{Name: "github-personal", Profile: "iwato-github", Label: "GitHub"}) || !slices.Contains(r.Binaries, "/usr/bin/gh") {
+	if r.Source != "provider" || r.Provider == nil || *r.Provider != (RuleProvider{Name: "openai", Profile: "openai"}) || !slices.Contains(r.Binaries, "/usr/bin/curl") {
 		t.Fatalf("%+v %+v", r, r.Provider)
 	}
 	for in, want := range map[string]string{"github-personal": "_provider_github_personal", "Claude.Work": "_provider_claude_work", "--": "_provider_unnamed", "_x_": "_provider_x"} {

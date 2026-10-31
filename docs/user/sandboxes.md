@@ -11,7 +11,7 @@ Create a sandbox with **Create a sandbox** in the sidebar:
 - **Name**: a lowercase letter first, then lowercase letters, digits and hyphens, up to 32 characters. It also names the sandbox's published ports (`5173.NAME.localhost`), so a name that is not a valid DNS label gets no local port links ([publishing](publishing.md))
 - **Image**: empty for Iwato's standard image (below), or any image, as with `openshell sandbox create --from` (for example `ubuntu:24.04`)
 - **Use the GPU**: passes this PC's GPU into the sandbox (WSL's GPU; no choice of model or count). It can be changed later by **Recreate**, and appears only where a GPU is available. See [desktop and GPU](desktop.md)
-- **Network presets**: sets of rules put into the first policy ([network policy](network-policy.md#presets))
+- **Network presets**: the first network rules. Packages, Tool installs and Agent CLIs start checked; Reading references does not. Details shows what each allows ([network policy](network-policy.md#presets))
 - **Providers**: credentials to attach ([providers](providers.md))
 
 A new sandbox starts and connects its terminal. The sandbox's card has **Start** and a menu (⋯) with **Stop**, **Delete**, **Recreate** and **Providers**.
@@ -64,6 +64,24 @@ Iwato's standard image (`ghcr.io/mtsmfm/iwato-sandbox`, built from `sandboximage
 - Iwato's sandbox convention (below)
 
 No language runtimes (Node, Python, Go, Ruby, Java, …) and no agent CLIs are included: install them in the sandbox with mise ([agents](agents.md)).
+
+### Package-manager defaults
+
+Against malicious package releases, the image sets defaults for the package managers you install with mise ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)). They sit below the project's and your own settings, so either can change them:
+
+| Tool | Default | Where | Change it |
+|---|---|---|---|
+| npm (11.10+) | `min-release-age=7` (days), `ignore-scripts=true` | `/etc/iwato/npmrc`, read as npm's global config through `NPM_CONFIG_GLOBALCONFIG` | the project's `.npmrc` or `~/.npmrc`; one command: `--min-release-age=0`, `--ignore-scripts=false` |
+| uv (0.9.17+) | `exclude-newer = "7 days"` | `/etc/uv/uv.toml` | `[tool.uv]` or `uv.toml` of the project, `~/.config/uv/uv.toml`; one command: `--exclude-newer false` (uv 0.11.24+) |
+| pip | none (pip 26.0 rejects a duration, and current Python ships it) | | with pip 26.1+, `[global] uploaded-prior-to = P7D` in `~/.config/pip/pip.conf` or the virtualenv's `pip.conf`; one command: `--uploaded-prior-to P7D` |
+| Bundler (4.0.13+) | `BUNDLE_COOLDOWN=7` (days) | the shell's environment | `bundle config set --local cooldown N`; one command: `--cooldown 0` |
+
+- Older versions ignore the setting; npm before 11.10 may warn that `min-release-age` is unknown
+- A package that needs its install script (a native build) fails or stays unbuilt under npm: run that install with `--ignore-scripts=false`, or `npm rebuild PKG --ignore-scripts=false` afterwards. pnpm 10+ and Bun already run dependencies' scripts only for packages a project allows (Bun also for a list of popular ones); in Yarn Berry, `enableScripts: false` in `.yarnrc.yml` turns them off
+- uv records the cooldown in `uv.lock`: in a project whose lockfile was made without one, `uv lock` rewrites it and `uv sync --locked` fails; `uv sync --frozen` installs the lockfile as it is. A project that does not want the cooldown sets `exclude-newer = false` in `[tool.uv]` (uv 0.11.24+)
+- pnpm 11+ and recent Yarn Berry have a 1-day cooldown of their own (`minimumReleaseAge` in minutes, `npmMinimalAgeGate`); raise it in the project's or your global config (`~/.config/pnpm/config.yaml`, `~/.yarnrc.yml`). Bun has none by default, and its global `~/.bunfig.toml` is in the home, so the image cannot set it: set `[install] minimumReleaseAge = 604800` (seconds) there or in the project's `bunfig.toml`
+- To drop the defaults for all your shells, add `unset NPM_CONFIG_GLOBALCONFIG BUNDLE_COOLDOWN` to `~/.bashrc` and set `exclude-newer = false` in `~/.config/uv/uv.toml` (uv 0.11.24+)
+- `/AGENTS.md` asks agents to install from lockfiles (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync --frozen`, `BUNDLE_FROZEN=true bundle install`, …)
 
 ### Where the image comes from
 

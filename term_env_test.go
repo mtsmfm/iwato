@@ -110,8 +110,8 @@ func TestTermEnvFile(t *testing.T) {
 
 func TestHasClaudeSignIn(t *testing.T) {
 	list := []ProviderInfo{
-		{Name: "token", Profile: scopedProfileID("iwato-claude", "token")},
-		{Name: "login", Profile: scopedProfileID(claudeSubscriptionProfileID, "login")},
+		{Name: "token", Profile: legacyProfileID("iwato-claude", "token")},
+		{Name: "login", Profile: legacyProfileID(claudeSubscriptionProfileID, "login")},
 		{Name: "old", Profile: claudeSubscriptionProfileID},
 	}
 	for _, c := range []struct {

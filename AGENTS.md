@@ -27,7 +27,7 @@ Follow OpenShell's behaviour and improve only what is really inconvenient. New r
 2. `python3 scripts/fetch-vendor.py` (fonts in `web/vendor`, not in the repository)
 3. `go mod download`
 
-Inside an Iwato sandbox this needs network proposals (GET only; the list is in [development.md](docs/dev/development.md#developing-inside-an-iwato-sandbox)), and there `TestAgentFilesPlacedWhenAbsent`, `TestAgentFilesSkipWhatDoesNotFit` and `TestDesktopStartWithoutTheDesktop` fail regardless of the change.
+Inside an Iwato sandbox this needs network proposals (GET only; the list is in [development.md](docs/dev/development.md#developing-inside-an-iwato-sandbox)).
 
 ## Branches and parallel work
 

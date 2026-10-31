@@ -8,7 +8,7 @@ import (
 	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
 )
 
-// The cases of OpenShell v0.1.5's (unchanged since v0.1.2) crates/openshell-policy/src/ambiguity.rs
+// The cases of OpenShell v0.1.6's (unchanged since v0.1.2) crates/openshell-policy/src/ambiguity.rs
 // tests, in the same order and with the same names.
 
 func ambEndpoint(host string, port uint32) v1.PolicyNetworkEndpoint {

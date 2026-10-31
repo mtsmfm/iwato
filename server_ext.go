@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 	"rsc.io/qr"
@@ -131,31 +132,29 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 			v = ProposalView{Error: safeCLIError(e), Pending: []PendingProposal{}, Rejected: []RejectedProposal{}, Unlinked: []UnlinkedProposal{}}
 		}
 		providers := map[string]RuleProvider{}
-		var targets []scopeTarget
+		var list []ProviderInfo
+		var attached []string
 		if prt, ok := s.rt.(providerRuntime); ok {
-			if list, attached, err := s.providerState(ctx, prt); err != nil {
+			if l, a, err := s.providerState(ctx, prt); err != nil {
 				log.Printf("sandbox %s: providers for the proposals: %v", sb.Name, safeText(english(err)))
 			} else {
-				providers, targets = ruleProvidersOf(list, attached[sb.Name]), s.scopeTargetsOf(list, attached[sb.Name])
+				list, attached = l, a[sb.Name]
+				providers = ruleProvidersOf(list, attached)
 			}
 		}
 		nameProviderRules(v.Policy, providers)
+		offerBindings(v.Policy, list, attached)
 		for i := range v.Pending {
-			v.Pending[i].Blocked = blockedChoices(v.Pending[i].fit, v.Pending[i].Rule, providers)
-			if r := v.Pending[i].rule; r != nil {
-				if wd := widenScope(*r, targets); wd != nil {
-					wd.Resolving = s.closings.has(sb.Name, v.Pending[i].ID)
-					v.Pending[i].ProviderScope = wd
-				}
+			if p := v.Pending[i].plan; p != nil {
+				v.Pending[i].Offer = credentialOffers(*p, list, attached)
 			}
 		}
-		markProviderHosts(v.Policy, targets)
 		v.Changes = s.policyChangesFor(sb.Name, v.Policy)
 		v.Limits, v.HostGateways, v.ListenPort = proposalLimits, hostGateways, s.listenPort()
 		jsonResponse(w, 200, v)
 		return
 	}
-	if r.Method != http.MethodPost || len(parts) != 3 || !proposalOps[parts[2]] {
+	if r.Method != http.MethodPost || len(parts) != 3 || !proposalOps[parts[2]] && parts[2] != "preview" {
 		fail(w, 405, "method/operation not allowed")
 		return
 	}
@@ -167,36 +166,28 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 		RequestID string `json:"requestId"`
 		// Scope (approve only) narrows the proposal before it is approved.
 		Scope *ProposalScope `json:"scope"`
-		// Digest (approve, reject, scope) is the proposal as the page
-		// showed it (proposalDigest).
+		// Digest (approve, reject) is the proposal as the page showed it
+		// (proposalDigest).
 		Digest string `json:"digest"`
+		// Reason (reject only) is the owner's, for the agent.
+		Reason string `json:"reason"`
 	}
 	if decode(w, r, &body) != nil || !ownerID.MatchString(body.RequestID) {
 		fail(w, 400, "invalid pending request ID")
 		return
 	}
-	if parts[2] == "approve" || parts[2] == "reject" || parts[2] == "scope" {
+	if parts[2] != "undo" && parts[2] != "restore" {
 		if !digestPattern.MatchString(body.Digest) {
 			failCode(w, 400, "proposal_digest_missing", nil, "表示した提案がわかりません。表示し直してください")
 			return
 		}
 	}
-	if parts[2] == "scope" {
-		if body.Scope != nil {
-			fail(w, 400, "scope applies to approve only")
-			return
-		}
-		if !hasRT {
-			fail(w, 409, "proposals unavailable")
-			return
-		}
-		ctx, cancel := timeout(s.ctx, 60*time.Second)
-		defer cancel()
-		s.widenProposal(ctx, w, sb, body.RequestID, body.Digest)
+	if body.Reason != "" && (parts[2] != "reject" || utf8.RuneCountInString(body.Reason) > 500) {
+		fail(w, 400, "invalid reason")
 		return
 	}
 	if body.Scope != nil {
-		if parts[2] != "approve" {
+		if parts[2] != "approve" && parts[2] != "preview" {
 			fail(w, 400, "scope applies to approve only")
 			return
 		}
@@ -209,56 +200,20 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 		fail(w, 409, "proposals unavailable")
 		return
 	}
+	if parts[2] == "preview" {
+		s.previewApproval(w, sb, body.RequestID, body.Digest, body.Scope)
+		return
+	}
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
+	ctx = withRejectNote(refuseDrift(ctx), body.Reason)
 	defer s.lockPolicy(sb.Name)()
 	if parts[2] == "undo" || parts[2] == "restore" {
 		s.undoProposal(ctx, w, sb, body.RequestID, parts[2] == "restore")
 		return
 	}
-	// The rule as it would join the policy (as proposed, or narrowed by
-	// the approve dialog: programs alone keep the proposed endpoints) may
-	// carry an attached provider's credential uninspected, which OpenShell
-	// refuses, or reach Iwato's own port.
-	if pr, ok := s.rt.(proposedRuleRuntime); ok && parts[2] == "approve" {
-		rule, digest, e := pr.ProposedRule(ctx, sb, body.RequestID)
-		if e != nil {
-			s.failGateway(ctx, w, sb, e)
-			return
-		}
-		if rule != nil {
-			if digest != body.Digest {
-				failErr(w, 409, errProposalChanged())
-				return
-			}
-			merged := *rule
-			if body.Scope != nil {
-				merged = body.Scope.apply(merged)
-			}
-			if e := s.iwatoPortRefusal(map[string]v1.NetworkPolicyRule{orDefault(merged.Name, "proposal"): merged}); e != nil {
-				failErr(w, 409, e)
-				return
-			}
-			scopes, e := s.attachedScopes(ctx, sb)
-			if e != nil {
-				failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(e)}, "プロバイダーを確かめられません: "+safeCLIError(e))
-				return
-			}
-			name := merged.Name
-			if name == "" {
-				name = "proposal"
-			}
-			if cs := credentialConflicts(map[string]v1.NetworkPolicyRule{name: merged}, scopes); len(cs) > 0 {
-				failCheck(w, conflictRefusal(cs))
-				return
-			}
-			// An endpoint already in the policy (a provider's, say) that
-			// overlaps with other settings: OpenShell refuses the approval.
-			if e := s.checkApproval(ctx, sb, name, *rule, body.Scope); e != nil {
-				failCheck(w, e)
-				return
-			}
-		}
+	if parts[2] == "approve" && !s.approvable(ctx, w, sb, body.RequestID, body.Digest, body.Scope) {
+		return
 	}
 	change, e := rt.DecideProposal(ctx, sb, parts[2], body.RequestID, body.Digest, body.Scope)
 	if e != nil {
@@ -269,14 +224,88 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 	jsonResponse(w, 200, map[string]any{"ok": true, "version": change.Version})
 }
 
+// approvable checks the rule an approval would join the policy with (as
+// proposed, or narrowed: programs alone keep the proposed endpoints): it
+// may carry an attached provider's credential uninspected, which
+// OpenShell refuses, or reach Iwato's own port. It writes the refusal.
+func (s *Server) approvable(ctx context.Context, w http.ResponseWriter, sb Sandbox, request, shown string, scope *ProposalScope) bool {
+	if pr, ok := s.rt.(proposedRuleRuntime); ok {
+		rule, digest, e := pr.ProposedRule(ctx, sb, request)
+		if e != nil {
+			s.failGateway(ctx, w, sb, e)
+			return false
+		}
+		if rule != nil {
+			if digest != shown {
+				failErr(w, 409, errProposalChanged())
+				return false
+			}
+			merged := *rule
+			if scope != nil {
+				merged = scope.apply(merged)
+			}
+			if e := s.iwatoPortRefusal(map[string]v1.NetworkPolicyRule{orDefault(merged.Name, "proposal"): merged}); e != nil {
+				failErr(w, 409, e)
+				return false
+			}
+			scopes, e := s.attachedScopes(ctx, sb)
+			if e != nil {
+				failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(e)}, "プロバイダーを確かめられません: "+safeCLIError(e))
+				return false
+			}
+			name := merged.Name
+			if name == "" {
+				name = "proposal"
+			}
+			if cs := credentialConflicts(map[string]v1.NetworkPolicyRule{name: merged}, scopes); len(cs) > 0 {
+				failCheck(w, conflictRefusal(cs))
+				return false
+			}
+			// An endpoint already in the policy (a provider's, say) that
+			// overlaps with other settings: OpenShell refuses the approval.
+			if e := s.checkApproval(ctx, sb, name, *rule, scope); e != nil {
+				failCheck(w, e)
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// approvalPreviewRuntime shows the rule an approval would write.
+type approvalPreviewRuntime interface {
+	PreviewApproval(ctx context.Context, sb Sandbox, request, digest string, scope *ProposalScope) (ApprovalPreview, error)
+}
+
+// previewApproval answers what an approval would add (ApprovalPreview),
+// or why it would be refused.
+func (s *Server) previewApproval(w http.ResponseWriter, sb Sandbox, request, digest string, scope *ProposalScope) {
+	rt, ok := s.rt.(approvalPreviewRuntime)
+	if !ok {
+		fail(w, 409, "proposals unavailable")
+		return
+	}
+	ctx, cancel := timeout(s.ctx, 20*time.Second)
+	defer cancel()
+	ctx = withGatewayReads(ctx)
+	if !s.approvable(ctx, w, sb, request, digest, scope) {
+		return
+	}
+	p, e := rt.PreviewApproval(ctx, sb, request, digest, scope)
+	if e != nil {
+		s.failGateway(ctx, w, sb, e)
+		return
+	}
+	jsonResponse(w, 200, p)
+}
+
 // digestPattern is a proposal's digest (proposalDigest).
 var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // proposalOps are the owner's actions on a proposal: approve (pending or
 // rejected), reject (pending), undo (approved: back to pending), restore
-// (approved, its rule gone: put the rule back, then undo), and scope
-// (pending, on a provider's host: widen the provider's scope instead).
-var proposalOps = map[string]bool{"approve": true, "reject": true, "undo": true, "restore": true, "scope": true}
+// (approved, its rule gone: put the rule back, then undo).
+var proposalOps = map[string]bool{"approve": true, "reject": true, "undo": true, "restore": true}
 
 // undoRuntime undoes approved proposals (openshell_policy_lists.go).
 type undoRuntime interface {
@@ -288,40 +317,6 @@ func (s *Server) undoProposal(ctx context.Context, w http.ResponseWriter, sb San
 	if !ok {
 		fail(w, 409, "proposals unavailable")
 		return
-	}
-	// Restoring puts the proposal's rule back for a moment: as an
-	// approval, it may not carry an attached provider's credential
-	// uninspected (OpenShell would refuse it).
-	if pr, ok := s.rt.(proposedRuleRuntime); ok && restore {
-		rule, _, e := pr.ProposedRule(ctx, sb, request)
-		if e != nil {
-			s.failGateway(ctx, w, sb, e)
-			return
-		}
-		if rule != nil {
-			if e := s.iwatoPortRefusal(map[string]v1.NetworkPolicyRule{orDefault(rule.Name, "proposal"): *rule}); e != nil {
-				failErr(w, 409, e)
-				return
-			}
-			scopes, e := s.attachedScopes(ctx, sb)
-			if e != nil {
-				failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(e)}, "プロバイダーを確かめられません: "+safeCLIError(e))
-				return
-			}
-			if cs := credentialConflicts(map[string]v1.NetworkPolicyRule{orDefault(rule.Name, "proposal"): *rule}, scopes); len(cs) > 0 {
-				failCheck(w, conflictRefusal(cs))
-				return
-			}
-			// Put back by hand (a merge, not an approval).
-			name := orDefault(rule.Name, "proposal")
-			r := cloneRule(*rule)
-			r.Name = name
-			ops := []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: r}}}
-			if e := s.checkOps(ctx, sb, ops, "ambiguous_restore", map[string]any{"rule": name}, "規則 "+name+" を戻すと OpenShell に拒否されます"); e != nil {
-				failCheck(w, e)
-				return
-			}
-		}
 	}
 	change, e := rt.UndoProposal(ctx, sb, request, restore)
 	if e != nil {
@@ -345,6 +340,28 @@ func nameProviderRules(p *CurrentPolicy, byRule map[string]RuleProvider) {
 	}
 }
 
+// offerBindings names, per endpoint of the sandbox's own rules, the
+// provider whose credential it could carry (EndpointView.Offer).
+func offerBindings(p *CurrentPolicy, list []ProviderInfo, attached []string) {
+	if p == nil {
+		return
+	}
+	rules := p.effective
+	if rules == nil {
+		rules = p.base
+	}
+	for _, r := range p.Rules {
+		if r.Source == "provider" {
+			continue
+		}
+		for i := range r.Endpoints {
+			if i < len(rules[r.Name].Endpoints) && r.Endpoints[i].Credential == "" {
+				r.Endpoints[i].Offer, _ = offerProvider(rules[r.Name].Endpoints[i], list, attached)
+			}
+		}
+	}
+}
+
 type policyRuntime interface {
 	EditPolicy(context.Context, Sandbox, PolicyEdit) (PolicyChange, error)
 	PolicyHistory(context.Context, Sandbox) ([]PolicyRevision, error)
@@ -360,6 +377,10 @@ var policyOps = map[string]bool{"add": true, "add-allow": true, "remove": true, 
 func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []string) {
 	if len(parts) == 3 && parts[2] == "yaml" {
 		s.handlePolicyYAML(w, r, parts)
+		return
+	}
+	if len(parts) >= 3 && (parts[2] == "store" || parts[2] == "commits" || parts[2] == "binding") {
+		s.handlePolicyStore(w, r, parts)
 		return
 	}
 	rt, hasRT := s.rt.(policyRuntime)
@@ -430,7 +451,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []st
 	}
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
-	ctx = withGatewayReads(ctx)
+	ctx = refuseDrift(withGatewayReads(ctx))
 	defer s.lockPolicy(sb.Name)()
 	// A rule by hand without inspection, to where an attached provider's
 	// credential goes: OpenShell refuses it.
@@ -457,18 +478,9 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request, parts []st
 		failCheck(w, e)
 		return
 	}
-	hits, e := s.editProviderHosts(ctx, sb, edit)
-	if e != nil {
+	if e := s.checkEditBinaries(ctx, sb, edit); e != nil {
 		failErr(w, 409, e)
 		return
-	}
-	if len(hits) > 0 {
-		plan := edit
-		plan.Confirm = ""
-		if token := confirmToken(sb.Name, "edit", plan, hits); edit.Confirm != token {
-			askProviderHosts(w, hits, token)
-			return
-		}
 	}
 	change, e := rt.EditPolicy(ctx, sb, edit)
 	if e != nil {
@@ -764,6 +776,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, parts []st
 		s.files.Forget(sb.Name)
 	}
 	s.ingress.forget(sb.Name)
+	if st, ok := s.rt.(policyStoreRuntime); ok {
+		if e := st.ForgetPolicyStore(sb.Name); e != nil {
+			log.Printf("sandbox %s: could not delete its policy history: %v", sb.Name, e)
+		}
+	}
 	s.mu.Lock()
 	delete(s.policyChanges, sb.Name)
 	s.mu.Unlock()

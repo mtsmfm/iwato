@@ -1,0 +1,32 @@
+# The initial rule of a provider of profiles/iwato-github.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+# Reads only: the REST API's GET, HEAD and OPTIONS, GraphQL queries, and git
+# clone and fetch. Writes and push take a proposal, whose approval can attach
+# the credential. Paths are /** (not empty) so that these endpoints are more
+# specific than a rule without a path on the same host (packages' mise
+# rules): OpenShell refuses overlapping endpoints of equal specificity that
+# bind differently.
+id: iwato-github
+label: GitHub
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - { host: api.github.com, port: 443, path: "/**", protocol: rest, access: read-only, enforcement: enforce }
+      - { host: api.github.com, port: 443, path: /graphql, protocol: graphql, access: read-only, enforcement: enforce }
+      - host: github.com
+        port: 443
+        path: "/**"
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+          - allow: { method: POST, path: "/**/git-upload-pack" }
+      - { host: uploads.github.com, port: 443, path: "/**", protocol: rest, access: read-only, enforcement: enforce }

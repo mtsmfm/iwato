@@ -23,11 +23,18 @@
 #                    a policy proposal.
 # Verified:          the env var and header against OpenShell's example and
 #                    OpenRouter's documented auth; not run against OpenRouter.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-openrouter.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-openrouter
 display_name: OpenRouter (Iwato)
 description: OpenRouter inference API for Iwato's sandbox image
 category: inference
+annotations:
+  iwato/credential-hosts: "openrouter.ai:443"
 inference_capable: true
 credentials:
   - name: api_key
@@ -38,13 +45,6 @@ credentials:
     header_name: authorization
 discovery:
   credentials: [api_key]
-endpoints:
-  - host: openrouter.ai
-    port: 443
-    path: /api/**
-    protocol: rest
-    access: read-write
-    enforcement: enforce
 binaries:
   - /usr/bin/curl
   - /usr/bin/wget

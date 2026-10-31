@@ -275,7 +275,7 @@ func TestAtlassianFlowCreatesTheProvider(t *testing.T) {
 	if form.Get("code") != "good-code" || form.Get("resource") != o.fake.srv.URL+"/v2/mcp" || form.Get("client_id") != "client-123" {
 		t.Fatal(form)
 	}
-	if want := []string{"create atlassian-new iwato-atlassian-for-atlassian-new ATLASSIAN_ACCESS_TOKEN", "configure atlassian-new ATLASSIAN_ACCESS_TOKEN", "rotate atlassian-new"}; !slices.Equal(o.rt.log(), want) {
+	if want := []string{"create atlassian-new iwato-atlassian ATLASSIAN_ACCESS_TOKEN", "configure atlassian-new ATLASSIAN_ACCESS_TOKEN", "rotate atlassian-new"}; !slices.Equal(o.rt.log(), want) {
 		t.Fatal(o.rt.log())
 	}
 	if m := o.rt.material[0]; m["client_id"] != "client-123" || m["refresh_token"] != "rt-SECRET-1" || !slices.Equal(o.rt.secretKeys[0], []string{"refresh_token"}) {
@@ -397,7 +397,7 @@ func TestAtlassianReconnect(t *testing.T) {
 	if code, body := o.do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"atlassian-oss"}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	if code, body := o.do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"atlassian-work"}`); code != 409 || !strings.Contains(body, "Atlassian (MCP) のプロバイダーは 1 つのサンドボックスに 1 つまで") {
+	if code, body := o.do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"atlassian-work"}`); code != 409 || !strings.Contains(body, "Atlassian のプロバイダーは 1 つのサンドボックスに 1 つまで") {
 		t.Fatal("two Atlassian providers on a sandbox:", code, body)
 	}
 	o.s.updateSandboxes(func(l []Sandbox) ([]Sandbox, error) { l[0].ProvidersChangedAt = time.Time{}; return l, nil })

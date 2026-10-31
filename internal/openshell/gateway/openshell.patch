@@ -1,0 +1,2927 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 9c8d0974d..b162d5db6 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5196,6 +5196,7 @@ dependencies = [
+  "flate2",
+  "futures",
+  "glob",
++ "h2",
+  "hex",
+  "hickory-proto",
+  "http 1.4.0",
+diff --git a/crates/openshell-core/src/grpc_client.rs b/crates/openshell-core/src/grpc_client.rs
+index 3a13ed88e..e7b6d9651 100644
+--- a/crates/openshell-core/src/grpc_client.rs
++++ b/crates/openshell-core/src/grpc_client.rs
+@@ -63,6 +63,11 @@ pub type AuthedChannel = InterceptedService<Channel, AuthInterceptor>;
+ /// stream. The gateway keeps configuration updates below it.
+ pub const MAX_SUPERVISOR_STREAM_MESSAGE_BYTES: usize = 9 * 1024 * 1024;
+ 
++/// Largest unary gateway response the supervisor's client accepts. Draft
++/// policy listings include decided chunks, which the gateway keeps, so they
++/// outgrow tonic's 4 MiB default.
++pub const MAX_GATEWAY_RESPONSE_BYTES: usize = 64 << 20;
++
+ /// Shared, refreshable Bearer header. All [`AuthInterceptor`] clones read
+ /// the same slot, so the renewal task can replace the token in place without
+ /// rebuilding the channel. `None` means the owning sandbox instance revoked it.
+@@ -1078,7 +1083,7 @@ mod workspace_tests {
+ /// Connect to the `OpenShell` server with one sandbox instance's credentials.
+ async fn connect(gateway: &GatewayEndpoint) -> Result<OpenShellClient<AuthedChannel>> {
+     let channel = connect_channel(gateway).await?;
+-    Ok(OpenShellClient::new(channel))
++    Ok(OpenShellClient::new(channel).max_decoding_message_size(MAX_GATEWAY_RESPONSE_BYTES))
+ }
+ 
+ /// Fetch sandbox policy from `OpenShell` server via gRPC.
+diff --git a/crates/openshell-supervisor-network/Cargo.toml b/crates/openshell-supervisor-network/Cargo.toml
+index 6ac123957..87290511f 100644
+--- a/crates/openshell-supervisor-network/Cargo.toml
++++ b/crates/openshell-supervisor-network/Cargo.toml
+@@ -29,6 +29,7 @@ aws-sigv4 = { version = "1", features = ["sign-http", "http1"] }
+ aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
+ aws-smithy-runtime-api = { version = "1", features = ["client"] }
+ http = { workspace = true }
++h2 = { workspace = true }
+ base64 = { workspace = true }
+ bytes = { workspace = true }
+ flate2 = "1"
+diff --git a/crates/openshell-supervisor-network/src/l7/http2.rs b/crates/openshell-supervisor-network/src/l7/http2.rs
+new file mode 100644
+index 000000000..a8fc847a1
+--- /dev/null
++++ b/crates/openshell-supervisor-network/src/l7/http2.rs
+@@ -0,0 +1,1240 @@
++// SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++// SPDX-License-Identifier: Apache-2.0
++
++//! HTTP/2 relay for TLS-terminated, L7-inspected REST endpoints.
++//!
++//! Each client stream is admitted on its own: the request head is converted to
++//! an HTTP/1-shaped header block so it passes through the same parser,
++//! canonicalization, policy evaluation, token-grant injection, and header
++//! placeholder rewriting as an HTTP/1 request. Only an admitted stream opens a
++//! stream upstream. A refused stream gets a response or `RST_STREAM`; the
++//! connection and its other streams continue.
++//!
++//! Request bodies are streamed, not rewritten: a body or trailer carrying a
++//! credential placeholder resets the stream instead of reaching upstream.
++
++use crate::l7::relay::{
++    L7EvalContext, credential_generation_guard, emit_l7_request_log, evaluate_l7_request,
++    prepare_inspected_request, reject_credential_resolution, request_authority_matches_endpoint,
++    select_l7_config_for_path,
++};
++use crate::l7::{EnforcementMode, L7EndpointConfig, L7Protocol, L7RequestInfo};
++use crate::opa::TunnelPolicyEngine;
++use ::h2::client::{ResponseFuture, SendRequest};
++use ::h2::server::SendResponse;
++use ::h2::{Reason, RecvStream, SendStream};
++use bytes::Bytes;
++use futures::stream::{FuturesUnordered, StreamExt};
++use http::header::{HOST, HeaderName, HeaderValue};
++use http::{Request, Response, StatusCode};
++use miette::{IntoDiagnostic, Result};
++use openshell_core::secrets;
++use std::future::poll_fn;
++use std::task::Poll;
++use tokio::io::{AsyncRead, AsyncWrite};
++use tracing::debug;
++
++const MAX_CONCURRENT_STREAMS: u32 = 100;
++const MAX_HEADER_LIST_SIZE: u32 = 64 * 1024;
++
++/// The `host:port` destinations that opt in to HTTP/2, comma-separated, fixed
++/// when the supervisor is built (`OPENSHELL_HTTP2_ENDPOINTS`). Unset or empty:
++/// every tunnel negotiates HTTP/1.1 only.
++pub const HTTP2_ENDPOINTS: &str = match option_env!("OPENSHELL_HTTP2_ENDPOINTS") {
++    Some(list) => list,
++    None => "",
++};
++
++/// Whether `host:port` is listed in `opted_in` (see [`HTTP2_ENDPOINTS`]).
++pub fn endpoint_opted_in(opted_in: &str, host: &str, port: u16) -> bool {
++    opted_in.split(',').any(|entry| {
++        entry.trim().rsplit_once(':').is_some_and(|(h, p)| {
++            h.eq_ignore_ascii_case(host) && p.parse::<u16>().is_ok_and(|p| p == port)
++        })
++    })
++}
++
++/// Whether an endpoint's enforcement can be applied to HTTP/2 streams.
++///
++/// Request signing and body rewriting need the whole HTTP/1 body path, so
++/// those endpoints keep negotiating HTTP/1.1.
++pub fn endpoint_supports_h2(config: &L7EndpointConfig) -> bool {
++    config.protocol == L7Protocol::Rest
++        && !config.credential_signing.is_sigv4()
++        && !config.request_body_credential_rewrite
++}
++
++/// Whether to offer `h2` to the sandbox client: the destination opted in,
++/// every endpoint on the route is inspected REST that the relay can enforce,
++/// the tunnel can carry credentials, and no middleware applies (the relay
++/// refuses streams that need middleware).
++pub fn should_offer_h2<'a>(
++    opted_in: &str,
++    ctx: &L7EvalContext,
++    configs: impl IntoIterator<Item = &'a L7EndpointConfig>,
++    middleware_chain_is_empty: impl FnOnce() -> bool,
++) -> bool {
++    let mut configs = configs.into_iter().peekable();
++    endpoint_opted_in(opted_in, &ctx.host, ctx.port)
++        && configs.peek().is_some()
++        && configs.all(endpoint_supports_h2)
++        && (ctx.provider_credentials.is_some() || ctx.secret_resolver.is_some())
++        && middleware_chain_is_empty()
++}
++
++struct Shared<'a> {
++    configs: &'a [L7EndpointConfig],
++    engine: &'a TunnelPolicyEngine,
++    ctx: &'a L7EvalContext,
++}
++
++/// Relay one HTTP/2 connection. `upstream` is `None` when the upstream did
++/// not negotiate `h2`; every stream is then answered with 502.
++pub async fn relay_h2<C, U>(
++    client: C,
++    upstream: Option<U>,
++    configs: &[L7EndpointConfig],
++    engine: &TunnelPolicyEngine,
++    ctx: &L7EvalContext,
++) -> Result<()>
++where
++    C: AsyncRead + AsyncWrite + Unpin + Send,
++    U: AsyncRead + AsyncWrite + Unpin + Send,
++{
++    let mut server = ::h2::server::Builder::new()
++        .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
++        .max_header_list_size(MAX_HEADER_LIST_SIZE)
++        .handshake::<_, Bytes>(client)
++        .await
++        .into_diagnostic()?;
++
++    let (sender, upstream_conn) = match upstream {
++        Some(io) => match ::h2::client::Builder::new()
++            .enable_push(false)
++            .max_header_list_size(MAX_HEADER_LIST_SIZE)
++            .handshake::<_, Bytes>(io)
++            .await
++        {
++            Ok((sender, conn)) => (Some(sender), Some(conn)),
++            Err(error) => {
++                debug!(host = %ctx.host, error = %error, "upstream HTTP/2 handshake failed");
++                (None, None)
++            }
++        },
++        None => (None, None),
++    };
++    let upstream_conn = async move {
++        match upstream_conn {
++            Some(conn) => conn.await,
++            None => std::future::pending().await,
++        }
++    };
++    tokio::pin!(upstream_conn);
++
++    let shared = Shared {
++        configs,
++        engine,
++        ctx,
++    };
++    let mut streams = FuturesUnordered::new();
++    let mut upstream_open = true;
++    loop {
++        let mut shutdown = false;
++        tokio::select! {
++            accepted = server.accept() => match accepted {
++                Some(Ok((request, respond))) => {
++                    streams.push(handle_stream(request, respond, sender.clone(), &shared));
++                }
++                Some(Err(error)) => {
++                    debug!(host = %ctx.host, error = %error, "HTTP/2 client connection error");
++                    break;
++                }
++                None => break,
++            },
++            Some(()) = streams.next(), if !streams.is_empty() => {}
++            result = &mut upstream_conn, if upstream_open => {
++                debug!(host = %ctx.host, ?result, "upstream HTTP/2 connection closed");
++                upstream_open = false;
++                shutdown = true;
++            }
++        }
++        if shutdown {
++            // New streams would only fail; let open ones finish.
++            server.graceful_shutdown();
++        }
++    }
++    Ok(())
++}
++
++enum Refusal {
++    Respond { status: StatusCode, body: String },
++    Reset(Reason),
++}
++
++impl Refusal {
++    fn json(status: StatusCode, error: &str, detail: &str) -> Self {
++        Self::Respond {
++            status,
++            body: serde_json::json!({ "error": error, "detail": detail }).to_string(),
++        }
++    }
++
++    fn send(self, respond: &mut SendResponse<Bytes>) {
++        match self {
++            Self::Respond { status, body } => {
++                let Ok(head) = Response::builder()
++                    .status(status)
++                    .header("content-type", "application/json")
++                    .body(())
++                else {
++                    respond.send_reset(Reason::INTERNAL_ERROR);
++                    return;
++                };
++                if let Ok(mut stream) = respond.send_response(head, false) {
++                    let _ = stream.send_data(Bytes::from(body), true);
++                }
++            }
++            Self::Reset(reason) => respond.send_reset(reason),
++        }
++    }
++}
++
++struct Admitted {
++    request: Request<()>,
++    ctx: L7EvalContext,
++}
++
++async fn handle_stream(
++    request: Request<RecvStream>,
++    mut respond: SendResponse<Bytes>,
++    sender: Option<SendRequest<Bytes>>,
++    shared: &Shared<'_>,
++) {
++    let (parts, body) = request.into_parts();
++    let admitted = match admit(&parts, shared).await {
++        Ok(admitted) => admitted,
++        Err(refusal) => {
++            refusal.send(&mut respond);
++            return;
++        }
++    };
++    let bad_gateway = || {
++        Refusal::json(
++            StatusCode::BAD_GATEWAY,
++            "upstream_unavailable",
++            "upstream HTTP/2 connection is not available",
++        )
++    };
++    let Some(sender) = sender else {
++        bad_gateway().send(&mut respond);
++        return;
++    };
++    let Ok(mut sender) = sender.ready().await else {
++        bad_gateway().send(&mut respond);
++        return;
++    };
++    // Last checks before the first upstream write, matching the HTTP/1 path.
++    if shared.engine.is_stale() {
++        respond.send_reset(Reason::REFUSED_STREAM);
++        return;
++    }
++    if let Some(guard) = credential_generation_guard(&admitted.ctx)
++        && guard.ensure_current().is_err()
++    {
++        bad_gateway().send(&mut respond);
++        return;
++    }
++    let end_of_stream = body.is_end_stream();
++    let Ok((response_future, upstream_send)) = sender.send_request(admitted.request, end_of_stream)
++    else {
++        bad_gateway().send(&mut respond);
++        return;
++    };
++    let request_body = async {
++        if !end_of_stream {
++            let _ = pump(body, upstream_send, true).await;
++        }
++    };
++    tokio::join!(request_body, relay_response(response_future, respond));
++}
++
++/// Per-stream admission. Returns the upstream request head with credentials
++/// resolved, or how to refuse the stream.
++async fn admit(parts: &http::request::Parts, shared: &Shared<'_>) -> Result<Admitted, Refusal> {
++    let ctx = shared.ctx;
++    if parts.method == http::Method::CONNECT {
++        return Err(Refusal::json(
++            StatusCode::FORBIDDEN,
++            "unsupported_request",
++            "extended CONNECT is not supported over HTTP/2",
++        ));
++    }
++    // Only origin-form: other forms would be evaluated on the path they name
++    // but forwarded as `:path` appended to the authority. The path
++    // canonicalizer rejects asterisk-form too.
++    if !parts
++        .uri
++        .path_and_query()
++        .is_some_and(|target| target.as_str().starts_with('/'))
++    {
++        return Err(Refusal::json(
++            StatusCode::BAD_REQUEST,
++            "bad_request",
++            ":path must be origin-form",
++        ));
++    }
++    let head = synthesize_h1_head(parts)
++        .map_err(|detail| Refusal::json(StatusCode::BAD_REQUEST, "bad_request", detail))?;
++
++    let lenient = shared
++        .configs
++        .iter()
++        .any(|config| config.allow_encoded_slash);
++    let req = parse_head(&head, lenient).await?;
++    let config = if shared.configs.len() == 1 {
++        &shared.configs[0]
++    } else {
++        select_l7_config_for_path(shared.configs, &req.target).ok_or_else(|| {
++            Refusal::json(
++                StatusCode::FORBIDDEN,
++                "policy_denied",
++                "no L7 endpoint matches the request path",
++            )
++        })?
++    };
++    let req = if lenient && !config.allow_encoded_slash {
++        parse_head(&head, false).await?
++    } else {
++        req
++    };
++    if !endpoint_supports_h2(config) {
++        return Err(Refusal::json(
++            StatusCode::FORBIDDEN,
++            "unsupported_request",
++            "this endpoint is not supported over HTTP/2",
++        ));
++    }
++    if !request_authority_matches_endpoint(&req, ctx) {
++        return Err(Refusal::json(
++            StatusCode::FORBIDDEN,
++            "authority_mismatch",
++            "request authority does not match the CONNECT endpoint",
++        ));
++    }
++
++    let redacted_target = match secrets::redact_target_for_policy(&req.target) {
++        Ok(target) => target,
++        Err(error) => return Err(credential_refusal(ctx, &req.action, &error).await),
++    };
++    let request_info = L7RequestInfo {
++        action: req.action.clone(),
++        target: redacted_target.clone(),
++        query_params: req.query_params.clone(),
++        graphql: None,
++        jsonrpc: None,
++    };
++    let (allowed, reason) = evaluate_l7_request(shared.engine, ctx, &request_info)
++        .map_err(|_| Refusal::Reset(Reason::REFUSED_STREAM))?;
++    let decision = match (allowed, config.enforcement) {
++        (true, _) => "allow",
++        (false, EnforcementMode::Audit) => "audit",
++        (false, EnforcementMode::Enforce) => "deny",
++    };
++    emit_l7_request_log(
++        ctx,
++        &request_info.action,
++        &redacted_target,
++        decision,
++        "l7",
++        &reason,
++        None,
++    );
++    if decision == "deny" {
++        return Err(Refusal::Respond {
++            status: StatusCode::FORBIDDEN,
++            body: serde_json::json!({
++                "error": "policy_denied",
++                "policy": ctx.policy_name,
++                "detail": reason,
++            })
++            .to_string(),
++        });
++    }
++
++    let chain = shared
++        .engine
++        .query_middleware_chain(&crate::l7::middleware::middleware_network_input(ctx))
++        .map_err(|_| Refusal::Reset(Reason::REFUSED_STREAM))?;
++    if !chain.is_empty() {
++        return Err(Refusal::json(
++            StatusCode::FORBIDDEN,
++            "middleware_required",
++            "middleware is not supported over HTTP/2",
++        ));
++    }
++
++    let request_id = uuid::Uuid::new_v4().to_string();
++    let (req, scoped) = prepare_inspected_request(
++        req,
++        ctx,
++        shared.engine,
++        config,
++        &request_info,
++        &request_id,
++        None,
++    )
++    .await
++    .map_err(|_| {
++        Refusal::json(
++            StatusCode::BAD_GATEWAY,
++            "credential_unavailable",
++            "credential could not be prepared",
++        )
++    })?;
++    let rewritten = match secrets::rewrite_http_header_block(
++        &req.raw_header,
++        scoped.secret_resolver.as_deref(),
++    ) {
++        Ok(rewritten) => rewritten,
++        Err(error) => return Err(credential_refusal(ctx, &req.action, &error).await),
++    };
++    let request = h1_head_to_h2_request(&rewritten.rewritten, ctx.request_scheme())
++        .map_err(|_| Refusal::Reset(Reason::INTERNAL_ERROR))?;
++    Ok(Admitted {
++        request,
++        ctx: scoped,
++    })
++}
++
++async fn parse_head(
++    head: &[u8],
++    allow_encoded_slash: bool,
++) -> Result<crate::l7::provider::L7Request, Refusal> {
++    let options = crate::l7::path::CanonicalizeOptions {
++        allow_encoded_slash,
++        ..Default::default()
++    };
++    match crate::l7::rest::parse_synthesized_request_head(head, &options).await {
++        Ok(Some(req)) => Ok(req),
++        Ok(None) | Err(_) => Err(Refusal::json(
++            StatusCode::BAD_REQUEST,
++            "bad_request",
++            "request head rejected",
++        )),
++    }
++}
++
++/// Emit the HTTP/1 credential-failure events and build the matching refusal.
++async fn credential_refusal(
++    ctx: &L7EvalContext,
++    method: &str,
++    error: &secrets::UnresolvedPlaceholderError,
++) -> Refusal {
++    let _ = reject_credential_resolution(&mut tokio::io::sink(), ctx, method, error).await;
++    if error.is_endpoint_mismatch() {
++        Refusal::json(
++            StatusCode::FORBIDDEN,
++            "credential_endpoint_mismatch",
++            "Credential is not authorized for this request endpoint",
++        )
++    } else {
++        Refusal::json(
++            StatusCode::INTERNAL_SERVER_ERROR,
++            "credential_unavailable",
++            "Credential placeholder could not be resolved",
++        )
++    }
++}
++
++/// Render an HTTP/2 request head as an HTTP/1.1 header block. `:authority`
++/// becomes `Host` and replaces any `host` header.
++fn synthesize_h1_head(parts: &http::request::Parts) -> Result<Vec<u8>, &'static str> {
++    let target = parts
++        .uri
++        .path_and_query()
++        .map_or("/", http::uri::PathAndQuery::as_str);
++    let authority = match parts.uri.authority() {
++        Some(authority) => authority.as_str(),
++        None => parts
++            .headers
++            .get(HOST)
++            .and_then(|value| value.to_str().ok())
++            .ok_or("request has no :authority")?,
++    };
++    let mut head = format!(
++        "{} {target} HTTP/1.1\r\nHost: {authority}\r\n",
++        parts.method
++    )
++    .into_bytes();
++    for (name, value) in &parts.headers {
++        if name == HOST {
++            continue;
++        }
++        let value = value
++            .to_str()
++            .map_err(|_| "header value is not visible ASCII")?;
++        head.extend_from_slice(name.as_str().as_bytes());
++        head.extend_from_slice(b": ");
++        head.extend_from_slice(value.as_bytes());
++        head.extend_from_slice(b"\r\n");
++    }
++    head.extend_from_slice(b"\r\n");
++    Ok(head)
++}
++
++/// Convert a (rewritten) HTTP/1.1 header block back into an HTTP/2 request head.
++fn h1_head_to_h2_request(raw: &[u8], scheme: &str) -> Result<Request<()>, &'static str> {
++    let text = std::str::from_utf8(raw).map_err(|_| "rewritten head is not UTF-8")?;
++    let head = text.split("\r\n\r\n").next().unwrap_or_default();
++    let mut lines = head.split("\r\n");
++    let request_line = lines.next().ok_or("empty head")?;
++    let mut parts = request_line.splitn(3, ' ');
++    let method = parts.next().ok_or("missing method")?;
++    let target = parts.next().ok_or("missing target")?;
++    let mut authority = None;
++    let mut builder = Request::builder()
++        .method(method)
++        .version(http::Version::HTTP_2);
++    for line in lines {
++        let (name, value) = line.split_once(':').ok_or("malformed header")?;
++        let (name, value) = (name.trim(), value.trim());
++        if name.eq_ignore_ascii_case("host") {
++            authority = Some(value);
++            continue;
++        }
++        builder = builder.header(
++            HeaderName::from_bytes(name.as_bytes()).map_err(|_| "bad header name")?,
++            HeaderValue::from_str(value).map_err(|_| "bad header value")?,
++        );
++    }
++    let authority = authority.ok_or("missing host")?;
++    builder
++        .uri(format!("{scheme}://{authority}{target}"))
++        .body(())
++        .map_err(|_| "invalid request head")
++}
++
++async fn relay_response(response_future: ResponseFuture, mut respond: SendResponse<Bytes>) {
++    // Dropping the response future on a client reset cancels the upstream stream.
++    let response = tokio::select! {
++        response = response_future => response,
++        _ = poll_fn(|cx| respond.poll_reset(cx)) => return,
++    };
++    let response = match response {
++        Ok(response) => response,
++        Err(error) => {
++            respond.send_reset(error.reason().unwrap_or(Reason::INTERNAL_ERROR));
++            return;
++        }
++    };
++    let (parts, body) = response.into_parts();
++    let end_of_stream = body.is_end_stream();
++    let Ok(send) = respond.send_response(Response::from_parts(parts, ()), end_of_stream) else {
++        return;
++    };
++    if !end_of_stream {
++        let _ = pump(body, send, false).await;
++    }
++}
++
++/// Forward DATA and trailers from `recv` to `send`, releasing receive window
++/// only after the bytes were accepted by the other side's flow control.
++async fn pump(
++    mut recv: RecvStream,
++    mut send: SendStream<Bytes>,
++    scan_markers: bool,
++) -> Result<(), Reason> {
++    let mut tail = Vec::new();
++    loop {
++        let next = tokio::select! {
++            next = recv.data() => next,
++            reset = poll_fn(|cx| send.poll_reset(cx)) => {
++                return Err(reset.unwrap_or(Reason::CANCEL));
++            }
++        };
++        let Some(chunk) = next else { break };
++        let mut chunk = match chunk {
++            Ok(chunk) => chunk,
++            Err(error) => {
++                let reason = error.reason().unwrap_or(Reason::CANCEL);
++                send.send_reset(reason);
++                return Err(reason);
++            }
++        };
++        let len = chunk.len();
++        if scan_markers && carries_marker(&mut tail, &chunk) {
++            send.send_reset(Reason::CANCEL);
++            return Err(Reason::CANCEL);
++        }
++        while !chunk.is_empty() {
++            send.reserve_capacity(chunk.len());
++            let capacity = poll_fn(|cx| {
++                if let Poll::Ready(reset) = send.poll_reset(cx) {
++                    return Poll::Ready(Err(reset.unwrap_or(Reason::CANCEL)));
++                }
++                send.poll_capacity(cx).map(|capacity| match capacity {
++                    Some(Ok(capacity)) => Ok(capacity),
++                    _ => Err(Reason::CANCEL),
++                })
++            })
++            .await?;
++            let n = capacity.min(chunk.len());
++            if n > 0 {
++                send.send_data(chunk.split_to(n), false)
++                    .map_err(|_| Reason::CANCEL)?;
++            }
++        }
++        let _ = recv.flow_control().release_capacity(len);
++    }
++    let trailers = match recv.trailers().await {
++        Ok(trailers) => trailers,
++        Err(error) => {
++            let reason = error.reason().unwrap_or(Reason::CANCEL);
++            send.send_reset(reason);
++            return Err(reason);
++        }
++    };
++    match trailers {
++        Some(trailers) => {
++            if scan_markers
++                && trailers.values().any(|value| {
++                    secrets::contains_reserved_credential_marker_bytes(value.as_bytes())
++                })
++            {
++                send.send_reset(Reason::CANCEL);
++                return Err(Reason::CANCEL);
++            }
++            send.send_trailers(trailers).map_err(|_| Reason::CANCEL)
++        }
++        None => send
++            .send_data(Bytes::new(), true)
++            .map_err(|_| Reason::CANCEL),
++    }
++}
++
++/// Scan a DATA chunk for a reserved credential marker, carrying a short tail
++/// so a marker split across frames is still found.
++fn carries_marker(tail: &mut Vec<u8>, chunk: &[u8]) -> bool {
++    let mut window = std::mem::take(tail);
++    window.extend_from_slice(chunk);
++    let found = secrets::contains_reserved_credential_marker_bytes(&window);
++    let keep = window.len().min(secrets::CREDENTIAL_MARKER_SCAN_TAIL_BYTES);
++    *tail = window[window.len() - keep..].to_vec();
++    found
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::l7::tls::{
++        CertCache, ProxyTlsState, SandboxCa, build_upstream_client_config,
++        tls_connect_upstream_alpn, tls_terminate_client_alpn,
++    };
++    use crate::opa::{NetworkInput, OpaEngine};
++    use openshell_core::secrets::SecretResolver;
++    use std::path::PathBuf;
++    use std::sync::Arc;
++    use std::time::Duration;
++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
++    use tokio::sync::mpsc;
++
++    const TEST_POLICY: &str = include_str!("../../data/sandbox-policy.rego");
++    const HOST: &str = "api.example.test";
++    const POLICY_DATA: &str = r#"
++network_policies:
++  rest_api:
++    name: rest_api
++    endpoints:
++      - host: api.example.test
++        port: 443
++        protocol: rest
++        enforcement: enforce
++        rules:
++          - allow:
++              method: GET
++              path: "/v1/**"
++          - allow:
++              method: POST
++              path: "/grpc.Service/**"
++    binaries:
++      - { path: /usr/bin/curl }
++"#;
++
++    /// What the in-process upstream received on one request.
++    #[derive(Debug)]
++    struct Seen {
++        path: String,
++        headers: Vec<(String, String)>,
++        body: Vec<u8>,
++        reset: bool,
++    }
++
++    impl Seen {
++        fn header(&self, name: &str) -> Option<&str> {
++            self.headers
++                .iter()
++                .find(|(n, _)| n == name)
++                .map(|(_, v)| v.as_str())
++        }
++
++        fn carries_marker(&self) -> bool {
++            secrets::contains_reserved_credential_marker(&self.path)
++                || self
++                    .headers
++                    .iter()
++                    .any(|(_, v)| secrets::contains_reserved_credential_marker(v))
++                || secrets::contains_reserved_credential_marker_bytes(&self.body)
++        }
++    }
++
++    struct Fixture {
++        configs: Vec<L7EndpointConfig>,
++        opa: Arc<OpaEngine>,
++        generation: u64,
++        ctx: Arc<L7EvalContext>,
++        proxy_tls: Arc<ProxyTlsState>,
++        sandbox_ca_pem: String,
++        upstream_addr: std::net::SocketAddr,
++        seen: mpsc::UnboundedReceiver<Seen>,
++        /// Placeholders handed to the "sandbox": token and modal secret.
++        token: String,
++        secret: String,
++        /// The build-time opt-in list (`HTTP2_ENDPOINTS`) for this proxy.
++        opted_in: &'static str,
++    }
++
++    const OPTED_IN: &str = "other.example.test:443, API.example.test:443";
++
++    async fn fixture(upstream_h2: bool) -> Fixture {
++        fixture_with(upstream_h2, POLICY_DATA, OPTED_IN).await
++    }
++
++    async fn fixture_with(upstream_h2: bool, policy_data: &str, opted_in: &'static str) -> Fixture {
++        let engine = OpaEngine::from_strings(TEST_POLICY, policy_data).unwrap();
++        let input = NetworkInput {
++            host: HOST.into(),
++            port: 443,
++            binary_path: PathBuf::from("/usr/bin/curl"),
++            binary_sha256: "unused".into(),
++            ancestors: vec![],
++            cmdline_paths: vec![],
++        };
++        let (endpoint_config, generation) = engine
++            .query_endpoint_config_with_generation(&input)
++            .unwrap();
++        let config = crate::l7::parse_l7_config(&endpoint_config.unwrap()).unwrap();
++
++        let (child_env, resolver) = SecretResolver::from_provider_env(
++            [
++                ("TOKEN".to_string(), "real-token".to_string()),
++                ("MODAL_SECRET".to_string(), "real-secret".to_string()),
++            ]
++            .into_iter()
++            .collect(),
++        );
++        let ctx = L7EvalContext {
++            host: HOST.into(),
++            port: 443,
++            request_default_port: Some(443),
++            policy_name: "rest_api".into(),
++            binary_path: "/usr/bin/curl".into(),
++            secret_resolver: resolver.map(Arc::new),
++            ..Default::default()
++        };
++
++        let upstream_ca = SandboxCa::generate().unwrap();
++        let upstream_ca_pem = upstream_ca.cert_pem().to_string();
++        let upstream_tls = ProxyTlsState::new(
++            CertCache::new(upstream_ca),
++            build_upstream_client_config("").unwrap(),
++        );
++        let (seen_tx, seen) = mpsc::unbounded_channel();
++        let upstream_addr = spawn_upstream(upstream_tls, upstream_h2, seen_tx).await;
++
++        let sandbox_ca = SandboxCa::generate().unwrap();
++        let sandbox_ca_pem = sandbox_ca.cert_pem().to_string();
++        let proxy_tls = ProxyTlsState::new(
++            CertCache::new(sandbox_ca),
++            build_upstream_client_config(&upstream_ca_pem).unwrap(),
++        );
++        Fixture {
++            configs: vec![config],
++            opa: Arc::new(engine),
++            generation,
++            ctx: Arc::new(ctx),
++            proxy_tls: Arc::new(proxy_tls),
++            sandbox_ca_pem,
++            upstream_addr,
++            seen,
++            token: child_env["TOKEN"].clone(),
++            secret: child_env["MODAL_SECRET"].clone(),
++            opted_in,
++        }
++    }
++
++    /// Upstream: h2 (echoes the body, adds grpc trailers) or HTTP/1.1 only.
++    async fn spawn_upstream(
++        tls: ProxyTlsState,
++        h2: bool,
++        seen: mpsc::UnboundedSender<Seen>,
++    ) -> std::net::SocketAddr {
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let addr = listener.local_addr().unwrap();
++        tokio::spawn(async move {
++            loop {
++                let Ok((tcp, _)) = listener.accept().await else {
++                    return;
++                };
++                let Ok((mut stream, negotiated_h2)) =
++                    tls_terminate_client_alpn(tcp, &tls, HOST, h2).await
++                else {
++                    continue;
++                };
++                let seen = seen.clone();
++                tokio::spawn(async move {
++                    if negotiated_h2 {
++                        serve_h2(stream, seen).await;
++                    } else {
++                        serve_h1(&mut stream, seen).await;
++                    }
++                });
++            }
++        });
++        addr
++    }
++
++    async fn serve_h2<S>(io: S, seen: mpsc::UnboundedSender<Seen>)
++    where
++        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
++    {
++        let mut conn = ::h2::server::handshake(io).await.unwrap();
++        while let Some(Ok((request, mut respond))) = conn.accept().await {
++            let seen = seen.clone();
++            tokio::spawn(async move {
++                let (parts, mut body) = request.into_parts();
++                let headers = parts
++                    .headers
++                    .iter()
++                    .map(|(n, v)| {
++                        (
++                            n.as_str().to_string(),
++                            String::from_utf8_lossy(v.as_bytes()).into_owned(),
++                        )
++                    })
++                    .collect::<Vec<_>>();
++                let grpc = parts
++                    .headers
++                    .get("content-type")
++                    .is_some_and(|v| v.as_bytes().starts_with(b"application/grpc"));
++                let mut data = Vec::new();
++                let mut reset = false;
++                while let Some(chunk) = body.data().await {
++                    match chunk {
++                        Ok(chunk) => {
++                            let _ = body.flow_control().release_capacity(chunk.len());
++                            data.extend_from_slice(&chunk);
++                        }
++                        Err(_) => {
++                            reset = true;
++                            break;
++                        }
++                    }
++                }
++                let request_trailers = if reset {
++                    None
++                } else {
++                    body.trailers().await.ok().flatten()
++                };
++                let _ = request_trailers;
++                let path = parts.uri.path().to_string();
++                seen.send(Seen {
++                    path: path.clone(),
++                    headers,
++                    body: data.clone(),
++                    reset,
++                })
++                .unwrap();
++                if reset {
++                    return;
++                }
++                let mut head = Response::builder().status(200).header("x-path", path);
++                if grpc {
++                    head = head.header("content-type", "application/grpc");
++                }
++                let mut send = respond
++                    .send_response(head.body(()).unwrap(), false)
++                    .unwrap();
++                send.send_data(Bytes::from(data), !grpc).unwrap();
++                if grpc {
++                    let mut trailers = http::HeaderMap::new();
++                    trailers.insert("grpc-status", HeaderValue::from_static("0"));
++                    trailers.insert("grpc-message", HeaderValue::from_static("ok"));
++                    send.send_trailers(trailers).unwrap();
++                }
++            });
++        }
++    }
++
++    async fn serve_h1<S>(io: &mut S, seen: mpsc::UnboundedSender<Seen>)
++    where
++        S: AsyncRead + AsyncWrite + Unpin,
++    {
++        let mut buf = Vec::new();
++        let mut byte = [0u8; 1];
++        while !buf.ends_with(b"\r\n\r\n") {
++            if io.read(&mut byte).await.unwrap_or(0) == 0 {
++                return;
++            }
++            buf.push(byte[0]);
++        }
++        let text = String::from_utf8_lossy(&buf).into_owned();
++        let mut lines = text.split("\r\n");
++        let path = lines
++            .next()
++            .and_then(|l| l.split(' ').nth(1))
++            .unwrap_or_default()
++            .to_string();
++        let headers = lines
++            .filter_map(|l| l.split_once(':'))
++            .map(|(n, v)| (n.trim().to_ascii_lowercase(), v.trim().to_string()))
++            .collect();
++        seen.send(Seen {
++            path,
++            headers,
++            body: Vec::new(),
++            reset: false,
++        })
++        .unwrap();
++        let _ = io
++            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
++            .await;
++        let _ = io.shutdown().await;
++    }
++
++    /// The proxy side of one CONNECT tunnel after `200`, as in `proxy.rs`.
++    fn spawn_proxy(
++        f: &Fixture,
++        client_io: tokio::io::DuplexStream,
++    ) -> tokio::task::JoinHandle<Result<()>> {
++        let engine = f.opa.clone_engine_for_tunnel(f.generation).unwrap();
++        let (configs, ctx, tls, addr) = (
++            f.configs.clone(),
++            Arc::clone(&f.ctx),
++            Arc::clone(&f.proxy_tls),
++            f.upstream_addr,
++        );
++        let offer_h2 = should_offer_h2(f.opted_in, &ctx, &configs, || {
++            engine
++                .query_middleware_chain(&crate::l7::middleware::middleware_network_input(&ctx))
++                .is_ok_and(|chain| chain.is_empty())
++        });
++        tokio::spawn(async move {
++            let (mut tls_client, client_h2) =
++                tls_terminate_client_alpn(client_io, &tls, HOST, offer_h2).await?;
++            let config = if client_h2 {
++                tls.upstream_config_h2()
++            } else {
++                tls.upstream_config()
++            };
++            let tcp = tokio::net::TcpStream::connect(addr)
++                .await
++                .into_diagnostic()?;
++            let (mut tls_upstream, upstream_h2) =
++                tls_connect_upstream_alpn(tcp, HOST, config).await?;
++            if client_h2 {
++                relay_h2(
++                    &mut tls_client,
++                    upstream_h2.then_some(&mut tls_upstream),
++                    &configs,
++                    &engine,
++                    &ctx,
++                )
++                .await
++            } else {
++                crate::l7::relay::relay_with_inspection(
++                    &configs[0],
++                    engine,
++                    &mut tls_client,
++                    &mut tls_upstream,
++                    &ctx,
++                )
++                .await
++            }
++        })
++    }
++
++    async fn sandbox_tls(
++        f: &Fixture,
++        alpn: &[&[u8]],
++    ) -> (
++        tokio_rustls::client::TlsStream<tokio::io::DuplexStream>,
++        tokio::task::JoinHandle<Result<()>>,
++    ) {
++        let (app, proxy_side) = tokio::io::duplex(64 * 1024);
++        let proxy = spawn_proxy(f, proxy_side);
++        let mut config = (*build_upstream_client_config(&f.sandbox_ca_pem).unwrap()).clone();
++        config.alpn_protocols = alpn.iter().map(|p| p.to_vec()).collect();
++        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
++        let name = rustls::pki_types::ServerName::try_from(HOST).unwrap();
++        let stream = connector.connect(name, app).await.unwrap();
++        (stream, proxy)
++    }
++
++    async fn h2_client(f: &Fixture) -> (SendRequest<Bytes>, tokio::task::JoinHandle<Result<()>>) {
++        let (stream, proxy) = sandbox_tls(f, &[b"h2", b"http/1.1"]).await;
++        assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"h2"[..]));
++        let (sender, conn) = ::h2::client::handshake(stream).await.unwrap();
++        tokio::spawn(async move {
++            let _ = conn.await;
++        });
++        (sender, proxy)
++    }
++
++    fn get(path: &str, headers: &[(&str, &str)]) -> Request<()> {
++        let mut builder = Request::builder()
++            .method("GET")
++            .uri(format!("https://{HOST}{path}"));
++        for (name, value) in headers {
++            builder = builder.header(*name, *value);
++        }
++        builder.body(()).unwrap()
++    }
++
++    /// Send a request and collect status, body, and trailers.
++    async fn exchange(
++        sender: &SendRequest<Bytes>,
++        request: Request<()>,
++        body: Option<&[u8]>,
++    ) -> std::result::Result<(StatusCode, Vec<u8>, Option<http::HeaderMap>), ::h2::Error> {
++        let mut sender = sender.clone().ready().await?;
++        let (response, mut send) = sender.send_request(request, body.is_none())?;
++        if let Some(body) = body {
++            send.send_data(Bytes::copy_from_slice(body), true)?;
++        }
++        let response = tokio::time::timeout(Duration::from_secs(5), response)
++            .await
++            .expect("response in time")?;
++        let status = response.status();
++        let mut recv = response.into_body();
++        let mut data = Vec::new();
++        while let Some(chunk) = recv.data().await {
++            let chunk = chunk?;
++            let _ = recv.flow_control().release_capacity(chunk.len());
++            data.extend_from_slice(&chunk);
++        }
++        let trailers = recv.trailers().await?;
++        Ok((status, data, trailers))
++    }
++
++    async fn next_seen(f: &mut Fixture) -> Seen {
++        tokio::time::timeout(Duration::from_secs(5), f.seen.recv())
++            .await
++            .expect("upstream request in time")
++            .expect("upstream channel open")
++    }
++
++    async fn assert_upstream_quiet(f: &mut Fixture) {
++        let result = tokio::time::timeout(Duration::from_millis(200), f.seen.recv()).await;
++        assert!(result.is_err(), "upstream must not see a request");
++    }
++
++    #[tokio::test]
++    async fn header_placeholders_are_substituted_over_h2() {
++        let mut f = fixture(true).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let bearer = format!("Bearer {}", f.token);
++        let request = get(
++            "/v1/apps",
++            &[
++                ("authorization", bearer.as_str()),
++                ("x-modal-token-secret", f.secret.as_str()),
++            ],
++        );
++        let (status, _, _) = exchange(&sender, request, None).await.unwrap();
++        assert_eq!(status, StatusCode::OK);
++        let seen = next_seen(&mut f).await;
++        assert_eq!(seen.path, "/v1/apps");
++        assert_eq!(seen.header("authorization"), Some("Bearer real-token"));
++        assert_eq!(seen.header("x-modal-token-secret"), Some("real-secret"));
++        assert!(!seen.carries_marker());
++    }
++
++    #[tokio::test]
++    async fn denied_stream_does_not_affect_other_streams() {
++        let mut f = fixture(true).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let token = f.token.clone();
++        let bearer = format!("Bearer {token}");
++        let auth = [("authorization", bearer.as_str())];
++        let (allowed, denied) = tokio::join!(
++            exchange(&sender, get("/v1/one", &auth), None),
++            exchange(&sender, get("/admin/secret", &auth), None),
++        );
++        assert_eq!(allowed.unwrap().0, StatusCode::OK);
++        let (status, body, _) = denied.unwrap();
++        assert_eq!(status, StatusCode::FORBIDDEN);
++        assert!(String::from_utf8_lossy(&body).contains("policy_denied"));
++        // The connection survives the denial.
++        let (status, _, _) = exchange(&sender, get("/v1/two", &auth), None)
++            .await
++            .unwrap();
++        assert_eq!(status, StatusCode::OK);
++        let mut paths = vec![next_seen(&mut f).await.path, next_seen(&mut f).await.path];
++        paths.sort();
++        assert_eq!(paths, ["/v1/one", "/v1/two"]);
++        assert_upstream_quiet(&mut f).await;
++    }
++
++    #[tokio::test]
++    async fn unresolvable_placeholder_fails_the_stream_closed() {
++        let mut f = fixture(true).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let unknown = secrets::placeholder_for_env_key("NOT_CONFIGURED");
++        let request = get("/v1/apps", &[("x-api-key", unknown.as_str())]);
++        let (status, _, _) = exchange(&sender, request, None).await.unwrap();
++        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
++        assert_upstream_quiet(&mut f).await;
++        let (status, _, _) = exchange(&sender, get("/v1/after", &[]), None)
++            .await
++            .unwrap();
++        assert_eq!(status, StatusCode::OK);
++        assert_eq!(next_seen(&mut f).await.path, "/v1/after");
++    }
++
++    #[tokio::test]
++    async fn grpc_post_streams_body_and_trailers() {
++        let mut f = fixture(true).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let request = Request::builder()
++            .method("POST")
++            .uri(format!("https://{HOST}/grpc.Service/Call"))
++            .header("content-type", "application/grpc")
++            .header("te", "trailers")
++            .header("x-modal-token-id", f.token.as_str())
++            .body(())
++            .unwrap();
++        let message = b"\x00\x00\x00\x00\x05hello";
++        let (status, body, trailers) = exchange(&sender, request, Some(message)).await.unwrap();
++        assert_eq!(status, StatusCode::OK);
++        assert_eq!(body, message);
++        let trailers = trailers.expect("grpc trailers");
++        assert_eq!(trailers["grpc-status"], "0");
++        let seen = next_seen(&mut f).await;
++        assert_eq!(seen.header("x-modal-token-id"), Some("real-token"));
++        assert_eq!(seen.header("te"), Some("trailers"));
++        assert_eq!(seen.body, message);
++    }
++
++    #[tokio::test]
++    async fn body_placeholder_resets_the_stream() {
++        let mut f = fixture(true).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let request = Request::builder()
++            .method("POST")
++            .uri(format!("https://{HOST}/grpc.Service/Call"))
++            .header("content-type", "application/grpc")
++            .body(())
++            .unwrap();
++        let body = format!("\x00\x00\x00\x00\x40{}", f.token);
++        let result = exchange(&sender, request, Some(body.as_bytes())).await;
++        assert!(result.is_err(), "stream must be reset");
++        let seen = next_seen(&mut f).await;
++        assert!(seen.reset);
++        assert!(!seen.carries_marker());
++    }
++
++    #[tokio::test]
++    async fn h1_client_still_uses_http1_path() {
++        let mut f = fixture(true).await;
++        let (mut stream, _proxy) = sandbox_tls(&f, &[b"http/1.1"]).await;
++        assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"http/1.1"[..]));
++        let request = format!(
++            "GET /v1/h1 HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
++            f.token
++        );
++        stream.write_all(request.as_bytes()).await.unwrap();
++        let mut response = Vec::new();
++        let _ =
++            tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await;
++        assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200"));
++        let seen = next_seen(&mut f).await;
++        assert_eq!(seen.path, "/v1/h1");
++        assert_eq!(seen.header("authorization"), Some("Bearer real-token"));
++        assert!(!seen.carries_marker());
++    }
++
++    async fn negotiated_alpn(f: &Fixture) -> Option<Vec<u8>> {
++        let (stream, _proxy) = sandbox_tls(f, &[b"h2", b"http/1.1"]).await;
++        stream.get_ref().1.alpn_protocol().map(<[u8]>::to_vec)
++    }
++
++    #[tokio::test]
++    async fn endpoint_without_opt_in_offers_only_http1() {
++        for opted_in in ["", "other.example.test:443", "api.example.test:8443"] {
++            let f = fixture_with(true, POLICY_DATA, opted_in).await;
++            assert!(f.ctx.secret_resolver.is_some());
++            assert_eq!(
++                negotiated_alpn(&f).await.as_deref(),
++                Some(&b"http/1.1"[..]),
++                "{opted_in:?}"
++            );
++        }
++        let f = fixture(true).await;
++        assert_eq!(negotiated_alpn(&f).await.as_deref(), Some(&b"h2"[..]));
++    }
++
++    #[tokio::test]
++    async fn route_with_middleware_never_offers_h2() {
++        let data = format!(
++            r#"
++network_middlewares:
++  request-middleware:
++    middleware: openshell/regex
++    on_error: fail_closed
++    endpoints:
++      include: ["{HOST}"]
++{}"#,
++            POLICY_DATA.trim_start_matches('\n')
++        );
++        let f = fixture_with(true, &data, OPTED_IN).await;
++        assert_eq!(negotiated_alpn(&f).await.as_deref(), Some(&b"http/1.1"[..]));
++    }
++
++    #[tokio::test]
++    async fn non_origin_form_path_is_refused_for_that_stream() {
++        let mut f = fixture(true).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let uri = http::Uri::from_parts({
++            let mut parts = http::uri::Parts::default();
++            parts.scheme = Some(http::uri::Scheme::HTTPS);
++            parts.authority = Some(HOST.parse().unwrap());
++            parts.path_and_query = Some(http::uri::PathAndQuery::from_static(
++                "https://api.example.test/v1/x",
++            ));
++            parts
++        })
++        .unwrap();
++        let request = Request::builder().method("GET").uri(uri).body(()).unwrap();
++        let (status, _, _) = exchange(&sender, request, None).await.unwrap();
++        assert_eq!(status, StatusCode::BAD_REQUEST);
++        assert_upstream_quiet(&mut f).await;
++        let (status, _, _) = exchange(&sender, get("/v1/after", &[]), None)
++            .await
++            .unwrap();
++        assert_eq!(status, StatusCode::OK);
++        assert_eq!(next_seen(&mut f).await.path, "/v1/after");
++    }
++
++    #[tokio::test]
++    async fn upstream_without_h2_refuses_streams_cleanly() {
++        let mut f = fixture(false).await;
++        let (sender, _proxy) = h2_client(&f).await;
++        let (status, _, _) = exchange(&sender, get("/v1/apps", &[]), None).await.unwrap();
++        assert_eq!(status, StatusCode::BAD_GATEWAY);
++        let (status, _, _) = exchange(&sender, get("/v1/again", &[]), None)
++            .await
++            .unwrap();
++        assert_eq!(status, StatusCode::BAD_GATEWAY);
++        assert_upstream_quiet(&mut f).await;
++    }
++}
+diff --git a/crates/openshell-supervisor-network/src/l7/mod.rs b/crates/openshell-supervisor-network/src/l7/mod.rs
+index 3f2611499..cec583644 100644
+--- a/crates/openshell-supervisor-network/src/l7/mod.rs
++++ b/crates/openshell-supervisor-network/src/l7/mod.rs
+@@ -10,6 +10,7 @@
+ 
+ pub mod graphql;
+ pub(crate) mod http;
++pub(crate) mod http2;
+ pub mod jsonrpc;
+ pub(crate) mod mcp;
+ pub(crate) mod middleware;
+diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
+index 17001e293..28ed51ad5 100644
+--- a/crates/openshell-supervisor-network/src/l7/relay.rs
++++ b/crates/openshell-supervisor-network/src/l7/relay.rs
+@@ -144,7 +144,7 @@ fn scoped_context_for_request(
+     Some(scoped)
+ }
+ 
+-fn credential_generation_guard(
++pub(crate) fn credential_generation_guard(
+     ctx: &L7EvalContext,
+ ) -> Option<crate::l7::rest::CredentialGenerationGuard<'_>> {
+     Some(
+@@ -236,7 +236,7 @@ pub(crate) async fn prepare_inspected_request(
+     Ok((req, scoped))
+ }
+ 
+-fn request_authority_matches_endpoint(
++pub(crate) fn request_authority_matches_endpoint(
+     request: &crate::l7::provider::L7Request,
+     ctx: &L7EvalContext,
+ ) -> bool {
+@@ -1636,7 +1636,7 @@ where
+     }
+ }
+ 
+-fn select_l7_config_for_path<'a>(
++pub(crate) fn select_l7_config_for_path<'a>(
+     configs: &'a [L7EndpointConfig],
+     path: &str,
+ ) -> Option<&'a L7EndpointConfig> {
+@@ -1646,7 +1646,7 @@ fn select_l7_config_for_path<'a>(
+         .max_by_key(|config| config.path_specificity())
+ }
+ 
+-fn emit_l7_request_log(
++pub(crate) fn emit_l7_request_log(
+     ctx: &L7EvalContext,
+     action: &str,
+     redacted_target: &str,
+@@ -3591,7 +3591,11 @@ where
+         let req = if let Some(engine) = middleware_engine {
+             let input = middleware_network_input(ctx);
+             let (chain, generation) = engine.query_middleware_chain_with_generation(&input)?;
+-            if generation != generation_guard.captured_generation() {
++            // A reload since the last check may readmit this relay to `generation`.
++            if generation != generation_guard.captured_generation()
++                && (generation_guard.is_stale()
++                    || generation != generation_guard.captured_generation())
++            {
+                 return Ok(());
+             }
+             let runner = engine.middleware_runner()?;
+diff --git a/crates/openshell-supervisor-network/src/l7/rest.rs b/crates/openshell-supervisor-network/src/l7/rest.rs
+index 7b8594266..6f2a986f8 100644
+--- a/crates/openshell-supervisor-network/src/l7/rest.rs
++++ b/crates/openshell-supervisor-network/src/l7/rest.rs
+@@ -310,6 +310,16 @@ async fn parse_http_request<C: AsyncRead + Unpin>(
+     }))
+ }
+ 
++/// Parse a request head synthesized from an HTTP/2 stream with the same
++/// validation and target canonicalization as an HTTP/1 request.
++pub(crate) async fn parse_synthesized_request_head(
++    head: &[u8],
++    canonicalize_options: &crate::l7::path::CanonicalizeOptions,
++) -> Result<Option<L7Request>> {
++    let mut reader = head;
++    parse_http_request(&mut reader, canonicalize_options).await
++}
++
+ /// Build an L7 request from a request already buffered by another proxy path.
+ ///
+ /// The forward proxy needs this after it has consumed the incoming HTTP/1
+diff --git a/crates/openshell-supervisor-network/src/l7/tls.rs b/crates/openshell-supervisor-network/src/l7/tls.rs
+index fe24afc90..a81bcfe46 100644
+--- a/crates/openshell-supervisor-network/src/l7/tls.rs
++++ b/crates/openshell-supervisor-network/src/l7/tls.rs
+@@ -205,25 +205,43 @@ impl CertCache {
+ pub struct ProxyTlsState {
+     cert_cache: CertCache,
+     upstream_config: Arc<ClientConfig>,
++    upstream_config_h2: Arc<ClientConfig>,
+ }
+ 
++/// ALPN identifier for HTTP/2 over TLS.
++pub const ALPN_H2: &[u8] = b"h2";
++
+ impl ProxyTlsState {
+     /// Create a new TLS state with the given cert cache and upstream config.
+     pub fn new(cert_cache: CertCache, upstream_config: Arc<ClientConfig>) -> Self {
++        let mut h2_config = (*upstream_config).clone();
++        // Keep http/1.1 so an upstream without h2 completes the handshake and
++        // the relay can refuse each stream instead of dropping the connection.
++        h2_config.alpn_protocols = vec![ALPN_H2.to_vec(), b"http/1.1".to_vec()];
+         Self {
+             cert_cache,
+             upstream_config,
++            upstream_config_h2: Arc::new(h2_config),
+         }
+     }
+ 
+     /// Get or generate a leaf cert for the hostname and return a TLS acceptor.
+     fn acceptor_for(&self, hostname: &str) -> Result<TlsAcceptor> {
++        self.acceptor_with_alpn(hostname, false)
++    }
++
++    /// Like [`Self::acceptor_for`], optionally also offering `h2`.
++    fn acceptor_with_alpn(&self, hostname: &str, offer_h2: bool) -> Result<TlsAcceptor> {
+         let leaf = self.cert_cache.get_or_generate(hostname)?;
+         let mut server_config = openshell_crypto::tls::server_builder()
+             .with_no_client_auth()
+             .with_single_cert(leaf.cert_chain.clone(), leaf.private_key.clone_key())
+             .into_diagnostic()?;
+-        server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
++        server_config.alpn_protocols = if offer_h2 {
++            vec![ALPN_H2.to_vec(), b"http/1.1".to_vec()]
++        } else {
++            vec![b"http/1.1".to_vec()]
++        };
+         Ok(TlsAcceptor::from(Arc::new(server_config)))
+     }
+ 
+@@ -231,6 +249,49 @@ impl ProxyTlsState {
+     pub fn upstream_config(&self) -> &Arc<ClientConfig> {
+         &self.upstream_config
+     }
++
++    /// Upstream client config that prefers `h2`, for connections whose
++    /// sandbox side negotiated HTTP/2.
++    pub fn upstream_config_h2(&self) -> &Arc<ClientConfig> {
++        &self.upstream_config_h2
++    }
++}
++
++/// Accept TLS from a sandbox client, optionally offering `h2` in ALPN.
++///
++/// Returns the stream and whether the client selected `h2`.
++pub async fn tls_terminate_client_alpn<S>(
++    client: S,
++    tls_state: &ProxyTlsState,
++    hostname: &str,
++    offer_h2: bool,
++) -> Result<(tokio_rustls::server::TlsStream<S>, bool)>
++where
++    S: AsyncRead + AsyncWrite + Unpin + Send,
++{
++    let acceptor = tls_state.acceptor_with_alpn(hostname, offer_h2)?;
++    let tls_stream = acceptor.accept(client).await.into_diagnostic()?;
++    let negotiated_h2 = offer_h2 && tls_stream.get_ref().1.alpn_protocol() == Some(ALPN_H2);
++    Ok((tls_stream, negotiated_h2))
++}
++
++/// Connect TLS upstream and report whether the server selected `h2`.
++pub async fn tls_connect_upstream_alpn<U>(
++    upstream: U,
++    hostname: &str,
++    client_config: &Arc<ClientConfig>,
++) -> Result<(tokio_rustls::client::TlsStream<U>, bool)>
++where
++    U: AsyncRead + AsyncWrite + Unpin + Send,
++{
++    let connector = TlsConnector::from(Arc::clone(client_config));
++    let server_name = ServerName::try_from(hostname.to_string()).into_diagnostic()?;
++    let tls_stream = connector
++        .connect(server_name, upstream)
++        .await
++        .into_diagnostic()?;
++    let negotiated_h2 = tls_stream.get_ref().1.alpn_protocol() == Some(ALPN_H2);
++    Ok((tls_stream, negotiated_h2))
+ }
+ 
+ /// Accept TLS from a sandbox client, presenting a dynamic cert for the hostname.
+diff --git a/crates/openshell-supervisor-network/src/opa.rs b/crates/openshell-supervisor-network/src/opa.rs
+index 2d1a73a94..9b786fb79 100644
+--- a/crates/openshell-supervisor-network/src/opa.rs
++++ b/crates/openshell-supervisor-network/src/opa.rs
+@@ -30,7 +30,7 @@ use std::sync::{
+     atomic::{AtomicU64, Ordering},
+ };
+ use tokio::sync::watch;
+-use tracing::info;
++use tracing::{debug, info};
+ 
+ mod raw_schema;
+ 
+@@ -115,6 +115,7 @@ pub struct EgressAuthorization {
+ }
+ 
+ /// Input for a network access policy evaluation.
++#[derive(Debug, Clone)]
+ pub struct NetworkInput {
+     pub host: String,
+     pub port: u16,
+@@ -180,6 +181,8 @@ pub struct OpaEngine {
+     binary_identity_required: bool,
+     generation: Arc<AtomicU64>,
+     middleware_runner: RwLock<ChainRunner>,
++    /// Incremented whenever the middleware registry is replaced.
++    middleware_epoch: AtomicU64,
+     websocket_assembly_budget: crate::l7::websocket::WebSocketAssemblyBudget,
+     generation_tx: watch::Sender<u64>,
+     fail_closed_reason: RwLock<Option<String>>,
+@@ -204,24 +207,37 @@ pub(crate) fn test_opa_query_count() -> u64 {
+ }
+ 
+ /// Generation guard captured when an HTTP tunnel or request path starts.
++///
++/// Clones share the captured generation, so a relay readmitted to a newer
++/// generation through one clone is current through all of them.
+ #[derive(Clone, Debug)]
+ pub struct PolicyGenerationGuard {
+-    captured_generation: u64,
++    captured_generation: Arc<AtomicU64>,
+     current_generation: Arc<AtomicU64>,
+     generation_rx: watch::Receiver<u64>,
++    readmission: Option<Arc<RelayReadmission>>,
+ }
+ 
+ impl PolicyGenerationGuard {
+     pub fn captured_generation(&self) -> u64 {
+-        self.captured_generation
++        self.captured_generation.load(Ordering::Acquire)
+     }
+ 
+     pub fn current_generation(&self) -> u64 {
+         self.current_generation.load(Ordering::Acquire)
+     }
+ 
++    /// Whether the captured generation no longer applies.
++    ///
++    /// A guard pinned for an established relay first tries to readmit the
++    /// relay to the current generation; see [`OpaEngine::relay_generation_guard`].
+     pub fn is_stale(&self) -> bool {
+-        self.current_generation() != self.captured_generation
++        if self.current_generation() == self.captured_generation() {
++            return false;
++        }
++        self.readmission
++            .as_ref()
++            .is_none_or(|readmission| !readmission.readmit(&self.captured_generation))
+     }
+ 
+     pub fn ensure_current(&self) -> Result<()> {
+@@ -249,10 +265,90 @@ impl PolicyGenerationGuard {
+     }
+ }
+ 
++/// Connection-level policy result for one relay identity.
++///
++/// A reload leaves a relay usable only when every part of this result is
++/// unchanged: the L4 action, the matched endpoints and their configuration
++/// (TLS, L7 protocol and rules, allowed IPs, credentials), credential guards,
++/// and the middleware configuration and registry.
++#[derive(Debug, PartialEq)]
++struct RelayAdmission {
++    authorization: regorus::Value,
++    credential_guards: regorus::Value,
++    middlewares: regorus::Value,
++    middleware_epoch: u64,
++}
++
++/// State that lets an established relay follow a policy reload that does not
++/// change its admission.
++struct RelayReadmission {
++    policy: Arc<OpaEngine>,
++    input: NetworkInput,
++    admission: RelayAdmission,
++    /// Per-tunnel evaluator replaced with the readmitting generation's engine.
++    tunnel_engine: Option<Arc<Mutex<regorus::Engine>>>,
++    /// Set once readmission fails; a revoked relay never becomes current again.
++    revoked: Mutex<bool>,
++}
++
++impl std::fmt::Debug for RelayReadmission {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.debug_struct("RelayReadmission")
++            .field("host", &self.input.host)
++            .field("port", &self.input.port)
++            .finish_non_exhaustive()
++    }
++}
++
++impl RelayReadmission {
++    fn readmit(&self, captured_generation: &AtomicU64) -> bool {
++        // Serialize readmission so the evaluator and the captured generation
++        // always move together.
++        let Ok(mut revoked) = self.revoked.lock() else {
++            return false;
++        };
++        if *revoked {
++            return false;
++        }
++        let captured = captured_generation.load(Ordering::Acquire);
++        let readmitted = self
++            .policy
++            .readmit_relay(
++                &self.input,
++                &self.admission,
++                captured,
++                self.tunnel_engine.is_some(),
++            )
++            .unwrap_or_default();
++        let Some((generation, engine)) = readmitted else {
++            *revoked = true;
++            return false;
++        };
++        if let (Some(slot), Some(engine)) = (&self.tunnel_engine, engine) {
++            let Ok(mut slot) = slot.lock() else {
++                *revoked = true;
++                return false;
++            };
++            *slot = engine;
++        }
++        captured_generation.store(generation, Ordering::Release);
++        if generation != captured {
++            debug!(
++                host = %self.input.host,
++                port = self.input.port,
++                previous_generation = captured,
++                generation,
++                "Relay readmitted after policy reload"
++            );
++        }
++        true
++    }
++}
++
+ /// Per-tunnel L7 policy evaluator bound to the engine generation captured when
+ /// the tunnel was established.
+ pub struct TunnelPolicyEngine {
+-    engine: Mutex<regorus::Engine>,
++    engine: Arc<Mutex<regorus::Engine>>,
+     generation_guard: PolicyGenerationGuard,
+     middleware_runner: ChainRunner,
+     websocket_assembly_budget: crate::l7::websocket::WebSocketAssemblyBudget,
+@@ -314,6 +410,7 @@ impl OpaEngine {
+             binary_identity_required,
+             generation,
+             middleware_runner: RwLock::new(ChainRunner::default()),
++            middleware_epoch: AtomicU64::new(0),
+             websocket_assembly_budget: crate::l7::websocket::WebSocketAssemblyBudget::default(),
+             generation_tx,
+             fail_closed_reason: RwLock::new(None),
+@@ -810,6 +907,7 @@ impl OpaEngine {
+         *engine = new_engine;
+         if let Some(new_runner) = new_runner {
+             *runner = new_runner;
++            self.middleware_epoch.fetch_add(1, Ordering::AcqRel);
+         }
+         *fail_closed_reason = None;
+         self.generation_guard(generation)
+@@ -904,6 +1002,7 @@ impl OpaEngine {
+             .write()
+             .map_err(|_| miette::miette!("middleware runner lock poisoned"))?;
+         *runner = runner.with_replacement_registry(registry);
++        self.middleware_epoch.fetch_add(1, Ordering::AcqRel);
+         self.advance_generation();
+         Ok(())
+     }
+@@ -934,13 +1033,157 @@ impl OpaEngine {
+                 "policy changed before HTTP relay started [expected_generation:{expected_generation} current_generation:{generation}]"
+             ));
+         }
+-        Ok(PolicyGenerationGuard {
+-            captured_generation: generation,
++        Ok(self.guard_for(generation, None))
++    }
++
++    fn guard_for(
++        &self,
++        generation: u64,
++        readmission: Option<RelayReadmission>,
++    ) -> PolicyGenerationGuard {
++        PolicyGenerationGuard {
++            captured_generation: Arc::new(AtomicU64::new(generation)),
+             current_generation: Arc::clone(&self.generation),
+             generation_rx: self.generation_tx.subscribe(),
++            readmission: readmission.map(Arc::new),
++        }
++    }
++
++    /// Return a guard for an established relay admitted by `input` in
++    /// `expected_generation`.
++    ///
++    /// Unlike [`Self::generation_guard`], the guard does not become stale when
++    /// a later generation admits the same relay identically (see
++    /// [`RelayAdmission`]): the relay moves to that generation and keeps its
++    /// connection. Any change to its admission, and fail-closed quarantine,
++    /// still makes the guard stale so the relay closes.
++    pub fn relay_generation_guard(
++        self: &Arc<Self>,
++        expected_generation: u64,
++        input: NetworkInput,
++    ) -> Result<PolicyGenerationGuard> {
++        let mut engine = self
++            .engine
++            .lock()
++            .map_err(|_| miette::miette!("OPA engine lock poisoned"))?;
++        let generation = self.current_generation();
++        if generation != expected_generation {
++            return Err(miette::miette!(
++                "policy changed before relay started [expected_generation:{expected_generation} current_generation:{generation}]"
++            ));
++        }
++        let readmission = self.relay_readmission_locked(&mut engine, input, None)?;
++        Ok(self.guard_for(generation, readmission))
++    }
++
++    /// Clone an L7 evaluator for an established relay admitted by `input`.
++    ///
++    /// The evaluator follows readmission like
++    /// [`Self::relay_generation_guard`]; once readmitted, later requests are
++    /// evaluated against the new generation.
++    pub fn clone_engine_for_relay(
++        self: &Arc<Self>,
++        expected_generation: u64,
++        input: NetworkInput,
++    ) -> Result<TunnelPolicyEngine> {
++        let mut engine = self
++            .engine
++            .lock()
++            .map_err(|_| miette::miette!("OPA engine lock poisoned"))?;
++        let generation = self.current_generation();
++        if generation != expected_generation {
++            return Err(miette::miette!(
++                "policy changed before L7 tunnel started [expected_generation:{expected_generation} current_generation:{generation}]"
++            ));
++        }
++        let tunnel_engine = Arc::new(Mutex::new(engine.clone()));
++        let readmission =
++            self.relay_readmission_locked(&mut engine, input, Some(Arc::clone(&tunnel_engine)))?;
++        Ok(TunnelPolicyEngine {
++            engine: tunnel_engine,
++            generation_guard: self.guard_for(generation, readmission),
++            middleware_runner: self.middleware_runner()?,
++            websocket_assembly_budget: self.websocket_assembly_budget(),
+         })
+     }
+ 
++    fn relay_readmission_locked(
++        self: &Arc<Self>,
++        engine: &mut regorus::Engine,
++        input: NetworkInput,
++        tunnel_engine: Option<Arc<Mutex<regorus::Engine>>>,
++    ) -> Result<Option<RelayReadmission>> {
++        Ok(self
++            .relay_admission_locked(engine, &input)?
++            .map(|admission| RelayReadmission {
++                policy: Arc::clone(self),
++                input,
++                admission,
++                tunnel_engine,
++                revoked: Mutex::new(false),
++            }))
++    }
++
++    /// Evaluate the connection-level admission of a relay. Returns `None`
++    /// when the relay is not allowed, including during fail-closed quarantine.
++    fn relay_admission_locked(
++        &self,
++        engine: &mut regorus::Engine,
++        input: &NetworkInput,
++    ) -> Result<Option<RelayAdmission>> {
++        if self
++            .fail_closed_reason
++            .read()
++            .map_err(|_| miette::miette!("OPA fail-closed state lock poisoned"))?
++            .is_some()
++        {
++            return Ok(None);
++        }
++        set_regorus_input(engine, network_input_json(input))?;
++        let authorization = engine
++            .eval_rule("data.openshell.sandbox.egress_authorization".into())
++            .map_err(|e| miette::miette!("{e}"))?;
++        if get_str(&authorization, "action").as_deref() != Some("allow") {
++            return Ok(None);
++        }
++        let credential_guards = engine
++            .eval_rule("data.openshell.sandbox.endpoint_credential_guards".into())
++            .map_err(|e| miette::miette!("{e}"))?;
++        let middlewares = engine
++            .eval_rule("data.openshell.sandbox.network_middlewares".into())
++            .map_err(|e| miette::miette!("{e}"))?;
++        Ok(Some(RelayAdmission {
++            authorization,
++            credential_guards,
++            middlewares,
++            middleware_epoch: self.middleware_epoch.load(Ordering::Acquire),
++        }))
++    }
++
++    /// Move a relay from `captured_generation` to the current generation when
++    /// the current policy admits it exactly as `admission` did. Returns the
++    /// generation and, if requested, a tunnel evaluator cloned from it.
++    fn readmit_relay(
++        &self,
++        input: &NetworkInput,
++        admission: &RelayAdmission,
++        captured_generation: u64,
++        clone_engine: bool,
++    ) -> Result<Option<(u64, Option<regorus::Engine>)>> {
++        let mut engine = self
++            .engine
++            .lock()
++            .map_err(|_| miette::miette!("OPA engine lock poisoned"))?;
++        let generation = self.current_generation();
++        if generation == captured_generation {
++            return Ok(Some((generation, None)));
++        }
++        if self.relay_admission_locked(&mut engine, input)?.as_ref() != Some(admission) {
++            return Ok(None);
++        }
++        Ok(Some((generation, clone_engine.then(|| engine.clone()))))
++    }
++
+     /// Query static sandbox configuration from the OPA data module.
+     ///
+     /// Extracts `filesystem_policy`, `landlock`, and `process` from the Rego
+@@ -1129,12 +1372,8 @@ impl OpaEngine {
+             ));
+         }
+         Ok(TunnelPolicyEngine {
+-            engine: Mutex::new(engine.clone()),
+-            generation_guard: PolicyGenerationGuard {
+-                captured_generation: generation,
+-                current_generation: Arc::clone(&self.generation),
+-                generation_rx: self.generation_tx.subscribe(),
+-            },
++            engine: Arc::new(Mutex::new(engine.clone())),
++            generation_guard: self.guard_for(generation, None),
+             middleware_runner: self.middleware_runner()?,
+             websocket_assembly_budget: self.websocket_assembly_budget(),
+         })
+diff --git a/crates/openshell-supervisor-network/src/proxy.rs b/crates/openshell-supervisor-network/src/proxy.rs
+index bd93c78c5..a62a4cfba 100644
+--- a/crates/openshell-supervisor-network/src/proxy.rs
++++ b/crates/openshell-supervisor-network/src/proxy.rs
+@@ -3086,18 +3086,26 @@ async fn handle_mediated_connection(
+             // Complete the client handshake before observing the upstream
+             // connection. A malformed client handshake provides no evidence
+             // of an endpoint network failure.
+-            let mut tls_client =
+-                match crate::l7::tls::tls_terminate_client(client, tls, &host_lc).await {
++            let offer_h2 = relay::offer_h2(l7_route, &opa_engine, &ctx);
++            let (mut tls_client, client_h2) =
++                match crate::l7::tls::tls_terminate_client_alpn(client, tls, &host_lc, offer_h2)
++                    .await
++                {
+                     Ok(client) => client,
+                     Err(error) => {
+                         debug!(host = %host_lc, port, "client TLS handshake failed");
+                         return Err(error);
+                     }
+                 };
+-            let mut tls_upstream = match crate::l7::tls::tls_connect_upstream(
++            let upstream_config = if client_h2 {
++                tls.upstream_config_h2()
++            } else {
++                tls.upstream_config()
++            };
++            let (mut tls_upstream, upstream_h2) = match crate::l7::tls::tls_connect_upstream_alpn(
+                 upstream,
+                 &host_lc,
+-                tls.upstream_config(),
++                upstream_config,
+             )
+             .await
+             {
+@@ -3124,6 +3132,14 @@ async fn handle_mediated_connection(
+                     return Ok(());
+                 };
+ 
++                if client_h2 {
++                    return relay::relay_h2_stream(
++                        &mut tls_client,
++                        upstream_h2.then_some(&mut tls_upstream),
++                        relay_context,
++                    )
++                    .await;
++                }
+                 relay::relay_http_stream(&mut tls_client, &mut tls_upstream, relay_context).await
+             };
+             if let Err(e) = Box::pin(tls_result).await {
+diff --git a/crates/openshell-supervisor-network/src/proxy/relay.rs b/crates/openshell-supervisor-network/src/proxy/relay.rs
+index 3e722e3b5..ad61164a0 100644
+--- a/crates/openshell-supervisor-network/src/proxy/relay.rs
++++ b/crates/openshell-supervisor-network/src/proxy/relay.rs
+@@ -5,7 +5,9 @@
+ 
+ use super::{EgressDecision, L7RouteSnapshot, emit_l7_tunnel_close_after_policy_change};
+ use crate::l7::relay::L7EvalContext;
+-use crate::opa::{NetworkAction, OpaEngine, PolicyGenerationGuard, TunnelPolicyEngine};
++use crate::opa::{
++    NetworkAction, NetworkInput, OpaEngine, PolicyGenerationGuard, TunnelPolicyEngine,
++};
+ use miette::{IntoDiagnostic, Result};
+ use openshell_core::activity::ActivitySender;
+ use openshell_core::endpoint_status::EndpointObservationSender;
+@@ -120,6 +122,21 @@ pub(super) fn pin_l7_evaluator(
+     opa_engine.clone_engine_for_tunnel(expected_generation)
+ }
+ 
++/// Reconstruct the policy input that authorized `decision`.
++///
++/// Process identity was verified when the connection was admitted, so a
++/// relay is re-evaluated with that identity rather than a fresh lookup.
++fn relay_policy_input(decision: &EgressDecision) -> NetworkInput {
++    NetworkInput {
++        host: decision.intent.destination.host.clone(),
++        port: decision.intent.destination.port,
++        binary_path: decision.binary.clone().unwrap_or_default(),
++        binary_sha256: String::new(),
++        ancestors: decision.ancestors.clone(),
++        cmdline_paths: decision.cmdline_paths.clone(),
++    }
++}
++
+ pub(super) fn validate_route_generation(
+     route: Option<&L7RouteSnapshot>,
+     expected_generation: u64,
+@@ -142,9 +159,13 @@ pub(super) fn validate_route_generation(
+ /// A stale generation preserves the established CONNECT behavior: emit the
+ /// policy-change close event and let the adapter close the live tunnel without
+ /// attempting to write an HTTP response into it.
++///
++/// Once started, the relay survives a policy reload that admits its
++/// connection identically and closes otherwise; L7 requests after the reload
++/// are evaluated against the new policy.
+ pub(super) fn prepare_http_relay<'a>(
+     route: Option<&L7RouteSnapshot>,
+-    opa_engine: &'a OpaEngine,
++    opa_engine: &'a Arc<OpaEngine>,
+     decision: &EgressDecision,
+     request: &'a L7EvalContext,
+ ) -> Option<RelayContext<'a>> {
+@@ -158,7 +179,9 @@ pub(super) fn prepare_http_relay<'a>(
+     }
+ 
+     let policy = if let Some(route) = route.filter(|route| !route.configs.is_empty()) {
+-        let evaluator = match pin_l7_evaluator(opa_engine, decision.policy_generation) {
++        let evaluator = match opa_engine
++            .clone_engine_for_relay(decision.policy_generation, relay_policy_input(decision))
++        {
+             Ok(evaluator) => evaluator,
+             Err(error) => {
+                 emit_l7_tunnel_close_after_policy_change(
+@@ -179,7 +202,9 @@ pub(super) fn prepare_http_relay<'a>(
+             evaluator: Box::new(evaluator),
+         }
+     } else {
+-        let generation_guard = match pin_policy_generation(opa_engine, decision.policy_generation) {
++        let generation_guard = match opa_engine
++            .relay_generation_guard(decision.policy_generation, relay_policy_input(decision))
++        {
+             Ok(guard) => guard,
+             Err(error) => {
+                 emit_l7_tunnel_close_after_policy_change(
+@@ -200,12 +225,12 @@ pub(super) fn prepare_http_relay<'a>(
+     })
+ }
+ 
+-/// Pin the generation used by a raw relay so policy activation or quarantine
+-/// closes streams that otherwise have no request boundary at which to notice
+-/// a stale decision.
++/// Pin the generation used by a raw relay so quarantine, or a policy change
++/// that no longer admits the connection identically, closes streams that
++/// otherwise have no request boundary at which to notice a stale decision.
+ pub(super) fn prepare_raw_relay(
+     route: Option<&L7RouteSnapshot>,
+-    opa_engine: &OpaEngine,
++    opa_engine: &Arc<OpaEngine>,
+     decision: &EgressDecision,
+ ) -> Option<PolicyGenerationGuard> {
+     if let Err(error) = validate_route_generation(route, decision.policy_generation) {
+@@ -217,7 +242,9 @@ pub(super) fn prepare_raw_relay(
+         return None;
+     }
+ 
+-    match pin_policy_generation(opa_engine, decision.policy_generation) {
++    match opa_engine
++        .relay_generation_guard(decision.policy_generation, relay_policy_input(decision))
++    {
+         Ok(guard) => Some(guard),
+         Err(error) => {
+             emit_l7_tunnel_close_after_policy_change(
+@@ -295,6 +322,63 @@ where
+     }
+ }
+ 
++/// Whether to offer `h2` to the sandbox client (`l7::http2::should_offer_h2`).
++pub(super) fn offer_h2(
++    route: Option<&L7RouteSnapshot>,
++    opa_engine: &OpaEngine,
++    request: &L7EvalContext,
++) -> bool {
++    let Some(route) = route else {
++        return false;
++    };
++    crate::l7::http2::should_offer_h2(
++        crate::l7::http2::HTTP2_ENDPOINTS,
++        request,
++        route.configs.iter().map(|snapshot| &snapshot.config),
++        || {
++            opa_engine
++                .query_middleware_chain_with_generation(
++                    &crate::l7::middleware::middleware_network_input(request),
++                )
++                .is_ok_and(|(chain, _)| chain.is_empty())
++        },
++    )
++}
++
++/// Relay an HTTP/2 connection. `upstream` is `None` when the upstream did not
++/// negotiate `h2`.
++pub(super) async fn relay_h2_stream<C, U>(
++    client: C,
++    upstream: Option<U>,
++    context: RelayContext<'_>,
++) -> Result<()>
++where
++    C: AsyncRead + AsyncWrite + Unpin + Send,
++    U: AsyncRead + AsyncWrite + Unpin + Send,
++{
++    match context.policy {
++        PreparedHttpPolicy::Inspect { configs, evaluator } => {
++            let generation_guard = evaluator.generation_guard().clone();
++            tokio::select! {
++                result = crate::l7::http2::relay_h2(
++                    client,
++                    upstream,
++                    &configs,
++                    &evaluator,
++                    context.request,
++                ) => result,
++                () = generation_guard.wait_until_stale() => {
++                    emit_stale_relay_close(context.request, &generation_guard);
++                    Ok(())
++                }
++            }
++        }
++        PreparedHttpPolicy::Passthrough { .. } => {
++            Err(miette::miette!("HTTP/2 requires an inspected L7 route"))
++        }
++    }
++}
++
+ // Exercise the production single/multiple-route dispatch from L7 fixtures.
+ #[cfg(test)]
+ pub async fn relay_inspected_http_stream_for_test<C, U>(
+@@ -412,7 +496,7 @@ mod tests {
+         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+ 
+         let (mut upstream, mut server) = tokio::io::duplex(1024);
+-        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+         let decision = decision(engine.current_generation());
+         let request = request_context();
+         let context = prepare_http_relay(None, &engine, &decision, &request).unwrap();
+@@ -500,7 +584,7 @@ mod tests {
+ 
+     #[test]
+     fn relay_without_route_pins_l4_decision_generation() {
+-        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+         let decision = decision(engine.current_generation());
+         let request = request_context();
+ 
+@@ -518,7 +602,7 @@ mod tests {
+ 
+     #[test]
+     fn empty_hydrated_route_cannot_replace_stale_l4_generation() {
+-        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+         let decision = decision(u64::MAX);
+         let route = L7RouteSnapshot {
+             configs: vec![],
+@@ -534,7 +618,7 @@ mod tests {
+ 
+     #[test]
+     fn inspected_route_cannot_replace_stale_l4_generation() {
+-        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+         let decision = decision(u64::MAX);
+         let route = L7RouteSnapshot {
+             configs: vec![super::super::L7ConfigSnapshot {
+@@ -572,7 +656,7 @@ mod tests {
+ 
+     #[test]
+     fn raw_route_cannot_replace_stale_l4_generation() {
+-        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+         let decision = decision(u64::MAX);
+         let route = L7RouteSnapshot {
+             configs: vec![],
+@@ -587,7 +671,7 @@ mod tests {
+ 
+     #[test]
+     fn stale_generation_fails_before_relay_context_is_created() {
+-        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+         let decision = decision(engine.current_generation());
+         let request = request_context();
+         engine.reload(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
+@@ -598,6 +682,250 @@ mod tests {
+         );
+     }
+ 
++    const STREAM_ENDPOINT: &str = "
++network_policies:
++  stream:
++    name: stream
++    endpoints:
++      - { host: example.com, port: 80 }
++    binaries:
++      - { path: /usr/bin/curl }
++";
++    const STREAM_REST_ENDPOINT: &str = "
++network_policies:
++  stream:
++    name: stream
++    endpoints:
++      - host: example.com
++        port: 80
++        protocol: rest
++        enforcement: enforce
++        rules:
++          - allow:
++              method: GET
++              path: /**
++    binaries:
++      - { path: /usr/bin/curl }
++";
++    const UNRELATED_POLICY: &str = "
++  other:
++    name: other
++    endpoints:
++      - { host: other.example.com, port: 443 }
++    binaries:
++      - { path: /usr/bin/curl }
++";
++    const OTHER_POLICY_ONLY: &str = "
++network_policies:
++  other:
++    name: other
++    endpoints:
++      - { host: other.example.com, port: 443 }
++    binaries:
++      - { path: /usr/bin/curl }
++";
++
++    fn authorized_decision(engine: &OpaEngine) -> EgressDecision {
++        let input = NetworkInput {
++            host: "example.com".to_string(),
++            port: 80,
++            binary_path: "/usr/bin/curl".into(),
++            binary_sha256: String::new(),
++            ancestors: vec![],
++            cmdline_paths: vec![],
++        };
++        let authorization = engine.authorize_egress(&input).unwrap();
++        assert!(matches!(authorization.action, NetworkAction::Allow { .. }));
++        let mut decision = EgressDecision {
++            intent: EgressIntent::connect("example.com".to_string(), 80),
++            action: authorization.action.clone(),
++            policy_generation: authorization.generation,
++            identity: ProcessIdentityEvidence::Available,
++            endpoint: EndpointDecision::from_authorization(&authorization),
++            binary: Some(input.binary_path),
++            binary_pid: None,
++            ancestors: vec![],
++            cmdline_paths: vec![],
++        };
++        super::super::hydrate_l7_route(&mut decision);
++        decision
++    }
++
++    async fn read_request_head(server: &mut tokio::io::DuplexStream) -> Option<Vec<u8>> {
++        use tokio::io::AsyncReadExt;
++
++        let mut request = Vec::new();
++        while !request.ends_with(b"\r\n\r\n") {
++            request.push(server.read_u8().await.ok()?);
++        }
++        Some(request)
++    }
++
++    /// Stream a chunked response through an established relay while the
++    /// policy reloads to `reloaded`. Returns the bytes the client received
++    /// after the reload, and whether a second request on the same
++    /// connection was answered.
++    async fn stream_across_reload(initial: &str, reloaded: &str) -> (Vec<u8>, bool) {
++        use tokio::io::{AsyncReadExt, AsyncWriteExt};
++
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, initial).unwrap());
++        let decision = authorized_decision(&engine);
++        let mut request = http_context(
++            &decision,
++            None,
++            None,
++            None,
++            openshell_core::proposals::AgentProposals::default(),
++            RelaySignals {
++                activity: None,
++                endpoint_observation: None,
++            },
++        );
++        request.request_default_port = Some(80);
++        let (mut caller, mut client) = tokio::io::duplex(4096);
++        let (mut upstream, mut server) = tokio::io::duplex(4096);
++        let context = prepare_http_relay(
++            decision.endpoint.l7_route.as_ref(),
++            &engine,
++            &decision,
++            &request,
++        )
++        .expect("current generation should prepare a relay");
++        // Own both sides so a closed relay is visible to its peers as EOF.
++        let relay =
++            Box::pin(async move { relay_http_stream(&mut client, &mut upstream, context).await });
++
++        let head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
++        let first = b"5\r\nhello\r\n";
++        let rest = b"5\r\nworld\r\n0\r\n\r\n";
++        let second = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
++        let (reloaded_tx, reloaded_rx) = tokio::sync::oneshot::channel::<()>();
++        let serve = async {
++            if read_request_head(&mut server).await.is_none() {
++                return;
++            }
++            server.write_all(head).await.unwrap();
++            server.write_all(first).await.unwrap();
++            server.flush().await.unwrap();
++            let _ = reloaded_rx.await;
++            let _ = server.write_all(rest).await;
++            let _ = server.flush().await;
++            if read_request_head(&mut server).await.is_some() {
++                let _ = server.write_all(second).await;
++                let _ = server.flush().await;
++            }
++        };
++        let receive = async {
++            let request = b"GET /stream HTTP/1.1\r\nHost: example.com\r\n\r\n";
++            caller.write_all(request).await.unwrap();
++            let mut received = vec![0; head.len() + first.len()];
++            caller.read_exact(&mut received).await.unwrap();
++            engine.reload(POLICY_REGO, reloaded).unwrap();
++            // Let the relay observe the new generation before more bytes arrive.
++            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
++            reloaded_tx.send(()).unwrap();
++            let mut after = vec![0; rest.len()];
++            let mut read = 0;
++            while read < after.len() {
++                match caller.read(&mut after[read..]).await {
++                    Ok(0) | Err(_) => break,
++                    Ok(n) => read += n,
++                }
++            }
++            after.truncate(read);
++            let mut response = vec![0; second.len()];
++            let answered = read == rest.len()
++                && caller.write_all(request).await.is_ok()
++                && caller.read_exact(&mut response).await.is_ok()
++                && response == second;
++            drop(caller);
++            (after, answered)
++        };
++        tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            Box::pin(async {
++                let (_, (), received) = tokio::join!(relay, serve, receive);
++                received
++            }),
++        )
++        .await
++        .expect("relay must not hang across a policy reload")
++    }
++
++    #[tokio::test]
++    async fn passthrough_stream_survives_unrelated_policy_reload() {
++        let reloaded = format!("{STREAM_ENDPOINT}{UNRELATED_POLICY}");
++        let (after, answered) = Box::pin(stream_across_reload(STREAM_ENDPOINT, &reloaded)).await;
++        assert_eq!(after, b"5\r\nworld\r\n0\r\n\r\n");
++        assert!(
++            answered,
++            "keep-alive connection must serve the next request"
++        );
++    }
++
++    #[tokio::test]
++    async fn inspected_stream_survives_unrelated_policy_reload() {
++        let reloaded = format!("{STREAM_REST_ENDPOINT}{UNRELATED_POLICY}");
++        let (after, answered) =
++            Box::pin(stream_across_reload(STREAM_REST_ENDPOINT, &reloaded)).await;
++        assert_eq!(after, b"5\r\nworld\r\n0\r\n\r\n");
++        assert!(
++            answered,
++            "keep-alive connection must serve the next request"
++        );
++    }
++
++    #[tokio::test]
++    async fn stream_closes_when_reload_removes_its_endpoint() {
++        for initial in [STREAM_ENDPOINT, STREAM_REST_ENDPOINT] {
++            let (after, answered) =
++                Box::pin(stream_across_reload(initial, OTHER_POLICY_ONLY)).await;
++            assert!(
++                after.is_empty(),
++                "revoked stream must not deliver more bytes"
++            );
++            assert!(!answered);
++        }
++    }
++
++    #[test]
++    fn relay_guard_follows_reloads_until_admission_changes() {
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, STREAM_ENDPOINT).unwrap());
++        let decision = authorized_decision(&engine);
++        let guard = prepare_raw_relay(None, &engine, &decision).unwrap();
++        let observer = guard.clone();
++
++        let unrelated = format!("{STREAM_ENDPOINT}{UNRELATED_POLICY}");
++        engine.reload(POLICY_REGO, &unrelated).unwrap();
++        assert!(!guard.is_stale(), "identical admission keeps the relay");
++        assert_eq!(observer.captured_generation(), engine.current_generation());
++
++        let other_binary = STREAM_ENDPOINT.replace("/usr/bin/curl", "/usr/bin/wget");
++        engine.reload(POLICY_REGO, &other_binary).unwrap();
++        assert!(
++            guard.is_stale(),
++            "a binary that is no longer allowed closes"
++        );
++
++        engine.reload(POLICY_REGO, STREAM_ENDPOINT).unwrap();
++        assert!(observer.is_stale(), "a revoked relay never becomes current");
++    }
++
++    #[test]
++    fn relay_guard_closes_on_endpoint_change_and_quarantine() {
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, STREAM_ENDPOINT).unwrap());
++        let decision = authorized_decision(&engine);
++        let guard = prepare_raw_relay(None, &engine, &decision).unwrap();
++        engine.reload(POLICY_REGO, STREAM_REST_ENDPOINT).unwrap();
++        assert!(guard.is_stale(), "a changed endpoint configuration closes");
++
++        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, STREAM_ENDPOINT).unwrap());
++        let decision = authorized_decision(&engine);
++        let guard = prepare_raw_relay(None, &engine, &decision).unwrap();
++        engine.enter_fail_closed("invalid candidate").unwrap();
++        assert!(guard.is_stale(), "fail-closed quarantine closes");
++    }
++
+     #[tokio::test]
+     async fn raw_relay_closes_immediately_when_fail_closed_generation_is_published() {
+         let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
+diff --git a/docs/how-it-works/policies/advisor.mdx b/docs/how-it-works/policies/advisor.mdx
+index c77e2a77d..5b6625866 100644
+--- a/docs/how-it-works/policies/advisor.mdx
++++ b/docs/how-it-works/policies/advisor.mdx
+@@ -292,8 +292,8 @@ The agent uses these endpoints at `http://policy.local`:
+ | `GET /v1/proposals/{chunk_id}/wait?timeout=300` | Waits until the proposal is approved or rejected, or until the timeout expires. |
+ 
+ After an approval, the `/wait` response reports `policy_reloaded: true` once the
+-sandbox has loaded the new rule. OpenShell closes connections opened under the
+-previous rules, so the agent's retry uses the new rule.
++sandbox has loaded the new rule. The agent's retry uses the new rule. Open
++connections that the new rule does not affect stay open.
+ 
+ When the policy advisor is disabled, every route returns `404 feature_disabled`,
+ new sandboxes do not receive the guide, and denial responses do not mention
+diff --git a/docs/how-it-works/policies/manage-policies.mdx b/docs/how-it-works/policies/manage-policies.mdx
+index c20af7b67..6fdf5225f 100644
+--- a/docs/how-it-works/policies/manage-policies.mdx
++++ b/docs/how-it-works/policies/manage-policies.mdx
+@@ -188,16 +188,20 @@ running sandbox. The startup sections do not:
+ 
+ | Change | Effect on a running sandbox | Required action |
+ |---|---|---|
+-| Network rules | The sandbox loads the new rules. Connections opened under the previous rules close. | Apply the change, then retry the request. |
++| Network rules | The sandbox loads the new rules. Open connections that the change affects close. | Apply the change, then retry the request. |
+ | Middleware in `network_middlewares` | You can add, remove, or reconfigure built-in middleware and external services already registered with the gateway. | Apply the change with `openshell policy set`. |
+ | External middleware registration | Policy changes cannot register a service or change its gateway connection settings. | Update the gateway configuration and restart the gateway. |
+ | Added filesystem paths | The saved policy can change, but the running workload keeps its existing filesystem permissions. | Recreate the sandbox. |
+ | Removed filesystem paths, or changed `include_workdir`, Landlock, or process settings | OpenShell rejects the change after the workload starts. | Recreate the sandbox. |
+ 
+-When new network rules take effect, OpenShell closes connections that were
+-opened under the previous rules, including HTTP keep-alive connections, tunnels,
+-WebSocket connections, and long-lived streams. Clients must reconnect, and their
+-next requests are checked against the new rules.
++When new network rules take effect, OpenShell checks each open connection,
++including HTTP keep-alive connections, tunnels, WebSocket connections, and
++long-lived streams, against the new rules. A connection stays open when the new
++rules admit it exactly as before: its binary is still allowed, and its matching
++endpoints, credential rules, and middleware are unchanged. Later requests on it
++are checked against the new rules. OpenShell closes every other connection, and
++every connection when the sandbox blocks traffic after a failed update. Clients
++must reconnect, and their next requests are checked against the new rules.
+ 
+ OpenShell validates every change twice before it takes effect:
+ 
+@@ -207,7 +211,7 @@ flowchart TD
+     B -->|Invalid| C["Change rejected<br/>Current policy stays active"]
+     B -->|Valid| D["Gateway saves a new revision"]
+     D --> E{"Sandbox validates<br/>and loads the revision"}
+-    E -->|Loads| F["New rules active<br/>Old connections close"]
++    E -->|Loads| F["New rules active<br/>Affected connections close"]
+     E -->|Fails| G["Failure mode applies<br/>Block traffic or keep the last valid policy"]
+ ```
+ 
+diff --git a/docs/how-it-works/policies/network-rules.mdx b/docs/how-it-works/policies/network-rules.mdx
+index 811d92092..ee2d87fab 100644
+--- a/docs/how-it-works/policies/network-rules.mdx
++++ b/docs/how-it-works/policies/network-rules.mdx
+@@ -443,8 +443,8 @@ Set `allow_uninspected_credentials: true` to relay binary frames anyway. Set
+ `websocket_credential_rewrite: true` only when client text messages contain
+ OpenShell credential placeholders that must be resolved.
+ 
+-When new network rules take effect, OpenShell closes open WebSocket connections,
+-so the client must reconnect. The client might receive close code `1012`, or the
++When new network rules change the rules that admit an open WebSocket
++connection, OpenShell closes it, so the client must reconnect. The client might receive close code `1012`, or the
+ connection might close without a close frame.
+ 
+ ### Allow GraphQL Operations
+diff --git a/verification/h2/Bug_forward_before_admit.cfg b/verification/h2/Bug_forward_before_admit.cfg
+new file mode 100644
+index 000000000..5ab98e1e4
+--- /dev/null
++++ b/verification/h2/Bug_forward_before_admit.cfg
+@@ -0,0 +1,12 @@
++\* Seeded defect: the checker must report a violation.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1, 2}
++  HdrKinds = {"none", "ok", "bad"}
++  BodyKinds = {"empty", "clean", "ph"}
++  Bug = "forward_before_admit"
++INVARIANTS
++  OnlyAllowedReachUpstream
++  RefusedSendsNothing
++  NoPlaceholderUpstream
++  NoCrossStream
+diff --git a/verification/h2/Bug_no_body_scan.cfg b/verification/h2/Bug_no_body_scan.cfg
+new file mode 100644
+index 000000000..a56ab1bdd
+--- /dev/null
++++ b/verification/h2/Bug_no_body_scan.cfg
+@@ -0,0 +1,12 @@
++\* Seeded defect: the checker must report a violation.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1, 2}
++  HdrKinds = {"none", "ok", "bad"}
++  BodyKinds = {"empty", "clean", "ph"}
++  Bug = "no_body_scan"
++INVARIANTS
++  OnlyAllowedReachUpstream
++  RefusedSendsNothing
++  NoPlaceholderUpstream
++  NoCrossStream
+diff --git a/verification/h2/Bug_skip_fail_closed.cfg b/verification/h2/Bug_skip_fail_closed.cfg
+new file mode 100644
+index 000000000..bb8586d16
+--- /dev/null
++++ b/verification/h2/Bug_skip_fail_closed.cfg
+@@ -0,0 +1,12 @@
++\* Seeded defect: the checker must report a violation.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1, 2}
++  HdrKinds = {"none", "ok", "bad"}
++  BodyKinds = {"empty", "clean", "ph"}
++  Bug = "skip_fail_closed"
++INVARIANTS
++  OnlyAllowedReachUpstream
++  RefusedSendsNothing
++  NoPlaceholderUpstream
++  NoCrossStream
+diff --git a/verification/h2/Bug_swap_map.cfg b/verification/h2/Bug_swap_map.cfg
+new file mode 100644
+index 000000000..fb0146848
+--- /dev/null
++++ b/verification/h2/Bug_swap_map.cfg
+@@ -0,0 +1,12 @@
++\* Seeded defect: the checker must report a violation.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1, 2}
++  HdrKinds = {"none", "ok", "bad"}
++  BodyKinds = {"empty", "clean", "ph"}
++  Bug = "swap_map"
++INVARIANTS
++  OnlyAllowedReachUpstream
++  RefusedSendsNothing
++  NoPlaceholderUpstream
++  NoCrossStream
+diff --git a/verification/h2/H2Relay.tla b/verification/h2/H2Relay.tla
+new file mode 100644
+index 000000000..5d5f2f166
+--- /dev/null
++++ b/verification/h2/H2Relay.tla
+@@ -0,0 +1,338 @@
++---------------------------- MODULE H2Relay ----------------------------
++(***************************************************************************)
++(* Per-connection, per-stream model of the HTTP/2 L7 relay in             *)
++(* crates/openshell-supervisor-network/src/l7/http2.rs.                   *)
++(*                                                                         *)
++(* One sandbox client connection is multiplexed onto one upstream         *)
++(* connection.  Each direction is one ordered frame queue (a TCP stream). *)
++(* The h2 crate demultiplexes client frames into per-stream buffers; one  *)
++(* handler per stream (handle_stream) admits, forwards and relays.        *)
++(*                                                                         *)
++(* Abstractions: a request is (allowed?, header placeholder kind, body    *)
++(* kind).  Placeholder rewriting is the function Rewrite; policy is the   *)
++(* allowed bit.  A response is a head frame RH plus an end frame RT       *)
++(* (DATA + trailers).  Flow control and HPACK are not modelled.           *)
++(***************************************************************************)
++EXTENDS Naturals, Sequences, FiniteSets
++
++CONSTANTS Streams,   \* client stream ids, e.g. {1, 2}
++          Bug,       \* "none" or a seeded defect, to show properties bite
++          HdrKinds,  \* subset of {"none", "ok", "bad"}: no / resolvable / unresolvable placeholder
++          BodyKinds  \* subset of {"empty", "clean", "ph"}: no body / body / body with placeholder
++
++Requests  == [allowed : BOOLEAN, hdr : HdrKinds, body : BodyKinds]
++UIds      == 1..Cardinality(Streams)
++NoId      == 0
++
++Frame(t, id, tag, ph, eos) == [t |-> t, id |-> id, tag |-> tag, ph |-> ph, eos |-> eos]
++
++\* secrets::rewrite_http_header_block: substitutes resolvable placeholders;
++\* an unresolvable one would survive (its fail-closed error is what admit checks).
++Rewrite(h) == IF h = "bad" THEN "placeholder" ELSE "clean"
++
++VARIABLES
++  cl,        \* client per-stream: [sentEnd, recvEnd, reset, opened]
++  req,       \* request chosen by the client
++  c2p,       \* client -> proxy frames
++  inbuf,     \* proxy per-stream receive buffers (h2 server demux)
++  px,        \* handler state
++  decision,  \* "none" | "allow" | "deny" | "fail"
++  pReqDone,  \* handler forwarded the request END_STREAM
++  hdrOf,     \* header kind the handler received
++  umap,      \* upstream stream id -> client stream id
++  uidOf,     \* client stream id -> upstream stream id
++  nextUid,
++  p2u,       \* proxy -> upstream frames
++  up,        \* upstream per-stream: "idle" | "open" | "done" | "reset"
++  utag, uReqDone, uHead,
++  u2p,       \* upstream -> proxy frames
++  p2c,       \* proxy -> client frames
++  upAlive,   \* upstream connection usable
++  goaway,    \* proxy sent GOAWAY to the client
++  upLog,     \* history: frames the upstream received
++  cLog       \* history: frames the client received
++
++vars == <<cl, req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid,
++          p2u, up, utag, uReqDone, uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++Init ==
++  /\ cl = [s \in Streams |-> [opened |-> FALSE, sentEnd |-> FALSE, recvEnd |-> FALSE, reset |-> FALSE]]
++  /\ req = [s \in Streams |-> [allowed |-> FALSE, hdr |-> "none", body |-> "empty"]]
++  /\ c2p = <<>> /\ inbuf = [s \in Streams |-> <<>>]
++  /\ px = [s \in Streams |-> "none"] /\ decision = [s \in Streams |-> "none"]
++  /\ pReqDone = [s \in Streams |-> FALSE] /\ hdrOf = [s \in Streams |-> "none"]
++  /\ umap = [u \in UIds |-> NoId] /\ uidOf = [s \in Streams |-> NoId] /\ nextUid = 1
++  /\ p2u = <<>> /\ up = [u \in UIds |-> "idle"] /\ utag = [u \in UIds |-> NoId]
++  /\ uReqDone = [u \in UIds |-> FALSE] /\ uHead = [u \in UIds |-> FALSE]
++  /\ u2p = <<>> /\ p2c = <<>> /\ upAlive = TRUE /\ goaway = FALSE
++  /\ upLog = <<>> /\ cLog = <<>>
++
++Terminal(s) == cl[s].recvEnd \/ cl[s].reset
++HandlerDone(s) == px[s] \in {"refused", "reset", "done"}
++
++-----------------------------------------------------------------------------
++(* Sandbox client *)
++
++ClientOpen(s) ==
++  /\ ~cl[s].opened /\ ~goaway
++  /\ \E r \in Requests :
++       /\ req' = [req EXCEPT ![s] = r]
++       /\ c2p' = Append(c2p, Frame("H", s, s, r.hdr, r.body = "empty"))
++       /\ cl' = [cl EXCEPT ![s].opened = TRUE, ![s].sentEnd = (r.body = "empty")]
++  /\ UNCHANGED <<inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u, up,
++                 utag, uReqDone, uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++ClientData(s) ==
++  /\ cl[s].opened /\ ~cl[s].sentEnd /\ ~cl[s].reset
++  /\ c2p' = Append(c2p, Frame("D", s, s, IF req[s].body = "ph" THEN "placeholder" ELSE "clean", TRUE))
++  /\ cl' = [cl EXCEPT ![s].sentEnd = TRUE]
++  /\ UNCHANGED <<req, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u, up,
++                 utag, uReqDone, uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++ClientReset(s) ==
++  /\ cl[s].opened /\ ~Terminal(s)
++  /\ c2p' = Append(c2p, Frame("R", s, NoId, "clean", TRUE))
++  /\ cl' = [cl EXCEPT ![s].reset = TRUE]
++  /\ UNCHANGED <<req, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u, up,
++                 utag, uReqDone, uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++ClientRecv ==
++  /\ p2c # <<>>
++  /\ LET f == Head(p2c) IN
++       /\ p2c' = Tail(p2c)
++       /\ cLog' = Append(cLog, f)
++       /\ cl' = IF cl[f.id].reset THEN cl
++                ELSE CASE f.t \in {"RESP", "RT"} -> [cl EXCEPT ![f.id].recvEnd = TRUE]
++                       [] f.t = "R"             -> [cl EXCEPT ![f.id].reset = TRUE]
++                       [] OTHER                 -> cl
++  /\ UNCHANGED <<req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u,
++                 up, utag, uReqDone, uHead, u2p, upAlive, goaway, upLog>>
++
++-----------------------------------------------------------------------------
++(* Proxy: connection task.  relay_h2 accept loop, http2.rs:140-165 *)
++
++ProxyDemux ==
++  /\ c2p # <<>>
++  /\ LET f == Head(c2p) IN
++       inbuf' = [inbuf EXCEPT ![f.id] = Append(@, f)]
++  /\ c2p' = Tail(c2p)
++  /\ UNCHANGED <<cl, req, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u, up,
++                 utag, uReqDone, uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++\* server.accept() yields (request, respond); streams.push(handle_stream) http2.rs:144-146
++Accept(s) ==
++  /\ px[s] = "none" /\ inbuf[s] # <<>> /\ Head(inbuf[s]).t = "H"
++  /\ hdrOf' = [hdrOf EXCEPT ![s] = Head(inbuf[s]).ph]
++  /\ pReqDone' = [pReqDone EXCEPT ![s] = Head(inbuf[s]).eos]
++  /\ inbuf' = [inbuf EXCEPT ![s] = Tail(@)]
++  /\ px' = [px EXCEPT ![s] = IF Bug = "forward_before_admit" THEN "ready" ELSE "admitting"]
++  /\ UNCHANGED <<cl, req, c2p, decision, umap, uidOf, nextUid, p2u, up, utag, uReqDone,
++                 uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++\* admit(): a non-origin-form :path -> 400 http2.rs:275-286 (a refusal like
++\* deny: allowed = FALSE), evaluate_l7_request http2.rs:336, deny -> 403 http2.rs:352,
++\* rewrite_http_header_block failure -> credential_refusal http2.rs:394-399,
++\* refusal.send http2.rs:217.  Only this stream's respond handle is touched.
++Admit(s) ==
++  /\ px[s] = "admitting"
++  /\ \/ /\ ~req[s].allowed
++        /\ decision' = [decision EXCEPT ![s] = "deny"]
++        /\ px' = [px EXCEPT ![s] = "refused"]
++        /\ p2c' = Append(p2c, Frame("RESP", s, s, "clean", TRUE))
++     \/ /\ req[s].allowed /\ hdrOf[s] = "bad" /\ Bug # "skip_fail_closed"
++        /\ decision' = [decision EXCEPT ![s] = "fail"]
++        /\ px' = [px EXCEPT ![s] = "refused"]
++        /\ p2c' = Append(p2c, Frame("RESP", s, s, "clean", TRUE))
++     \/ /\ req[s].allowed /\ (hdrOf[s] # "bad" \/ Bug = "skip_fail_closed")
++        /\ decision' = [decision EXCEPT ![s] = "allow"]
++        /\ px' = [px EXCEPT ![s] = "ready"]
++        /\ UNCHANGED p2c
++  /\ UNCHANGED <<cl, req, c2p, inbuf, pReqDone, hdrOf, umap, uidOf, nextUid, p2u, up, utag,
++                 uReqDone, uHead, u2p, upAlive, goaway, upLog, cLog>>
++
++\* sender.ready() / send_request http2.rs:229-251; no upstream -> 502.
++Forward(s) ==
++  /\ px[s] = "ready"
++  /\ IF ~upAlive
++       THEN /\ px' = [px EXCEPT ![s] = "refused"]
++            /\ p2c' = Append(p2c, Frame("RESP", s, s, "clean", TRUE))
++            /\ UNCHANGED <<umap, uidOf, nextUid, p2u>>
++       ELSE /\ px' = [px EXCEPT ![s] = "fwd"]
++            /\ umap' = [umap EXCEPT ![nextUid] = s]
++            /\ uidOf' = [uidOf EXCEPT ![s] = nextUid]
++            /\ nextUid' = nextUid + 1
++            /\ p2u' = Append(p2u, Frame("H", nextUid, s, Rewrite(hdrOf[s]), pReqDone[s]))
++            /\ UNCHANGED p2c
++  /\ UNCHANGED <<cl, req, c2p, inbuf, decision, pReqDone, hdrOf, up, utag, uReqDone, uHead,
++                 u2p, upAlive, goaway, upLog, cLog>>
++
++\* pump(body, upstream_send, true) http2.rs:542-609: DATA forwarded unless it
++\* carries a marker (carries_marker http2.rs:565 -> send_reset); a client RST
++\* surfaces as a recv error and is propagated upstream (http2.rs:557-561), or
++\* via respond.poll_reset in relay_response (http2.rs:521).
++PumpReq(s) ==
++  /\ px[s] = "fwd" /\ inbuf[s] # <<>>
++  /\ LET f == Head(inbuf[s]) IN
++       \/ /\ f.t = "D" /\ (f.ph = "clean" \/ Bug = "no_body_scan")
++          /\ p2u' = Append(p2u, Frame("D", uidOf[s], s, f.ph, f.eos))
++          /\ pReqDone' = [pReqDone EXCEPT ![s] = f.eos]
++          /\ UNCHANGED <<px, p2c>>
++       \/ /\ f.t = "D" /\ f.ph = "placeholder" /\ Bug # "no_body_scan"
++          /\ p2u' = Append(p2u, Frame("R", uidOf[s], NoId, "clean", TRUE))
++          /\ p2c' = Append(p2c, Frame("R", s, NoId, "clean", TRUE))
++          /\ px' = [px EXCEPT ![s] = "reset"]
++          /\ UNCHANGED pReqDone
++       \/ /\ f.t = "R"
++          /\ p2u' = Append(p2u, Frame("R", uidOf[s], NoId, "clean", TRUE))
++          /\ px' = [px EXCEPT ![s] = "reset"]
++          /\ UNCHANGED <<pReqDone, p2c>>
++  /\ inbuf' = [inbuf EXCEPT ![s] = Tail(@)]
++  /\ UNCHANGED <<cl, req, c2p, decision, hdrOf, umap, uidOf, nextUid, up, utag, uReqDone,
++                 uHead, u2p, upAlive, goaway, upLog, cLog>>
++
++\* Frames for a finished stream are discarded by the h2 crate.
++Drop(s) ==
++  /\ HandlerDone(s) /\ inbuf[s] # <<>>
++  /\ inbuf' = [inbuf EXCEPT ![s] = Tail(@)]
++  /\ UNCHANGED <<cl, req, c2p, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u, up,
++                 utag, uReqDone, uHead, u2p, p2c, upAlive, goaway, upLog, cLog>>
++
++\* relay_response / pump(.., false) http2.rs:517-539: frames from upstream
++\* stream u go to the client stream whose handler owns u.
++ProxyRecvUp ==
++  /\ u2p # <<>>
++  /\ LET f == Head(u2p)
++         s == IF Bug = "swap_map" /\ Cardinality(Streams) > 1
++                THEN CHOOSE t \in Streams : t # umap[f.id]
++                ELSE umap[f.id] IN
++       IF px[s] = "fwd"
++         THEN /\ p2c' = Append(p2c, Frame(f.t, s, f.tag, "clean", f.t # "RH"))
++              /\ px' = [px EXCEPT ![s] = CASE f.t = "RT" -> "done"
++                                          [] f.t = "R"  -> "reset"
++                                          [] OTHER      -> "fwd"]
++         ELSE UNCHANGED <<p2c, px>>
++  /\ u2p' = Tail(u2p)
++  /\ UNCHANGED <<cl, req, c2p, inbuf, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u,
++                 up, utag, uReqDone, uHead, upAlive, goaway, upLog, cLog>>
++
++\* Upstream connection ended (GOAWAY or close): upstream_conn branch
++\* http2.rs:155-163 -> graceful_shutdown; in-flight streams error -> RST.
++UpLost(s) ==
++  /\ px[s] = "fwd" /\ ~upAlive
++  /\ px' = [px EXCEPT ![s] = "reset"]
++  /\ p2c' = Append(p2c, Frame("R", s, NoId, "clean", TRUE))
++  /\ UNCHANGED <<cl, req, c2p, inbuf, decision, pReqDone, hdrOf, umap, uidOf, nextUid, p2u,
++                 up, utag, uReqDone, uHead, u2p, upAlive, goaway, upLog, cLog>>
++
++-----------------------------------------------------------------------------
++(* Upstream server *)
++
++UpRecv ==
++  /\ p2u # <<>> /\ upAlive
++  /\ LET f == Head(p2u) IN
++       /\ upLog' = Append(upLog, f)
++       /\ CASE f.t = "H" ->
++                 /\ up' = [up EXCEPT ![f.id] = "open"]
++                 /\ utag' = [utag EXCEPT ![f.id] = f.tag]
++                 /\ uReqDone' = [uReqDone EXCEPT ![f.id] = f.eos]
++            [] f.t = "D" ->
++                 /\ uReqDone' = [uReqDone EXCEPT ![f.id] = f.eos]
++                 /\ UNCHANGED <<up, utag>>
++            [] OTHER ->
++                 /\ up' = [up EXCEPT ![f.id] = IF @ = "open" THEN "reset" ELSE @]
++                 /\ UNCHANGED <<utag, uReqDone>>
++  /\ p2u' = Tail(p2u)
++  /\ UNCHANGED <<cl, req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid,
++                 uHead, u2p, p2c, upAlive, goaway, cLog>>
++
++UpHead(u) ==
++  /\ upAlive /\ up[u] = "open" /\ ~uHead[u]
++  /\ uHead' = [uHead EXCEPT ![u] = TRUE]
++  /\ u2p' = Append(u2p, Frame("RH", u, utag[u], "clean", FALSE))
++  /\ UNCHANGED <<cl, req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid,
++                 p2u, up, utag, uReqDone, p2c, upAlive, goaway, upLog, cLog>>
++
++UpEnd(u) ==
++  /\ upAlive /\ up[u] = "open" /\ uHead[u] /\ uReqDone[u]
++  /\ up' = [up EXCEPT ![u] = "done"]
++  /\ u2p' = Append(u2p, Frame("RT", u, utag[u], "clean", TRUE))
++  /\ UNCHANGED <<cl, req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid,
++                 p2u, utag, uReqDone, uHead, p2c, upAlive, goaway, upLog, cLog>>
++
++UpReset(u) ==
++  /\ upAlive /\ up[u] = "open"
++  /\ up' = [up EXCEPT ![u] = "reset"]
++  /\ u2p' = Append(u2p, Frame("R", u, NoId, "clean", TRUE))
++  /\ UNCHANGED <<cl, req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid,
++                 p2u, utag, uReqDone, uHead, p2c, upAlive, goaway, upLog, cLog>>
++
++UpClose ==
++  /\ upAlive
++  /\ upAlive' = FALSE /\ goaway' = TRUE
++  /\ p2u' = <<>> /\ u2p' = <<>>
++  /\ UNCHANGED <<cl, req, c2p, inbuf, px, decision, pReqDone, hdrOf, umap, uidOf, nextUid,
++                 up, utag, uReqDone, uHead, p2c, upLog, cLog>>
++
++-----------------------------------------------------------------------------
++
++Next ==
++  \/ \E s \in Streams : ClientOpen(s) \/ ClientData(s) \/ ClientReset(s)
++  \/ ClientRecv \/ ProxyDemux \/ ProxyRecvUp \/ UpRecv \/ UpClose
++  \/ \E s \in Streams : Accept(s) \/ Admit(s) \/ Forward(s) \/ PumpReq(s) \/ Drop(s) \/ UpLost(s)
++  \/ \E u \in UIds : UpHead(u) \/ UpEnd(u) \/ UpReset(u)
++
++\* Fairness only for the relay, the upstream finishing a request it has, and
++\* the client finishing its body; resets, GOAWAY and new streams are optional.
++Fairness ==
++  /\ WF_vars(ClientRecv) /\ WF_vars(ProxyDemux) /\ WF_vars(ProxyRecvUp) /\ WF_vars(UpRecv)
++  /\ \A s \in Streams : WF_vars(ClientData(s)) /\ WF_vars(Accept(s)) /\ WF_vars(Admit(s))
++                        /\ WF_vars(Forward(s)) /\ WF_vars(PumpReq(s)) /\ WF_vars(Drop(s))
++                        /\ WF_vars(UpLost(s))
++  /\ \A u \in UIds : WF_vars(UpHead(u)) /\ WF_vars(UpEnd(u))
++
++Spec == Init /\ [][Next]_vars /\ Fairness
++
++-----------------------------------------------------------------------------
++(* Properties *)
++
++TypeOK ==
++  /\ HdrKinds \subseteq {"none", "ok", "bad"} /\ BodyKinds \subseteq {"empty", "clean", "ph"}
++  /\ px \in [Streams -> {"none", "admitting", "ready", "fwd", "refused", "reset", "done"}]
++  /\ decision \in [Streams -> {"none", "allow", "deny", "fail"}]
++  /\ nextUid \in 1..(Cardinality(Streams) + 1)
++
++ToUpstream == {upLog[i] : i \in DOMAIN upLog} \cup {p2u[i] : i \in DOMAIN p2u}
++
++\* P1: nothing of a stream is sent upstream before (or without) an allow decision.
++OnlyAllowedReachUpstream ==
++  \A f \in ToUpstream : f.t \in {"H", "D"} => decision[f.tag] = "allow"
++
++\* P2a: a denied or failed stream sends nothing upstream.
++RefusedSendsNothing ==
++  \A s \in Streams : decision[s] \in {"deny", "fail"} =>
++     /\ \A f \in ToUpstream : f.t \in {"H", "D"} => f.tag # s
++     /\ uidOf[s] = NoId
++
++\* P2b: refusing a stream changes no other stream and keeps the connection.
++RefusalIsLocal ==
++  [][\A s \in Streams :
++       (decision[s] = "none" /\ decision'[s] \in {"deny", "fail"}) =>
++         /\ \A t \in Streams \ {s} : px'[t] = px[t] /\ inbuf'[t] = inbuf[t]
++         /\ upAlive' = upAlive /\ goaway' = goaway /\ p2u' = p2u]_vars
++
++\* P3: every header block and DATA frame reaching upstream is placeholder-free;
++\* an unresolvable header placeholder fails the stream closed.
++NoPlaceholderUpstream ==
++  /\ \A f \in ToUpstream : f.t \in {"H", "D"} => f.ph = "clean"
++  /\ \A s \in Streams : (px[s] # "none" /\ hdrOf[s] = "bad" /\ req[s].allowed
++                         /\ px[s] \notin {"admitting", "ready"}) => decision[s] = "fail"
++
++\* P4: response frames are delivered on the stream whose request produced them.
++NoCrossStream ==
++  \A i \in DOMAIN cLog : cLog[i].t \in {"RH", "RT"} => cLog[i].tag = cLog[i].id
++
++\* P5: under fairness, every opened stream completes, is refused, or is reset,
++\* and every stream handler terminates.
++StreamsComplete == \A s \in Streams : cl[s].opened ~> Terminal(s)
++HandlersFinish == \A s \in Streams : (px[s] # "none") ~> HandlerDone(s)
++=============================================================================
+diff --git a/verification/h2/Liveness1.cfg b/verification/h2/Liveness1.cfg
+new file mode 100644
+index 000000000..e0c66ab89
+--- /dev/null
++++ b/verification/h2/Liveness1.cfg
+@@ -0,0 +1,17 @@
++\* All properties, including liveness under fairness, one stream.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1}
++  HdrKinds = {"none", "ok", "bad"}
++  BodyKinds = {"empty", "clean", "ph"}
++  Bug = "none"
++INVARIANTS
++  TypeOK
++  OnlyAllowedReachUpstream
++  RefusedSendsNothing
++  NoPlaceholderUpstream
++  NoCrossStream
++PROPERTIES
++  RefusalIsLocal
++  StreamsComplete
++  HandlersFinish
+diff --git a/verification/h2/Liveness2.cfg b/verification/h2/Liveness2.cfg
+new file mode 100644
+index 000000000..3591684a4
+--- /dev/null
++++ b/verification/h2/Liveness2.cfg
+@@ -0,0 +1,11 @@
++\* Liveness under fairness with two concurrent streams. Request kinds are
++\* reduced to keep the temporal check tractable; Safety.cfg covers all kinds.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1, 2}
++  HdrKinds = {"ok", "bad"}
++  BodyKinds = {"empty", "ph"}
++  Bug = "none"
++PROPERTIES
++  StreamsComplete
++  HandlersFinish
+diff --git a/verification/h2/Safety.cfg b/verification/h2/Safety.cfg
+new file mode 100644
+index 000000000..ddab0e77c
+--- /dev/null
++++ b/verification/h2/Safety.cfg
+@@ -0,0 +1,15 @@
++\* Safety only (invariants and the action property), two streams.
++SPECIFICATION Spec
++CONSTANTS
++  Streams = {1, 2}
++  HdrKinds = {"none", "ok", "bad"}
++  BodyKinds = {"empty", "clean", "ph"}
++  Bug = "none"
++INVARIANTS
++  TypeOK
++  OnlyAllowedReachUpstream
++  RefusedSendsNothing
++  NoPlaceholderUpstream
++  NoCrossStream
++PROPERTIES
++  RefusalIsLocal
+diff --git a/verification/h2/run.sh b/verification/h2/run.sh
+new file mode 100755
+index 000000000..abce2ae0b
+--- /dev/null
++++ b/verification/h2/run.sh
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
++# Run TLC on every config. JAVA and TLA2TOOLS point at a JRE and tla2tools.jar (v1.8.0).
++# Bug_*.cfg seed a defect and are expected to report a violation.
++set -u
++cd "$(dirname "$0")"
++for cfg in Safety.cfg Liveness1.cfg Liveness2.cfg Bug_*.cfg; do
++  echo "== $cfg"
++  "${JAVA:-java}" -XX:+UseParallelGC -cp "$TLA2TOOLS" tlc2.TLC -deadlock -workers auto \
++    -metadir "${TMPDIR:-/tmp}/h2relay-tlc/$cfg" -config "$cfg" H2Relay.tla |
++    grep -E 'violated|No error|distinct states found, 0|depth of'
++done
++rm -f H2Relay_TTrace_*

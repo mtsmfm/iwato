@@ -6,11 +6,9 @@
 
 ## インストールの通信
 
-新しいサンドボックスは通信を許していません。ダウンロードのたびに承認しなくて済むよう、作成時か、あとから「ポリシー」タブでプリセットを選びます ([プリセット](network-policy.md)):
+プリセット「ツールのインストール」と「エージェントの CLI」(どちらも作成フォームの既定) で、エージェントのインストールと更新の通信が最初から許されます ([プリセット](network-policy.md#プリセット))。あとから「ポリシー」タブで入れることもできます。
 
-- 「パッケージと Claude Code・Grok Build のダウンロード」
-
-どのプログラムにも許すパッケージの読み取りのほか、mise・Claude Code・Grok Build に、認証情報の付かないダウンロード先 (エージェント自身の更新を含む) を狭い規則 (プログラム・メソッド・パス) で入れます。エージェントの API の宛先 (`api.anthropic.com`、`api.x.ai` など) はプリセットに含まず、エージェントのプロバイダーを付けるか、エージェントの提案を承認します ([プロバイダー](providers.md))。ほかに要る通信は、エージェントが提案します ([提案](network-policy.md#規則の提案))。
+エージェントの API の宛先 (`api.anthropic.com`、`api.x.ai`、`chatgpt.com` など) はプリセットに含まず、エージェントのプロバイダーを付けるか、エージェントの提案を承認します ([プロバイダー](providers.md))。プロバイダーを付けておけば、`mise use -g claude` のあとすぐ `claude` が使えます。ほかに要る通信は、エージェントが提案します ([提案](network-policy.md#規則の提案))。
 
 ## Claude Code
 
@@ -18,7 +16,7 @@
 mise use -g claude
 ```
 
-`~/.local/share/mise/installs/claude/<版>` に入ります。Claude Code 自身の更新は `~/.local/share/claude/versions/<版>` に入ります。API (`api.anthropic.com:443`) は「Claude Code (Claude でログイン)」のプロバイダー ([プロバイダー](providers.md)) を付けるか、提案を承認します。
+`~/.local/share/mise/installs/claude/<版>` に入ります。Claude Code 自身の更新は `~/.local/share/claude/versions/<版>` に入ります。API (`api.anthropic.com:443`) は「Claude Code」のプロバイダー ([プロバイダー](providers.md)) を付けるか、提案を承認します。
 
 ## Grok Build
 
@@ -26,15 +24,23 @@ mise use -g claude
 mise use -g grok
 ```
 
-`~/.local/share/mise/installs/grok/<版>` に入ります。grok 自身の更新は `~/.grok/downloads` に入ります。プロバイダーは「Grok Build (xAI のサブスクリプション)」(SuperGrok など個人の xAI のアカウントでログイン) を使います ([プロバイダー](providers.md))。
+`~/.local/share/mise/installs/grok/<版>` に入ります。grok 自身の更新は `~/.grok/downloads` に入ります。プロバイダーは「Grok Build」(SuperGrok など個人の xAI のアカウントでログイン) を使います ([プロバイダー](providers.md))。
 
-## Codex とそのほかのエージェント
+## Codex
 
-Codex のプロバイダーはまだありません。提案を承認して使います。ほかのエージェントも同じです。
+```sh
+mise use -g codex
+```
+
+mise は GitHub の openai/codex のリリースから入れます。codex は新しい版を知らせるだけで、自分では更新しません (`mise use -g codex@latest` で更新します)。プロバイダーは「Codex」(ChatGPT のアカウント) か、API キーなら「OpenAI API」を使います ([プロバイダー](providers.md#codex-の-chatgpt-でのログイン))。
+
+## そのほかのエージェント
+
+提案を承認して使います。
 
 ## エージェント向けのサンドボックスの説明 (`/AGENTS.md`)
 
-標準イメージには `/AGENTS.md` があり、エージェントに環境を説明します: 止められた通信の見え方と規則の提案のしかた、残るもの、認証情報が置き換え用の値であること、HTTPS の git、デスクトップ。Claude Code も Codex も `/AGENTS.md` を自分では読まないので、Iwato はサンドボックスを起動するたびに次を **ないときだけ** 置きます:
+標準イメージには `/AGENTS.md` があり、エージェントに環境を説明します: 止められた通信の見え方と規則の提案のしかた、残るもの、認証情報が置き換え用の値であること、パッケージマネージャーの既定 ([サンドボックス](sandboxes.md#パッケージマネージャーの既定))、HTTPS の git、デスクトップ。Claude Code も Codex も `/AGENTS.md` を自分では読まないので、Iwato はサンドボックスを起動するたびに次を **ないときだけ** 置きます:
 
 - Claude Code: `~/.claude/CLAUDE.md` (`@/AGENTS.md` の 1 行で取り込む)
 - Codex: `~/.codex/AGENTS.md` (`/AGENTS.md` へのシンボリックリンク)

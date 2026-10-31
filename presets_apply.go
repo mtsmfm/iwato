@@ -96,7 +96,7 @@ func (s *Server) handleSandboxPresets(w http.ResponseWriter, r *http.Request, pa
 	}
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
-	ctx = withGatewayReads(ctx)
+	ctx = refuseDrift(withGatewayReads(ctx))
 	defer s.lockPolicy(sb.Name)()
 	if parts[2] == "apply" {
 		s.applyPreset(ctx, w, rt, sb, ref)
@@ -119,8 +119,7 @@ func (s *Server) setSandboxPresets(name string, change func([]PresetRef) []Prese
 }
 
 func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt presetRuntime, sb Sandbox, ref PresetRef) {
-	rules, err := presetRefRules(ref)
-	if err != nil {
+	if _, err := presetRefRules(ref); err != nil {
 		failErr(w, 400, err)
 		return
 	}
@@ -128,12 +127,19 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 		failCode(w, 409, "preset_applied", map[string]any{"preset": ref.label()}, ref.label()+" はもう入っています")
 		return
 	}
+	// The presets it requires come with it, unless they are in already.
+	refs := slices.DeleteFunc(withRequiredPresets([]PresetRef{ref}), func(r PresetRef) bool { return slices.ContainsFunc(sb.Presets, r.same) })
+	if err := validPresetList(refs); err != nil {
+		failErr(w, 400, err)
+		return
+	}
+	rules := presetRules(refs)
 	exists, err := rt.Exists(ctx, sb)
 	if err != nil {
 		fail(w, 409, safeCLIError(err))
 		return
 	}
-	add := func(list []PresetRef) []PresetRef { return append(list, ref) }
+	add := func(list []PresetRef) []PresetRef { return append(list, refs...) }
 	if !exists {
 		// Created with it (sandboxPolicy), checked then by the gateway.
 		if err := s.setSandboxPresets(sb.Name, add); err != nil {
@@ -175,7 +181,7 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 			return
 		}
 	}
-	version, err := rt.ApplyPolicyChange(ctx, sb, ops)
+	version, err := rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Apply preset "+ref.label()), sb, ops)
 	if err != nil {
 		s.failGateway(ctx, w, sb, err)
 		return
@@ -189,7 +195,7 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 	if folded := foldedPresetRules(after, rules); len(folded) > 0 {
 		msg := ref.label() + " の規則を OpenShell が既存の規則にまとめたので、元に戻しました: " + strings.Join(folded, "、") + "。重なる規則を外してから入れてください。"
 		if undo := rollbackOps(before, after); len(undo) > 0 {
-			if v, err := rt.ApplyPolicyChange(ctx, sb, undo); err != nil {
+			if v, err := rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Take preset "+ref.label()+" out again: its rules were folded into others"), sb, undo); err != nil {
 				msg = ref.label() + " の規則を OpenShell が既存の規則にまとめ、元に戻せませんでした: " + strings.Join(folded, "、") + "。ポリシーのタブで、まとめられた規則から許可を外してください: " + safeCLIError(err)
 			} else {
 				s.recordPolicyChange(sb.Name, PolicyChange{Version: v, Kind: "edit", Rule: opsRule(undo), At: time.Now().Unix()})
@@ -219,6 +225,12 @@ func (s *Server) removePreset(ctx context.Context, w http.ResponseWriter, rt pre
 		return
 	}
 	rest := slices.Delete(slices.Clone(sb.Presets), i, i+1)
+	for _, other := range rest {
+		if p := findPreset(other.ID); p != nil && slices.Contains(p.Requires, ref.ID) {
+			failCode(w, 409, "preset_required", map[string]any{"preset": ref.label(), "by": other.label()}, other.label()+" が "+ref.label()+" を必要としています。先にそちらを外してください")
+			return
+		}
+	}
 	drop := func(list []PresetRef) []PresetRef {
 		return slices.DeleteFunc(list, ref.same)
 	}
@@ -245,7 +257,7 @@ func (s *Server) removePreset(ctx context.Context, w http.ResponseWriter, rt pre
 	ops, kept := presetRemoval(base, mine, presetRules(sb.Presets), presetRules(rest))
 	var version uint32
 	if len(ops) > 0 {
-		if version, err = rt.ApplyPolicyChange(ctx, sb, ops); err != nil {
+		if version, err = rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Remove preset "+ref.label()), sb, ops); err != nil {
 			s.failGateway(ctx, w, sb, err)
 			return
 		}
@@ -410,7 +422,15 @@ func (s *Server) presetsAmbiguities(ctx context.Context, refs []PresetRef, provi
 	byRule := map[string]RuleProvider{}
 	for _, p := range providers {
 		if m := s.providerProfile(ctx, p); m != nil {
-			byRule[composeProviderRule(rules, p.Name, m)] = providerLabel(p)
+			if key := composeProviderRule(rules, p.Name, m); key != "" {
+				byRule[key] = providerLabel(p)
+			}
+		}
+		initial, _ := providerInitialRules(p.Profile, p.Name)
+		for k, r := range initial {
+			if _, taken := rules[k]; !taken {
+				rules[k], byRule[k] = r, providerLabel(p)
+			}
 		}
 	}
 	if list := findEndpointAmbiguities(rules); len(list) > 0 {

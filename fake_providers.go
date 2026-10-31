@@ -20,8 +20,7 @@ type fakeProviders struct {
 	attached map[string][]string
 	// refresh is the gateway's refresh state (by provider).
 	refresh map[string]RefreshInfo
-	// receipts are the attach/detach and scope changes running sandboxes
-	// apply.
+	// receipts are the attach/detach changes running sandboxes apply.
 	receipts map[string]fakeReceipt
 }
 
@@ -31,20 +30,19 @@ func (d *Fake) seedProviders() {
 	at := time.Now().AddDate(0, 0, -20).UTC()
 	d.prov.list = map[string]ProviderInfo{}
 	d.prov.attached = map[string][]string{}
-	registerScopes(fakeProviderScopes())
 	for _, p := range []ProviderInfo{
 		{Name: "github-personal", Profile: "iwato-github", CreatedAt: at},
-		// With its own profile: the scope fakeProviderScopes gives it.
-		{Name: "github-work", Profile: scopedProfileID(githubProfileID, "github-work"), CreatedAt: at.AddDate(0, 0, 3)},
+		// With its own profile, made before ADR 0022.
+		{Name: "github-work", Profile: legacyProfileID(githubProfileID, "github-work"), Keys: []string{"GITHUB_TOKEN", "GH_TOKEN"}, CreatedAt: at.AddDate(0, 0, 3)},
 		{Name: "claude", Profile: claudeSubscriptionProfileID, CreatedAt: at.AddDate(0, 0, 5)},
-		// Of a type Iwato no longer ships (retiredBases): the gateway keeps its profile.
-		{Name: "claude-token", Profile: scopedProfileID("iwato-claude", "claude-token"), Keys: []string{claudeOAuthCredentialKey}, CreatedAt: at.AddDate(0, 0, 6)},
+		// Of a type Iwato no longer ships: the gateway keeps its profile.
+		{Name: "claude-token", Profile: legacyProfileID("iwato-claude", "claude-token"), Keys: []string{claudeOAuthCredentialKey}, CreatedAt: at.AddDate(0, 0, 6)},
 		{Name: "atlassian-work", Profile: atlassianProfileID, CreatedAt: at.AddDate(0, 0, 8)},
 		{Name: "atlassian-oss", Profile: atlassianProfileID, CreatedAt: at.AddDate(0, 0, 9)},
 		{Name: "huggingface", Profile: "iwato-huggingface", CreatedAt: at.AddDate(0, 0, 10)},
-		{Name: "openrouter", Profile: scopedProfileID("iwato-openrouter", "openrouter"), CreatedAt: at.AddDate(0, 0, 10)},
+		{Name: "openrouter", Profile: "iwato-openrouter", CreatedAt: at.AddDate(0, 0, 10)},
 		{Name: "grok-subscription", Profile: grokSubscriptionProfileID, CreatedAt: at.AddDate(0, 0, 11)},
-		{Name: "runpod", Profile: scopedProfileID("iwato-runpod", "runpod"), CreatedAt: at.AddDate(0, 0, 11)},
+		{Name: "runpod", Profile: "iwato-runpod", CreatedAt: at.AddDate(0, 0, 11)},
 		// Of a profile imported with OpenShell's CLI (not Iwato's).
 		{Name: "openai", Profile: "openai", Keys: []string{"OPENAI_API_KEY"}, CreatedAt: at.AddDate(0, 0, 12)},
 	} {
@@ -191,6 +189,13 @@ func (d *Fake) changeProvider(sandbox, provider string, attach bool) (bool, stri
 		l = append(l, provider)
 	}
 	prev := d.prov.attached[sandbox]
+	if !attach {
+		// As the gateway: not while the policy binds it.
+		revs := d.fakePolicy(sandbox)
+		if slices.Contains(boundProviders(revs[len(revs)-1].rules), provider) {
+			return false, "", fmt.Errorf("provider '%s' is referenced by the sandbox policy credential_binding; remove credential_binding from the sandbox policy endpoint", provider)
+		}
+	}
 	d.prov.attached[sandbox] = l
 	if attach {
 		// As the gateway's attachment preflight: the composed policy may
@@ -284,18 +289,6 @@ func (d *Fake) ProviderProfile(_ context.Context, id string) (*pb.ProviderProfil
 	return m, nil
 }
 
-// fakeProviderScopes are the fake configuration's scopes: github-work
-// writes to one repository, openrouter and runpod are read-only (the
-// others have no scope: they use the shared built-in profiles).
-func fakeProviderScopes() map[string]ProviderScope {
-	return map[string]ProviderScope{
-		"github-work":  {Base: githubProfileID, Mode: scopeRepos, Repos: []string{"mtsmfm/iwato"}},
-		"openrouter":   {Base: "iwato-openrouter", Mode: scopeReadOnly},
-		"runpod":       {Base: "iwato-runpod", Mode: scopeReadOnly},
-		"claude-token": {Base: "iwato-claude", Mode: scopeReadOnly},
-	}
-}
-
 // PutProviderProfile takes the profile as the gateway would (Iwato's
 // registry holds what ProviderProfile returns); a profile with the
 // description "fake: reject" is refused, as the gateway refuses one that
@@ -309,14 +302,15 @@ func (d *Fake) PutProviderProfile(_ context.Context, m *pb.ProviderProfile) erro
 
 func (d *Fake) DeleteProviderProfile(context.Context, string) error { return nil }
 
-// ObserveProvider follows a scope change: applied after fakeApplyDelay.
-func (d *Fake) ObserveProvider(_ context.Context, sandbox, _ string) (string, error) {
+// ObserveProvider follows the provider's current state: applied after
+// fakeApplyDelay.
+func (d *Fake) ObserveProvider(_ context.Context, sandbox, provider string) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.prov.receipts == nil {
 		d.prov.receipts = map[string]fakeReceipt{}
 	}
 	id := "fake-" + randomHex(8)
-	d.prov.receipts[id] = fakeReceipt{at: time.Now(), attach: true}
+	d.prov.receipts[id] = fakeReceipt{at: time.Now(), attach: slices.Contains(d.prov.attached[sandbox], provider)}
 	return id, nil
 }

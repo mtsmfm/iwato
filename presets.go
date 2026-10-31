@@ -32,6 +32,8 @@ import (
 //	id: my-tools             # a-z, 0-9, -; the owner's are "user:ID"
 //	label: 表示名
 //	note: 説明
+//	default: true            # optional: checked in the create form
+//	requires: [tools]        # optional: preset IDs that come with this one
 //	params:                  # optional
 //	  - name: repo           # used as ${repo}
 //	    label: リポジトリ
@@ -70,6 +72,8 @@ type presetDoc struct {
 	ID              string                   `yaml:"id"`
 	Label           string                   `yaml:"label"`
 	Note            string                   `yaml:"note,omitempty"`
+	Default         bool                     `yaml:"default,omitempty"`
+	Requires        []string                 `yaml:"requires,omitempty"`
 	Params          []presetParamDoc         `yaml:"params,omitempty"`
 	NetworkPolicies map[string]presetRuleDoc `yaml:"network_policies"`
 }
@@ -89,19 +93,20 @@ type presetRuleDoc struct {
 
 // networkPreset is one preset, as the lists show it.
 type networkPreset struct {
-	ID     string           `json:"id"`
-	Label  string           `json:"label"`
-	Note   string           `json:"note"`
-	Params []presetParamDoc `json:"params"`
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Note  string `json:"note"`
+	// Default: checked in the create form. Requires: presets that come
+	// with this one.
+	Default  bool             `json:"default,omitempty"`
+	Requires []string         `json:"requires,omitempty"`
+	Params   []presetParamDoc `json:"params"`
 	// Source is builtin or user; File the owner's file name.
 	Source string   `json:"source"`
 	File   string   `json:"file,omitempty"`
 	Hosts  []string `json:"hosts"`
-	// ProviderHosts are endpoints where a provider's credential goes
-	// (ADR 0006: those hosts belong to the providers). An owner's preset
-	// with any is refused; Iwato's packages keeps mise's read-only rules on
-	// GitHub, listed here.
-	ProviderHosts []string `json:"providerHosts"`
+	// Allows is what the rules let through, for the owner to read.
+	Allows []presetAllow `json:"allows"`
 	// rules hold ${NAME} where the parameters go.
 	rules    map[string]v1.NetworkPolicyRule
 	patterns map[string]*regexp.Regexp
@@ -293,7 +298,7 @@ func parsePresetYAML(b []byte, source string) (*networkPreset, error) {
 	if strings.TrimSpace(doc.Label) == "" || len(doc.Label) > 200 || len(doc.Note) > 2000 {
 		return nil, errCodeEn("preset_label_invalid", nil, "label (200 バイトまで) が要ります。note は 2000 バイトまでです", "label is required (up to 200 bytes); note is up to 2000 bytes", nil)
 	}
-	p := &networkPreset{ID: doc.ID, Label: doc.Label, Note: doc.Note, Source: source, Params: []presetParamDoc{}, Hosts: []string{}, ProviderHosts: []string{},
+	p := &networkPreset{ID: doc.ID, Label: doc.Label, Note: doc.Note, Default: doc.Default, Requires: doc.Requires, Source: source, Params: []presetParamDoc{}, Hosts: []string{},
 		rules: map[string]v1.NetworkPolicyRule{}, patterns: map[string]*regexp.Regexp{}}
 	if source == "user" {
 		p.ID = userPresetPrefix + doc.ID
@@ -393,11 +398,10 @@ func parsePresetYAML(b []byte, source string) (*networkPreset, error) {
 	if err != nil {
 		return nil, err
 	}
-	if source == "builtin" {
-		// The owner's are checked in build, Iwato's are only shown.
-		p.ProviderHosts = credentialHits(sampled)
-	} else if err := presetFitsProviders(sampled); err != nil {
-		return nil, err
+	if source == "user" {
+		if err := presetFitsProviders(sampled); err != nil {
+			return nil, err
+		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(p.rules)) {
 		for _, e := range p.rules[key].Endpoints {
@@ -406,7 +410,71 @@ func parsePresetYAML(b []byte, source string) (*networkPreset, error) {
 			}
 		}
 	}
+	p.Allows = presetAllows(p.rules)
 	return p, nil
+}
+
+// presetAllow is one destination of a preset: "host:port" (and the
+// endpoint's path), with the methods and paths its rules allow.
+type presetAllow struct {
+	Target string            `json:"target"`
+	Rules  []presetAllowRule `json:"rules"`
+}
+
+// presetAllowRule is the paths allowed the same methods.
+type presetAllowRule struct {
+	Methods []string `json:"methods"`
+	Paths   []string `json:"paths"`
+}
+
+// presetAllows lists the rules by destination, in host order.
+func presetAllows(rules map[string]v1.NetworkPolicyRule) []presetAllow {
+	byTarget := map[string]map[string][]string{} // target, path, methods
+	for _, r := range rules {
+		for _, e := range r.Endpoints {
+			target := e.Host + ":" + joinPorts(effectivePorts(e)) + e.Path
+			paths := byTarget[target]
+			if paths == nil {
+				paths = map[string][]string{}
+				byTarget[target] = paths
+			}
+			add := func(path string, methods ...string) {
+				for _, m := range methods {
+					if !slices.Contains(paths[path], m) {
+						paths[path] = append(paths[path], m)
+					}
+				}
+			}
+			for _, x := range e.Rules {
+				if x.Allow != nil {
+					add(x.Allow.Path, x.Allow.Method)
+				}
+			}
+			if len(e.Rules) == 0 {
+				methods := accessMethods[accessNames[e.Access]]
+				if methods == nil { // not inspected, or no preset: everything
+					methods = []string{"*"}
+				}
+				add("**", methods...)
+			}
+		}
+	}
+	out := []presetAllow{}
+	for _, target := range slices.Sorted(maps.Keys(byTarget)) {
+		a := presetAllow{Target: target}
+		paths := byTarget[target]
+		for _, path := range slices.Sorted(maps.Keys(paths)) {
+			methods := slices.Sorted(slices.Values(paths[path]))
+			i := slices.IndexFunc(a.Rules, func(r presetAllowRule) bool { return slices.Equal(r.Methods, methods) })
+			if i < 0 {
+				a.Rules = append(a.Rules, presetAllowRule{Methods: methods})
+				i = len(a.Rules) - 1
+			}
+			a.Rules[i].Paths = append(a.Rules[i].Paths, path)
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 func presetParamUnknown(rule, name string) error {
@@ -497,18 +565,11 @@ func (p *networkPreset) build(params map[string]string) (map[string]v1.NetworkPo
 		}
 		out[name] = r
 	}
-	if p.Source == "user" {
-		if hits := credentialHits(out); len(hits) > 0 {
-			return nil, errCodeEn("preset_provider_hosts", map[string]any{"hosts": hits},
-				"プロバイダーの認証情報が届く宛先はプリセットに書けません (プロバイダーで許可します): "+strings.Join(hits, "、"),
-				"A preset cannot name destinations a provider's credential goes to (the provider allows them): "+strings.Join(hits, ", "), nil)
-		}
-	}
 	return out, nil
 }
 
 // presetFitsProviders refuses rules that disagree with each other or with
-// a rule of an Iwato provider (OpenShell's endpoint ambiguity).
+// the initial rules of Iwato's providers (OpenShell's endpoint ambiguity).
 func presetFitsProviders(rules map[string]v1.NetworkPolicyRule) error {
 	if a := findEndpointAmbiguities(rules); len(a) > 0 {
 		return errCodeEn("preset_rules_ambiguous", map[string]any{"detail": a[0].String()},
@@ -516,56 +577,21 @@ func presetFitsProviders(rules map[string]v1.NetworkPolicyRule) error {
 	}
 	providersOnly := map[string]v1.NetworkPolicyRule{}
 	for _, prof := range providerProfiles {
-		composeProviderRule(providersOnly, prof.ID, prof.proto())
+		add, err := providerInitialRules(prof.ID, "p")
+		if err != nil {
+			return err
+		}
+		for k, r := range add {
+			providersOnly[prof.ID+"/"+k] = r
+		}
 	}
-	if a := newAmbiguities(providersOnly, withProviderRules(rules, providersOnly)); len(a) > 0 {
+	all := cloneRules(providersOnly)
+	maps.Copy(all, rules)
+	if a := newAmbiguities(providersOnly, all); len(a) > 0 {
 		return errCodeEn("preset_provider_ambiguous", map[string]any{"detail": a[0].String()},
 			"プロバイダーの規則と検査のしかたが食い違います: "+a[0].String(), "The rules disagree with a provider's on how to inspect: "+a[0].String(), nil)
 	}
 	return nil
-}
-
-// credentialHits are the endpoints of rules where an Iwato provider's
-// credential goes: the host and port of its credentialed endpoint, the
-// endpoint's path overlapping its path, and (when the endpoint lists
-// requests) a request's path too. As "host:port (provider)".
-func credentialHits(rules map[string]v1.NetworkPolicyRule) []string {
-	var scopes []credScope
-	// Every profile's: the built-in ones, the scoped providers' own and the
-	// custom ones (providers_scope.go).
-	for _, prof := range allProfiles() {
-		scopes = append(scopes, providerScopes(prof.ID, prof.ID)...)
-	}
-	var out []string
-	for _, name := range slices.Sorted(maps.Keys(rules)) {
-		for _, e := range rules[name].Endpoints {
-			for _, sc := range scopes {
-				if !credentialReaches(e, sc) {
-					continue
-				}
-				hit := fmt.Sprintf("%s:%d (%s)", e.Host, sc.Port, sc.Label)
-				if !slices.Contains(out, hit) {
-					out = append(out, hit)
-				}
-			}
-		}
-	}
-	return out
-}
-
-// credentialReaches says whether the endpoint reaches the provider's
-// credentialed endpoint sc: host and port, the endpoint's path overlapping
-// sc's, and (when the endpoint lists requests) a request's path too.
-func credentialReaches(e v1.PolicyNetworkEndpoint, sc credScope) bool {
-	if !hostPatternsOverlap(e.Host, sc.Host) || !slices.Contains(effectivePorts(e), sc.Port) || !pathPatternsOverlap(e.Path, sc.Path) {
-		return false
-	}
-	// The requests narrow it only when enforced (an audited endpoint lets
-	// every request through).
-	return normalizedEnforcement(e.Enforcement) != int32(v1.NetworkEnforcementModeEnforce) ||
-		e.Access != v1.NetworkAccessPresetUnspecified || len(e.Rules) == 0 || slices.ContainsFunc(e.Rules, func(r v1.L7Rule) bool {
-		return r.Allow == nil || pathPatternsOverlap(r.Allow.Path, sc.Path)
-	})
 }
 
 // presetList is Iwato's presets, then the owner's.
@@ -648,8 +674,25 @@ func presetRules(refs []PresetRef) map[string]v1.NetworkPolicyRule {
 	return out
 }
 
+// withRequiredPresets is refs and the presets they require.
+func withRequiredPresets(refs []PresetRef) []PresetRef {
+	out := slices.Clone(refs)
+	for i := 0; i < len(out); i++ {
+		p := findPreset(out[i].ID)
+		if p == nil {
+			continue
+		}
+		for _, id := range p.Requires {
+			if r := (PresetRef{ID: id}); !slices.ContainsFunc(out, r.same) {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}
+
 // presetView is what GET /api/presets answers: the presets, the owner's
-// files that could not be read, and the owner's folder.
+// files that could not be read and the owner's folder.
 type presetView struct {
 	Presets []networkPreset   `json:"presets"`
 	Errors  []presetFileError `json:"errors"`

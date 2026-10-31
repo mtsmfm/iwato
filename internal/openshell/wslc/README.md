@@ -2,7 +2,7 @@
 
 An external [OpenShell](https://github.com/NVIDIA/OpenShell) compute driver
 that runs sandboxes as WSLc containers through `wslc.exe`, targeting
-OpenShell v0.1.5. It ports the contract of OpenShell's Docker driver:
+OpenShell v0.1.6. It ports the contract of OpenShell's Docker driver:
 
 - the workload container runs `openshell-sandbox launch-capability-free`
   as `0:0` with `--network none` (WSLc cannot drop capabilities at create;
@@ -67,7 +67,7 @@ argument definitions and what WSL 3.0.1 did: refused options and
 `--network host`, `stop --time`, exit codes, logs on stderr, exec as the
 container's user, images only once pulled). It cannot reproduce mounts,
 network isolation or a first process that is PID 1: on WSLc the v0.1.2
-sandbox does not exit after SIGTERM (v0.1.5 keeps the code that hangs), which
+sandbox does not exit after SIGTERM (v0.1.6 keeps the code that hangs), which
 the e2e does not show.
 
 GPUs: a `resources.gpu` request (no count, or 1) becomes `--gpus all`, the
@@ -84,5 +84,5 @@ cap on the tmpfs, not an allocation.
 Not supported: PID limits and resource admission. WSLc has no `--cap-drop` or no-new-privileges, so the workload
 relies on `launch-capability-free` dropping them.
 
-Regenerate `../computev1` and `../extensionv1` from `../proto` (OpenShell v0.1.5; the other protos come from its Go SDK, so mapped with `M` options) with protoc
+Regenerate `../computev1` and `../extensionv1` from `../proto` (OpenShell v0.1.6; the other protos come from its Go SDK, so mapped with `M` options) with protoc
 29.6, protoc-gen-go 1.36.11 and protoc-gen-go-grpc 1.6.2.

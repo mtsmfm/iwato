@@ -89,7 +89,7 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gp := got.GetProfile(); len(gp.GetEndpoints()) != 4 || len(gp.GetEndpoints()[2].GetRules()) != 4 || gp.GetEndpoints()[1].GetPath() != "/graphql" || len(gp.GetBinaries()) != 4 {
+	if gp := got.GetProfile(); len(gp.GetEndpoints()) != 0 || gp.GetAnnotations()[credentialHostsKey] != "api.github.com:443,github.com:443,uploads.github.com:443" || len(gp.GetBinaries()) != 4 {
 		t.Fatalf("the gateway's iwato-github lost detail: %v", gp)
 	}
 	// The gateway holds what the YAML files say, and renders back to them.
@@ -99,7 +99,8 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		held := proto.Clone(got.GetProfile()).(*pb.ProviderProfile)
-		held.ResourceVersion, held.Annotations, held.Source, held.Scope = 0, nil, "", ""
+		held.ResourceVersion, held.Source, held.Scope = 0, "", ""
+		delete(held.Annotations, profileHashKey)
 		if !proto.Equal(held, p.proto()) {
 			t.Fatalf("the gateway's %s differs from its YAML:\n%v\n%v", p.ID, prototext.Format(held), prototext.Format(p.proto()))
 		}
@@ -193,7 +194,7 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 		t.Fatalf("attached: %v %v", attached, err)
 	}
 	// The policy tab shows the effective policy (GetSandboxConfig): the
-	// provider's rule, which no revision holds, under OpenShell's name.
+	// provider's initial rule, from the first policy, bound to it (ADR 0022).
 	providerRule := func(name string) *PolicyRuleView {
 		t.Helper()
 		v, err := o.Proposals(ctx, w)
@@ -207,11 +208,18 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 		}
 		return nil
 	}
-	if r := providerRule("_provider_github_e2e"); r == nil || r.Source != "provider" || !slices.Contains(r.Binaries, "/usr/bin/gh") || len(r.Chunks) != 0 {
-		t.Fatalf("the effective policy lacks the provider's rule: %+v", r)
+	if r := providerRule("provider_github_e2e"); r == nil || r.Source == "provider" || len(r.Endpoints) != 4 || r.Endpoints[0].Credential != "github-e2e" {
+		t.Fatalf("the effective policy lacks the provider's initial rule: %+v", r)
 	}
-	if rules, err := o.revisionRules(ctx, w); err != nil || rules["_provider_github_e2e"].Name != "" {
-		t.Fatalf("a revision holds the provider's rule: %v", err)
+	// OpenShell composes an endpointless profile's rule without
+	// endpoints; the view leaves it out.
+	if providerRule("_provider_github_e2e") != nil {
+		t.Fatal("the view shows an endpointless profile's rule")
+	}
+	if cfg, err := o.effectivePolicy(ctx, w); err != nil || cfg.Policy == nil {
+		t.Fatal("effective policy:", err)
+	} else if r, ok := cfg.Policy.NetworkPolicies["_provider_github_e2e"]; ok && len(r.Endpoints) != 0 {
+		t.Fatalf("an endpointless profile's rule has endpoints: %+v", r)
 	}
 	// UndoDraftChunk reaches the gateway (no chunk can be made here: see
 	// TestOpenShellE2E); an unknown one is refused, nothing changes.
@@ -255,19 +263,39 @@ func TestOpenShellProvidersE2E(t *testing.T) {
 	if took := time.Since(start); took > 5*time.Second {
 		t.Fatal("attach waited for the sandbox:", took)
 	}
-	if state, _, _ := o.ProviderReadiness(ctx, w.Name, "claude-e2e", receipt); state != "pending" && state != "persisted" && state != "ready" {
+	// Endpointless: until the policy binds it, OpenShell withholds the
+	// credential. Iwato commits the initial rules next and follows a new
+	// observation (handleSandboxProviders), as here.
+	if state, _, _ := o.ProviderReadiness(ctx, w.Name, "claude-e2e", receipt); state != "pending" && state != "persisted" && state != "withheld" {
 		t.Fatal("readiness right after attaching:", state)
+	}
+	initial, err := providerInitialRules(claudeSubscriptionProfileID, "claude-e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.AddProviderRules(ctx, w, "claude-e2e", initial); err != nil {
+		t.Fatal("the provider's rules:", err)
+	}
+	if receipt, err = o.ObserveProvider(ctx, w.Name, "claude-e2e"); err != nil || receipt == "" {
+		t.Fatal("observe:", receipt, err)
 	}
 	applied("claude-e2e", receipt, "ready")
 	// New processes get it.
 	if out := env(); !placeholder(out, "CLAUDE", "CLAUDE_CODE_OAUTH_TOKEN") || strings.Contains(out, "SECRET") {
 		t.Fatalf("after attaching:\n%s", out)
 	}
-	if providerRule("_provider_claude_e2e") == nil {
-		t.Fatal("the attached provider's rule is not in the effective policy")
+	if providerRule("_provider_claude_e2e") != nil {
+		t.Fatal("the view shows an endpointless profile's rule")
 	}
 	if err := o.DeleteProvider(ctx, "claude-e2e"); err == nil {
 		t.Fatal("OpenShell deleted an attached provider")
+	}
+	// OpenShell refuses detaching it while the policy binds it.
+	if _, _, err := o.DetachProvider(ctx, w.Name, "claude-e2e"); err == nil {
+		t.Fatal("OpenShell detached a provider the policy binds")
+	}
+	if _, err := o.RemoveProvider(ctx, w, "claude-e2e"); err != nil {
+		t.Fatal("the provider's rules out:", err)
 	}
 	ok, receipt, err = o.DetachProvider(ctx, w.Name, "claude-e2e")
 	if !ok || receipt == "" || err != nil {

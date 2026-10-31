@@ -370,7 +370,7 @@ func (s *Server) applyCarried(ctx context.Context, name string, fresh bool) ([]C
 			failed = append(failed, f)
 			continue
 		}
-		if err := rt.ApplyPolicyOps(ctx, sb, step.Ops); err != nil {
+		if err := rt.ApplyPolicyOps(withPolicyNote(ctx, "recreate", "Carry rule "+step.Rule+" over the recreate"), sb, step.Ops); err != nil {
 			if ctx.Err() != nil {
 				return failed, ctx.Err()
 			}

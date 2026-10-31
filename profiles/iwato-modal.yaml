@@ -1,6 +1,6 @@
 # Iwato's Modal profile: the control plane the `modal` CLI and Python client
 # use, gRPC (grpclib) over HTTP/2 only. It works only with Iwato's patched
-# supervisor (internal/openshell/gateway/h2-l7.patch), which offers h2 to
+# supervisor (internal/openshell/gateway/openshell.patch), which offers h2 to
 # these endpoints alone (OPENSHELL_HTTP2_ENDPOINTS in the gateway's
 # Dockerfile). Iwato imports it into the gateway (platform scope) when it
 # prepares OpenShell. Lint it with:
@@ -45,11 +45,18 @@
 # Verified:          from modal-labs/modal-client (main, 890fea5ff81c,
 #                    2026-10-23) and vmagamedov/grpclib 0.4.9, via GitHub.
 #                    Not verified against Modal's servers.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-modal.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-modal
 display_name: Modal (Iwato)
 description: Modal control plane (gRPC over HTTP/2) for Iwato's sandbox image
 category: other
+annotations:
+  iwato/credential-hosts: "api.modal.com:443,api.modal2.com:443"
 credentials:
   - name: token_id
     description: Modal token ID
@@ -65,21 +72,6 @@ credentials:
     header_name: x-modal-token-secret
 discovery:
   credentials: [token_id, token_secret]
-endpoints:
-  - host: api.modal.com
-    port: 443
-    path: /modal.client.ModalClient/**
-    protocol: rest
-    enforcement: enforce
-    rules:
-      - allow: { method: POST, path: "/modal.client.ModalClient/*" }
-  - host: api.modal2.com
-    port: 443
-    path: /modal.client.ModalClient/**
-    protocol: rest
-    enforcement: enforce
-    rules:
-      - allow: { method: POST, path: "/modal.client.ModalClient/*" }
 binaries:
   - /usr/bin/python3*
   - /home/dev/.local/share/mise/installs/python/*/bin/python3*

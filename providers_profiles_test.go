@@ -8,8 +8,30 @@ import (
 	"strings"
 	"testing"
 
-	sb "github.com/NVIDIA/OpenShell/sdk/go/proto/sandboxv1"
+	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 )
+
+// initialEndpoints are the endpoints of the profile's initial rule
+// (presets/providers), each bound to the provider.
+func initialEndpoints(t *testing.T, id string) []v1.PolicyNetworkEndpoint {
+	t.Helper()
+	rules, err := providerInitialRules(id, "p")
+	if err != nil || len(rules) != 1 {
+		t.Fatal(id, rules, err)
+	}
+	for _, r := range rules {
+		if len(r.Binaries) != 1 || r.Binaries[0].Path != "/**" {
+			t.Errorf("%s: %v", id, r.Binaries)
+		}
+		for _, e := range r.Endpoints {
+			if e.CredentialBinding == nil || e.CredentialBinding.Provider != "p" {
+				t.Errorf("%s: %s not bound", id, e.Host)
+			}
+		}
+		return r.Endpoints
+	}
+	return nil
+}
 
 func mustProfile(t *testing.T, id string) providerProfile {
 	t.Helper()
@@ -28,7 +50,7 @@ func TestHTTP2EndpointsAreModals(t *testing.T) {
 	}
 	got := regexp.MustCompile(`OPENSHELL_HTTP2_ENDPOINTS=(\S+)`).FindAllSubmatch(b, -1)
 	var want []string
-	for _, e := range mustProfile(t, "iwato-modal").proto().Endpoints {
+	for _, e := range initialEndpoints(t, "iwato-modal") {
 		want = append(want, fmt.Sprintf("%s:%d", e.Host, e.Port))
 	}
 	if len(got) != 1 || string(got[0][1]) != strings.Join(want, ",") {
@@ -38,8 +60,9 @@ func TestHTTP2EndpointsAreModals(t *testing.T) {
 
 // The page's metadata agrees with the YAML: the note names every variable
 // the sandbox gets, the groups come in profileGroups' order, and every
-// credentialed endpoint is inspected (OpenShell refuses the rest, and
-// Iwato never sets allow_uninspected_credentials).
+// endpoint of the initial rules is inspected (OpenShell binds no other,
+// and Iwato never sets allow_uninspected_credentials) and on one of the
+// credential's hosts.
 func TestProfileMetadata(t *testing.T) {
 	files, err := profileFiles.ReadDir("profiles")
 	if err != nil || len(files) != len(providerProfiles) {
@@ -57,7 +80,7 @@ func TestProfileMetadata(t *testing.T) {
 			t.Errorf("%s: group %q out of order", p.ID, p.Group)
 		}
 		last = g
-		if p.Label == "" || p.Note == "" || p.DefaultName == "" || !p.Scoped {
+		if p.Label == "" || p.Note == "" || p.DefaultName == "" || len(p.CredentialHosts) == 0 {
 			t.Errorf("%s: %+v", p.ID, p)
 		}
 		m := p.proto()
@@ -71,16 +94,26 @@ func TestProfileMetadata(t *testing.T) {
 				}
 			}
 		}
-		if len(m.Credentials) == 0 {
-			continue
-		}
-		for _, e := range m.Endpoints {
-			if e.Protocol == "" || e.Protocol == "tcp" || e.Tls == sb.NetworkTlsMode_NETWORK_TLS_MODE_SKIP || e.AllowUninspectedCredentials {
+		var hosts []string
+		for _, e := range initialEndpoints(t, p.ID) {
+			if !bindable(e) {
 				t.Errorf("%s: %s%s is not inspected", p.ID, e.Host, e.Path)
 			}
-			if e.Enforcement != sb.NetworkEnforcementMode_NETWORK_ENFORCEMENT_MODE_ENFORCE {
+			if e.Enforcement != v1.NetworkEnforcementModeEnforce {
 				t.Errorf("%s: %s%s is not enforced", p.ID, e.Host, e.Path)
 			}
+			if e.Path == "" {
+				t.Errorf("%s: %s has no path (equal specificity with rules without one)", p.ID, e.Host)
+			}
+			if !credentialHost(p, e) {
+				t.Errorf("%s: %s is not one of its credential hosts", p.ID, e.Host)
+			}
+			if hp := fmt.Sprintf("%s:%d", e.Host, e.Port); !slices.Contains(hosts, hp) {
+				hosts = append(hosts, hp)
+			}
+		}
+		if !slices.Equal(hosts, p.CredentialHosts) {
+			t.Errorf("%s: credential hosts %v, initial rules on %v", p.ID, p.CredentialHosts, hosts)
 		}
 	}
 }
@@ -97,15 +130,16 @@ func TestServiceProfiles(t *testing.T) {
 		env              []string
 		hosts, binaries  []string
 	}{
+		{"iwato-openai", "bearer", "authorization", []string{"OPENAI_API_KEY"}, []string{"api.openai.com/v1/**"}, append(append(slices.Clone(python), node), "/home/dev/.local/share/mise/installs/codex/*/bin/codex")},
 		{"iwato-openrouter", "bearer", "authorization", []string{"OPENROUTER_API_KEY"}, []string{"openrouter.ai/api/**"}, append(slices.Clone(python), node)},
-		{"iwato-huggingface", "bearer", "authorization", []string{"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"}, []string{"huggingface.co", "hf.co"}, append(append(slices.Clone(python), node), git...)},
-		{"iwato-civitai", "bearer", "authorization", []string{"CIVITAI_API_TOKEN", "CIVITAI_TOKEN"}, []string{"civitai.com/api/**", "orchestration.civitai.com"}, python},
+		{"iwato-huggingface", "bearer", "authorization", []string{"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"}, []string{"huggingface.co/**", "hf.co/**"}, append(append(slices.Clone(python), node), git...)},
+		{"iwato-civitai", "bearer", "authorization", []string{"CIVITAI_API_TOKEN", "CIVITAI_TOKEN"}, []string{"civitai.com/api/**", "orchestration.civitai.com/**"}, python},
 		{"iwato-vastai", "bearer", "authorization", []string{"VAST_API_KEY"}, []string{"console.vast.ai/api/**"}, python},
 		{"iwato-runpod", "bearer", "authorization", []string{"RUNPOD_API_KEY"}, []string{"api.runpod.io/graphql", "api.runpod.io/v2/**", "rest.runpod.io/v1/**", "api.runpod.ai/v2/**", "hapi.runpod.net/v1/**"},
 			append([]string{"/home/dev/.local/share/mise/installs/github-runpod-runpodctl/*/runpodctl", "/usr/local/bin/runpodctl"}, append(slices.Clone(python), node)...)},
 		{"iwato-cloudflare", "bearer", "authorization", []string{"CLOUDFLARE_API_TOKEN"}, []string{"api.cloudflare.com/client/v4/graphql", "api.cloudflare.com/client/v4/**"},
 			[]string{node, "/home/dev/.local/share/mise/installs/cloudflared/*/cloudflared", "/usr/bin/curl"}},
-		{"iwato-comfy-cloud", "header", "x-api-key", []string{"COMFY_CLOUD_API_KEY", "COMFY_API_KEY"}, []string{"cloud.comfy.org/api/**", "cloud.comfy.org/api/prompt", "cloud.comfy.org/ws", "api.comfy.org"}, append(slices.Clone(python), node)},
+		{"iwato-comfy-cloud", "header", "x-api-key", []string{"COMFY_CLOUD_API_KEY", "COMFY_API_KEY"}, []string{"cloud.comfy.org/api/**", "cloud.comfy.org/api/prompt", "cloud.comfy.org/ws", "api.comfy.org/**"}, append(slices.Clone(python), node)},
 	} {
 		p := mustProfile(t, c.id)
 		m := p.proto()
@@ -116,7 +150,7 @@ func TestServiceProfiles(t *testing.T) {
 			t.Errorf("%s: discovery %v", c.id, m.Discovery)
 		}
 		var hosts, bins []string
-		for _, e := range m.Endpoints {
+		for _, e := range initialEndpoints(t, c.id) {
 			hosts = append(hosts, e.Host+e.Path)
 			if e.Port != 443 {
 				t.Errorf("%s: %s port %d", c.id, e.Host, e.Port)
@@ -135,7 +169,7 @@ func TestServiceProfiles(t *testing.T) {
 
 	// Download hosts get no key: they are not in the profiles.
 	for _, id := range []string{"iwato-huggingface", "iwato-civitai", "iwato-comfy-cloud"} {
-		for _, e := range mustProfile(t, id).proto().Endpoints {
+		for _, e := range initialEndpoints(t, id) {
 			if strings.Contains(e.Host, "*") || strings.HasPrefix(e.Host, "cdn") || strings.Contains(e.Host, "xethub") || strings.Contains(e.Host, "storage") {
 				t.Errorf("%s: download host %s is credentialed", id, e.Host)
 			}
@@ -143,20 +177,20 @@ func TestServiceProfiles(t *testing.T) {
 	}
 
 	// Hugging Face: reads, and only the POSTs that read.
-	for _, r := range mustProfile(t, "iwato-huggingface").proto().Endpoints[0].Rules {
+	for _, r := range initialEndpoints(t, "iwato-huggingface")[0].Rules {
 		if a := r.Allow; a.Method != "GET" && a.Method != "HEAD" && a.Method != "OPTIONS" &&
 			!slices.Contains([]string{"/api/**/paths-info/**", "/**/info/lfs/objects/batch", "/**/git-upload-pack"}, a.Path) {
 			t.Error("huggingface.co allows", a)
 		}
 	}
 	// Civitai: read-only (generation spends Buzz).
-	for _, e := range mustProfile(t, "iwato-civitai").proto().Endpoints {
-		if e.Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_ONLY {
+	for _, e := range initialEndpoints(t, "iwato-civitai") {
+		if e.Access != v1.NetworkAccessPresetReadOnly {
 			t.Error("civitai", e.Host, e.Access)
 		}
 	}
 	// Vast.ai: reads and the offer searches; renting takes a proposal.
-	for _, r := range mustProfile(t, "iwato-vastai").proto().Endpoints[0].Rules {
+	for _, r := range initialEndpoints(t, "iwato-vastai")[0].Rules {
 		if a := r.Allow; a.Method != "GET" && a.Method != "HEAD" && a.Method != "OPTIONS" &&
 			!(a.Method == "PUT" && a.Path == "/api/v0/search/asks/") && !(a.Method == "POST" && a.Path == "/api/v0/bundles/") {
 			t.Error("console.vast.ai allows", a)
@@ -164,20 +198,20 @@ func TestServiceProfiles(t *testing.T) {
 	}
 	// RunPod: reads only (GraphQL queries, REST GET); pods and serverless
 	// runs take a proposal.
-	for _, e := range mustProfile(t, "iwato-runpod").proto().Endpoints {
-		if e.Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_ONLY || len(e.Rules) > 0 || (e.Protocol == "graphql") != (e.Path == "/graphql") {
+	for _, e := range initialEndpoints(t, "iwato-runpod") {
+		if e.Access != v1.NetworkAccessPresetReadOnly || len(e.Rules) > 0 || (e.Protocol == "graphql") != (e.Path == "/graphql") {
 			t.Error("runpod", e.Host+e.Path, e.Protocol, e.Access)
 		}
 	}
 	// Cloudflare: reads and GraphQL queries; deploys take a proposal.
-	for _, e := range mustProfile(t, "iwato-cloudflare").proto().Endpoints {
-		if e.Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_ONLY || len(e.Rules) > 0 || (e.Protocol == "graphql") != strings.HasSuffix(e.Path, "/graphql") {
+	for _, e := range initialEndpoints(t, "iwato-cloudflare") {
+		if e.Access != v1.NetworkAccessPresetReadOnly || len(e.Rules) > 0 || (e.Protocol == "graphql") != strings.HasSuffix(e.Path, "/graphql") {
 			t.Error("cloudflare", e.Host+e.Path, e.Protocol, e.Access)
 		}
 	}
 	// Comfy Cloud: the body is rewritten for /api/prompt only (uploads
 	// over 256 KiB would fail), the WebSocket is the upgrade only.
-	for _, e := range mustProfile(t, "iwato-comfy-cloud").proto().Endpoints {
+	for _, e := range initialEndpoints(t, "iwato-comfy-cloud") {
 		if e.RequestBodyCredentialRewrite != (e.Path == "/api/prompt") {
 			t.Error("comfy body rewrite on", e.Host+e.Path)
 		}
@@ -193,7 +227,7 @@ func TestServiceProfiles(t *testing.T) {
 		t.Error("modal credentials", m.Credentials)
 	}
 	var modalHosts []string
-	for _, e := range m.Endpoints {
+	for _, e := range initialEndpoints(t, "iwato-modal") {
 		modalHosts = append(modalHosts, e.Host)
 		if e.Protocol != "rest" || e.Port != 443 || e.CredentialSigning != "" || e.RequestBodyCredentialRewrite || len(e.Rules) != 1 || e.Rules[0].Allow.Method != "POST" || e.Rules[0].Allow.Path != "/modal.client.ModalClient/*" {
 			t.Error("modal", e.Host, e.Protocol, e.Rules)
@@ -203,7 +237,7 @@ func TestServiceProfiles(t *testing.T) {
 		t.Error("modal hosts", modalHosts)
 	}
 	// OpenRouter: inference is POST.
-	if e := mustProfile(t, "iwato-openrouter").proto(); e.Endpoints[0].Access != sb.NetworkAccessPreset_NETWORK_ACCESS_PRESET_READ_WRITE || !e.InferenceCapable {
-		t.Error("openrouter", e.Endpoints[0].Access)
+	if e := initialEndpoints(t, "iwato-openrouter"); e[0].Access != v1.NetworkAccessPresetReadWrite || !mustProfile(t, "iwato-openrouter").proto().InferenceCapable {
+		t.Error("openrouter", e[0].Access)
 	}
 }

@@ -75,8 +75,8 @@ func (r *staleList) CreateProvider(ctx context.Context, name, profile string, cr
 func TestProviderAPICreatesWithoutAName(t *testing.T) {
 	_, _, do, _ := providerServerCookie(t)
 	l := listProviders(t, do)
-	if l.Profiles[4].DefaultName != "github" || l.Profiles[3].DefaultName != "atlassian" || l.Profiles[7].DefaultName != "comfy-cloud" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" {
-		t.Fatalf("%+v", l.Profiles)
+	if l.Profiles[6].DefaultName != "github" || l.Profiles[5].DefaultName != "atlassian" || l.Profiles[9].DefaultName != "comfy-cloud" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" || l.Profiles[2].DefaultName != "codex-subscription" {
+		t.Fatalf("%d profiles", len(l.Profiles))
 	}
 	for _, want := range []string{"github", "github-2"} {
 		code, body := do("POST", "/api/providers", `{"name":"  ","profile":"iwato-github","values":{"token":"x"}}`)
@@ -86,7 +86,7 @@ func TestProviderAPICreatesWithoutAName(t *testing.T) {
 		if code != 200 || json.Unmarshal([]byte(body), &resp) != nil || resp.Name != want {
 			t.Fatal(code, body, want)
 		}
-		if p, ok := provider(listProviders(t, do), want); !ok || p.Profile != scopedProfileID(githubProfileID, want) {
+		if p, ok := provider(listProviders(t, do), want); !ok || p.Profile != githubProfileID {
 			t.Fatalf("%+v", p)
 		}
 	}
@@ -114,7 +114,7 @@ func TestAtlassianFlowNamesTheProvider(t *testing.T) {
 		if done.Status != "done" || done.Name != want || !strings.HasPrefix(done.Message, want+" として接続しました。") {
 			t.Fatalf("%+v", done)
 		}
-		if p, ok := provider(listProviders(t, o.do), want); !ok || p.Profile != scopedProfileID(atlassianProfileID, want) || p.Base != atlassianProfileID || p.Refresh == nil {
+		if p, ok := provider(listProviders(t, o.do), want); !ok || p.Profile != atlassianProfileID || p.Refresh == nil {
 			t.Fatalf("%+v", p)
 		}
 	}

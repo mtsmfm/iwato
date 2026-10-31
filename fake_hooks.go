@@ -24,6 +24,7 @@ type fakeBackend struct {
 	oauth  func(s *Server, origin string) oauthBackend
 	claude func(s *Server, origin string) claudeBackend
 	xai    func(s *Server, origin string) deviceBackend
+	codex  func(s *Server, origin string) deviceBackend
 }
 
 // fakeRun is serve -fake: its configuration and runtime, and setup, which

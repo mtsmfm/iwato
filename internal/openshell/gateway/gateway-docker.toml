@@ -37,5 +37,5 @@ app_armor_profile   = "Unconfined"
 # The official runtime images, pinned by digest: the same as the WSLc
 # driver's (DefaultSupervisorImage and DefaultSandboxImage in
 # internal/openshell/wslc/driver.go; TestDockerfilePinsOpenShell).
-supervisor_image      = "ghcr.io/nvidia/openshell/supervisor:0.1.5@sha256:fabcd01f656e9d23df4386f82e80b4f48b90f3452d7d5c58889007643a069161"
-sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:0.1.5@sha256:e9adf9ecde328122414ad2ee8c6fc5d5b389e4cf168daf4357c46f5a77d55851"
+supervisor_image      = "ghcr.io/nvidia/openshell/supervisor:0.1.6@sha256:ce859a7d77ee515d3fe0b3c7dc61286516f402eb1d25c761d806d9ae5ed96c0b"
+sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:0.1.6@sha256:1038eb5c1f191fa3c34684fd7041b891c78ec570979d487f36e06e08f91bfb63"

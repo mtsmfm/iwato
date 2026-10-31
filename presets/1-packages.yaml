@@ -1,0 +1,76 @@
+# Iwato's network preset for package registries (ADR 0022), read only (GET,
+# HEAD and OPTIONS, plus the POSTs npm's audit needs). Every program
+# (binaries "/**"): program matching is no boundary (ADR 0022). Every endpoint
+# of Iwato's presets is inspected (rest, enforce), as the providers' are, so
+# attaching a provider later never makes an endpoint ambiguous. HEAD is
+# allowed wherever GET is (OpenShell matches a HEAD against GET rules).
+id: packages
+label: パッケージ
+note: npm・PyPI・RubyGems・crates.io・Go のモジュールを読み取りだけで取得できます。公開やアップロードは通りません
+default: true
+network_policies:
+  # npm install and npm audit send the dependency list by POST to the
+  # advisory endpoints; they only read (without them every install warns).
+  preset_packages_registry_npmjs_org:
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "**" }
+          - allow: { method: HEAD, path: "**" }
+          - allow: { method: OPTIONS, path: "**" }
+          - allow: { method: POST, path: /-/npm/v1/security/advisories/bulk }
+          - allow: { method: POST, path: /-/npm/v1/security/audits/quick }
+          - allow: { method: POST, path: /-/npm/v1/security/audits }
+    binaries: ["/**"]
+  preset_packages_pypi_org:
+    endpoints:
+      - { host: pypi.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_packages_files_pythonhosted_org:
+    endpoints:
+      - { host: files.pythonhosted.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  # cargo search and cargo-binstall (mise's cargo backend) read the API;
+  # publishing and yanking (PUT, DELETE) do not get through.
+  preset_packages_crates_io:
+    endpoints:
+      - { host: crates.io, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_packages_index_crates_io:
+    endpoints:
+      - { host: index.crates.io, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_packages_static_crates_io:
+    endpoints:
+      - { host: static.crates.io, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_packages_proxy_golang_org:
+    endpoints:
+      - { host: proxy.golang.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_packages_sum_golang_org:
+    endpoints:
+      - { host: sum.golang.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  # Shared with agents under one name: two names on one endpoint would be
+  # folded by OpenShell, and could not be taken out again.
+  preset_storage_googleapis_com:
+    endpoints:
+      - host: storage.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/proxy-golang-org-prod/**" }
+    binaries: ["/**"]
+  preset_packages_rubygems_org:
+    endpoints:
+      - { host: rubygems.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  preset_packages_index_rubygems_org:
+    endpoints:
+      - { host: index.rubygems.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]

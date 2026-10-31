@@ -48,9 +48,6 @@ type PolicyRuleView struct {
 	// names it from the attached providers).
 	Provider *RuleProvider `json:"provider,omitempty"`
 	Chunks   []ChunkLink   `json:"chunks,omitempty"`
-	// ProviderHosts are its endpoints where an attached provider's
-	// credential goes (the server marks them: markProviderHosts).
-	ProviderHosts []ProviderHost `json:"providerHosts,omitempty"`
 }
 
 // RuleProvider is the provider behind a _provider_* rule and its profile.
@@ -82,6 +79,11 @@ type EndpointView struct {
 	// Denied are the requests the endpoint denied (and still would), and
 	// the programs its rule refused, from the same log.
 	Denied []ObservedRequest `json:"denied,omitempty"`
+	// Credential is the provider whose credential the endpoint carries
+	// (credential_binding); Offer the attached provider whose credential
+	// is meant for its host and could (offerProvider).
+	Credential string `json:"credential,omitempty"`
+	Offer      string `json:"offer,omitempty"`
 }
 
 var accessNames = map[v1.NetworkAccessPreset]string{v1.NetworkAccessPresetReadOnly: "read-only", v1.NetworkAccessPresetReadWrite: "read-write", v1.NetworkAccessPresetFull: "full"}
@@ -150,6 +152,11 @@ func (o *OpenShell) currentPolicy(ctx context.Context, w Sandbox) (*CurrentPolic
 func policyView(st *v1.PolicyStatusResult, rules map[string]v1.NetworkPolicyRule) *CurrentPolicy {
 	p := &CurrentPolicy{Version: st.Revision.Version, Active: st.ActiveVersion, Loaded: st.ActiveVersion >= st.Revision.Version && st.Revision.Status != v1.PolicyLoadStatusFailed, LoadError: st.Revision.LoadError, Rules: []PolicyRuleView{}}
 	for name, rule := range rules {
+		if isProviderRule(name) && len(rule.Endpoints) == 0 {
+			// An endpointless profile's (OpenShell composes its programs
+			// alone): it allows nothing.
+			continue
+		}
 		r := PolicyRuleView{Name: name, Binaries: []string{}, Endpoints: []EndpointView{}, Source: "hand"}
 		if isProviderRule(name) {
 			r.Source = "provider"
@@ -159,6 +166,9 @@ func policyView(st *v1.PolicyStatusResult, rules map[string]v1.NetworkPolicyRule
 		}
 		for _, e := range rule.Endpoints {
 			ev := EndpointView{Host: e.Host, Ports: endpointPorts(e), Path: e.Path, Inspect: e.Protocol, AllowedIPs: slices.Clone(e.AllowedIPs)}
+			if e.CredentialBinding != nil {
+				ev.Credential = e.CredentialBinding.Provider
+			}
 			if e.Protocol != "" {
 				ev.Enforcement = map[v1.NetworkEnforcementMode]string{v1.NetworkEnforcementModeEnforce: "enforce", v1.NetworkEnforcementModeAudit: "audit"}[e.Enforcement]
 				if ev.Enforcement == "" {
@@ -232,8 +242,8 @@ func endpointPorts(e v1.PolicyNetworkEndpoint) []uint32 {
 }
 
 // PolicyEdit is one change to a sandbox's network policy, made as
-// `openshell policy update` makes it: merge operations that the gateway
-// applies to its latest revision. Op is
+// `openshell policy update` makes it: merge operations, which Iwato
+// applies to the policy it keeps (applyOps). Op is
 //
 //   - "add": an endpoint for Binaries (or any binary) into rule Rule
 //     (allow_HOST_PORT when empty, as the CLI names it); an existing rule
@@ -261,9 +271,6 @@ type PolicyEdit struct {
 	// Keep (enforce) keeps the endpoint's access and rules: it only
 	// switches it from audit to enforce.
 	Keep bool `json:"keep,omitempty"`
-	// Confirm is the token of the owner's confirmation that providers'
-	// credentials go with the rule (askProviderHosts).
-	Confirm string `json:"confirm,omitempty"`
 }
 
 var (
@@ -371,8 +378,11 @@ func generatedRuleName(host string, port uint32) string {
 }
 
 // operations turns the edit into merge operations on rules, the network
-// policy it was made against.
-func (e PolicyEdit) operations(rules map[string]v1.NetworkPolicyRule) ([]v1.PolicyMergeOperation, error) {
+// policy it was made against. An added endpoint inherits as an approval's
+// does (inheritShadowed against composed, rules with the providers'
+// rules): an inspected one gets the path /** where an endpoint with /**
+// would shadow it, and the binding of an endpoint as specific.
+func (e PolicyEdit) operations(rules, composed map[string]v1.NetworkPolicyRule) ([]v1.PolicyMergeOperation, error) {
 	name := e.Rule
 	if e.Op == "add" && name == "" {
 		name = generatedRuleName(e.Host, e.Ports[0])
@@ -477,7 +487,8 @@ func (e PolicyEdit) operations(rules map[string]v1.NetworkPolicyRule) ([]v1.Poli
 			endpoint.Rules = append(endpoint.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: r.Method, Path: r.Path}})
 		}
 	}
-	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: v1.NetworkPolicyRule{Name: name, Binaries: binaries, Endpoints: []v1.PolicyNetworkEndpoint{endpoint}}}}}, nil
+	plan := inheritShadowed(v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{endpoint}}, composed, nil)
+	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: v1.NetworkPolicyRule{Name: name, Binaries: binaries, Endpoints: plan.Endpoints}}}}, nil
 }
 
 // PolicyChange is a revision that an approval or an edit in Iwato made,
@@ -525,7 +536,13 @@ func (o *OpenShell) EditPolicy(ctx context.Context, w Sandbox, edit PolicyEdit) 
 	if st.Revision.Policy != nil {
 		rules = st.Revision.Policy.NetworkPolicies
 	}
-	ops, err := edit.operations(rules)
+	var composed map[string]v1.NetworkPolicyRule
+	if edit.Op == "add" {
+		if composed, err = o.withProviders(ctx, w, rules); err != nil {
+			return PolicyChange{}, err
+		}
+	}
+	ops, err := edit.operations(rules, composed)
 	if err != nil {
 		return PolicyChange{}, err
 	}

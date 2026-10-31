@@ -18,18 +18,25 @@
 #                    /api/v0/search/asks/ and POST /api/v0/bundles/ (`vastai
 #                    search offers`). Renting, changing and destroying
 #                    instances spend money or lose data, so they take a policy
-#                    proposal (approving one widens the provider's scope:
-#                    ADR 0006, 0014). A key with
+#                    proposal (approving one can attach the provider's credential:
+#                    ADR 0022). A key with
 #                    restricted permissions (`vastai create api-key
 #                    --permission_file`) narrows it further.
 #                    cloud.vast.ai (the web console) and run.vast.ai (serverless,
 #                    which takes the key in a JSON body) are not listed.
 # Verified:          from vast-ai/vast-cli's vast.py (master, via GitHub).
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-vastai.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-vastai
 display_name: Vast.ai (Iwato)
 description: Vast.ai console API for Iwato's sandbox image
 category: other
+annotations:
+  iwato/credential-hosts: "console.vast.ai:443"
 credentials:
   - name: api_key
     description: Vast.ai API key
@@ -39,18 +46,6 @@ credentials:
     header_name: authorization
 discovery:
   credentials: [api_key]
-endpoints:
-  - host: console.vast.ai
-    port: 443
-    path: /api/**
-    protocol: rest
-    enforcement: enforce
-    rules:
-      - allow: { method: GET, path: "/api/**" }
-      - allow: { method: HEAD, path: "/api/**" }
-      - allow: { method: OPTIONS, path: "/api/**" }
-      - allow: { method: PUT, path: /api/v0/search/asks/ }
-      - allow: { method: POST, path: /api/v0/bundles/ }
 binaries:
   - /usr/bin/curl
   - /usr/bin/wget

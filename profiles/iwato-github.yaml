@@ -10,16 +10,23 @@
 # Client binaries:   gh, git (git runs git-remote-https for HTTPS remotes).
 # Reference layout:  Ubuntu's git and gh packages under /usr.
 # Credential scope:  GITHUB_TOKEN and GH_TOKEN, sent as a bearer
-#                    authorization header to the endpoints below only.
+#                    authorization header to the bound endpoints only.
 # Endpoint access:   the API read-only; github.com clone and fetch only.
 #                    Writes and push (git-receive-pack) take a policy
-#                    proposal; approving one widens the provider's scope
-#                    (ADR 0006, 0014).
+#                    proposal; approving one can attach the provider's credential
+#                    (ADR 0022).
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-github.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-github
 display_name: GitHub (Iwato)
 description: GitHub API and Git over HTTPS for Iwato's sandbox image
 category: source_control
+annotations:
+  iwato/credential-hosts: "api.github.com:443,github.com:443,uploads.github.com:443"
 credentials:
   - name: token
     description: GitHub token
@@ -27,37 +34,6 @@ credentials:
     required: true
     auth_style: bearer
     header_name: authorization
-endpoints:
-  # REST and GraphQL read-only: writes take a policy proposal, which widens
-  # the provider's scope when approved.
-  - host: api.github.com
-    port: 443
-    protocol: rest
-    access: read-only
-    enforcement: enforce
-  - host: api.github.com
-    port: 443
-    path: /graphql
-    protocol: graphql
-    access: read-only
-    enforcement: enforce
-  # git over HTTPS: clone and fetch (git-upload-pack); push
-  # (git-receive-pack) takes a policy proposal, which widens the provider's
-  # scope when approved.
-  - host: github.com
-    port: 443
-    protocol: rest
-    enforcement: enforce
-    rules:
-      - allow: { method: GET, path: "**" }
-      - allow: { method: HEAD, path: "**" }
-      - allow: { method: OPTIONS, path: "**" }
-      - allow: { method: POST, path: "/**/git-upload-pack" }
-  - host: uploads.github.com
-    port: 443
-    protocol: rest
-    access: read-only
-    enforcement: enforce
 binaries:
   - /usr/bin/gh
   - /usr/bin/git

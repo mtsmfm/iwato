@@ -33,14 +33,14 @@ import (
 	"iwato/internal/openshell/wslc"
 )
 
-//go:embed Dockerfile entrypoint.sh gateway.toml gateway-docker.toml h2-l7.patch
+//go:embed Dockerfile entrypoint.sh gateway.toml gateway-docker.toml openshell.patch
 var buildContext embed.FS
 
 // contextFiles are the image's build context.
-var contextFiles = []string{"Dockerfile", "entrypoint.sh", "gateway.toml", "gateway-docker.toml", "h2-l7.patch"}
+var contextFiles = []string{"Dockerfile", "entrypoint.sh", "gateway.toml", "gateway-docker.toml", "openshell.patch"}
 
 // PatchedSupervisor: the image's supervisor is built from source with
-// h2-l7.patch (the Dockerfile's OPENSHELL_PATCH), and the gateway image,
+// openshell.patch (the Dockerfile's OPENSHELL_PATCH), and the gateway image,
 // which carries it at /openshell-supervisor, is the sandboxes' supervisor
 // image (ImageRef) in place of the release's.
 const PatchedSupervisor = true

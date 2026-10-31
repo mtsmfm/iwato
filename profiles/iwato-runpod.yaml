@@ -45,8 +45,8 @@
 #                    templates and volumes (POST, PATCH, PUT, DELETE) take a
 #                    policy proposal, and so do serverless runs (POST
 #                    /v2/ID/run, /runsync), which cost money. Health and job
-#                    status (GET) are allowed. Approving a proposal widens the
-#                    provider's scope (ADR 0006, 0014).
+#                    status (GET) are allowed. Approving a proposal can attach the
+#                    provider's credential (ADR 0022).
 #                    Not listed: load-balanced serverless endpoints
 #                    (ID.api.runpod.ai, runpod-python apps/targets.py), pods'
 #                    proxy (ID-PORT.proxy.runpod.net, which takes the pod's own
@@ -55,11 +55,18 @@
 #                    runpod/runpod-python (main, 4473f30acc31, 2026-10-16) and
 #                    runpod/js-sdk (main), via GitHub; runpodctl's mise path by
 #                    installing github:runpod/runpodctl 3.0.1.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-runpod.yaml; iwato/credential-hosts names the
+#                    hosts the credential is meant for.
 
 id: iwato-runpod
 display_name: RunPod (Iwato)
 description: RunPod API (GraphQL, REST and serverless) for Iwato's sandbox image
 category: other
+annotations:
+  iwato/credential-hosts: "api.runpod.io:443,rest.runpod.io:443,api.runpod.ai:443,hapi.runpod.net:443"
 credentials:
   - name: api_key
     description: RunPod API key
@@ -69,37 +76,6 @@ credentials:
     header_name: authorization
 discovery:
   credentials: [api_key]
-endpoints:
-  - host: api.runpod.io
-    port: 443
-    path: /graphql
-    protocol: graphql
-    access: read-only
-    enforcement: enforce
-  - host: api.runpod.io
-    port: 443
-    path: /v2/**
-    protocol: rest
-    access: read-only
-    enforcement: enforce
-  - host: rest.runpod.io
-    port: 443
-    path: /v1/**
-    protocol: rest
-    access: read-only
-    enforcement: enforce
-  - host: api.runpod.ai
-    port: 443
-    path: /v2/**
-    protocol: rest
-    access: read-only
-    enforcement: enforce
-  - host: hapi.runpod.net
-    port: 443
-    path: /v1/**
-    protocol: rest
-    access: read-only
-    enforcement: enforce
 binaries:
   - /home/dev/.local/share/mise/installs/github-runpod-runpodctl/*/runpodctl
   - /usr/local/bin/runpodctl

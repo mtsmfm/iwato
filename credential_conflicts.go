@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -16,7 +15,8 @@ import (
 
 // OpenShell (v0.1.4) puts a provider's credentials only into traffic it
 // inspects. A sandbox policy endpoint that matches an attached provider's
-// credentialed endpoint (host and port overlap, and the provider's path
+// credentialed endpoint (a profile's endpoint, or a policy endpoint bound
+// to the provider: boundScopes) (host and port overlap, and the provider's path
 // covers the endpoint's) without L7 inspection (no protocol: "L4-only";
 // or tls: skip) and without allow_uninspected_credentials makes the
 // gateway refuse the sandbox's effective policy
@@ -31,8 +31,7 @@ import (
 // that would create such an endpoint while the provider is attached. It
 // never sets allow_uninspected_credentials.
 
-// credScope is one credentialed endpoint of a provider (from Iwato's
-// profiles).
+// credScope is one credentialed endpoint of a provider.
 type credScope struct {
 	Provider, Label, Host, Path string
 	Port                        uint32
@@ -244,25 +243,38 @@ func (s *Server) attachedScopes(ctx context.Context, sb Sandbox) ([]credScope, e
 			scopes = append(scopes, providerScopes(p.Name, p.Profile)...)
 		}
 	}
+	if rr, ok := s.rt.(policyRulesRuntime); ok {
+		rules, err := rr.PolicyRules(ctx, sb)
+		if err != nil {
+			return nil, err
+		}
+		scopes = append(scopes, boundScopes(rules, list)...)
+	}
 	return scopes, nil
 }
 
-// beyondScopeForAttach are the latest policy's endpoints that would carry
-// the provider's credential beyond its own rule.
-func (s *Server) beyondScopeForAttach(ctx context.Context, sb Sandbox, provider ProviderInfo) ([]BeyondScope, error) {
-	rt, ok := s.rt.(policyRulesRuntime)
-	if !ok {
-		return nil, nil
+// boundScopes are the credentialed endpoints the policy's bindings make
+// (OpenShell: extend_credentialed_scopes_from_policy_bindings).
+func boundScopes(rules map[string]v1.NetworkPolicyRule, list []ProviderInfo) []credScope {
+	var out []credScope
+	for _, name := range slices.Sorted(maps.Keys(rules)) {
+		for _, e := range rules[name].Endpoints {
+			if e.CredentialBinding == nil {
+				continue
+			}
+			sc := credScope{Provider: e.CredentialBinding.Provider, Label: e.CredentialBinding.Provider, Host: strings.ToLower(e.Host), Path: e.Path}
+			if i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == sc.Provider }); i >= 0 {
+				if prof, ok := profileByID(list[i].Profile); ok {
+					sc.Label, sc.Profile = prof.Label, prof.ID
+				}
+			}
+			for _, port := range effectivePorts(e) {
+				sc.Port = port
+				out = append(out, sc)
+			}
+		}
 	}
-	m := s.providerProfile(ctx, provider)
-	if m == nil || len(m.Credentials) == 0 {
-		return nil, nil
-	}
-	rules, err := rt.PolicyRules(ctx, sb)
-	if err != nil {
-		return nil, err
-	}
-	return beyondScope(rules, provider.Name, m), nil
+	return out
 }
 
 // conflictsForAttach are the latest policy's endpoints that would conflict
@@ -273,6 +285,11 @@ func (s *Server) conflictsForAttach(ctx context.Context, sb Sandbox, provider Pr
 		return nil, nil
 	}
 	scopes := providerScopes(provider.Name, provider.Profile)
+	initial, err := providerInitialRules(provider.Profile, provider.Name)
+	if err != nil {
+		return nil, err
+	}
+	scopes = append(scopes, boundScopes(initial, []ProviderInfo{provider})...)
 	if len(scopes) == 0 {
 		return nil, nil
 	}
@@ -281,144 +298,4 @@ func (s *Server) conflictsForAttach(ctx context.Context, sb Sandbox, provider Pr
 		return nil, err
 	}
 	return credentialConflicts(rules, scopes), nil
-}
-
-// accessAllows are the requests an access preset stands for (OpenShell's
-// supervisor l7/mod.rs access_preset_rules).
-func accessAllows(protocol string, access v1.NetworkAccessPreset) []v1.L7Allow {
-	rest := func(methods ...string) []v1.L7Allow {
-		var out []v1.L7Allow
-		for _, m := range methods {
-			out = append(out, v1.L7Allow{Method: m, Path: "**"})
-		}
-		return out
-	}
-	gql := func(ops ...string) []v1.L7Allow {
-		var out []v1.L7Allow
-		for _, o := range ops {
-			out = append(out, v1.L7Allow{OperationType: o})
-		}
-		return out
-	}
-	switch p := strings.ToLower(strings.TrimSpace(protocol)); {
-	case p == "graphql":
-		return map[v1.NetworkAccessPreset][]v1.L7Allow{v1.NetworkAccessPresetReadOnly: gql("query"), v1.NetworkAccessPresetReadWrite: gql("query", "mutation"), v1.NetworkAccessPresetFull: gql("*")}[access]
-	case p == "websocket":
-		return map[v1.NetworkAccessPreset][]v1.L7Allow{v1.NetworkAccessPresetReadOnly: rest("GET"), v1.NetworkAccessPresetReadWrite: rest("GET", "WEBSOCKET_TEXT"), v1.NetworkAccessPresetFull: rest("*")}[access]
-	}
-	return map[v1.NetworkAccessPreset][]v1.L7Allow{v1.NetworkAccessPresetReadOnly: rest("GET", "HEAD", "OPTIONS"),
-		v1.NetworkAccessPresetReadWrite: rest("GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH"), v1.NetworkAccessPresetFull: rest("*")}[access]
-}
-
-// endpointL7Allows are the requests an inspected endpoint lets through.
-func endpointL7Allows(e v1.PolicyNetworkEndpoint) []v1.L7Allow {
-	out := accessAllows(e.Protocol, e.Access)
-	for _, r := range e.Rules {
-		if r.Allow != nil {
-			out = append(out, *r.Allow)
-		}
-	}
-	return out
-}
-
-// allowCovers: every request a allows, b allows too.
-func allowCovers(b, a v1.L7Allow, graphql bool) bool {
-	if graphql {
-		if b.OperationType != "*" && !strings.EqualFold(b.OperationType, a.OperationType) {
-			return false
-		}
-		if b.OperationName != "" && b.OperationName != a.OperationName {
-			return false
-		}
-		if len(b.Fields) > 0 && (len(a.Fields) == 0 || slices.ContainsFunc(a.Fields, func(f string) bool { return !slices.Contains(b.Fields, f) })) {
-			return false
-		}
-		return true
-	}
-	bm, am := orDefault(b.Method, "*"), orDefault(a.Method, "*")
-	if bm != "*" && !strings.EqualFold(bm, am) {
-		return false
-	}
-	if b.Command != "" && b.Command != a.Command {
-		return false
-	}
-	if (len(b.Query) > 0 || len(b.Params) > 0) && (!reflect.DeepEqual(b.Query, a.Query) || !reflect.DeepEqual(b.Params, a.Params)) {
-		return false
-	}
-	return scopePathCovers(b.Path, a.Path)
-}
-
-// withinProvider: what endpoint e lets through, the provider's own rule
-// (its endpoints pe) lets through as well, so the credential reaches no
-// more than the provider's scope gives it. An uninspected or audited
-// endpoint lets everything through.
-func withinProvider(e v1.PolicyNetworkEndpoint, pe []v1.PolicyNetworkEndpoint) bool {
-	if strings.TrimSpace(e.Protocol) == "" || e.TLS == v1.NetworkTLSModeSkip || normalizedEnforcement(e.Enforcement) != int32(v1.NetworkEnforcementModeEnforce) {
-		return false
-	}
-	graphql := strings.EqualFold(e.Protocol, "graphql")
-	ports := effectivePorts(e)
-	allows := endpointL7Allows(e)
-	if len(allows) == 0 {
-		return false
-	}
-	for _, a := range allows {
-		path := a.Path
-		if graphql || path == "" {
-			path = orDefault(e.Path, "**")
-		}
-		if !slices.ContainsFunc(pe, func(p v1.PolicyNetworkEndpoint) bool {
-			if !strings.EqualFold(p.Protocol, e.Protocol) || normalizedEnforcement(p.Enforcement) != int32(v1.NetworkEnforcementModeEnforce) ||
-				strings.ContainsAny(e.Host, "*") && !strings.EqualFold(p.Host, e.Host) || !hostPatternMatches(p.Host, e.Host) ||
-				slices.ContainsFunc(ports, func(x uint32) bool { return !slices.Contains(effectivePorts(p), x) }) {
-				return false
-			}
-			if p.Path != "" && !scopePathCovers(p.Path, path) {
-				return false
-			}
-			for _, d := range p.DenyRules {
-				if (d.Method == "" || d.Method == "*" || strings.EqualFold(d.Method, a.Method) || a.Method == "*") && pathPatternsOverlap(d.Path, path) {
-					return false
-				}
-			}
-			return slices.ContainsFunc(endpointL7Allows(p), func(b v1.L7Allow) bool { return allowCovers(b, a, graphql) })
-		}) {
-			return false
-		}
-	}
-	return true
-}
-
-// BeyondScope is an endpoint of a rule of the policy that would let a
-// provider's credential reach more than the provider's scope.
-type BeyondScope struct {
-	Rule  string   `json:"rule"`
-	Host  string   `json:"host"`
-	Ports []uint32 `json:"ports"`
-	// Binaries lose the endpoint when it is removed.
-	Binaries []string `json:"binaries"`
-}
-
-// beyondScope are the endpoints of rules (not the providers') that reach
-// the credential of provider p (profile m) beyond what its own rule
-// allows.
-func beyondScope(rules map[string]v1.NetworkPolicyRule, p string, m *pb.ProviderProfile) []BeyondScope {
-	scopes := profileScopes(p, p, m)
-	own := profileRule(m, "").Endpoints
-	var out []BeyondScope
-	for _, name := range slices.Sorted(maps.Keys(rules)) {
-		if isProviderRule(name) {
-			continue
-		}
-		for _, e := range rules[name].Endpoints {
-			if slices.ContainsFunc(scopes, func(sc credScope) bool { return credentialReaches(e, sc) }) && !withinProvider(e, own) {
-				b := BeyondScope{Rule: name, Host: e.Host, Ports: endpointPorts(e), Binaries: []string{}}
-				for _, x := range rules[name].Binaries {
-					b.Binaries = append(b.Binaries, x.Path)
-				}
-				out = append(out, b)
-			}
-		}
-	}
-	return out
 }

@@ -1,0 +1,50 @@
+# Iwato's network preset for installing and updating Claude Code, Grok Build
+# and Codex with mise (ADR 0022). mise itself and Codex's releases are tools'.
+# The agents' APIs are their providers'.
+id: agents
+label: エージェントの CLI
+note: Claude Code・Grok Build・Codex のインストールと更新を許可します。「ツールのインストール」も一緒に入ります
+default: true
+requires: [tools]
+network_policies:
+  # Claude Code's updates and settings (installed by mise or by its own
+  # updater into versions/).
+  preset_agents_downloads_claude_ai:
+    endpoints:
+      - host: downloads.claude.ai
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/claude-code-releases/**" }
+    binaries: ["/**"]
+  preset_agents_platform_claude_com:
+    endpoints:
+      - { host: platform.claude.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: ["/**"]
+  # mise's registry installs grok with its http backend: the version from
+  # x.ai/cli/stable, the binary from xAI's bucket (storage.googleapis.com,
+  # below). grok installed this way counts itself as installed by xAI's
+  # installer, so its updater checks and downloads new versions from
+  # x.ai/cli (the bucket as the fallback) into ~/.grok/downloads.
+  preset_agents_x_ai:
+    endpoints:
+      - host: x.ai
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/cli/**" }
+          - allow: { method: HEAD, path: "/cli/**" }
+    binaries: ["/**"]
+  # xAI's bucket; the rule is shared with packages (see there).
+  preset_storage_googleapis_com:
+    endpoints:
+      - host: storage.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/grok-build-public-artifacts/cli/**" }
+          - allow: { method: HEAD, path: "/grok-build-public-artifacts/cli/**" }
+    binaries: ["/**"]

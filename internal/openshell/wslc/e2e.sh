@@ -23,7 +23,7 @@ set -u
 # background closes the lock (9>&-), so a leftover cannot hold it.
 exec 9>/tmp/iwato-e2e.lock
 flock 9
-VERSION=${VERSION:-0.1.5}
+VERSION=${VERSION:-0.1.6}
 TAG=v$VERSION
 [ "$VERSION" = dev ] && TAG=dev
 MODE=${MODE:-plain}
@@ -341,7 +341,8 @@ if [ "$MODE" = tls ]; then
     out=$(os provider profile lint -f "$f")
     check "openshell provider profile lint accepts profiles/${f##*/}" '[[ $out == *"lint passed"* ]]'
   done
-  sed 's/access: read-only/access: readonly/' "$ROOT/profiles/iwato-github.yaml" >"$WORK/bad-profile.yaml"
+  # Iwato's profiles have no endpoints (ADR 0022): the copy gets a broken one.
+  sed 's/^binaries:/endpoints:\n  - { host: api.github.com, port: 443, protocol: rest, access: readonly }\nbinaries:/' "$ROOT/profiles/iwato-github.yaml" >"$WORK/bad-profile.yaml"
   out=$(os provider profile lint -f "$WORK/bad-profile.yaml")
   check "openshell provider profile lint refuses a broken copy" '[[ $out == *"lint failed"* && $out == *"unknown access value"* ]]'
   # Iwato's provider profiles and providers (the key-encryption key where
@@ -350,14 +351,6 @@ if [ "$MODE" = tls ]; then
   free_dns
   gotest TestOpenShellProvidersE2E
   TAIL=30 passed "iwato imports its profiles, and providers reach a sandbox as placeholders"
-  # Provider scopes: OpenShell lints the rendered profiles, a GitHub
-  # provider's own profile follows its scope into a running sandbox's
-  # effective policy, and goes with the provider.
-  section TestOpenShellScopeE2E
-  free_dns
-  gotest TestOpenShellScopeE2E
-  echo "$out" | grep -E "readiness|lint " | sed 's/^ */    /'
-  TAIL=30 passed "a provider's scope renders its own profile, which reaches the sandbox"
   # The Atlassian profile and Iwato's OAuth flow against the gateway: a
   # fake Atlassian, and a copy of the profile whose token_url is a loopback
   # endpoint in the test, so the gateway's refresh (and the rotation of the

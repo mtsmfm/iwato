@@ -1,0 +1,193 @@
+# The initial rule of a provider of profiles/iwato-atlassian.yaml (ADR
+# 0022): attaching the provider adds it to the sandbox's policy, every
+# endpoint bound to the provider (credential_binding), and detaching removes
+# the endpoints bound to it. The format is a network preset's (presets.go)
+# with the parameter provider, the provider's name.
+#
+# The MCP endpoint (/v2/mcp and below), inspected as MCP: the core methods
+# and tools/call of the read tools only. They are the Rovo MCP server's (v2)
+# tools that only read: the read_* and search_* groups of Atlassian's list
+# of supported tools
+# (https://support.atlassian.com/atlassian-ai-gateway/docs/supported-tools/,
+# 2026-10-18), its common tools that read and the three reads of
+# manage_jira; a tool whose effect is unclear counts as a write. The execute
+# meta-tools (execute, executeRead, executeWrite, executeDestructive) run
+# the tool named in their arguments, which OpenShell does not match, so they
+# are writes too; the sandbox registers the MCP with ?tools=all, which lists
+# every tool under its own name. versions: every MCP revision OpenShell
+# supports (a request without the header is read as 2025-03-26).
+id: iwato-atlassian
+label: Atlassian
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - host: mcp.atlassian.com
+        port: 443
+        path: /v2/mcp/**
+        protocol: mcp
+        enforcement: enforce
+        mcp:
+          versions: ["2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]
+          strict_tool_names: true
+          allow_all_known_mcp_methods: true
+        rules:
+          - allow:
+              method: tools/call
+              params:
+                name:
+                  any:
+                  # Common.
+                  - atlassianUserInfo
+                  - getAccessibleAtlassianResources
+                  - discover
+                  - getContentFormatGuide
+                  # Jira: read_jira, search_jira, and manage_jira's reads.
+                  - getJiraIssue
+                  - listJiraProjects
+                  - listJiraProjectIssueTypesMetadata
+                  - getJiraIssueTypeMetaWithFields
+                  - listJiraIssueTransitions
+                  - listJiraIssueLinkTypes
+                  - listJiraIssueRemoteIssueLinks
+                  - listJiraIssueWorklogs
+                  - lookupJiraAccountId
+                  - listJiraIssueAssignableUsers
+                  - listJiraIssueComments
+                  - listJiraIssueChangelogs
+                  - getJiraCurrentUser
+                  - getJiraUser
+                  - listJiraStatuses
+                  - listJiraProjectComponents
+                  - getJiraProjectVersions
+                  - getJiraProjectVersionRelatedWork
+                  - listJiraBoards
+                  - getJiraBoardConfig
+                  - getJiraBoardIssueData
+                  - getJiraBoardSprintData
+                  - listJiraBoardSprints
+                  - listJiraFilters
+                  - listJiraDashboards
+                  - getJiraEntityProperty
+                  - downloadJiraIssueAttachment
+                  - searchJiraIssuesUsingJql
+                  - getJiraWorkflows
+                  - getJiraWorkflowEditorLink
+                  - getJiraScreen
+                  # Confluence: read_confluence, search_confluence.
+                  - getConfluenceContent
+                  - listConfluenceContent
+                  - listConfluenceSpaces
+                  - getConfluenceSpace
+                  - getConfluenceSpaceInstructions
+                  - getConfluencePersonalSpace
+                  - listConfluenceComments
+                  - getConfluenceComment
+                  - listConfluenceContentVersions
+                  - getConfluenceContentVersion
+                  - diffConfluenceContentVersions
+                  - listConfluenceAttachments
+                  - getConfluenceAttachment
+                  - downloadConfluenceAttachment
+                  - exportConfluenceContent
+                  - getConfluenceContentPermissions
+                  - getConfluenceContentRestrictionState
+                  - getConfluencePublicLinkStatus
+                  - getConfluenceReactions
+                  - getConfluenceTask
+                  - listConfluenceTasks
+                  - listConfluenceTemplates
+                  - getConfluenceTemplate
+                  - resolveConfluenceContentMacros
+                  - getConfluenceMauiApp
+                  - searchConfluence
+                  # Jira Service Management: read_jsm.
+                  - getJsmOpsAlerts
+                  - getJsmOpsScheduleInfo
+                  - getJsmOpsTeamInfo
+                  # Bitbucket Cloud: read_bitbucket.
+                  - listBitbucketWorkspaces
+                  - getBitbucketWorkspace
+                  - listBitbucketRepositories
+                  - getBitbucketRepository
+                  - getBitbucketRepoDefaultReviewers
+                  - getBitbucketRepoFileContent
+                  - getBitbucketRepoBranch
+                  - getBitbucketRepoCommit
+                  - listBitbucketRepoCommitReports
+                  - getBitbucketRepoCommitReport
+                  - getBitbucketRepoCommitReportAnnotations
+                  - listBitbucketRepoPullRequests
+                  - getBitbucketRepoPullRequest
+                  - getBitbucketRepoPullRequestDiff
+                  - listBitbucketRepoPullRequestComments
+                  - listBitbucketRepoPullRequestTasks
+                  - listBitbucketRepoPipelines
+                  - getBitbucketRepoPipeline
+                  - listBitbucketRepoPipelineSteps
+                  - getBitbucketRepoPipelineStep
+                  - getBitbucketRepoPipelineStepLog
+                  - listBitbucketRepoDeployments
+                  - getBitbucketRepoDeployment
+                  - listBitbucketRepoEnvironments
+                  - getBitbucketRepoEnvironment
+                  # Atlassian platform: read_teamwork_graph, search_atlassian, search_code.
+                  - getTeamworkGraphContext
+                  - getTeamworkGraphObject
+                  - getPeopleInfo
+                  - getWorkPortfolio
+                  - getWorkActivity
+                  - getPullRequests
+                  - getCollaborators
+                  - search
+                  - searchCode
+                  - getCodeFile
+                  - listCodeDirectory
+                  - scanCodeRepo
+                  - getCodeSymbol
+                  - diffCodeSymbols
+                  # Assets: read_assets.
+                  - getAssetsObject
+                  - getAssetsObjectsById
+                  - getAssetsObjectSchema
+                  - getAssetsObjectType
+                  - getAssetsServiceObjectsById
+                  - listAssetsObjectSchemas
+                  - listAssetsObjectTypeAttributes
+                  - queryAssetsObjects
+                  - queryAssetsObjectSchemaAttributes
+                  - queryAssetsObjectsUsingAql
+                  - queryAssetsObjectTypes
+                  - queryAssetsReferenceTypes
+                  - searchAssetsObjects
+                  # Loom: read_loom.
+                  - getLoomVideo
+                  - listLoomVideos
+                  - listLoomVideosSharedWithMe
+                  - getLoomVideoComments
+                  - getLoomMeetingActionItems
+                  - getLoomVideoDownloadUrl
+                  - listLoomFolders
+                  # Goals, Projects, Teams, Focus, Talent, Capacity planning: read_*.
+                  - searchGoals
+                  - getGoal
+                  - getGoalUpdate
+                  - getGoalTypes
+                  - searchProjects
+                  - getProject
+                  - getProjectUpdate
+                  - searchTeams
+                  - getTeam
+                  - searchFocusAreas
+                  - getFocusArea
+                  - getFocusAreaTypes
+                  - getTalentUser
+                  - getTalentFields
+                  - searchTalentPositions
+                  - getTalentPosition
+                  - getTalentPositionsByEntity
+                  - getTalentGroupMetrics
+                  - getCapacityPlanAllocations
+                  - searchCapacityPlanNonProjectWork

@@ -10,13 +10,15 @@ Iwato turns on OpenShell's Policy Advisor for every sandbox. When an agent needs
 
 ## The policy tab
 
-The switch at the top of the tab, which stays in place while you scroll, chooses between the lists (**List**) and the policy as YAML (**YAML**); the browser remembers the choice. The lists show OpenShell's data only (Iwato stores none of it):
+The switch at the top of the tab, which stays in place while you scroll, chooses between the lists (**List**) and the policy as YAML (**YAML**); the browser remembers the choice. Iwato keeps each sandbox's policy, with its history ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)); the proposals are OpenShell's. The lists:
 
-- **Waiting for approval**: proposals waiting for you. **Approve** or **Reject**
-- **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Provider rules are read-only. Rules on the hosts a provider's credentials reach are marked as that provider's ("Provider X's destination"). For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
+- **Waiting for approval**: proposals waiting for you, the agent's first, with one opened beside them (below them on a phone; see [Approving](#approving)). **Reject all** rejects every one after a question
+- **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Rules of providers whose profile has destinations of its own (imported with OpenShell's CLI) are read-only. A rule whose destinations carry a provider's credential is marked **Credential: NAME**. For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
 - **Rejected proposals**
 
-The tab also has: **Add a rule**, adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, **History** (provider rules are not in it), and **Presets**.
+The tab also has: **Add a rule** (for every program, like approvals), adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, attaching or removing a provider's token on an endpoint whose host the provider's credential is meant for (**Attach / Remove NAME's token**), **History** (each change with its reason and diff; **Revert** undoes one as a new change, except the first), and **Presets**.
+
+When the policy was changed outside Iwato (with the `openshell` CLI, for example), a banner says so: **Import** keeps that change in Iwato's policy, **Overwrite with Iwato's** puts Iwato's back. Changes in the policy tab wait until you choose; changes made elsewhere (attaching a provider, a recreate) import it first.
 
 Decisions made elsewhere (for example with the `openshell` CLI) show up within a minute.
 
@@ -32,50 +34,46 @@ Saving is refused when:
 
 If a change made directly in OpenShell (its CLI) lands while saving, it may be replaced; the tab says so.
 
-A rule added or changed that reaches a host where a provider's credentials go (any provider type, attached or not) asks for confirmation and names the providers. If you allow it, the provider's credential is also sent with that traffic. For GitHub, the provider's scope can allow it more narrowly. Adding a rule or methods and paths by hand, including from a provider rule's blocked requests, is asked the same way. A rule bound to a provider's credential cannot change its programs.
+A rule bound to a provider's credential cannot change its programs.
 
 Approved proposals stay approved, and presets stay in the list; taking a preset out later removes only the rules that are still as it made them.
 
 ## Approving
 
-The approve dialog shows the destination and the agent's reason first, then lets you narrow the proposal before approving:
+The opened proposal shows the agent's reason (none for OpenShell's own drafts), the destination, whether OpenShell inspects the requests, and the program that proposed it, for information only: approved rules allow every program ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)).
 
-- **Read only** or **Allow writes**: read only allows `GET`, `HEAD` and `OPTIONS` on the paths listed (none listed: every path). Allow writes sets the method per path, for example `POST` on one path (`*` is one segment, `**` is everything below); the writes it allows are listed above the paths. The dialog starts with what the proposal needs
-- **Details**:
-  - The program: exactly that path; the same path with versions as `*`, so an update keeps working (the default when the path has a version); names starting the same; everything under a folder; or any program. A rule also covers the processes the program starts
-  - Approving as proposed
-  - **Audit**: let every request through and record it, then pick the recorded requests to allow and switch to enforcing (**Allow only the chosen ones and switch to enforce**). Use it when you do not know the paths yet
+- **What it allows**: one checkbox per method and path; unchecked ones are left out of the approval. An uninspected proposal (L4; most of OpenShell's drafts) lists the methods on every path with `GET` and `HEAD` checked, and is approved as an inspected rule with the checked methods. Its last row lets everything through uninspected instead (checked when the port is not a web one)
+- **To check**: warnings, which never block the approval. Red: the host is a malware or phishing domain by Cloudflare's filtering resolver (1.1.1.2), or a service made to receive or publish arbitrary data (webhook.site, request catchers, tunnels such as ngrok, out-of-band test hosts, pastebins, file drops). Amber: the domain was registered less than 30 days ago (by RDAP), the rule is uninspected, a write on every path or on a wildcard host, internal addresses (`allowed_ips`), settings that widen an endpoint, and destinations that reach the loopback of the machine Iwato runs on. Otherwise the facts found. Iwato looks hosts up from the machine it runs on, with short timeouts, and remembers the answers for a few hours; a lookup that fails shows as unknown
+- **Attach NAME's token**: shown when the approved endpoint takes requests from one that carries a provider's credential (on, for example a `git push` under GitHub's `github.com`) or when its host is one an attached provider's credential is meant for (off). See [providers](providers.md#where-credentials-go)
+- **Policy diff (YAML)**: the rule the approval adds, as it will be written
+- **Reject** (with an optional reason, which the agent reads) or **Approve**
 
-An approval applies the whole rule, so the dialog shows all of it:
+A rule on Iwato's own port is refused, from the approval, a rule added by hand and the YAML editor alike. When OpenShell would refuse the rule (endpoints on the same host, port and path whose settings differ), the opened proposal says why and Approve waits. The approval is for the version you saw: when the proposal changed in the meantime, Iwato refuses it and shows the new version.
 
-- **Caution** (above the choices): a proposal that names more than one program, or every program (`/**`); settings that widen an endpoint (`tls: skip`, `allow_encoded_slash`, `websocket_credential_rewrite`, `request_body_credential_rewrite`, `allow_uninspected_credentials`); destinations that reach the loopback of the machine Iwato runs on (`host.docker.internal`, `host.wslc.internal`, `host.containers.internal`, `host-gateway` and their addresses), where Iwato itself and the published pages listen. The approval allows only the program in Details, never the proposal's other programs
-- **The proposal** (below the summary): every program and endpoint with all its settings, rules and deny rules
+A proposal with more than Iwato can show (more than 128 rules, for example) or with settings it does not show (GraphQL, MCP, request signing) can be approved only narrowed: reject it, or write the rule in YAML.
 
-A proposal with more than Iwato can show (more than 8 programs or 20 endpoints, for example) or with settings it does not show (GraphQL, MCP, request signing) cannot be approved: reject it, or write the rule in YAML. A rule on Iwato's own port is refused, from the dialog, a rule added by hand and the YAML editor alike. The YAML editor's confirmation names rules that reach the host's loopback.
-
-The approval is for the version you saw: when the proposal changed in the meantime (OpenShell refines proposals as more requests are blocked), Iwato refuses it, reloads the list and asks again.
-
-Choices OpenShell would refuse cannot be picked (the dialog says so in one line, and why under Details): OpenShell rejects rules on the same host, port and path whose inspection settings differ (endpoint ambiguity), and Iwato checks this before sending. When the gateway refuses a change anyway, Iwato explains why.
-
-A proposal for a host where an attached provider's credentials go is handled by the provider ([ADR 0006](../adr/0006-providers-own-credentialed-hosts.md)): for a provider with a scope (GitHub), approving widens the provider's scope instead of adding a policy rule (for example a `git push` to `OWNER/REPO` adds that repository, and an Atlassian MCP tool call adds that tool), and the proposal is then rejected with the reason "retry" once the sandbox has the new scope. Other proposals on such hosts are approved as rules, with a warning that the token rides along. See [providers](providers.md#scopes).
+A rejected proposal can be approved later from the rejected list: Approve opens the same review, with the same warnings. Its rules are shown but cannot be unchecked, because OpenShell approves a rejected proposal only as proposed. To narrow it, approve it, Undo it on its rule, then approve it narrowed.
 
 ## Presets
 
-A preset is a named set of rules. Choose presets in the create form, or put them in and take them out later in the policy tab (Presets: Apply, Remove). Taking a preset out removes only the rules that are still as the preset made them. Presets are kept when a sandbox is recreated. A preset that no longer exists (removed from Iwato, or your file deleted) is marked "preset not found": its rules stay in the policy as ordinary rules, and Remove only takes it off the list.
+A preset is a named set of rules. Choose presets in the create form (Details shows each one's hosts, methods and paths), or put them in and take them out later in the policy tab (Presets: Apply, Remove). Taking a preset out removes only the rules that are still as the preset made them. Presets are kept when a sandbox is recreated. The first commit of the policy history names the presets the sandbox started from. A preset that no longer exists (removed from Iwato, or your file deleted) is marked "preset not found": its rules stay in the policy as ordinary rules, and Remove only takes it off the list. A preset another one in the sandbox requires cannot be taken out first.
 
 Iwato's presets:
 
 | Preset | What it allows |
 |---|---|
-| Package, Claude Code and Grok Build downloads | read-only (GET, HEAD, OPTIONS, and the POSTs that only read: npm's audit, the registries' tokens) from any program: npm, PyPI (and uv's Python builds), crates.io, the Rust toolchains (rustup), the Go proxy, RubyGems, mise, the Node.js and Go downloads, GitHub release and archive downloads and raw files, Docker Hub and ghcr.io images. No publishing or uploads. For mise, claude and grok only: mise's downloads (GitHub, mise-versions.jdx.dev), Claude Code's updates and settings (downloads.claude.ai, platform.claude.com), grok's version check, download and updates (x.ai, storage.googleapis.com) |
+| Packages (on by default) | read-only (GET, HEAD, OPTIONS, and the POSTs npm's audit needs) from any program: npm, PyPI, RubyGems, crates.io, Go modules. No publishing or uploads |
+| Tool installs (on by default) | read-only from any program: mise, the Node.js, Go and Rust toolchains, uv's Python builds, GitHub (github.com, api.github.com, release and archive downloads, raw files) |
+| Agent CLIs (on by default; brings Tool installs) | installing and updating Claude Code, Grok Build and Codex |
+| Reading references | read-only (GET, HEAD) from any program: Wikipedia (English, Japanese, images), arXiv (and export.arxiv.org), MDN, docs.python.org, go.dev and pkg.go.dev, doc.rust-lang.org and docs.rs, nodejs.org, docs.ruby-lang.org and ruby-doc.org, GitHub Docs, man7.org, rfc-editor.org, `*.readthedocs.io`, Stack Overflow, Hacker News |
 
-Presets never include hosts where a provider's credentials go (github.com, api.github.com, the agents' APIs): those belong to the providers. The only exception is mise's read-only GitHub rules in the package preset (mise downloads from GitHub); the list marks them.
+Presets carry no credentials: the agents' APIs come with their providers. Preset rules allow every program ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)). Tool installs reads github.com and api.github.com without a credential; with the GitHub provider attached, they are read with its token.
 
 ### Your own presets
 
 Add, edit and delete your own presets under Presets in the policy tab (New preset, Edit YAML, Delete). They are stored as `presets/*.yaml` in the config folder, and are read again whenever the list is shown, so you can also edit them with another editor; a file that cannot be read is listed with the reason. Your presets get the id `user:ID`, so they never shadow Iwato's.
 
-The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`:
+The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`, `default` (`true`: checked in the create form) and `requires` (preset ids that come with it):
 
 ```yaml
 id: my-preset
@@ -93,4 +91,4 @@ network_policies:
     binaries: [/usr/bin/curl]
 ```
 
-When you save, Iwato checks that the preset contains no provider hosts and does not conflict with the providers' rules. A preset that allows every host cannot be made: OpenShell refuses `*` and `**` as a host, and a rule with `allowed_ips` but no host would conflict with other rules and providers on the same port.
+When you save, Iwato checks that the preset does not conflict with the providers' rules. A preset that allows every host cannot be made: OpenShell refuses `*` and `**` as a host, and a rule with `allowed_ips` but no host would conflict with other rules and providers on the same port.

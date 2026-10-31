@@ -6,7 +6,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Setup
 
-1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-atlassian`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
+1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-codex-subscription`, `iwato-atlassian`, `iwato-openai`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
 2. Check that the key is on the volume (so values stay readable after the gateway is recreated):
 
        wslc container exec iwato-personal-gateway ls -l /var/lib/openshell/credentials
@@ -21,9 +21,9 @@ Iwato's profiles are `profiles/ID.yaml` (`iwato-github`, `iwato-claude-subscript
 Checks:
 
 - `go test -tags uitest -run 'Profile|YAML' .`: the files load, unknown keys are rejected, and the protos built from YAML equal the ones formerly written in Go (same hash, so the gateway's profiles are not updated)
-- OpenShell's lint (it calls the gateway's `LintProviderProfiles`, so it needs a gateway): `MODE=tls internal/openshell/wslc/e2e.sh` runs `openshell provider profile lint -f` on `profiles/*.yaml`. By hand, while the e2e runs (or against Iwato's gateway): `~/.cache/openshell-e2e/0.1.5/openshell provider profile lint -f profiles/iwato-github.yaml`
+- OpenShell's lint (it calls the gateway's `LintProviderProfiles`, so it needs a gateway): `MODE=tls internal/openshell/wslc/e2e.sh` runs `openshell provider profile lint -f` on `profiles/*.yaml`. By hand, while the e2e runs (or against Iwato's gateway): `~/.cache/openshell-e2e/0.1.6/openshell provider profile lint -f profiles/iwato-github.yaml`
 
-The providers panel's **View the profile as YAML** (for each provider and for the type chosen in the add form) shows the bundled file for Iwato's profiles (**Shipped with Iwato**), and for profiles imported with OpenShell's CLI the gateway's copy written out in OpenShell's format (**From the gateway**; without comments and formatting, `resource_version`, `annotations`, `source` or `scope`) (`GET /api/provider-profiles/ID`).
+The providers panel's **View the profile as YAML** (for each provider and for the type chosen in the add form) shows the bundled file for Iwato's profiles (**Shipped with Iwato**), and for profiles imported with OpenShell's CLI the gateway's copy written out in OpenShell's format (**From the gateway**; without comments and formatting, `resource_version`, Iwato's hash annotation, `source` or `scope`) (`GET /api/provider-profiles/ID`).
 
 ## Uninspected rules and providers (allow_uninspected_credentials)
 
@@ -53,13 +53,13 @@ On failure, look at denied requests in the **Policy** tab. `credential_endpoint_
 ## (b) git clone / push (private repository)
 
 1. In (a)'s sandbox, `sh providers-check.sh git OWNER/PRIVATE-REPO`. A successful clone means git sent the placeholder from the credential helper as Basic auth and OpenShell substituted it
-2. The read-only scope does not allow push (like OpenShell's github.yaml: clone and fetch only). Commit in the clone and `git push`: it stops with 403 and a policy proposal appears (agents such as Claude Code propose on their own). A push goes through the provider's scope, not a hand-added rule (ADR 0006, 0014): approving the proposal adds the repository to the provider's writable repositories, or choose **Write to the listed repositories** under **Change scope** in the providers view. A hand-added rule on github.com cannot carry the token
+2. The GitHub provider's initial rule (ADR 0022) does not allow push (clone and fetch only). Commit in the clone and `git push`: it stops with 403 and a policy proposal appears (agents such as Claude Code propose on their own). Approving it adds a rule for the push's paths that carries the token by default (the approve dialog's credential choice); the push then goes through.
 3. Wait until **Waiting to apply** clears (about 10 seconds) and retry `git push`. The token arrives without reattaching or restarting
 
 ## (c) claude (iwato-claude-subscription, experimental)
 
 0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, preset `packages`) (the home `/home/dev` is always a volume, so no reinstall later). The profile's programs cover both (below)
-1. Add a provider of type **Claude Code (sign in with Claude)** as in (l)
+1. Add a provider of type **Claude Code** as in (l)
 2. Attach it to the sandbox and restart (or open a new terminal)
 3. `sh providers-check.sh claude`. `PROVIDER-OK` means Claude Code runs on the placeholder and OpenShell substitutes `Authorization: Bearer` to `api.anthropic.com`
 4. Check interactive `claude` too: `/status` shows `CLAUDE_CODE_OAUTH_TOKEN` as the auth
@@ -80,7 +80,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
 - Lifetimes of the access and refresh tokens, and whether the refresh token rotates: Iwato's log (menu **Log**) shows them on connect, never the values
   - `atlassian oauth: NAME: token response fields ..., lifetimes map[expires_in:N ...] s, refresh_token true, scope "..."`: the exchange's response (`refresh_token_expires_in` etc. would show here)
   - `the gateway refreshed it; access token lifetime ...`: the gateway's first refresh right after connecting (capped at the profile's max_lifetime of 1 hour)
-- Whether refresh needs `resource`: OpenShell v0.1.5's refresh sends only `grant_type=refresh_token, client_id, refresh_token` (no client_secret, scope or resource). If the first refresh fails, the UI shows "Connected, but the gateway's first refresh failed (STATE)". `invalid_target` / `invalid_request` suggest resource is required (needs an OpenShell change; the current token works until it expires)
+- Whether refresh needs `resource`: OpenShell v0.1.6's refresh sends only `grant_type=refresh_token, client_id, refresh_token` (no client_secret, scope or resource). If the first refresh fails, the UI shows "Connected, but the gateway's first refresh failed (STATE)". `invalid_target` / `invalid_request` suggest resource is required (needs an OpenShell change; the current token works until it expires)
 - Rotation: two successful **Refresh now** in a row mean the gateway stores and uses the new refresh token (`reauthorization_required` / `oauth_invalid_grant` on the second points at storing the rotation or resource)
 
 ### Steps
@@ -93,7 +93,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
 
    If `token_endpoint` is not `https://auth.atlassian.com/oauth/token`, Iwato stops ("Atlassian's token endpoint differs from the profile") and the profile needs an update
 3. In Atlassian admin, check that Rovo MCP's "domain control" allows clients returning to localhost (127.0.0.1) (skip if not an admin)
-4. Menu **Providers** → type **Atlassian (MCP)**, name `atlassian-work` → **Connect to Atlassian** → check the scopes, **Ask for authorization** → **Allow in Atlassian**
+4. Menu **Providers** → type **Atlassian**, name `atlassian-work` → **Connect to Atlassian** → check the scopes, **Ask for authorization** → **Allow in Atlassian**
    - Browser on the same PC: after logging in and allowing, Atlassian returns to `http://127.0.0.1:PORT/callback` with a page saying the authorization was received (「許可を受け取りました」). Iwato shows that it is connected and **The gateway refreshes it**, with the expiry and the next refresh
    - Phone (over the tailnet): the 127.0.0.1 page cannot open after allowing. Copy the URL from the address bar, paste it into Iwato's **Redirect URL** and **Send**
    - Without a return within 5 minutes the listener closes (start over)
@@ -109,7 +109,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
    - sending the placeholder to another allowed destination gets 403 `credential_endpoint_mismatch` (substituted only on mcp.atlassian.com /v2/mcp)
 10. The MCP keeps working in the same claude for over an hour (past the access token's expiry; the placeholder does not change on refresh)
 11. Reconnect: revoke Iwato in Atlassian's profile (connected apps) → **Refresh now** (or the next automatic refresh) shows "Authorization needed again" → **Reconnect** to allow again. Sandboxes that have it become **Restart pending** (a new grant changes the placeholder); restart and repeat 8
-12. Tool scope: a new provider is in **Read tools, and the tools listed**. In `claude`, reading a Jira issue works and creating one is denied (the policy tab shows the denied `tools/call`). Add `createJiraIssue` under **Change scope**; once **Waiting to apply** clears, creating works without a restart. Also note which `MCP-Protocol-Version` the requests carry (the profile accepts every revision OpenShell knows) and whether `claude` complains about the refused `DELETE` when it exits
+12. Read tools: the provider's initial rule allows only the read tools. In `claude`, reading a Jira issue works and creating one is denied (the policy tab shows the denied `tools/call`). Approving the proposal (or adding `createJiraIssue` to the rule's `tools/call` names in the YAML editor) makes creating work without a restart. Also note which `MCP-Protocol-Version` the requests carry (the rule accepts every revision OpenShell knows) and whether `claude` complains about the refused `DELETE` when it exits
 
 On failure:
 
@@ -125,7 +125,7 @@ On failure:
 - **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). It is replaced with the real value in HTTP headers (Bearer, Basic, any header), the path and the query (`?token=` etc.) of requests to the profile's endpoints (host, port, path). `auth_style` / `header_name` are display metadata and do not decide where substitution happens. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
 - **Programs**: these tools run on python (`hf`, `vastai`, `comfy`, ComfyUI, SDKs), node or curl. OpenShell matches the executable (or an ancestor process), not the script, so allowing python lets any python program reach the endpoint with the value. It cannot be narrower, so the profiles list the standard image's `/usr/bin/python3*`, mise's `/home/dev/.local/share/mise/installs/python/*/bin/python3*`, uv's `/home/dev/.local/share/uv/python/*/bin/python3*` (venv pythons link to these), mise's node, curl and wget (not in the standard image). Python elsewhere (pyenv, conda, …) gets proposals
 - **Download hosts (no value needed)**: Hugging Face's `cdn-lfs*.huggingface.co` and `*.hf.co` (Xet: `cas-bridge.xethub.hf.co` etc.), Civitai's signed-URL storage and Comfy Cloud's output storage carry their own authorization in signed URLs, and clients send no value there. They are not in the profiles: every endpoint of a profile with a value is a credential endpoint, so the placeholder would be substituted there too (the value could reach a CDN), and rules allowing those hosts uninspected (L4, as proposed) would be refused (above). Outside the profile they appear as ordinary proposals on the first download; check the program and host and approve with **Read only** (inspected, so a stray placeholder stops at `credential_endpoint_mismatch`)
-- **Writes and billing**: Hugging Face uploads, Civitai generation (Buzz), creating or deleting Vast.ai instances and RunPod pods, and Cloudflare deploys are not allowed by the read-only scope. They show up as proposals; approving one widens the provider to **Allow writes** (ADR 0014), or set it under **Change scope**. OpenRouter inference and running Comfy Cloud workflows are what those keys are for, so they are allowed
+- **Writes and billing**: Hugging Face uploads, Civitai generation (Buzz), creating or deleting Vast.ai instances and RunPod pods, and Cloudflare deploys are not allowed by the providers' initial rules. They show up as proposals; approving one with the credential attached allows it (ADR 0022). OpenRouter inference and running Comfy Cloud workflows are what those keys are for, so they are allowed
 
 To check (each with `sh providers-check.sh NAME`, never printing tokens; add a provider of the type, attach it and restart first):
 
@@ -208,7 +208,7 @@ Precedence (Auth Precedence in grok's guide, `flow.rs`): a model's `api_key` > t
 ### Steps
 
 1. Start the new exe. The log shows `imported the provider profile iwato-grok-subscription`
-2. Menu **Providers** → type **Grok Build (xAI subscription)** → **Connect to xAI**. A code and **Allow in xAI** appear. On a PC or a phone, log in on xAI's page, check the code matches and allow (within the time limit). Iwato shows "Connected as grok-subscription" and **The gateway refreshes it**, with the expiry and the next refresh
+2. Menu **Providers** → type **Grok Build** → **Connect to xAI**. A code and **Allow in xAI** appear. On a PC or a phone, log in on xAI's page, check the code matches and allow (within the time limit). Iwato shows "Connected as grok-subscription" and **The gateway refreshes it**, with the expiry and the next refresh
 3. Press **Refresh now** twice in the list; both succeed
 4. Attach it from the sandbox's ⋯ → **Providers** and **Restart now** (or choose it in the create form). Install grok with mise (`mise use -g grok`, preset `packages`)
 5. In a terminal, `cat ~/.config/iwato/env` shows an `export GROK_AUTH_PROVIDER_COMMAND=…` line conditional on `XAI_OAUTH_TOKEN`, `echo "$GROK_AUTH_PROVIDER_COMMAND"` prints the command, and `sh -c "$GROK_AUTH_PROVIDER_COMMAND"` prints `{"access_token":"<placeholder>",…,"issuer":"https://auth.x.ai"}` (the placeholder is not a secret, but do not paste it into an agent's conversation)
@@ -226,7 +226,7 @@ On failure:
 
 Iwato.exe signs in with Claude Code's public OAuth client (authorization code with PKCE: a loopback redirect on the PC, or Claude's page showing a code to paste from a phone) and hands the refresh token to the gateway, which refreshes the access token; the sandbox gets the `CLAUDE_CODE_OAUTH_TOKEN` placeholder (ADR 0009). The profile's comment gives the sources; it is not checked against real Anthropic. `TestClaudeFlow` covers the flow with a fake.
 
-1. Menu **Providers** → type **Claude Code (sign in with Claude)** → **Sign in to Claude** → **Sign in with Claude** (on a phone: **Sign in on a phone (paste a code)** and paste the code Claude's page shows)
+1. Menu **Providers** → type **Claude Code** → **Sign in to Claude** → **Sign in with Claude** (on a phone: **Sign in on a phone (paste a code)** and paste the code Claude's page shows)
 2. Press **Refresh now** twice; both succeed. If the first refresh fails, the UI says so (the gateway sends a form body; Claude Code sends JSON)
 3. Attach it and restart, then `sh providers-check.sh claude` as in (c)
 
@@ -238,3 +238,22 @@ Iwato.exe signs in with Claude Code's public OAuth client (authorization code wi
 2. `CLOUDFLARE_API_TOKEN` is a placeholder, and `wrangler whoami` and `wrangler deployments list` work (GETs). `wrangler d1 info DB` checks GraphQL queries (POST `/client/v4/graphql`)
 3. `wrangler deploy` is proposed (it needs writes, including the assets upload with its own JWT). Approving widens the provider to **Allow writes**
 4. To check: cloudflared (`mise use -g cloudflared`) after `cloudflared tunnel login` (its token is in cert.pem, not the variable): `cloudflared tunnel list` passes and `cloudflared tunnel create` is proposed. See denied requests in the policy tab
+
+## (n) Codex with a ChatGPT sign-in (iwato-codex-subscription, experimental)
+
+Iwato.exe signs in at `auth.openai.com` with Codex's device code login (Codex's public client `app_EMoamEEZ73f0CkXaXp7hrann`; not RFC 8628: `POST /api/accounts/deviceauth/usercode`, the owner enters the code at `/codex/device`, `POST /api/accounts/deviceauth/token` answers an authorization code and its PKCE verifier, exchanged at `/oauth/token`) and hands the refresh token to the gateway. The provider has two credentials: `CODEX_CHATGPT_ACCESS_TOKEN` (refreshed) and `CODEX_CHATGPT_ACCOUNT_ID` (the id token's `chatgpt_account_id`, Codex's `chatgpt-account-id` header). Codex reads neither from the environment: the terminals' `~/.config/iwato/env` writes `~/.codex/auth.json` with their placeholders (only when absent or Iwato's, marked by the refresh token `iwato-gateway-refreshes`), and points Codex's own refresh at a closed local port (`CODEX_REFRESH_TOKEN_URL_OVERRIDE`).
+
+### Open points on OpenAI's side
+
+- The device code login must be turned on for the account (ChatGPT's settings, Security); otherwise the start fails with `oauth_codex_device_disabled`
+- Refresh: Codex sends JSON; the gateway sends a form (`grant_type`, `client_id`, `refresh_token`). The token endpoint takes a form for the code exchange; the refresh is not verified. Refresh tokens are single use
+- Placeholders in `~/.codex/auth.json`: OpenShell resolves the revisioned placeholder of the shell that wrote it while the provider stays the same; a reconnect needs a restart and a new terminal
+
+### Steps
+
+1. Menu **Providers** → type **Codex** → **Sign in with ChatGPT**. Enter the code at OpenAI's page; Iwato shows "Connected as codex-subscription"
+2. Press **Refresh now** twice; both succeed
+3. Attach it and restart; install codex with mise (`mise use -g codex`, the Agent CLIs preset)
+4. In a new terminal: `sh providers-check.sh codex` (both variables are placeholders, `auth.json` is Iwato's, `codex exec` replies)
+5. Interactive `codex` starts without a login screen and answers; `/status` shows the ChatGPT account
+6. Denied requests (apps `/backend-api/ps/mcp`, plugins, telemetry on `ab.chatgpt.com`) show in the policy tab; decide whether they are needed

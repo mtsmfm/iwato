@@ -94,7 +94,7 @@ func TestPolicyEditsBecomeMergeOperations(t *testing.T) {
 			continue
 		}
 		rules := testRules()
-		ops, err := c.edit.operations(rules)
+		ops, err := c.edit.operations(rules, nil)
 		got := opsString(ops)
 		if err != nil {
 			got = "error: " + err.Error()
@@ -170,8 +170,12 @@ func TestEditPolicyUpdatesTheLatestRevision(t *testing.T) {
 		t.Fatal("removed a rule that is not there", err)
 	}
 	change, err := o.EditPolicy(ctx, w, PolicyEdit{Op: "remove", Rule: "git"})
-	if err != nil || len(updates) != 1 || updates[0].Name != "dev" || updates[0].Policy != nil || opsString(updates[0].MergeOperations) != "remove-rule git" {
+	// The whole policy without the rule, with the commit that holds it.
+	if err != nil || len(updates) != 1 || updates[0].Name != "dev" || updates[0].Policy == nil || len(updates[0].MergeOperations) > 0 || updates[0].Annotations[provenanceCommit] == "" {
 		t.Fatal(err, updates)
+	}
+	if rules := updates[0].Policy.NetworkPolicies; len(rules) != len(testRules())-1 || rules["git"].Name != "" {
+		t.Fatal(rules)
 	}
 	// The revision the update made, to show until the sandbox loads it.
 	if change.Version != 5 || change.Kind != "edit" || change.Rule != "git" {
@@ -207,7 +211,7 @@ func TestPolicyEditsKeepAllowedIPs(t *testing.T) {
 		if err := edit.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		ops, err := edit.operations(rules())
+		ops, err := edit.operations(rules(), nil)
 		if err != nil {
 			t.Fatal(edit.Op, err)
 		}

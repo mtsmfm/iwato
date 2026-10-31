@@ -62,7 +62,7 @@ func profileEndpoint(e *sbv1.NetworkEndpoint) v1.PolicyNetworkEndpoint {
 		}
 	}
 	if m := e.GetMcp(); m != nil {
-		x.Mcp = &types.McpOptions{StrictToolNames: m.StrictToolNames}
+		x.Mcp = &types.McpOptions{Versions: slices.Clone(m.GetVersions()), StrictToolNames: m.StrictToolNames, AllowAllKnownMcpMethods: m.AllowAllKnownMcpMethods}
 	}
 	if b := e.GetCredentialBinding(); b != nil {
 		x.CredentialBinding = &types.NetworkCredentialBinding{Provider: b.GetProvider()}
@@ -83,6 +83,8 @@ func queryMatchers(in map[string]*sbv1.L7QueryMatcher) map[string]v1.L7QueryMatc
 
 // composeProviderRule adds a provider's rule to rules as OpenShell does
 // (compose.rs: _provider_NAME, then _2, _3 when taken) and returns its key.
+// A profile without endpoints (Iwato's: ADR 0022) gets a rule without
+// endpoints too, its programs only.
 func composeProviderRule(rules map[string]v1.NetworkPolicyRule, provider string, m *pb.ProviderProfile) string {
 	key := providerRuleName(provider)
 	for n := 2; ; n++ {
@@ -352,42 +354,11 @@ func approvalOps(name string, rule v1.NetworkPolicyRule) []v1.PolicyMergeOperati
 	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: rule}}}
 }
 
-// approveChoices are the approve dialog's choices as scopes (the methods
-// and paths do not matter to the check, nor do the programs).
-var approveChoices = []struct {
-	Name  string
-	Label string
-	Scope *ProposalScope
-}{
-	{"read", "読み取りだけ", &ProposalScope{ReadOnly: true}},
-	{"rules", "メソッドとパスを指定", &ProposalScope{Rules: []ProposalRule{{Method: "*", Path: "/**"}}}},
-	{"all", "提案どおり", nil},
-	{"audit", "監査", &ProposalScope{Audit: true}},
-}
-
-// proposalFit says, per approve choice, which ambiguities approving the
-// proposed rule with it would bring. before indexes
-// withProviderRules(base, effective).
-func proposalFit(ctx context.Context, before *ambiguityIndex, base, effective map[string]v1.NetworkPolicyRule, name string, rule v1.NetworkPolicyRule) (map[string][]EndpointAmbiguity, error) {
-	out := map[string][]EndpointAmbiguity{}
-	for _, c := range approveChoices {
-		r := rule
-		if c.Scope != nil {
-			r = c.Scope.apply(cloneRule(rule))
-		}
-		merged, err := simulateMerge(base, approvalOps(name, r))
-		if err != nil {
-			continue
-		}
-		a, err := before.newIn(ctx, withProviderRules(merged, effective))
-		if err != nil {
-			return nil, err
-		}
-		if len(a) > 0 {
-			out[c.Name] = a
-		}
-	}
-	return out, nil
+// approvalPlanOps add the rule an approval writes (approvedRule,
+// inheritShadowed) under a free name.
+func approvalPlanOps(base, effective map[string]v1.NetworkPolicyRule, name string, rule v1.NetworkPolicyRule, attach *bool) []v1.PolicyMergeOperation {
+	plan := inheritShadowed(approvedRule(freeRuleName(base, name), rule), withProviderRules(base, effective), attach)
+	return []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: plan.Name, Rule: plan}}}
 }
 
 // AmbiguityView is an ambiguity for the owner: the endpoint already in the
@@ -879,35 +850,8 @@ func (s *Server) failGateway(ctx context.Context, w http.ResponseWriter, sb Sand
 	fail(w, 409, msg)
 }
 
-// choiceLabel is an approve choice as the dialog names it.
-func choiceLabel(name string) string {
-	for _, c := range approveChoices {
-		if c.Name == name {
-			return c.Label
-		}
-	}
-	return name
-}
-
-// blockedChoices says which approve choices OpenShell would refuse and why.
-func blockedChoices(fit map[string][]EndpointAmbiguity, rule string, providers map[string]RuleProvider) map[string]BlockedChoice {
-	if len(fit) == 0 {
-		return nil
-	}
-	out := map[string]BlockedChoice{}
-	for choice, list := range fit {
-		views := ambiguityViews(list, []string{rule}, nil, providers)
-		var parts []string
-		for _, v := range views {
-			parts = append(parts, v.Endpoint+" には "+ruleOwner(v.Rule, v.Provider)+" があり、設定が食い違います ("+strings.Join(v.Details, "、")+")")
-		}
-		out[choice] = BlockedChoice{Reason: "「" + choiceLabel(choice) + "」は選べません: " + strings.Join(parts, "。") + "。OpenShell は同じ宛先の規則どうしで検査のしかたがそろっていることを求めます。", Ambiguities: views}
-	}
-	return out
-}
-
 // checkApproval refuses an approval (the proposed rule, narrowed by scope)
-// that OpenShell would refuse as ambiguous, saying which choices work.
+// that OpenShell would refuse as ambiguous.
 func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rule v1.NetworkPolicyRule, scope *ProposalScope) error {
 	base, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok {
@@ -917,34 +861,21 @@ func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rul
 		return errCode("policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
 	}
 	r := rule
+	var attach *bool
 	if scope != nil {
-		r = scope.apply(cloneRule(rule))
+		r, attach = scope.apply(cloneRule(rule)), scope.Attach
 	}
-	list, err := predictAmbiguities(base, effective, approvalOps(name, r))
+	composed := withProviderRules(base, effective)
+	if err := bindingRequired(inheritShadowed(approvedRule(freeRuleName(base, name), r), composed, attach), composed); err != nil {
+		return err
+	}
+	list, err := predictAmbiguities(base, effective, approvalPlanOps(base, effective, name, r, attach))
 	if err != nil || len(list) == 0 {
 		return nil
 	}
 	views := ambiguityViews(list, []string{name}, nil, s.ruleProviders(ctx, sb))
-	before, err := indexAmbiguities(ctx, withProviderRules(base, effective))
-	if err != nil {
-		return err
-	}
-	fit, err := proposalFit(ctx, before, base, effective, name, rule)
-	if err != nil {
-		return err
-	}
-	ok2, labels := []string{}, []string{}
-	for _, c := range approveChoices {
-		if _, blocked := fit[c.Name]; !blocked {
-			ok2 = append(ok2, c.Name)
-			labels = append(labels, "「"+c.Label+"」")
-		}
-	}
-	fix := "どの選び方でも承認できません。食い違う規則の宛先を外す (プロバイダーの規則ならプロバイダーを外す) か、この提案を却下してください。"
-	if len(ok2) > 0 {
-		fix = strings.Join(labels, "") + "なら承認できます。"
-	}
-	return errRefused("ambiguous_approve", map[string]any{"choices": ok2}, ambiguityMessage("この承認は OpenShell に拒否されます", views, fix), views, nil)
+	fix := "食い違う規則の宛先を外す (プロバイダーの規則ならプロバイダーを外す) か、許可する内容を変えるか、この提案を却下してください。"
+	return errRefused("ambiguous_approve", nil, ambiguityMessage("この承認は OpenShell に拒否されます", views, fix), views, nil)
 }
 
 // checkEdit refuses a hand edit that OpenShell would refuse as ambiguous.
@@ -954,11 +885,11 @@ func (s *Server) checkEdit(ctx context.Context, sb Sandbox, edit PolicyEdit) err
 	default:
 		return nil // removing never makes endpoints ambiguous
 	}
-	base, _, ok, err := s.policyLayers(ctx, sb)
+	base, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok || err != nil {
 		return nil
 	}
-	ops, err := edit.operations(base)
+	ops, err := edit.operations(base, withProviderRules(base, effective))
 	if err != nil {
 		return nil // the runtime says why
 	}
@@ -969,35 +900,53 @@ func (s *Server) checkEdit(ctx context.Context, sb Sandbox, edit PolicyEdit) err
 }
 
 // attachAmbiguities are the endpoints of the sandbox's policy that the
-// provider's rule would make ambiguous (OpenShell refuses the attach:
-// grpc/policy.rs validate_candidate_provider_attachments). None when it
-// is attached already.
+// provider's rules would make ambiguous: the rule of a profile with
+// endpoints (OpenShell refuses the attach: grpc/policy.rs
+// validate_candidate_provider_attachments) and the initial rules Iwato
+// adds (provider_rules.go). None when it is attached already.
 func (s *Server) attachAmbiguities(ctx context.Context, sb Sandbox, p ProviderInfo) ([]AmbiguityView, error) {
 	_, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok || err != nil {
 		return nil, err
 	}
-	m := s.providerProfile(ctx, p)
-	if m == nil {
-		return nil, nil
-	}
-	providers := s.ruleProviders(ctx, sb)
-	for _, rp := range providers {
-		if rp.Name == p.Name {
+	if prt, ok := s.rt.(providerRuntime); ok {
+		_, attached, err := s.providerState(ctx, prt)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(attached[sb.Name], p.Name) {
 			return nil, nil
 		}
 	}
+	providers := s.ruleProviders(ctx, sb)
 	candidate := maps.Clone(effective)
 	if candidate == nil {
 		candidate = map[string]v1.NetworkPolicyRule{}
 	}
-	key := composeProviderRule(candidate, p.Name, m)
-	providers[key] = providerLabel(p)
+	var keys []string
+	if m := s.providerProfile(ctx, p); m != nil {
+		if key := composeProviderRule(candidate, p.Name, m); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	initial, err := providerInitialRules(p.Profile, p.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range slices.Sorted(maps.Keys(initial)) {
+		r := initial[k]
+		r.Name = freeRuleName(candidate, k)
+		candidate[r.Name] = r
+		keys = append(keys, r.Name)
+	}
+	for _, k := range keys {
+		providers[k] = providerLabel(p)
+	}
 	list := newAmbiguities(effective, candidate)
 	if len(list) == 0 {
 		return nil, nil
 	}
-	return ambiguityViews(list, []string{key}, candidate, providers), nil
+	return ambiguityViews(list, keys, candidate, providers), nil
 }
 
 // providersAmbiguities are the ambiguities among providers chosen
@@ -1007,7 +956,13 @@ func (s *Server) providersAmbiguities(ctx context.Context, list []ProviderInfo) 
 	providers := map[string]RuleProvider{}
 	for _, p := range list {
 		if m := s.providerProfile(ctx, p); m != nil {
-			providers[composeProviderRule(rules, p.Name, m)] = providerLabel(p)
+			if key := composeProviderRule(rules, p.Name, m); key != "" {
+				providers[key] = providerLabel(p)
+			}
+		}
+		initial, _ := providerInitialRules(p.Profile, p.Name)
+		for k, r := range initial {
+			rules[k], providers[k] = r, providerLabel(p)
 		}
 	}
 	if a := findEndpointAmbiguities(rules); len(a) > 0 {

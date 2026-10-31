@@ -13,6 +13,7 @@
 #   sh providers-check.sh civitai           # (g) /api/v1/me and a model listing
 #   sh providers-check.sh vastai            # (h) the user and an offer search
 #   sh providers-check.sh comfy             # (i) /api/user, v1 and v2 auth
+#   sh providers-check.sh codex             # (j) codex exec with the iwato-codex-subscription provider
 set -u
 placeholder() {
   eval "v=\${$1:-}"
@@ -91,5 +92,12 @@ case ${1:-} in
     echo "---- GET /api/queue (X-API-Key, v1)"
     curl -sS -H "X-API-Key: $COMFY_CLOUD_API_KEY" https://cloud.comfy.org/api/queue | head -c 300; echo
     ;;
-  *) sed -n '2,15p' "$0"; exit 2 ;;
+  codex)
+    placeholder CODEX_CHATGPT_ACCESS_TOKEN; placeholder CODEX_CHATGPT_ACCOUNT_ID
+    f=${CODEX_HOME:-$HOME/.codex}/auth.json
+    if grep -qs '"refresh_token":"iwato-gateway-refreshes"' "$f"; then echo "OK   $f is Iwato's"; else echo "NG   $f is not Iwato's (codex logout, then a new terminal)"; fi
+    echo "---- codex exec"
+    codex exec --skip-git-repo-check 'Reply with exactly: PROVIDER-OK'
+    ;;
+  *) sed -n '2,16p' "$0"; exit 2 ;;
 esac

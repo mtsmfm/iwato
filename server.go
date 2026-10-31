@@ -58,9 +58,7 @@ type Server struct {
 	config Config
 	rt     Runtime
 	// fake: serve -fake, the fake backend of the browser checks (fake_hooks.go).
-	fake bool
-	// closings are the proposals Iwato closes once their provider scope applies (proposal_scope.go).
-	closings                            scopeClosings
+	fake                                bool
 	host, origin, bootstrap, cookieName string
 	bootstrapUntil                      time.Time
 	mu                                  sync.Mutex
@@ -80,7 +78,7 @@ type Server struct {
 	providerMu               sync.Mutex  // serializes provider changes and their checks
 	policyLocks              policyLocks // one per sandbox: Iwato's policy writes (policy_lock.go)
 	oauth                    oauthFlows  // the Atlassian OAuth flow (atlassian_flow.go)
-	xai                      xaiFlows    // the xAI device code flow (xai.go)
+	xai, codex               deviceFlows // the device code sign-ins (device_flow.go)
 	claude                   claudeFlows // the Claude sign-in (claude_oauth.go)
 	checks                   *checkState // the startup checks (checks.go); nil in tests
 	images                   *imageManager
@@ -98,6 +96,8 @@ type Server struct {
 	resets                   resetJob         // 「すべて消す」 (reset.go)
 	autoStop                 autoStops        // stopping once the terminals end (autostop.go)
 	resources                *resourceMonitor // CPU, memory, GPU and home sizes (resources.go)
+	hostChecks               *hostChecker     // the approval's host checks (host_check.go)
+	hostChecksOnce           sync.Once
 
 	// flowCtx is the OAuth flows' life until a reset (oauthLife).
 	flowCtx context.Context
@@ -198,6 +198,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/oauth/atlassian", s.handleOAuth)
 	mux.HandleFunc("/api/oauth/atlassian/", s.handleOAuth)
 	mux.HandleFunc("/api/oauth/xai/", s.handleXAIOAuth)
+	mux.HandleFunc("/api/oauth/codex/", s.handleCodexOAuth)
 	mux.HandleFunc("/api/oauth/claude/", s.handleClaudeOAuth)
 	if s.fake {
 		fakeHooks.routes(s, mux)
@@ -211,6 +212,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/presence", s.handlePresence)
 	mux.HandleFunc("/api/reset", s.handleReset)
 	mux.HandleFunc("/api/timezone", s.handleTimezone)
+	mux.HandleFunc("/api/hostcheck", s.handleHostCheck)
 	mux.HandleFunc("/api/resources", s.handleResources)
 	mux.HandleFunc("/api/resources/", s.handleResources)
 	mux.HandleFunc("/ws/", s.handleWS)

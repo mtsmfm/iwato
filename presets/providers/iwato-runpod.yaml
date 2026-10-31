@@ -1,0 +1,18 @@
+# The initial rule of a provider of profiles/iwato-runpod.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+id: iwato-runpod
+label: RunPod
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - { host: api.runpod.io, port: 443, path: /graphql, protocol: graphql, access: read-only, enforcement: enforce }
+      - { host: api.runpod.io, port: 443, path: /v2/**, protocol: rest, access: read-only, enforcement: enforce }
+      - { host: rest.runpod.io, port: 443, path: /v1/**, protocol: rest, access: read-only, enforcement: enforce }
+      - { host: api.runpod.ai, port: 443, path: /v2/**, protocol: rest, access: read-only, enforcement: enforce }
+      - { host: hapi.runpod.net, port: 443, path: /v1/**, protocol: rest, access: read-only, enforcement: enforce }

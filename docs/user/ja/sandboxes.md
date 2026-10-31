@@ -11,7 +11,7 @@ Iwato のサンドボックス 1 つは [NVIDIA OpenShell](https://github.com/NV
 - **名前**: 英小文字で始まり、英小文字・数字・ハイフンの 32 文字以内。公開するポートの名前 (`5173.名前.localhost`) にも使うので、DNS のラベルにならない名前ではこの PC のリンクが出ません ([ポートの公開](publishing.md))
 - **イメージ**: 空欄なら Iwato の標準イメージ (下記)。`openshell sandbox create --from` と同じく任意のイメージも指定できます (例: `ubuntu:24.04`)
 - **「GPU を使う」**: この PC の GPU をサンドボックスに渡します (WSL の GPU。台数や機種は選べません)。あとから「作り直す」で変えられ、GPU を使える環境でだけ出ます。[デスクトップと GPU](desktop.md)
-- **「通信のプリセット」**: 最初のポリシーに入れる規則のまとまり ([通信のポリシー](network-policy.md))
+- **「通信のプリセット」**: 最初の通信の規則。「パッケージ」「ツールのインストール」「エージェントの CLI」は最初から選ばれ、「よく読む参照先」は選ばれていません。「詳細」に何を許すかが出ます ([通信のポリシー](network-policy.md#プリセット))
 - **プロバイダー**: 付ける認証情報 ([プロバイダー](providers.md))
 
 作ると起動してターミナルに接続します。サンドボックスのカードには「起動」と、メニュー (「⋯」) の「停止」「削除」「作り直す」「プロバイダー」があります。
@@ -64,6 +64,24 @@ Iwato の標準イメージ (`ghcr.io/mtsmfm/iwato-sandbox`、`sandboximage/` �
 - Iwato のサンドボックスの決まり (下記)
 
 言語のランタイム (Node、Python、Go、Ruby、Java など) とエージェントの CLI は入っていません。サンドボックスの中で mise で入れます ([エージェント](agents.md))。
+
+### パッケージマネージャーの既定
+
+悪意のあるパッケージのリリースへの備えとして、mise で入れるパッケージマネージャーの既定をイメージが設定しています ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。プロジェクトやご自身の設定より優先度が低いので、どちらでも変えられます:
+
+| ツール | 既定 | 場所 | 変え方 |
+|---|---|---|---|
+| npm (11.10 以降) | `min-release-age=7` (日)、`ignore-scripts=true` | `/etc/iwato/npmrc`。`NPM_CONFIG_GLOBALCONFIG` で npm のグローバル設定として読まれます | プロジェクトの `.npmrc` か `~/.npmrc`。1 回だけなら `--min-release-age=0`、`--ignore-scripts=false` |
+| uv (0.9.17 以降) | `exclude-newer = "7 days"` | `/etc/uv/uv.toml` | プロジェクトの `[tool.uv]` か `uv.toml`、`~/.config/uv/uv.toml`。1 回だけなら `--exclude-newer false` (uv 0.11.24 以降) |
+| pip | なし (pip 26.0 は期間を受け付けず、今の Python に入っているため) | | pip 26.1 以降で `~/.config/pip/pip.conf` か仮想環境の `pip.conf` に `[global] uploaded-prior-to = P7D`。1 回だけなら `--uploaded-prior-to P7D` |
+| Bundler (4.0.13 以降) | `BUNDLE_COOLDOWN=7` (日) | シェルの環境変数 | `bundle config set --local cooldown N`。1 回だけなら `--cooldown 0` |
+
+- これより古い版は設定を無視します。npm 11.10 より前は `min-release-age` を知らないという警告を出すことがあります
+- インストールスクリプトの要るパッケージ (native のビルド) は npm では失敗するか、ビルドされないままになります。そのインストールだけ `--ignore-scripts=false` を付けるか、後から `npm rebuild PKG --ignore-scripts=false` を実行します。pnpm 10 以降と Bun は、もともとプロジェクトが許したパッケージにしか依存のスクリプトを実行しません (Bun はよく使われるパッケージの一覧も)。Yarn Berry では `.yarnrc.yml` の `enableScripts: false` で止まります
+- uv はクールダウンを `uv.lock` に記録します。クールダウンなしで作られたロックファイルのプロジェクトでは、`uv lock` がロックファイルを書き換え、`uv sync --locked` は失敗します。`uv sync --frozen` はロックファイルのとおりに入れます。クールダウンの要らないプロジェクトは `[tool.uv]` に `exclude-newer = false` を書きます (uv 0.11.24 以降)
+- pnpm 11 以降と最近の Yarn Berry には 1 日の既定のクールダウンがあります (`minimumReleaseAge` (分)、`npmMinimalAgeGate`)。延ばすにはプロジェクトかグローバルの設定 (`~/.config/pnpm/config.yaml`、`~/.yarnrc.yml`) に書きます。Bun には既定がなく、グローバルの `~/.bunfig.toml` はホームにあるのでイメージでは設定できません。そこかプロジェクトの `bunfig.toml` に `[install] minimumReleaseAge = 604800` (秒) を書きます
+- すべてのシェルで既定をやめるには、`~/.bashrc` に `unset NPM_CONFIG_GLOBALCONFIG BUNDLE_COOLDOWN` を書き、`~/.config/uv/uv.toml` に `exclude-newer = false` を書きます (uv 0.11.24 以降)
+- `/AGENTS.md` はエージェントにロックファイルからのインストールを求めています (`npm ci`、`pnpm install --frozen-lockfile`、`uv sync --frozen`、`BUNDLE_FROZEN=true bundle install` など)
 
 ### イメージの取得
 

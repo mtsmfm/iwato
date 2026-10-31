@@ -1,0 +1,15 @@
+# The initial rule of a provider of profiles/iwato-codex-subscription.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+id: iwato-codex-subscription
+label: Codex
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - { host: chatgpt.com, port: 443, path: /backend-api/codex/**, protocol: rest, access: read-write, enforcement: enforce }
+      - { host: chatgpt.com, port: 443, path: /backend-api/wham/**, protocol: rest, access: read-write, enforcement: enforce }

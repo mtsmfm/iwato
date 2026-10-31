@@ -11,7 +11,7 @@ Alternatives: wait for upstream (no Modal until then); `tls: skip` (no credentia
 
 ## Decision
 
-- The gateway image builds `openshell-supervisor` from v0.1.5's source with `internal/openshell/gateway/h2-l7.patch` and serves as the supervisor image for both drivers. The gateway, CLI and `openshell-sandbox` stay the release's
+- The gateway image builds `openshell-supervisor` from v0.1.5's source with `internal/openshell/gateway/openshell.patch` and serves as the supervisor image for both drivers. The gateway, CLI and `openshell-sandbox` stay the release's
 - The patch offers `h2` only to the `host:port` destinations named in `OPENSHELL_HTTP2_ENDPOINTS` when the supervisor is built, and only where every endpoint of the route is inspected REST without SigV4 or body rewriting, the tunnel carries credentials and no middleware applies. Each stream is admitted like an HTTP/1 request
 - Only `iwato-modal`'s endpoints are listed (a test keeps the list equal to the profile). Everything else keeps `http/1.1` only
 

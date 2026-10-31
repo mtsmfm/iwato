@@ -88,64 +88,34 @@ func TestPolicyYAMLPlan(t *testing.T) {
 	if _, ok := rules["drop"]; ok {
 		t.Fatal("a removed rule stayed")
 	}
-}
 
-// ADR 0006: no rule written as YAML may reach an attached provider's
-// credential, inspected or not; one already there may stay as it was
-// (for the same or fewer programs).
-func TestPolicyYAMLProviderHosts(t *testing.T) {
-	targets := []scopeTarget{{name: "github-personal", label: "GitHub", creds: []credScope{{Provider: "github-personal", Host: "api.github.com", Port: 443}}}}
-	gh := v1.PolicyNetworkEndpoint{Host: "api.github.com", Port: 443, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce,
-		Rules: []v1.L7Rule{{Allow: &v1.L7Allow{Method: "POST", Path: "/repos/other/repo/**"}}}}
-	curl := []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}
-	old := map[string]v1.NetworkPolicyRule{"legacy": {Name: "legacy", Binaries: append(curl, v1.PolicyNetworkBinary{Path: "/usr/bin/git"}), Endpoints: []v1.PolicyNetworkEndpoint{gh}}}
-	other := v1.PolicyNetworkEndpoint{Host: "example.com", Port: 443}
-	cases := []struct {
-		what string
-		rule v1.NetworkPolicyRule
-		hit  bool
-	}{
-		{"a new rule on the provider's host", v1.NetworkPolicyRule{Binaries: curl, Endpoints: []v1.PolicyNetworkEndpoint{gh}}, true},
-		{"a new uninspected rule on it", v1.NetworkPolicyRule{Binaries: curl, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.github.com", Port: 443}}}, true},
-		{"another host", v1.NetworkPolicyRule{Binaries: curl, Endpoints: []v1.PolicyNetworkEndpoint{other}}, false},
+	// A credential binding (not in the YAML) stays with an edited
+	// endpoint in the same place (host, ports, path); one that moves
+	// loses it, and the save says so.
+	boundEp := func(host, path string) v1.PolicyNetworkEndpoint {
+		e := ep(host)
+		e.Path = path
+		e.CredentialBinding = &types.NetworkCredentialBinding{Provider: "work"}
+		return e
 	}
-	for _, c := range cases {
-		rules := map[string]v1.NetworkPolicyRule{"r": c.rule}
-		if hits := policyYAMLProviderHits(old, rules, []string{"r"}, targets); (len(hits) > 0) != c.hit {
-			t.Errorf("%s: %+v", c.what, hits)
-		}
+	plain := func(host, path string) v1.PolicyNetworkEndpoint {
+		e := ep(host)
+		e.Path, e.Access = path, v1.NetworkAccessPresetFull
+		return e
 	}
-	legacy := func(bins []v1.PolicyNetworkBinary, eps ...v1.PolicyNetworkEndpoint) []ProviderHostHit {
-		return policyYAMLProviderHits(old, map[string]v1.NetworkPolicyRule{"legacy": {Binaries: bins, Endpoints: eps}}, []string{"legacy"}, targets)
+	old = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{boundEp("api.example.com", "/v1/**"), boundEp("up.example.com", "/**")}}}
+	edited = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{plain("API.example.com", "/v1/**"), plain("up.example.com", "/v2/**"), plain("new.example.com", "/v1/**")}}}
+	rules, diff = policyYAMLPlan(old, edited)
+	got := rules["b"].Endpoints
+	if got[0].CredentialBinding == nil || got[0].CredentialBinding.Provider != "work" || got[1].CredentialBinding != nil || got[2].CredentialBinding != nil {
+		t.Fatalf("bindings: %+v", got)
 	}
-	if hits := legacy(curl, gh, other); len(hits) != 0 {
-		t.Error("an endpoint kept as it was, for fewer programs:", hits)
+	if len(diff.Unbound) != 1 || diff.Unbound[0].Host != "up.example.com:443" || diff.Unbound[0].Path != "/**" || diff.Unbound[0].Provider != "work" {
+		t.Fatalf("unbound: %+v", diff.Unbound)
 	}
-	if hits := legacy(append(curl, v1.PolicyNetworkBinary{Path: "/usr/bin/python3"}), gh); len(hits) == 0 {
-		t.Error("a program added to a provider's host passed")
-	}
-	wider := gh
-	wider.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "*", Path: "/**"}}}
-	if hits := legacy(curl, wider); len(hits) == 0 {
-		t.Error("a widened provider's endpoint passed")
-	}
-}
-
-// Iwato's presets with rules on GitHub's hosts (packages) fit the
-// GitHub provider's scope; wider access does not.
-func TestBeyondScope(t *testing.T) {
-	for _, prof := range allProfiles() {
-		if b := beyondScope(presetRules(allBuiltinPresets()), prof.ID, prof.proto()); len(b) != 0 {
-			t.Errorf("Iwato's presets with %s: %+v", prof.ID, b)
-		}
-	}
-	gh, _ := profileByID("iwato-github")
-	post := v1.NetworkPolicyRule{Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/git"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "github.com", Port: 443, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce,
-		Rules: []v1.L7Rule{{Allow: &v1.L7Allow{Method: "POST", Path: "/o/r.git/git-receive-pack"}}}}}}
-	mutation := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{{Host: "api.github.com", Port: 443, Path: "/graphql", Protocol: "graphql", Enforcement: v1.NetworkEnforcementModeEnforce, Access: v1.NetworkAccessPresetReadWrite}}}
-	audited := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{{Host: "uploads.github.com", Port: 443, Protocol: "rest", Access: v1.NetworkAccessPresetReadOnly, Enforcement: v1.NetworkEnforcementModeAudit}}}
-	if b := beyondScope(map[string]v1.NetworkPolicyRule{"push": post, "mutation": mutation, "audited": audited}, "github", gh.proto()); len(b) != 3 {
-		t.Fatalf("wider rules: %+v", b)
+	// A rule taken out lists its bindings too.
+	if _, d := policyYAMLPlan(old, map[string]v1.NetworkPolicyRule{}); len(d.Unbound) != 2 {
+		t.Fatalf("%+v", d)
 	}
 }
 

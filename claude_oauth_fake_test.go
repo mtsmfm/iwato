@@ -88,7 +88,7 @@ func TestClaudeFlow(t *testing.T) {
 	if done.Status != "done" || done.Name != "claude-subscription" || done.LoopbackURL != "" || done.Refresh == nil {
 		t.Fatalf("%+v", done)
 	}
-	if got := c.rt.log(); !slices.Equal(got, []string{"create claude-subscription iwato-claude-subscription-for-claude-subscription CLAUDE_CODE_OAUTH_TOKEN", "configure claude-subscription CLAUDE_CODE_OAUTH_TOKEN", "rotate claude-subscription"}) {
+	if got := c.rt.log(); !slices.Equal(got, []string{"create claude-subscription iwato-claude-subscription CLAUDE_CODE_OAUTH_TOKEN", "configure claude-subscription CLAUDE_CODE_OAUTH_TOKEN", "rotate claude-subscription"}) {
 		t.Fatalf("%q", got)
 	}
 	if m := c.rt.material[0]; m["client_id"] != claudeClientID || m["refresh_token"] != "rt-SECRET" {

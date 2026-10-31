@@ -9,11 +9,16 @@ import (
 )
 
 // The match follows OpenShell's: host and port overlap, the provider's
-// path covers the endpoint's, and the endpoint is not inspected.
+// path covers the endpoint's, and the endpoint is not inspected. The
+// providers' credentialed endpoints are their initial rules' bindings.
 func TestCredentialConflicts(t *testing.T) {
-	claude := providerScopes("claude", claudeSubscriptionProfileID)
-	atl := providerScopes("atl", atlassianProfileID)
-	gh := providerScopes("gh", "iwato-github")
+	scopes := func(name, profile string) []credScope {
+		rules, _ := providerInitialRules(profile, name)
+		return boundScopes(rules, []ProviderInfo{{Name: name, Profile: profile}})
+	}
+	claude := scopes("claude", claudeSubscriptionProfileID)
+	atl := scopes("atl", atlassianProfileID)
+	gh := scopes("gh", "iwato-github")
 	if len(claude) != 1 || claude[0].Host != "api.anthropic.com" || len(gh) != 4 || len(atl) != 1 || atl[0].Path != "/v2/mcp/**" {
 		t.Fatal(claude, gh, atl)
 	}

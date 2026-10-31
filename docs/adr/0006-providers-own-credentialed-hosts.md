@@ -1,6 +1,6 @@
 # 0006. Providers own the hosts their credentials reach; policies cover the rest
 
-- Status: Accepted
+- Status: Superseded by [0022](0022-iwato-owns-the-sandbox-policy.md)
 - Date: 2026-10-17
 
 ## Context

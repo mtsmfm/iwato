@@ -6,19 +6,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
 )
 
 // fakeRevision is one version of a fake sandbox's network policy.
 type fakeRevision struct {
-	at    time.Time
-	rules map[string]v1.NetworkPolicyRule
+	at         time.Time
+	rules      map[string]v1.NetworkPolicyRule
+	provenance map[string]string
 }
 
 // fakeLoadDelay stands in for the sandbox's settings poll.
@@ -83,6 +87,15 @@ func (d *Fake) fakePolicy(name string) []fakeRevision {
 		if name == "dev" && d.seedPolicy != nil {
 			second = cloneRules(d.seedPolicy)
 		}
+		// The attached providers' initial rules (provider_rules.go), as
+		// the sandbox was created with them.
+		var list []ProviderInfo
+		for _, p := range d.prov.list {
+			list = append(list, p)
+		}
+		if withInitial, err := withProviderInitialRules(second, list, d.prov.attached[name]); err == nil {
+			second = withInitial
+		}
 		now := time.Now()
 		d.policies[name] = []fakeRevision{{at: now.Add(-2 * time.Hour), rules: first}, {at: now.Add(-time.Hour), rules: second}}
 	}
@@ -126,9 +139,7 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 	chunks := []v1.PolicyChunk{
 		// Waiting.
 		c("fake-git", "pending", "allow_github_com_443", fakeGitRemote, "iwato リポジトリにブランチを push する", 3, ago(16), ago(12), rule("allow_github_com_443", []string{fakeGitRemote}, git)),
-		// A REST write under a repository, by the GitHub provider's gh:
-		// a provider with its own profile (github-work) takes it as a
-		// repository to write to (proposal_scope.go).
+		// A REST write under a repository, by the GitHub provider's gh.
 		c("fake-pr", "pending", "allow_api_github_com_443", "/usr/bin/gh", "octo-org/octo-repo に PR を作る", 1, ago(14), ago(14), rule("allow_api_github_com_443", []string{"/usr/bin/gh"}, pr)),
 		c("fake-downloads", "pending", "allow_downloads_claude_ai_443", fakeClaudeBin, auto(fakeClaudeBin, "downloads.claude.ai", 443), 4, ago(174), ago(23), rule("allow_downloads_claude_ai_443", []string{fakeClaudeBin}, downloads)),
 		c("fake-datadog", "pending", "allow_http_intake_logs_us5_datadoghq_com_443", fakeClaudeBin, auto(fakeClaudeBin, "http-intake.logs.us5.datadoghq.com", 443), 37, ago(302), ago(10), rule("allow_http_intake_logs_us5_datadoghq_com_443", []string{fakeClaudeBin}, l4Endpoint("http-intake.logs.us5.datadoghq.com", 443))),
@@ -204,6 +215,10 @@ func (d *Fake) fakeMerge(name string, ops []v1.PolicyMergeOperation) error {
 	if err := fakeValidate(d.fakeCompose(name, rules)); err != nil {
 		return err
 	}
+	if rulesKey(rules) == rulesKey(revs[len(revs)-1].rules) {
+		// As the gateway: the same policy makes no revision.
+		return nil
+	}
 	d.policies[name] = append(revs, fakeRevision{at: time.Now(), rules: rules})
 	return nil
 }
@@ -221,6 +236,20 @@ func fakeValidate(rules map[string]v1.NetworkPolicyRule) error {
 	return errors.New("network endpoint ambiguity validation failed:\n" + strings.Join(lines, "\n"))
 }
 
+// fakeBindings refuses bindings as the gateway does: to a provider that is
+// not attached, or whose profile has endpoints. The caller holds d.mu.
+func (d *Fake) fakeBindings(name string, rules map[string]v1.NetworkPolicyRule) error {
+	for _, p := range boundProviders(rules) {
+		if !slices.Contains(d.prov.attached[name], p) {
+			return fmt.Errorf("credential_binding references provider '%s', but that provider is not attached to the sandbox", p)
+		}
+		if _, ok := builtinProfile(d.prov.list[p].Profile); !ok {
+			return fmt.Errorf("credential_binding provider '%s' profile already defines endpoints; profile endpoints remain the credential boundary", p)
+		}
+	}
+	return nil
+}
+
 // fakeCompose is rules with the attached providers' rules, as the gateway
 // composes them. The caller holds d.mu.
 func (d *Fake) fakeCompose(name string, rules map[string]v1.NetworkPolicyRule) map[string]v1.NetworkPolicyRule {
@@ -228,6 +257,9 @@ func (d *Fake) fakeCompose(name string, rules map[string]v1.NetworkPolicyRule) m
 	for _, p := range d.prov.attached[name] {
 		if prof, ok := profileByID(d.prov.list[p].Profile); ok {
 			composeProviderRule(rules, p, prof.proto())
+		} else if d.prov.list[p].Profile == "openai" {
+			m, _ := parseProfileYAML([]byte(fakeGatewayProfile))
+			composeProviderRule(rules, p, m)
 		}
 	}
 	return rules
@@ -258,7 +290,7 @@ func (d *Fake) fakeStatus(name string, version int) (*v1.PolicyStatusResult, err
 	// The parts fixed at creation, as Iwato creates them.
 	policy := sandboxPolicy(Sandbox{Name: name})
 	policy.NetworkPolicies = rev.rules
-	return &v1.PolicyStatusResult{ActiveVersion: uint32(active), Revision: v1.SandboxPolicyRevision{Version: uint32(version), Status: status, CreatedAt: rev.at, Policy: policy}}, nil
+	return &v1.PolicyStatusResult{ActiveVersion: uint32(active), Revision: v1.SandboxPolicyRevision{Version: uint32(version), Status: status, CreatedAt: rev.at, Policy: policy, Provenance: maps.Clone(rev.provenance)}}, nil
 }
 
 func (d *Fake) EditPolicy(ctx context.Context, w Sandbox, edit PolicyEdit) (PolicyChange, error) {
@@ -335,7 +367,7 @@ func fakeLogs() []v1.LogLine {
 	deny := func(method, host, path, rule, reason string) {
 		add(fmt.Sprintf("HTTP:%s [MED] DENIED %s http://%s:443%s [policy:%s engine:l7] [reason:L7_REQUEST deny %s %s:443%s reason=%s]", method, method, host, path, rule, method, host, path, reason))
 	}
-	const api, ci, gh = "allow_api_example_com_443", "allow_ci_tailnet_example_443", "_provider_github_personal"
+	const api, ci, gh = "allow_api_example_com_443", "allow_ci_tailnet_example_443", "provider_github_personal"
 	connect("/usr/bin/curl", 301, "api.example.com", api)
 	deny("PUT", "api.example.com", "/v1/items/42", api, "PUT /v1/items/42 not permitted by policy")
 	deny("GET", "api.example.com", "/v2/status", api, "GET /v2/status not permitted by policy")
@@ -366,6 +398,18 @@ func (d *Fake) fakePropose(sandbox, host string) string {
 		HitCount: 1, FirstSeen: now, LastSeen: now, CreatedAt: now, ReviewToken: "t-" + id,
 		ProposedRule: &v1.NetworkPolicyRule{Name: name, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint(host, 443)}}})
 	return "proposed " + name
+}
+
+// fakeDrift changes the policy as OpenShell's CLI would: a revision with a
+// rule of its own and no provenance of Iwato's.
+func (d *Fake) fakeDrift(sandbox string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	revs := d.fakePolicy(sandbox)
+	rules := cloneRules(revs[len(revs)-1].rules)
+	rules["outside_change"] = v1.NetworkPolicyRule{Name: "outside_change", Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint("outside.example", 443)}}
+	d.policies[sandbox] = append(revs, fakeRevision{at: time.Now(), rules: rules})
+	return "policy changed outside Iwato"
 }
 
 // fake runs the same code as the gateway (openshell_proposals.go,
@@ -407,11 +451,12 @@ func (g fakeGateway) GetDraft(_ context.Context, _, sandbox string, opts ...v1.G
 	return &v1.DraftPolicy{Chunks: chunks, DraftVersion: version}, nil
 }
 
-func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, _ ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {
+func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, opts ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {
 	g.d.gatewayCall("GetStatus")
 	g.d.mu.Lock()
 	defer g.d.mu.Unlock()
-	return g.d.fakeStatus(sandbox, 0)
+	cfg := types.ApplyGetStatusOptions(opts)
+	return g.d.fakeStatus(sandbox, int(cfg.Version()))
 }
 
 // ApproveDraftChunk merges the chunk's rule (AddRule under its rule name),
@@ -465,6 +510,10 @@ func (g fakeGateway) EditDraftChunk(_ context.Context, _, sandbox, id string, ru
 	if c.Status != "pending" {
 		return fmt.Errorf("chunk status is '%s', expected 'pending'", c.Status)
 	}
+	// As the gateway's evaluation: a rule name the policy does not have.
+	revs := g.d.fakePolicy(sandbox)
+	composed := g.d.fakeCompose(sandbox, revs[len(revs)-1].rules)
+	c.RuleName = freeRuleName(composed, c.RuleName)
 	c.ProposedRule, c.ReviewToken = rule, c.ReviewToken+"-edited"
 	return nil
 }
@@ -508,7 +557,7 @@ func (d *Fake) openShell() *OpenShell {
 }
 
 func (d *Fake) newOpenShell() *OpenShell {
-	return &OpenShell{pol: fakeGateway{d: d}, sandboxConfig: d.fakeConfig,
+	return &OpenShell{pol: fakeGateway{d: d}, sandboxConfig: d.fakeConfig, providerList: d.ListProviders,
 		logs: func(context.Context, Sandbox) ([]v1.LogLine, error) { d.gatewayCall("GetLogs"); return fakeLogs(), nil },
 		updateConfig: func(_ context.Context, u *v1.ConfigUpdate) (*v1.ConfigUpdateResult, error) {
 			d.gatewayCall("UpdateConfig")
@@ -520,7 +569,10 @@ func (d *Fake) newOpenShell() *OpenShell {
 				if err := fakeValidate(d.fakeCompose(u.Name, rules)); err != nil {
 					return nil, err
 				}
-				d.policies[u.Name] = append(d.fakePolicy(u.Name), fakeRevision{at: time.Now(), rules: rules})
+				if err := d.fakeBindings(u.Name, rules); err != nil {
+					return nil, err
+				}
+				d.policies[u.Name] = append(d.fakePolicy(u.Name), fakeRevision{at: time.Now(), rules: rules, provenance: maps.Clone(u.Annotations)})
 				return &v1.ConfigUpdateResult{Version: uint32(len(d.policies[u.Name]))}, nil
 			}
 			if err := d.fakeMerge(u.Name, u.MergeOperations); err != nil {
@@ -556,6 +608,10 @@ func (d *Fake) DecideProposal(ctx context.Context, w Sandbox, action, id, digest
 	return d.openShell().DecideProposal(ctx, w, action, id, digest, scope)
 }
 
+func (d *Fake) PreviewApproval(ctx context.Context, w Sandbox, id, digest string, scope *ProposalScope) (ApprovalPreview, error) {
+	return d.openShell().PreviewApproval(ctx, w, id, digest, scope)
+}
+
 func (d *Fake) UndoProposal(ctx context.Context, w Sandbox, id string, restore bool) (PolicyChange, error) {
 	return d.openShell().UndoProposal(ctx, w, id, restore)
 }
@@ -589,6 +645,37 @@ func (d *Fake) LatestPolicy(ctx context.Context, w Sandbox) (*v1.PolicyStatusRes
 	return d.openShell().LatestPolicy(ctx, w)
 }
 
+func (d *Fake) PolicyStore(ctx context.Context, w Sandbox) (PolicyStoreState, error) {
+	if !d.created(w) {
+		return PolicyStoreState{}, errors.New("サンドボックスがありません")
+	}
+	return d.openShell().PolicyStore(ctx, w)
+}
+
+func (d *Fake) ImportPolicy(ctx context.Context, w Sandbox) (PolicyStoreState, error) {
+	return d.openShell().ImportPolicy(ctx, w)
+}
+
+func (d *Fake) OverwritePolicy(ctx context.Context, w Sandbox) (uint32, error) {
+	return d.openShell().OverwritePolicy(ctx, w)
+}
+
+func (d *Fake) PolicyCommits(ctx context.Context, w Sandbox, limit int) ([]PolicyCommit, error) {
+	return d.openShell().PolicyCommits(ctx, w, limit)
+}
+
+func (d *Fake) PolicyCommitDiff(ctx context.Context, w Sandbox, sha string) (PolicyCommit, string, error) {
+	return d.openShell().PolicyCommitDiff(ctx, w, sha)
+}
+
+func (d *Fake) RevertPolicyCommit(ctx context.Context, w Sandbox, sha string) (uint32, error) {
+	return d.openShell().RevertPolicyCommit(ctx, w, sha)
+}
+
+func (d *Fake) ForgetPolicyStore(name string) error {
+	return d.openShell().ForgetPolicyStore(name)
+}
+
 func (d *Fake) ReplacePolicyRules(ctx context.Context, w Sandbox, version uint32, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {
 	return d.openShell().ReplacePolicyRules(ctx, w, version, rules)
 }
@@ -598,8 +685,16 @@ func (d *Fake) ApplyPolicyChange(ctx context.Context, w Sandbox, ops []v1.Policy
 	return d.openShell().ApplyPolicyChange(ctx, w, ops)
 }
 
-func (d *Fake) CloseProposal(ctx context.Context, w Sandbox, request, reason string) error {
-	return d.openShell().CloseProposal(ctx, w, request, reason)
+func (d *Fake) AddProviderRules(ctx context.Context, w Sandbox, provider string, rules map[string]v1.NetworkPolicyRule) (PolicyChange, error) {
+	return d.openShell().AddProviderRules(ctx, w, provider, rules)
+}
+
+func (d *Fake) RemoveProvider(ctx context.Context, w Sandbox, provider string) (PolicyChange, error) {
+	return d.openShell().RemoveProvider(ctx, w, provider)
+}
+
+func (d *Fake) SetBinding(ctx context.Context, w Sandbox, b PolicyBinding) (PolicyChange, error) {
+	return d.openShell().SetBinding(ctx, w, b)
 }
 
 // fakePreset is the fake's owner preset (a folder of its own each run).

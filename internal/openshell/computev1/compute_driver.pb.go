@@ -2246,8 +2246,17 @@ type StartSandboxRequest struct {
 	// under a different selection. Operator endpoints may change without
 	// changing that identity; the driver still validates the retained resource.
 	IsolationBackend *IsolationBackendRegistration `protobuf:"bytes,6,opt,name=isolation_backend,json=isolationBackend,proto3" json:"isolation_backend,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Restore the state retained by the last SuspendSandbox through
+	// IsolationBackend.ResumeBoundary. When false, the driver discards any
+	// retained state and starts fresh. A resume without retained state fails
+	// with FAILED_PRECONDITION. When the driver can observe a failed restore
+	// before returning, it should keep the retained state and return an error,
+	// so the gateway returns the sandbox to SUSPENDED for another attempt.
+	Resume bool `protobuf:"varint,7,opt,name=resume,proto3" json:"resume,omitempty"`
+	// Forwarded to ResumeBoundaryRequest.restart_if_restore_fails.
+	RestartIfRestoreFails bool `protobuf:"varint,8,opt,name=restart_if_restore_fails,json=restartIfRestoreFails,proto3" json:"restart_if_restore_fails,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *StartSandboxRequest) Reset() {
@@ -2322,6 +2331,102 @@ func (x *StartSandboxRequest) GetIsolationBackend() *IsolationBackendRegistratio
 	return nil
 }
 
+func (x *StartSandboxRequest) GetResume() bool {
+	if x != nil {
+		return x.Resume
+	}
+	return false
+}
+
+func (x *StartSandboxRequest) GetRestartIfRestoreFails() bool {
+	if x != nil {
+		return x.RestartIfRestoreFails
+	}
+	return false
+}
+
+type SuspendSandboxRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Immutable sandbox ID stored by the gateway. The driver resolves its own
+	// compute-runtime name from this identity.
+	Sandbox       string `protobuf:"bytes,1,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuspendSandboxRequest) Reset() {
+	*x = SuspendSandboxRequest{}
+	mi := &file_compute_driver_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuspendSandboxRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuspendSandboxRequest) ProtoMessage() {}
+
+func (x *SuspendSandboxRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_compute_driver_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuspendSandboxRequest.ProtoReflect.Descriptor instead.
+func (*SuspendSandboxRequest) Descriptor() ([]byte, []int) {
+	return file_compute_driver_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *SuspendSandboxRequest) GetSandbox() string {
+	if x != nil {
+		return x.Sandbox
+	}
+	return ""
+}
+
+type SuspendSandboxResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuspendSandboxResponse) Reset() {
+	*x = SuspendSandboxResponse{}
+	mi := &file_compute_driver_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuspendSandboxResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuspendSandboxResponse) ProtoMessage() {}
+
+func (x *SuspendSandboxResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_compute_driver_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuspendSandboxResponse.ProtoReflect.Descriptor instead.
+func (*SuspendSandboxResponse) Descriptor() ([]byte, []int) {
+	return file_compute_driver_proto_rawDescGZIP(), []int{35}
+}
+
 type StartSandboxResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Updated opaque runtime identity after a successful start. Required when
@@ -2333,7 +2438,7 @@ type StartSandboxResponse struct {
 
 func (x *StartSandboxResponse) Reset() {
 	*x = StartSandboxResponse{}
-	mi := &file_compute_driver_proto_msgTypes[34]
+	mi := &file_compute_driver_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2345,7 +2450,7 @@ func (x *StartSandboxResponse) String() string {
 func (*StartSandboxResponse) ProtoMessage() {}
 
 func (x *StartSandboxResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[34]
+	mi := &file_compute_driver_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2358,7 +2463,7 @@ func (x *StartSandboxResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSandboxResponse.ProtoReflect.Descriptor instead.
 func (*StartSandboxResponse) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{34}
+	return file_compute_driver_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *StartSandboxResponse) GetRuntimeIdentity() string {
@@ -2380,7 +2485,7 @@ type DeleteSandboxRequest struct {
 
 func (x *DeleteSandboxRequest) Reset() {
 	*x = DeleteSandboxRequest{}
-	mi := &file_compute_driver_proto_msgTypes[35]
+	mi := &file_compute_driver_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2392,7 +2497,7 @@ func (x *DeleteSandboxRequest) String() string {
 func (*DeleteSandboxRequest) ProtoMessage() {}
 
 func (x *DeleteSandboxRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[35]
+	mi := &file_compute_driver_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2405,7 +2510,7 @@ func (x *DeleteSandboxRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSandboxRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSandboxRequest) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{35}
+	return file_compute_driver_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *DeleteSandboxRequest) GetSandboxId() string {
@@ -2432,7 +2537,7 @@ type DeleteSandboxResponse struct {
 
 func (x *DeleteSandboxResponse) Reset() {
 	*x = DeleteSandboxResponse{}
-	mi := &file_compute_driver_proto_msgTypes[36]
+	mi := &file_compute_driver_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2444,7 +2549,7 @@ func (x *DeleteSandboxResponse) String() string {
 func (*DeleteSandboxResponse) ProtoMessage() {}
 
 func (x *DeleteSandboxResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[36]
+	mi := &file_compute_driver_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2457,7 +2562,7 @@ func (x *DeleteSandboxResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSandboxResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSandboxResponse) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{36}
+	return file_compute_driver_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DeleteSandboxResponse) GetDeleted() bool {
@@ -2475,7 +2580,7 @@ type WatchSandboxesRequest struct {
 
 func (x *WatchSandboxesRequest) Reset() {
 	*x = WatchSandboxesRequest{}
-	mi := &file_compute_driver_proto_msgTypes[37]
+	mi := &file_compute_driver_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2487,7 +2592,7 @@ func (x *WatchSandboxesRequest) String() string {
 func (*WatchSandboxesRequest) ProtoMessage() {}
 
 func (x *WatchSandboxesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[37]
+	mi := &file_compute_driver_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2500,7 +2605,7 @@ func (x *WatchSandboxesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSandboxesRequest.ProtoReflect.Descriptor instead.
 func (*WatchSandboxesRequest) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{37}
+	return file_compute_driver_proto_rawDescGZIP(), []int{39}
 }
 
 type WatchSandboxesSandboxEvent struct {
@@ -2513,7 +2618,7 @@ type WatchSandboxesSandboxEvent struct {
 
 func (x *WatchSandboxesSandboxEvent) Reset() {
 	*x = WatchSandboxesSandboxEvent{}
-	mi := &file_compute_driver_proto_msgTypes[38]
+	mi := &file_compute_driver_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2525,7 +2630,7 @@ func (x *WatchSandboxesSandboxEvent) String() string {
 func (*WatchSandboxesSandboxEvent) ProtoMessage() {}
 
 func (x *WatchSandboxesSandboxEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[38]
+	mi := &file_compute_driver_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2538,7 +2643,7 @@ func (x *WatchSandboxesSandboxEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSandboxesSandboxEvent.ProtoReflect.Descriptor instead.
 func (*WatchSandboxesSandboxEvent) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{38}
+	return file_compute_driver_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *WatchSandboxesSandboxEvent) GetSandbox() *DriverSandbox {
@@ -2558,7 +2663,7 @@ type WatchSandboxesDeletedEvent struct {
 
 func (x *WatchSandboxesDeletedEvent) Reset() {
 	*x = WatchSandboxesDeletedEvent{}
-	mi := &file_compute_driver_proto_msgTypes[39]
+	mi := &file_compute_driver_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2570,7 +2675,7 @@ func (x *WatchSandboxesDeletedEvent) String() string {
 func (*WatchSandboxesDeletedEvent) ProtoMessage() {}
 
 func (x *WatchSandboxesDeletedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[39]
+	mi := &file_compute_driver_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2583,7 +2688,7 @@ func (x *WatchSandboxesDeletedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSandboxesDeletedEvent.ProtoReflect.Descriptor instead.
 func (*WatchSandboxesDeletedEvent) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{39}
+	return file_compute_driver_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *WatchSandboxesDeletedEvent) GetSandboxId() string {
@@ -2605,7 +2710,7 @@ type WatchSandboxesPlatformEvent struct {
 
 func (x *WatchSandboxesPlatformEvent) Reset() {
 	*x = WatchSandboxesPlatformEvent{}
-	mi := &file_compute_driver_proto_msgTypes[40]
+	mi := &file_compute_driver_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2617,7 +2722,7 @@ func (x *WatchSandboxesPlatformEvent) String() string {
 func (*WatchSandboxesPlatformEvent) ProtoMessage() {}
 
 func (x *WatchSandboxesPlatformEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[40]
+	mi := &file_compute_driver_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2630,7 +2735,7 @@ func (x *WatchSandboxesPlatformEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSandboxesPlatformEvent.ProtoReflect.Descriptor instead.
 func (*WatchSandboxesPlatformEvent) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{40}
+	return file_compute_driver_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *WatchSandboxesPlatformEvent) GetSandboxId() string {
@@ -2661,7 +2766,7 @@ type WatchSandboxesEvent struct {
 
 func (x *WatchSandboxesEvent) Reset() {
 	*x = WatchSandboxesEvent{}
-	mi := &file_compute_driver_proto_msgTypes[41]
+	mi := &file_compute_driver_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2673,7 +2778,7 @@ func (x *WatchSandboxesEvent) String() string {
 func (*WatchSandboxesEvent) ProtoMessage() {}
 
 func (x *WatchSandboxesEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[41]
+	mi := &file_compute_driver_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2686,7 +2791,7 @@ func (x *WatchSandboxesEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSandboxesEvent.ProtoReflect.Descriptor instead.
 func (*WatchSandboxesEvent) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{41}
+	return file_compute_driver_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *WatchSandboxesEvent) GetPayload() isWatchSandboxesEvent_Payload {
@@ -2758,7 +2863,7 @@ type EnsureWorkspaceRequest struct {
 
 func (x *EnsureWorkspaceRequest) Reset() {
 	*x = EnsureWorkspaceRequest{}
-	mi := &file_compute_driver_proto_msgTypes[42]
+	mi := &file_compute_driver_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2770,7 +2875,7 @@ func (x *EnsureWorkspaceRequest) String() string {
 func (*EnsureWorkspaceRequest) ProtoMessage() {}
 
 func (x *EnsureWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[42]
+	mi := &file_compute_driver_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2783,7 +2888,7 @@ func (x *EnsureWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnsureWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*EnsureWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{42}
+	return file_compute_driver_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *EnsureWorkspaceRequest) GetWorkspace() string {
@@ -2801,7 +2906,7 @@ type EnsureWorkspaceResponse struct {
 
 func (x *EnsureWorkspaceResponse) Reset() {
 	*x = EnsureWorkspaceResponse{}
-	mi := &file_compute_driver_proto_msgTypes[43]
+	mi := &file_compute_driver_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2813,7 +2918,7 @@ func (x *EnsureWorkspaceResponse) String() string {
 func (*EnsureWorkspaceResponse) ProtoMessage() {}
 
 func (x *EnsureWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[43]
+	mi := &file_compute_driver_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2826,7 +2931,7 @@ func (x *EnsureWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnsureWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*EnsureWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{43}
+	return file_compute_driver_proto_rawDescGZIP(), []int{45}
 }
 
 type DeleteWorkspaceRequest struct {
@@ -2839,7 +2944,7 @@ type DeleteWorkspaceRequest struct {
 
 func (x *DeleteWorkspaceRequest) Reset() {
 	*x = DeleteWorkspaceRequest{}
-	mi := &file_compute_driver_proto_msgTypes[44]
+	mi := &file_compute_driver_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2851,7 +2956,7 @@ func (x *DeleteWorkspaceRequest) String() string {
 func (*DeleteWorkspaceRequest) ProtoMessage() {}
 
 func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[44]
+	mi := &file_compute_driver_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2864,7 +2969,7 @@ func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{44}
+	return file_compute_driver_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *DeleteWorkspaceRequest) GetWorkspace() string {
@@ -2882,7 +2987,7 @@ type DeleteWorkspaceResponse struct {
 
 func (x *DeleteWorkspaceResponse) Reset() {
 	*x = DeleteWorkspaceResponse{}
-	mi := &file_compute_driver_proto_msgTypes[45]
+	mi := &file_compute_driver_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2894,7 +2999,7 @@ func (x *DeleteWorkspaceResponse) String() string {
 func (*DeleteWorkspaceResponse) ProtoMessage() {}
 
 func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_compute_driver_proto_msgTypes[45]
+	mi := &file_compute_driver_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2907,7 +3012,7 @@ func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*DeleteWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_compute_driver_proto_rawDescGZIP(), []int{45}
+	return file_compute_driver_proto_rawDescGZIP(), []int{47}
 }
 
 var File_compute_driver_proto protoreflect.FileDescriptor
@@ -3084,7 +3189,7 @@ const file_compute_driver_proto_rawDesc = "" +
 	"\n" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\x15\n" +
-	"\x13StopSandboxResponse\"\xc5\x02\n" +
+	"\x13StopSandboxResponse\"\x96\x03\n" +
 	"\x13StartSandboxRequest\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x12\n" +
@@ -3092,7 +3197,12 @@ const file_compute_driver_proto_rawDesc = "" +
 	"\x15launch_authentication\x18\x03 \x01(\fB\x04\x88\xb5\x18\x01R\x14launchAuthentication\x12#\n" +
 	"\rgeneration_id\x18\x04 \x01(\tR\fgenerationId\x12:\n" +
 	"\x19expected_runtime_identity\x18\x05 \x01(\tR\x17expectedRuntimeIdentity\x12_\n" +
-	"\x11isolation_backend\x18\x06 \x01(\v22.openshell.compute.v1.IsolationBackendRegistrationR\x10isolationBackend\"A\n" +
+	"\x11isolation_backend\x18\x06 \x01(\v22.openshell.compute.v1.IsolationBackendRegistrationR\x10isolationBackend\x12\x16\n" +
+	"\x06resume\x18\a \x01(\bR\x06resume\x127\n" +
+	"\x18restart_if_restore_fails\x18\b \x01(\bR\x15restartIfRestoreFails\"1\n" +
+	"\x15SuspendSandboxRequest\x12\x18\n" +
+	"\asandbox\x18\x01 \x01(\tR\asandbox\"\x18\n" +
+	"\x16SuspendSandboxResponse\"A\n" +
 	"\x14StartSandboxResponse\x12)\n" +
 	"\x10runtime_identity\x18\x01 \x01(\tR\x0fruntimeIdentity\"I\n" +
 	"\x14DeleteSandboxRequest\x12\x1d\n" +
@@ -3121,8 +3231,7 @@ const file_compute_driver_proto_rawDesc = "" +
 	"\x17EnsureWorkspaceResponse\"6\n" +
 	"\x16DeleteWorkspaceRequest\x12\x1c\n" +
 	"\tworkspace\x18\x01 \x01(\tR\tworkspace\"\x19\n" +
-	"\x17DeleteWorkspaceResponse2\xb4\n" +
-	"\n" +
+	"\x17DeleteWorkspaceResponse2\xa1\v\n" +
 	"\rComputeDriver\x12n\n" +
 	"\x0fGetCapabilities\x12,.openshell.compute.v1.GetCapabilitiesRequest\x1a-.openshell.compute.v1.GetCapabilitiesResponse\x12z\n" +
 	"\x13AuthenticateSandbox\x120.openshell.compute.v1.AuthenticateSandboxRequest\x1a1.openshell.compute.v1.AuthenticateSandboxResponse\x12\x80\x01\n" +
@@ -3132,7 +3241,8 @@ const file_compute_driver_proto_rawDesc = "" +
 	"\rListSandboxes\x12*.openshell.compute.v1.ListSandboxesRequest\x1a+.openshell.compute.v1.ListSandboxesResponse\x12h\n" +
 	"\rCreateSandbox\x12*.openshell.compute.v1.CreateSandboxRequest\x1a+.openshell.compute.v1.CreateSandboxResponse\x12b\n" +
 	"\vStopSandbox\x12(.openshell.compute.v1.StopSandboxRequest\x1a).openshell.compute.v1.StopSandboxResponse\x12e\n" +
-	"\fStartSandbox\x12).openshell.compute.v1.StartSandboxRequest\x1a*.openshell.compute.v1.StartSandboxResponse\x12h\n" +
+	"\fStartSandbox\x12).openshell.compute.v1.StartSandboxRequest\x1a*.openshell.compute.v1.StartSandboxResponse\x12k\n" +
+	"\x0eSuspendSandbox\x12+.openshell.compute.v1.SuspendSandboxRequest\x1a,.openshell.compute.v1.SuspendSandboxResponse\x12h\n" +
 	"\rDeleteSandbox\x12*.openshell.compute.v1.DeleteSandboxRequest\x1a+.openshell.compute.v1.DeleteSandboxResponse\x12j\n" +
 	"\x0eWatchSandboxes\x12+.openshell.compute.v1.WatchSandboxesRequest\x1a).openshell.compute.v1.WatchSandboxesEvent0\x01\x12n\n" +
 	"\x0fEnsureWorkspace\x12,.openshell.compute.v1.EnsureWorkspaceRequest\x1a-.openshell.compute.v1.EnsureWorkspaceResponse\x12n\n" +
@@ -3150,7 +3260,7 @@ func file_compute_driver_proto_rawDescGZIP() []byte {
 	return file_compute_driver_proto_rawDescData
 }
 
-var file_compute_driver_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
+var file_compute_driver_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_compute_driver_proto_goTypes = []any{
 	(*GetCapabilitiesRequest)(nil),        // 0: openshell.compute.v1.GetCapabilitiesRequest
 	(*GetCapabilitiesResponse)(nil),       // 1: openshell.compute.v1.GetCapabilitiesResponse
@@ -3186,58 +3296,60 @@ var file_compute_driver_proto_goTypes = []any{
 	(*StopSandboxRequest)(nil),            // 31: openshell.compute.v1.StopSandboxRequest
 	(*StopSandboxResponse)(nil),           // 32: openshell.compute.v1.StopSandboxResponse
 	(*StartSandboxRequest)(nil),           // 33: openshell.compute.v1.StartSandboxRequest
-	(*StartSandboxResponse)(nil),          // 34: openshell.compute.v1.StartSandboxResponse
-	(*DeleteSandboxRequest)(nil),          // 35: openshell.compute.v1.DeleteSandboxRequest
-	(*DeleteSandboxResponse)(nil),         // 36: openshell.compute.v1.DeleteSandboxResponse
-	(*WatchSandboxesRequest)(nil),         // 37: openshell.compute.v1.WatchSandboxesRequest
-	(*WatchSandboxesSandboxEvent)(nil),    // 38: openshell.compute.v1.WatchSandboxesSandboxEvent
-	(*WatchSandboxesDeletedEvent)(nil),    // 39: openshell.compute.v1.WatchSandboxesDeletedEvent
-	(*WatchSandboxesPlatformEvent)(nil),   // 40: openshell.compute.v1.WatchSandboxesPlatformEvent
-	(*WatchSandboxesEvent)(nil),           // 41: openshell.compute.v1.WatchSandboxesEvent
-	(*EnsureWorkspaceRequest)(nil),        // 42: openshell.compute.v1.EnsureWorkspaceRequest
-	(*EnsureWorkspaceResponse)(nil),       // 43: openshell.compute.v1.EnsureWorkspaceResponse
-	(*DeleteWorkspaceRequest)(nil),        // 44: openshell.compute.v1.DeleteWorkspaceRequest
-	(*DeleteWorkspaceResponse)(nil),       // 45: openshell.compute.v1.DeleteWorkspaceResponse
-	nil,                                   // 46: openshell.compute.v1.DriverSandboxSpec.EnvironmentEntry
-	nil,                                   // 47: openshell.compute.v1.DriverFenceEvidence.ResourceClaimsEntry
-	nil,                                   // 48: openshell.compute.v1.DriverSandboxTemplate.LabelsEntry
-	nil,                                   // 49: openshell.compute.v1.DriverSandboxTemplate.EnvironmentEntry
-	nil,                                   // 50: openshell.compute.v1.DriverPlatformEvent.MetadataEntry
-	(*extensionv1.PeerMetadata)(nil),      // 51: openshell.extension.v1.PeerMetadata
-	(*sandboxv1.SandboxPolicy)(nil),       // 52: openshell.sandbox.v1.SandboxPolicy
-	(*structpb.Struct)(nil),               // 53: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),         // 54: google.protobuf.Timestamp
+	(*SuspendSandboxRequest)(nil),         // 34: openshell.compute.v1.SuspendSandboxRequest
+	(*SuspendSandboxResponse)(nil),        // 35: openshell.compute.v1.SuspendSandboxResponse
+	(*StartSandboxResponse)(nil),          // 36: openshell.compute.v1.StartSandboxResponse
+	(*DeleteSandboxRequest)(nil),          // 37: openshell.compute.v1.DeleteSandboxRequest
+	(*DeleteSandboxResponse)(nil),         // 38: openshell.compute.v1.DeleteSandboxResponse
+	(*WatchSandboxesRequest)(nil),         // 39: openshell.compute.v1.WatchSandboxesRequest
+	(*WatchSandboxesSandboxEvent)(nil),    // 40: openshell.compute.v1.WatchSandboxesSandboxEvent
+	(*WatchSandboxesDeletedEvent)(nil),    // 41: openshell.compute.v1.WatchSandboxesDeletedEvent
+	(*WatchSandboxesPlatformEvent)(nil),   // 42: openshell.compute.v1.WatchSandboxesPlatformEvent
+	(*WatchSandboxesEvent)(nil),           // 43: openshell.compute.v1.WatchSandboxesEvent
+	(*EnsureWorkspaceRequest)(nil),        // 44: openshell.compute.v1.EnsureWorkspaceRequest
+	(*EnsureWorkspaceResponse)(nil),       // 45: openshell.compute.v1.EnsureWorkspaceResponse
+	(*DeleteWorkspaceRequest)(nil),        // 46: openshell.compute.v1.DeleteWorkspaceRequest
+	(*DeleteWorkspaceResponse)(nil),       // 47: openshell.compute.v1.DeleteWorkspaceResponse
+	nil,                                   // 48: openshell.compute.v1.DriverSandboxSpec.EnvironmentEntry
+	nil,                                   // 49: openshell.compute.v1.DriverFenceEvidence.ResourceClaimsEntry
+	nil,                                   // 50: openshell.compute.v1.DriverSandboxTemplate.LabelsEntry
+	nil,                                   // 51: openshell.compute.v1.DriverSandboxTemplate.EnvironmentEntry
+	nil,                                   // 52: openshell.compute.v1.DriverPlatformEvent.MetadataEntry
+	(*extensionv1.PeerMetadata)(nil),      // 53: openshell.extension.v1.PeerMetadata
+	(*sandboxv1.SandboxPolicy)(nil),       // 54: openshell.sandbox.v1.SandboxPolicy
+	(*structpb.Struct)(nil),               // 55: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),         // 56: google.protobuf.Timestamp
 }
 var file_compute_driver_proto_depIdxs = []int32{
-	51, // 0: openshell.compute.v1.GetCapabilitiesRequest.gateway:type_name -> openshell.extension.v1.PeerMetadata
+	53, // 0: openshell.compute.v1.GetCapabilitiesRequest.gateway:type_name -> openshell.extension.v1.PeerMetadata
 	4,  // 1: openshell.compute.v1.GetCapabilitiesResponse.resource_capabilities:type_name -> openshell.compute.v1.ResourceCapabilities
-	51, // 2: openshell.compute.v1.GetCapabilitiesResponse.extension:type_name -> openshell.extension.v1.PeerMetadata
+	53, // 2: openshell.compute.v1.GetCapabilitiesResponse.extension:type_name -> openshell.extension.v1.PeerMetadata
 	5,  // 3: openshell.compute.v1.ResourceCapabilities.cpu:type_name -> openshell.compute.v1.CpuResourceCapabilities
 	6,  // 4: openshell.compute.v1.ResourceCapabilities.memory:type_name -> openshell.compute.v1.MemoryResourceCapabilities
 	7,  // 5: openshell.compute.v1.ResourceCapabilities.gpu:type_name -> openshell.compute.v1.GpuResourceCapabilities
 	9,  // 6: openshell.compute.v1.DriverSandbox.spec:type_name -> openshell.compute.v1.DriverSandboxSpec
 	20, // 7: openshell.compute.v1.DriverSandbox.status:type_name -> openshell.compute.v1.DriverSandboxStatus
-	46, // 8: openshell.compute.v1.DriverSandboxSpec.environment:type_name -> openshell.compute.v1.DriverSandboxSpec.EnvironmentEntry
+	48, // 8: openshell.compute.v1.DriverSandboxSpec.environment:type_name -> openshell.compute.v1.DriverSandboxSpec.EnvironmentEntry
 	18, // 9: openshell.compute.v1.DriverSandboxSpec.template:type_name -> openshell.compute.v1.DriverSandboxTemplate
-	52, // 10: openshell.compute.v1.DriverSandboxSpec.policy:type_name -> openshell.sandbox.v1.SandboxPolicy
+	54, // 10: openshell.compute.v1.DriverSandboxSpec.policy:type_name -> openshell.sandbox.v1.SandboxPolicy
 	16, // 11: openshell.compute.v1.DriverSandboxSpec.resource_requirements:type_name -> openshell.compute.v1.ResourceRequirements
 	13, // 12: openshell.compute.v1.DriverSandboxSpec.workload_identity:type_name -> openshell.compute.v1.WorkloadIdentityRequest
 	10, // 13: openshell.compute.v1.DriverSandboxSpec.isolation_backend:type_name -> openshell.compute.v1.IsolationBackendRegistration
 	11, // 14: openshell.compute.v1.IsolationBackendRegistration.tcp:type_name -> openshell.compute.v1.IsolationBackendTcpEndpoint
 	12, // 15: openshell.compute.v1.IsolationBackendRegistration.vsock:type_name -> openshell.compute.v1.IsolationBackendVsockEndpoint
-	47, // 16: openshell.compute.v1.DriverFenceEvidence.resource_claims:type_name -> openshell.compute.v1.DriverFenceEvidence.ResourceClaimsEntry
+	49, // 16: openshell.compute.v1.DriverFenceEvidence.resource_claims:type_name -> openshell.compute.v1.DriverFenceEvidence.ResourceClaimsEntry
 	17, // 17: openshell.compute.v1.ResourceRequirements.gpu:type_name -> openshell.compute.v1.GpuResourceRequirements
-	48, // 18: openshell.compute.v1.DriverSandboxTemplate.labels:type_name -> openshell.compute.v1.DriverSandboxTemplate.LabelsEntry
-	49, // 19: openshell.compute.v1.DriverSandboxTemplate.environment:type_name -> openshell.compute.v1.DriverSandboxTemplate.EnvironmentEntry
+	50, // 18: openshell.compute.v1.DriverSandboxTemplate.labels:type_name -> openshell.compute.v1.DriverSandboxTemplate.LabelsEntry
+	51, // 19: openshell.compute.v1.DriverSandboxTemplate.environment:type_name -> openshell.compute.v1.DriverSandboxTemplate.EnvironmentEntry
 	19, // 20: openshell.compute.v1.DriverSandboxTemplate.resources:type_name -> openshell.compute.v1.DriverResourceRequirements
-	53, // 21: openshell.compute.v1.DriverSandboxTemplate.platform_config:type_name -> google.protobuf.Struct
-	53, // 22: openshell.compute.v1.DriverSandboxTemplate.driver_config:type_name -> google.protobuf.Struct
+	55, // 21: openshell.compute.v1.DriverSandboxTemplate.platform_config:type_name -> google.protobuf.Struct
+	55, // 22: openshell.compute.v1.DriverSandboxTemplate.driver_config:type_name -> google.protobuf.Struct
 	21, // 23: openshell.compute.v1.DriverSandboxStatus.conditions:type_name -> openshell.compute.v1.DriverCondition
 	14, // 24: openshell.compute.v1.DriverSandboxStatus.resolved_identity:type_name -> openshell.compute.v1.ResolvedWorkloadIdentity
 	15, // 25: openshell.compute.v1.DriverSandboxStatus.fence_evidence:type_name -> openshell.compute.v1.DriverFenceEvidence
-	54, // 26: openshell.compute.v1.DriverCondition.transition_time:type_name -> google.protobuf.Timestamp
-	54, // 27: openshell.compute.v1.DriverPlatformEvent.event_time:type_name -> google.protobuf.Timestamp
-	50, // 28: openshell.compute.v1.DriverPlatformEvent.metadata:type_name -> openshell.compute.v1.DriverPlatformEvent.MetadataEntry
+	56, // 26: openshell.compute.v1.DriverCondition.transition_time:type_name -> google.protobuf.Timestamp
+	56, // 27: openshell.compute.v1.DriverPlatformEvent.event_time:type_name -> google.protobuf.Timestamp
+	52, // 28: openshell.compute.v1.DriverPlatformEvent.metadata:type_name -> openshell.compute.v1.DriverPlatformEvent.MetadataEntry
 	8,  // 29: openshell.compute.v1.ValidateSandboxCreateRequest.sandbox:type_name -> openshell.compute.v1.DriverSandbox
 	8,  // 30: openshell.compute.v1.GetSandboxResponse.sandbox:type_name -> openshell.compute.v1.DriverSandbox
 	8,  // 31: openshell.compute.v1.ListSandboxesResponse.sandboxes:type_name -> openshell.compute.v1.DriverSandbox
@@ -3245,9 +3357,9 @@ var file_compute_driver_proto_depIdxs = []int32{
 	10, // 33: openshell.compute.v1.StartSandboxRequest.isolation_backend:type_name -> openshell.compute.v1.IsolationBackendRegistration
 	8,  // 34: openshell.compute.v1.WatchSandboxesSandboxEvent.sandbox:type_name -> openshell.compute.v1.DriverSandbox
 	22, // 35: openshell.compute.v1.WatchSandboxesPlatformEvent.event:type_name -> openshell.compute.v1.DriverPlatformEvent
-	38, // 36: openshell.compute.v1.WatchSandboxesEvent.sandbox:type_name -> openshell.compute.v1.WatchSandboxesSandboxEvent
-	39, // 37: openshell.compute.v1.WatchSandboxesEvent.deleted:type_name -> openshell.compute.v1.WatchSandboxesDeletedEvent
-	40, // 38: openshell.compute.v1.WatchSandboxesEvent.platform_event:type_name -> openshell.compute.v1.WatchSandboxesPlatformEvent
+	40, // 36: openshell.compute.v1.WatchSandboxesEvent.sandbox:type_name -> openshell.compute.v1.WatchSandboxesSandboxEvent
+	41, // 37: openshell.compute.v1.WatchSandboxesEvent.deleted:type_name -> openshell.compute.v1.WatchSandboxesDeletedEvent
+	42, // 38: openshell.compute.v1.WatchSandboxesEvent.platform_event:type_name -> openshell.compute.v1.WatchSandboxesPlatformEvent
 	0,  // 39: openshell.compute.v1.ComputeDriver.GetCapabilities:input_type -> openshell.compute.v1.GetCapabilitiesRequest
 	2,  // 40: openshell.compute.v1.ComputeDriver.AuthenticateSandbox:input_type -> openshell.compute.v1.AuthenticateSandboxRequest
 	23, // 41: openshell.compute.v1.ComputeDriver.ValidateSandboxCreate:input_type -> openshell.compute.v1.ValidateSandboxCreateRequest
@@ -3256,24 +3368,26 @@ var file_compute_driver_proto_depIdxs = []int32{
 	29, // 44: openshell.compute.v1.ComputeDriver.CreateSandbox:input_type -> openshell.compute.v1.CreateSandboxRequest
 	31, // 45: openshell.compute.v1.ComputeDriver.StopSandbox:input_type -> openshell.compute.v1.StopSandboxRequest
 	33, // 46: openshell.compute.v1.ComputeDriver.StartSandbox:input_type -> openshell.compute.v1.StartSandboxRequest
-	35, // 47: openshell.compute.v1.ComputeDriver.DeleteSandbox:input_type -> openshell.compute.v1.DeleteSandboxRequest
-	37, // 48: openshell.compute.v1.ComputeDriver.WatchSandboxes:input_type -> openshell.compute.v1.WatchSandboxesRequest
-	42, // 49: openshell.compute.v1.ComputeDriver.EnsureWorkspace:input_type -> openshell.compute.v1.EnsureWorkspaceRequest
-	44, // 50: openshell.compute.v1.ComputeDriver.DeleteWorkspace:input_type -> openshell.compute.v1.DeleteWorkspaceRequest
-	1,  // 51: openshell.compute.v1.ComputeDriver.GetCapabilities:output_type -> openshell.compute.v1.GetCapabilitiesResponse
-	3,  // 52: openshell.compute.v1.ComputeDriver.AuthenticateSandbox:output_type -> openshell.compute.v1.AuthenticateSandboxResponse
-	24, // 53: openshell.compute.v1.ComputeDriver.ValidateSandboxCreate:output_type -> openshell.compute.v1.ValidateSandboxCreateResponse
-	26, // 54: openshell.compute.v1.ComputeDriver.GetSandbox:output_type -> openshell.compute.v1.GetSandboxResponse
-	28, // 55: openshell.compute.v1.ComputeDriver.ListSandboxes:output_type -> openshell.compute.v1.ListSandboxesResponse
-	30, // 56: openshell.compute.v1.ComputeDriver.CreateSandbox:output_type -> openshell.compute.v1.CreateSandboxResponse
-	32, // 57: openshell.compute.v1.ComputeDriver.StopSandbox:output_type -> openshell.compute.v1.StopSandboxResponse
-	34, // 58: openshell.compute.v1.ComputeDriver.StartSandbox:output_type -> openshell.compute.v1.StartSandboxResponse
-	36, // 59: openshell.compute.v1.ComputeDriver.DeleteSandbox:output_type -> openshell.compute.v1.DeleteSandboxResponse
-	41, // 60: openshell.compute.v1.ComputeDriver.WatchSandboxes:output_type -> openshell.compute.v1.WatchSandboxesEvent
-	43, // 61: openshell.compute.v1.ComputeDriver.EnsureWorkspace:output_type -> openshell.compute.v1.EnsureWorkspaceResponse
-	45, // 62: openshell.compute.v1.ComputeDriver.DeleteWorkspace:output_type -> openshell.compute.v1.DeleteWorkspaceResponse
-	51, // [51:63] is the sub-list for method output_type
-	39, // [39:51] is the sub-list for method input_type
+	34, // 47: openshell.compute.v1.ComputeDriver.SuspendSandbox:input_type -> openshell.compute.v1.SuspendSandboxRequest
+	37, // 48: openshell.compute.v1.ComputeDriver.DeleteSandbox:input_type -> openshell.compute.v1.DeleteSandboxRequest
+	39, // 49: openshell.compute.v1.ComputeDriver.WatchSandboxes:input_type -> openshell.compute.v1.WatchSandboxesRequest
+	44, // 50: openshell.compute.v1.ComputeDriver.EnsureWorkspace:input_type -> openshell.compute.v1.EnsureWorkspaceRequest
+	46, // 51: openshell.compute.v1.ComputeDriver.DeleteWorkspace:input_type -> openshell.compute.v1.DeleteWorkspaceRequest
+	1,  // 52: openshell.compute.v1.ComputeDriver.GetCapabilities:output_type -> openshell.compute.v1.GetCapabilitiesResponse
+	3,  // 53: openshell.compute.v1.ComputeDriver.AuthenticateSandbox:output_type -> openshell.compute.v1.AuthenticateSandboxResponse
+	24, // 54: openshell.compute.v1.ComputeDriver.ValidateSandboxCreate:output_type -> openshell.compute.v1.ValidateSandboxCreateResponse
+	26, // 55: openshell.compute.v1.ComputeDriver.GetSandbox:output_type -> openshell.compute.v1.GetSandboxResponse
+	28, // 56: openshell.compute.v1.ComputeDriver.ListSandboxes:output_type -> openshell.compute.v1.ListSandboxesResponse
+	30, // 57: openshell.compute.v1.ComputeDriver.CreateSandbox:output_type -> openshell.compute.v1.CreateSandboxResponse
+	32, // 58: openshell.compute.v1.ComputeDriver.StopSandbox:output_type -> openshell.compute.v1.StopSandboxResponse
+	36, // 59: openshell.compute.v1.ComputeDriver.StartSandbox:output_type -> openshell.compute.v1.StartSandboxResponse
+	35, // 60: openshell.compute.v1.ComputeDriver.SuspendSandbox:output_type -> openshell.compute.v1.SuspendSandboxResponse
+	38, // 61: openshell.compute.v1.ComputeDriver.DeleteSandbox:output_type -> openshell.compute.v1.DeleteSandboxResponse
+	43, // 62: openshell.compute.v1.ComputeDriver.WatchSandboxes:output_type -> openshell.compute.v1.WatchSandboxesEvent
+	45, // 63: openshell.compute.v1.ComputeDriver.EnsureWorkspace:output_type -> openshell.compute.v1.EnsureWorkspaceResponse
+	47, // 64: openshell.compute.v1.ComputeDriver.DeleteWorkspace:output_type -> openshell.compute.v1.DeleteWorkspaceResponse
+	52, // [52:65] is the sub-list for method output_type
+	39, // [39:52] is the sub-list for method input_type
 	39, // [39:39] is the sub-list for extension type_name
 	39, // [39:39] is the sub-list for extension extendee
 	0,  // [0:39] is the sub-list for field type_name
@@ -3291,7 +3405,7 @@ func file_compute_driver_proto_init() {
 	}
 	file_compute_driver_proto_msgTypes[17].OneofWrappers = []any{}
 	file_compute_driver_proto_msgTypes[18].OneofWrappers = []any{}
-	file_compute_driver_proto_msgTypes[41].OneofWrappers = []any{
+	file_compute_driver_proto_msgTypes[43].OneofWrappers = []any{
 		(*WatchSandboxesEvent_Sandbox)(nil),
 		(*WatchSandboxesEvent_Deleted)(nil),
 		(*WatchSandboxesEvent_PlatformEvent)(nil),
@@ -3302,7 +3416,7 @@ func file_compute_driver_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_compute_driver_proto_rawDesc), len(file_compute_driver_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   51,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

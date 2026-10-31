@@ -15,13 +15,17 @@ func init() {
 		routes: func(s *Server, mux *http.ServeMux) {
 			mux.HandleFunc("/fake/atlassian/authorize", s.handleFakeAuthorize)
 			mux.HandleFunc("/fake/xai/device", s.handleFakeDevice)
+			mux.HandleFunc("/fake/codex/device", s.handleFakeDevice)
 			mux.HandleFunc("/fake/claude/authorize", s.handleFakeClaude)
 			mux.HandleFunc("/fake/claude/code", s.handleFakeClaude)
 		},
 		oauth:  func(_ *Server, origin string) oauthBackend { return fakeOAuth{origin: origin} },
 		claude: func(_ *Server, origin string) claudeBackend { return fakeClaudeOAuth{origin: origin} },
 		xai: func(s *Server, origin string) deviceBackend {
-			return fakeXAIBackend{d: s.fakeDevices(), origin: origin}
+			return fakeXAIBackend{d: s.fakeDevices(), origin: origin, service: "xai"}
+		},
+		codex: func(s *Server, origin string) deviceBackend {
+			return fakeXAIBackend{d: s.fakeDevices(), origin: origin, service: "codex"}
 		},
 	}
 }
@@ -43,13 +47,11 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 		dev := newSandbox("dev")
 		dev.LegacyPersist = []string{"/sandbox/work"} // made before the image convention
 		dev.Providers = []string{"github-personal"}   // fake_providers.go
-		// With a GitHub provider of its own profile: proposals to GitHub
-		// widen its scope (proposal_scope.go).
+		// With a GitHub provider made before ADR 0022 (its own profile).
 		exp := newSandbox("experiment")
 		exp.Providers = []string{"github-work"}
 		exp.GPU = true // the resources show its GPU (fake_resources.go)
 		c.Sandboxes = []Sandbox{dev, exp}
-		c.ProviderScopes = fakeProviderScopes()
 		d := NewFake()
 		d.latency = *latency
 		d.gatewayLatency = *gatewayLatency
@@ -70,6 +72,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 			// page checks again (fake_checks.go).
 			s.checks = newFakeChecks(*engineDown)
 			s.ingress.newProvider = newFakeIngressProvider
+			s.hostChecks = newHostChecker(fakeHostLookups{})
 			seedFakePresets()
 			s.imageUpdates = &imageUpdates{src: newFakeImages()}
 			s.update = newFakeUpdate()

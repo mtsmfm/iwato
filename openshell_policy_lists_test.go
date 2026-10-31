@@ -112,6 +112,25 @@ func TestUndoPlanTakesTheWidenedGlob(t *testing.T) {
 	}
 }
 
+// A rejected proposal approved as proposed names its program, but Iwato's
+// rule for it names every program: the rule is still the proposal's, and
+// undoing it takes the rule out.
+func TestApprovedAfterRejectLinksToItsRule(t *testing.T) {
+	rule := binaryRule("allow_x", []string{everyProgram}, "x.example")
+	c := approvedChunk("late", "allow_x", "/usr/bin/curl", []string{"/usr/bin/curl"}, "x.example", 1)
+	if !linked(c, map[string]v1.NetworkPolicyRule{"allow_x": rule}) {
+		t.Fatal("not linked")
+	}
+	left, removes := undoPlan(rule, c, []v1.PolicyChunk{c})
+	if !slices.Equal(left, []string{everyProgram}) || !removes {
+		t.Fatal(left, removes)
+	}
+	rules, err := simulateMerge(map[string]v1.NetworkPolicyRule{"allow_x": rule}, []v1.PolicyMergeOperation{{RemoveBinary: &v1.RemoveNetworkBinary{RuleName: "allow_x", BinaryPath: everyProgram}}})
+	if _, ok := rules["allow_x"]; err != nil || ok {
+		t.Fatal(err, rules)
+	}
+}
+
 func chunkStatus(t *testing.T, o *OpenShell, w Sandbox, id string) string {
 	t.Helper()
 	draft, _ := o.pol.GetDraft(context.Background(), "", w.Name)
@@ -129,7 +148,7 @@ func chunkStatus(t *testing.T, o *OpenShell, w Sandbox, id string) string {
 // cannot compose it, the revision's rules stand in, with the reason.
 func TestEffectivePolicyHasTheProviderRules(t *testing.T) {
 	f := &fakePolicy{providerRules: map[string]v1.NetworkPolicyRule{"_provider_github_personal": binaryRule("_provider_github_personal", []string{"/usr/bin/gh"}, "github.com")}}
-	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}
+	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}
 	ctx, w := context.Background(), newSandbox("dev")
 	v, err := o.Proposals(ctx, w)
 	if err != nil || v.Error != "" || len(v.Policy.Rules) != 2 || v.Policy.Rules[1].Name != "_provider_github_personal" || v.Policy.Rules[1].Source != "provider" || v.Policy.Version != 3 {
@@ -156,7 +175,7 @@ func TestRejectedProposalsTellWhatCameAfter(t *testing.T) {
 		r("covered", "already covered by approved chunk c1 (agent_authored or prior auto-approval)", 1, at.Add(2*time.Minute), at.Add(2*time.Minute)),
 		r("superseded", "superseded by chunk c9", 1, at.Add(3*time.Minute), at.Add(3*time.Minute)),
 	}}
-	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs}
+	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}
 	v, err := o.Proposals(context.Background(), newSandbox("dev"))
 	if err != nil {
 		t.Fatal(err)
