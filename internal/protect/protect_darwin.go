@@ -95,6 +95,11 @@ func keychainKey() ([]byte, error) {
 		// show the key to every process (ps).
 		cmd := fmt.Sprintf("add-generic-password -s %s -a %s -l %s -w %s\n", service, account, "iwato-secrets", hex.EncodeToString(fresh))
 		if _, err := security(cmd, "-i"); err != nil {
+			// Another process may have made the item since findKey.
+			if k, ferr := findKey(); ferr == nil {
+				key = k
+				return k, nil
+			}
 			return nil, fmt.Errorf("store Iwato's key in the Keychain: %w", err)
 		}
 		k, err = findKey()
