@@ -119,22 +119,6 @@ func TestPolicyYAMLPlan(t *testing.T) {
 	}
 }
 
-// A rule bound to a provider's credential keeps its programs.
-func TestBoundBinaries(t *testing.T) {
-	bound := v1.NetworkPolicyRule{Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/gh"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "x.example.com", Port: 443, CredentialBinding: &types.NetworkCredentialBinding{Provider: "p"}}}}
-	old := map[string]v1.NetworkPolicyRule{"b": bound}
-	more := cloneRule(bound)
-	more.Binaries = append(more.Binaries, v1.PolicyNetworkBinary{Path: "/usr/bin/curl"})
-	if checkBoundBinaries(old, map[string]v1.NetworkPolicyRule{"b": more}, []string{"b"}) == nil {
-		t.Fatal("a program added to a bound rule passed")
-	}
-	other := cloneRule(bound)
-	other.Endpoints[0].Port = 8443
-	if err := checkBoundBinaries(old, map[string]v1.NetworkPolicyRule{"b": other}, []string{"b"}); err != nil {
-		t.Fatal("same programs:", err)
-	}
-}
-
 // Several sandboxes' locks are taken in one order, whatever the order asked.
 func TestLockPolicyOrder(t *testing.T) {
 	s := &Server{}

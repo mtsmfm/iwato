@@ -285,7 +285,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   await approveFirst(eg);
   assert.equal(eg.confirmations.length, 0, 'approving the opened proposal needs no further question');
   assert.equal(mutations(eg).length, 1); const approveReq = mutations(eg)[0]; assert.equal(approveReq.path, '/api/sandboxes/api/proposals/approve'); assert.equal(approveReq.method, 'POST');
-  assert.deepEqual(JSON.parse(approveReq.body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'as proposed: every program, the request ID and the digest shown'); assert.equal(approveReq.headers['X-CSRF-Token'], 'csrf123');
+  assert.deepEqual(JSON.parse(approveReq.body), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), scope: {}}, 'as proposed: the request ID and the digest shown'); assert.equal(approveReq.headers['X-CSRF-Token'], 'csrf123');
   assert.equal(eg.policy().children[0].children[3].hidden, false); assert.match(eg.policy().children[0].children[3].textContent, /10 秒ほど/, 'an approval says it takes a moment to reach the sandbox');
   eg.card().children[2].children[0].children[1].click(); await flush(); assert(eg.intervals.some((i) => i.ms === 2000 && !i.cleared), 'the policy tab follows closely just after the owner acted');
   ok('the policy tab opens a proposal beside the list and approves it as proposed for every program, with its request ID and digest');
@@ -298,10 +298,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(ruleRows(narrow)[1], [false, 'POST /o/r.git/git-receive-pack', 'true']);
     await runTimers(narrow);
     const preview = narrow.requests.filter((r) => r.path.endsWith('/proposals/preview'));
-    assert.deepEqual(JSON.parse(preview.at(-1).body).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}]}, 'the preview asks about the narrowed rule');
+    assert.deepEqual(JSON.parse(preview.at(-1).body).scope, {rules: [{method: 'GET', path: '/o/r.git/info/refs'}]}, 'the preview asks about the narrowed rule');
     assert.match(texts(review(narrow)), /\+ {3}allow_x:/, 'the diff shows the rule added');
     await approveFirst(narrow);
-    assert.deepEqual(scopeOf(narrow).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/o/r.git/info/refs'}]});
+    assert.deepEqual(scopeOf(narrow).scope, {rules: [{method: 'GET', path: '/o/r.git/info/refs'}]});
     // Nothing checked: nothing to approve.
     const none = await approveEnv(proposal);
     for (const b of boxes(none)) toggle(b);
@@ -316,11 +316,11 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.match(texts(review(l4)), /書き込みをすべてのパスに許可します\nPOST cdn\.example\/\*\*/, 'a write on every path is warned');
     toggle(boxes(l4)[2]);
     await approveFirst(l4);
-    assert.deepEqual(scopeOf(l4).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}]});
+    assert.deepEqual(scopeOf(l4).scope, {rules: [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}]});
     toggle(boxes(l4)[6]);
     assert.equal(boxes(l4)[0].disabled, true, 'L4 makes the methods moot'); assert.match(texts(review(l4)), /検査せずに許可します \(L4\)/);
     await approveFirst(l4);
-    assert.deepEqual(scopeOf(l4).scope, {binaries: ['/**']}, 'L4: as proposed, every program');
+    assert.deepEqual(scopeOf(l4).scope, {}, 'L4: as proposed');
     // Not a web port: L4 checked from the start.
     const ssh = await approveEnv({...proposal, endpoints: [{host: 'github.com', ports: [22]}]});
     assert.equal(ruleRows(ssh).at(-1)[0], true); assert.equal(ruleRows(ssh)[0][0], false);
@@ -420,9 +420,9 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.equal(find(opened(red), '却下'), undefined); assert(find(opened(red), '閉じる')); assert.match(texts(opened(red)), /提案どおりにしか承認できない/);
     assert.match(texts(nodes(opened(red)).find((n) => n.className === 'review-rules')), /^POST\n\/hook$/);
     const previewed = red.requests.filter((r) => r.path.endsWith('/proposals/preview'));
-    assert.deepEqual(JSON.parse(previewed.at(-1).body), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'the preview asks with the digest');
+    assert.deepEqual(JSON.parse(previewed.at(-1).body), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {}}, 'the preview asks with the digest');
     find(opened(red), '承認').click(); await flush();
-    assert.deepEqual(scopeOf(red), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'as proposed, with the digest');
+    assert.deepEqual(scopeOf(red), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {}}, 'as proposed, with the digest');
     // Closed: the list's button again, nothing sent.
     const closed = await openRejected(fine);
     find(opened(closed), '閉じる').click(); await flush();
@@ -433,7 +433,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const box = nodes(opened(tok)).filter((n) => n.type === 'checkbox').find((n) => !n.parent.hidden);
     assert.equal(box.checked, true); assert.match(texts(opened(tok)), /gh のトークン/);
     toggle(box); find(opened(tok), '承認').click(); await flush();
-    assert.deepEqual(scopeOf(tok).scope, {binaries: ['/**'], attach: false}, 'unchecked, the token stays out');
+    assert.deepEqual(scopeOf(tok).scope, {attach: false}, 'unchecked, the token stays out');
   }
   ok('a rejected proposal opens the same review: red host checks, rule warnings, Iwato\'s port refused, read-only rows, the token checkbox, approved as proposed with its digest');
   {
@@ -449,18 +449,18 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.deepEqual(plain(A.reviewScope({placeholder: true, endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/'}]}]}, ph)).scope.rules, [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}], 'never exactly / unless proposed by the agent');
   // Audited as proposed: enforced with its rules.
   const audited = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'audit', rules: [{method: 'GET', path: '/a'}]}]};
-  assert.deepEqual(plain(A.reviewScope(audited, A.reviewRows(audited))).scope, {binaries: ['/**'], rules: [{method: 'GET', path: '/a'}]});
+  assert.deepEqual(plain(A.reviewScope(audited, A.reviewRows(audited))).scope, {rules: [{method: 'GET', path: '/a'}]});
   // One L4 row per uninspected endpoint; only the checked ones go uninspected.
   const twoL4 = {endpoints: [{host: 'a.example', ports: [443]}, {host: 'b.example', ports: [5432]}]};
   const l4Rows = A.reviewRows(twoL4);
   assert.deepEqual(plain(l4Rows.filter((r) => r.kind === 'l4').map((r) => r.checked + ' ' + r.ep + ' ' + r.label)), ['false 0 a.example', 'true 1 b.example:5432']);
-  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {binaries: ['/**'], uninspected: [1], rules: [{method: 'GET', path: '/**', host: 'a.example'}, {method: 'HEAD', path: '/**', host: 'a.example'}]});
+  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {uninspected: [1], rules: [{method: 'GET', path: '/**', host: 'a.example'}, {method: 'HEAD', path: '/**', host: 'a.example'}]});
   assert.deepEqual(plain([...A.uninspectedHosts(twoL4, l4Rows)]), ['b.example']);
   for (const r of l4Rows) if (r.kind === 'l4') r.checked = true;
-  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {binaries: ['/**']}, 'every endpoint uninspected: as proposed');
+  assert.deepEqual(plain(A.reviewScope(twoL4, l4Rows)).scope, {}, 'every endpoint uninspected: as proposed');
   const many = {endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: Array.from({length: 20}, (_, i) => ({method: 'GET', path: '/p' + i}))}]};
   const manyRows = A.reviewRows(many);
-  assert.deepEqual(plain(A.reviewScope(many, manyRows)), {scope: {binaries: ['/**']}, error: ''}, 'over 16, all kept: as proposed');
+  assert.deepEqual(plain(A.reviewScope(many, manyRows)), {scope: {}, error: ''}, 'over 16, all kept: as proposed');
   manyRows[0].checked = false;
   assert.match(A.reviewScope(many, manyRows).error, /16 個までです \(いま 19 個\)/);
   const day = 86400, now = Date.UTC(2026, 9, 31) / 1000;
@@ -1593,7 +1593,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   find(rejItems()[0], '承認する').click(); await flush();
   find(rejItems()[0], '承認').click(); await flush();
   const appr = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/approve');
-  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {binaries: ['/**']}});
+  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {}});
   ok('the rejected list shows the newest 10 then more, the hits since, OpenShell\'s own rejections, and approves as proposed');
   }
 

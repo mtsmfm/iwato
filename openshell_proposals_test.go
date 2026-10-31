@@ -207,7 +207,7 @@ func TestNarrowedApprovalInspectsRequests(t *testing.T) {
 	if rules := proposalRules(f.chunks[0]); len(rules) != 1 || rules[0] != (ProposalRule{Method: "*", Path: "/owner/repo.git/**"}) {
 		t.Fatal("a proposal's rules:", rules)
 	}
-	for _, bad := range []ProposalScope{{}, {Rules: []ProposalRule{{Method: "TRACE", Path: "/"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "a"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "/a b"}}}} {
+	for _, bad := range []ProposalScope{{Rules: []ProposalRule{{Method: "TRACE", Path: "/"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "a"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "/a b"}}}} {
 		if bad.Validate() == nil {
 			t.Errorf("accepted %+v", bad)
 		}
@@ -341,7 +341,7 @@ func TestApprovalSetsProgramsAndReadOnlyPaths(t *testing.T) {
 	if !slices.Equal(p.Binaries, []string{bin}) || len(p.Endpoints) != 1 || p.Endpoints[0].Host != "raw.githubusercontent.com" || !slices.Equal(p.Endpoints[0].Ports, []uint32{443}) {
 		t.Fatalf("pending: %+v", p)
 	}
-	scope := &ProposalScope{Binaries: []string{"/**"}, Rules: []ProposalRule{
+	scope := &ProposalScope{Rules: []ProposalRule{
 		{Method: "GET", Path: "/a/b/install.sh"}, {Method: "HEAD", Path: "/a/b/install.sh"}, {Method: "OPTIONS", Path: "/a/b/install.sh"},
 		{Method: "GET", Path: "/a/**"}, {Method: "HEAD", Path: "/a/**"}, {Method: "OPTIONS", Path: "/a/**"},
 	}}
@@ -378,26 +378,9 @@ func TestApprovalSetsProgramsAndReadOnlyPaths(t *testing.T) {
 		t.Fatal(f.approved)
 	}
 
-	// Programs alone keep the endpoints as proposed (no inspection added).
-	only := ProposalScope{Binaries: []string{"/**"}}
-	if err := only.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if got := only.apply(*rule); got.Binaries[0].Path != "/**" || got.Endpoints[0].Protocol != "" || len(got.Endpoints[0].Rules) != 1 || len(rule.Binaries) != 1 || rule.Binaries[0].Path != bin {
-		t.Fatalf("programs only: %+v (proposed %+v)", got, rule)
-	}
-	for _, bad := range []ProposalScope{
-		{Binaries: []string{"claude-*"}}, {Binaries: []string{"/"}}, {Binaries: []string{"/a//b"}}, {Binaries: []string{"/a/"}}, {Binaries: []string{"/a b"}}, {Binaries: []string{"/a\u200bb"}}, {Binaries: []string{""}},
-		{Rules: []ProposalRule{{Method: "GET", Path: "a"}}},
-	} {
-		if bad.Validate() == nil {
-			t.Errorf("accepted %+v", bad)
-		}
-	}
-	for _, good := range []string{"/usr/bin/python3.*", "/**", "/sandbox/.claude/downloads/*", "/opt/日本語/x"} {
-		if err := validBinary(good); err != nil {
-			t.Error(err)
-		}
+	// Nothing narrowed: as proposed.
+	if got, err := (&ProposalScope{}).against(*rule); got != nil || err != nil {
+		t.Fatal(got, err)
 	}
 }
 
@@ -486,7 +469,7 @@ func TestApprovalCredentialChoice(t *testing.T) {
 	}
 	off := false
 	id := requestID("narrow")
-	if _, err := o.DecideProposal(ctx, w, "approve", id, testDigest(o, ctx, w, id), &ProposalScope{Binaries: []string{"/**"}, Attach: &off}); err != nil {
+	if _, err := o.DecideProposal(ctx, w, "approve", id, testDigest(o, ctx, w, id), &ProposalScope{Attach: &off}); err != nil {
 		t.Fatal(err)
 	}
 	applied := f.updates[len(f.updates)-1].Policy.NetworkPolicies
@@ -494,7 +477,7 @@ func TestApprovalCredentialChoice(t *testing.T) {
 		t.Fatalf("%+v", applied)
 	}
 	id = requestID("whole")
-	if _, err := o.DecideProposal(ctx, w, "approve", id, testDigest(o, ctx, w, id), &ProposalScope{Binaries: []string{"/**"}, Attach: &off}); codeOf(err) != "approval_credential_required" {
+	if _, err := o.DecideProposal(ctx, w, "approve", id, testDigest(o, ctx, w, id), &ProposalScope{Attach: &off}); codeOf(err) != "approval_credential_required" {
 		t.Fatal(err)
 	}
 }

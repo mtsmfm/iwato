@@ -227,7 +227,9 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 		}
 		rule := *chunk.ProposedRule
 		if scope != nil {
+			// The rule is approved for every program, not the proposal's.
 			rule = scope.apply(rule)
+			rule.Binaries = nil
 		}
 		if parts := proposalUnshown(rule); len(parts) > 0 {
 			return none, errProposalUnshown(parts)
@@ -477,15 +479,11 @@ func binaryPaths(r v1.NetworkPolicyRule) []string {
 // inspects the HTTP requests (protocol rest, enforced) and lets only the
 // listed methods and paths through.
 //
-// Binaries replace the proposed rule's programs; the page sends every
-// program. Alone they leave the endpoints as proposed.
-//
 // Uninspected are the indexes of the proposed endpoints approved as
 // proposed (uninspected, L4); the others are narrowed, and left out without
 // rules of their own.
 type ProposalScope struct {
 	Rules       []ProposalRule `json:"rules"`
-	Binaries    []string       `json:"binaries"`
 	Uninspected []int          `json:"uninspected,omitempty"`
 	// Attach: whether the approved endpoints carry the credential of the
 	// endpoints they shadow (nil: that default, PendingProposal.Attach).
@@ -495,8 +493,7 @@ type ProposalScope struct {
 	Offer bool `json:"offer,omitempty"`
 }
 
-// narrows: the scope changes the proposed endpoints (programs and
-// credentials do not).
+// narrows: the scope changes the proposed endpoints (credentials do not).
 func (s *ProposalScope) narrows() bool {
 	return s != nil && (len(s.Rules) > 0 || len(s.Uninspected) > 0)
 }
@@ -516,23 +513,10 @@ var scopeMethods = map[string]bool{"*": true, "GET": true, "HEAD": true, "OPTION
 // readMethods are OpenShell's read-only preset.
 var readMethods = []string{"GET", "HEAD", "OPTIONS"}
 
-// Validate accepts up to 16 rules with a known method and an absolute path
-// without spaces or control characters, and up to 8 programs (validBinary).
-// Programs alone keep the proposed access.
+// Validate checks the uninspected indexes and the rules (validateRules).
 func (s ProposalScope) Validate() error {
-	if !s.narrows() && len(s.Binaries) == 0 && s.Attach == nil && !s.Offer {
-		return errCode("scope_empty", nil, "メソッドとパスかプログラムを指定してください")
-	}
-	if len(s.Binaries) > 8 {
-		return errCode("scope_binaries_too_many", nil, "プログラムは 8 個までです")
-	}
 	if len(s.Uninspected) > proposalLimits.Endpoints || slices.ContainsFunc(s.Uninspected, func(i int) bool { return i < 0 }) {
 		return errCode("scope_uninspected_invalid", nil, "検査せずに通す宛先の指定が正しくありません")
-	}
-	for _, b := range s.Binaries {
-		if err := validBinary(b); err != nil {
-			return err
-		}
 	}
 	return validateRules(s.Rules)
 }
@@ -559,44 +543,17 @@ func validateRules(rules []ProposalRule) error {
 	return nil
 }
 
-// validBinary accepts an absolute path or glob (OpenShell matches globs with
-// "/" as the separator: "*" within a segment, "**" across segments) of
-// printable characters without empty segments.
-func validBinary(b string) error {
-	ok := strings.HasPrefix(b, "/") && len(b) <= 512 && strings.IndexFunc(b, func(c rune) bool { return c <= ' ' || c == 0x7f || !unicode.IsPrint(c) }) < 0
-	if ok && b != "/" {
-		for _, seg := range strings.Split(b[1:], "/") {
-			ok = ok && seg != ""
-		}
-	}
-	if !ok || b == "/" {
-		return errCode("scope_binary_invalid", map[string]any{"binary": fmt.Sprintf("%q", b)}, fmt.Sprintf("プログラム %q は / で始まる絶対パスで、空白や空の区切り (//) を含まないようにしてください", b))
-	}
-	return nil
-}
-
-// against checks a scope against the rule it narrows. The programs are the
-// page's: a scope without them is refused when the rule names some (the
-// rule's are never kept). A scope that only names the rule's own programs
-// is no narrowing (nil: approved as proposed).
+// against checks a scope against the rule it narrows. A scope without
+// narrowing, attach or offer is nil: approved as proposed.
 func (s *ProposalScope) against(rule v1.NetworkPolicyRule) (*ProposalScope, error) {
 	if s == nil {
 		return nil, nil
-	}
-	if len(s.Binaries) == 0 && len(rule.Binaries) > 0 {
-		return nil, errCode("scope_binaries_missing", nil, "承認するプログラムがありません")
 	}
 	if slices.ContainsFunc(s.Uninspected, func(i int) bool { return i >= len(rule.Endpoints) }) {
 		return nil, errCode("scope_uninspected_invalid", nil, "検査せずに通す宛先の指定が正しくありません")
 	}
 	if !s.narrows() && s.Attach == nil && !s.Offer {
-		same := len(s.Binaries) == len(rule.Binaries)
-		for i, b := range rule.Binaries {
-			same = same && s.Binaries[i] == b.Path
-		}
-		if same {
-			return nil, nil
-		}
+		return nil, nil
 	}
 	if len(s.apply(rule).Endpoints) == 0 {
 		return nil, errCode("scope_no_endpoint", nil, "承認する宛先がありません")
@@ -604,16 +561,9 @@ func (s *ProposalScope) against(rule v1.NetworkPolicyRule) (*ProposalScope, erro
 	return s, nil
 }
 
-// apply sets the programs and narrows the requests of every endpoint but
-// the uninspected ones; everything else, allowed_ips included, stays as
-// proposed.
+// apply narrows the requests of every endpoint but the uninspected ones;
+// everything else, allowed_ips included, stays as proposed.
 func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
-	if len(s.Binaries) > 0 {
-		rule.Binaries = make([]v1.PolicyNetworkBinary, len(s.Binaries))
-		for i, b := range s.Binaries {
-			rule.Binaries[i] = v1.PolicyNetworkBinary{Path: b}
-		}
-	}
 	if !s.narrows() {
 		return rule
 	}

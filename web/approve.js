@@ -93,15 +93,15 @@
     return new Set(eps.map((e) => e.host || '').filter((h) => eps.every((e, i) => (e.host || '') !== h || on.has(i))));
   }
 
-  // The approval: {scope (null: nothing to send), error}. Every program
-  // (ADR 0022); the checked rules per host and the endpoints whose L4 row is
-  // checked (uninspected), or as proposed when nothing was narrowed or every
-  // endpoint is allowed uninspected; a rejected proposal only as proposed.
+  // The approval: {scope (null: nothing to send), error}. The checked rules
+  // per host and the endpoints whose L4 row is checked (uninspected), or as
+  // proposed when nothing was narrowed or every endpoint is allowed
+  // uninspected; a rejected proposal only as proposed.
   // grant is the token checkboxes: attach (inherited; null when not shown)
   // and offer.
   function reviewScope(item, rows, grant = {}) {
     const out = { scope: null, error: '' };
-    const scope = { binaries: ['/**'] };
+    const scope = {};
     if (grant.attach === true || grant.attach === false) scope.attach = grant.attach;
     if (grant.offer === true) scope.offer = true;
     if (item.rejected) {

@@ -67,7 +67,7 @@ func TestApprovalRefusesUninspectedCredentialRule(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	for _, scope := range []string{"", `,"scope":{"binaries":["/usr/bin/*"]}`} {
+	for _, scope := range []string{"", `,"scope":{}`} {
 		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-uploads")+`"`+digestField(s.rt, requestID("fake-uploads"))+``+scope+`}`)
 		if code != 409 || !strings.Contains(body, "github-personal (GitHub)") || !strings.Contains(body, "メソッドとパスを選んで") {
 			t.Fatal(scope, code, body)
@@ -77,7 +77,7 @@ func TestApprovalRefusesUninspectedCredentialRule(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-git")+`"`+digestField(s.rt, requestID("fake-git"))+`}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-uploads")+`"`+digestField(s.rt, requestID("fake-uploads"))+`,"scope":{"rules":[{"method":"GET","path":"/**"}],"binaries":["/usr/bin/*"]}}`); code != 200 {
+	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-uploads")+`"`+digestField(s.rt, requestID("fake-uploads"))+`,"scope":{"rules":[{"method":"GET","path":"/**"}]}}`); code != 200 {
 		t.Fatal(code, body)
 	}
 	sb, _ := s.lookupSandbox("dev")

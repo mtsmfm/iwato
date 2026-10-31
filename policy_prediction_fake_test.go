@@ -26,7 +26,7 @@ func TestApprovalRefusedWhereTheProviderEnforces(t *testing.T) {
 	audited := auditedMiseProposal(d)
 	id := `{"requestId":"` + requestID("fake-mise-gh") + `"` + digestField(s.rt, requestID("fake-mise-gh"))
 	for _, op := range []string{"preview", "approve"} {
-		code, body := do("POST", "/api/sandboxes/dev/proposals/"+op, id+`,"scope":{"binaries":["/**"]}}`)
+		code, body := do("POST", "/api/sandboxes/dev/proposals/"+op, id+`,"scope":{}}`)
 		var resp struct {
 			Error       string
 			Code        string
@@ -40,7 +40,7 @@ func TestApprovalRefusedWhereTheProviderEnforces(t *testing.T) {
 	}
 	*audited = v1.PolicyNetworkEndpoint{Host: audited.Host, Port: audited.Port}
 	id = `{"requestId":"` + requestID("fake-mise-gh") + `"` + digestField(s.rt, requestID("fake-mise-gh"))
-	scope := `,"scope":{"rules":[{"method":"GET","path":"/**"}],"binaries":["/**"]}}`
+	scope := `,"scope":{"rules":[{"method":"GET","path":"/**"}]}}`
 	code, body := do("POST", "/api/sandboxes/dev/proposals/preview", id+scope)
 	var preview struct{ YAML string }
 	if code != 200 || json.Unmarshal([]byte(body), &preview) != nil || !strings.Contains(preview.YAML, "path: /**") || !strings.Contains(preview.YAML, "provider: github-personal") {
@@ -73,13 +73,13 @@ func TestFakeGatewayRefusesWhatIwatoPredicts(t *testing.T) {
 	do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"github-personal"}`)
 	sb := newSandbox("dev")
 	auditedMiseProposal(d)
-	_, err := d.DecideProposal(context.Background(), sb, "approve", requestID("fake-mise-gh"), testDigest(d, context.Background(), sb, requestID("fake-mise-gh")), &ProposalScope{Binaries: []string{fakeMise}})
+	_, err := d.DecideProposal(context.Background(), sb, "approve", requestID("fake-mise-gh"), testDigest(d, context.Background(), sb, requestID("fake-mise-gh")), nil)
 	if err == nil || !strings.Contains(err.Error(), "proposal is not applicable: candidate invalid: network endpoint ambiguity validation failed:") {
 		t.Fatal(err)
 	}
 	base, effective, _ := d.PolicyLayers(context.Background(), sb)
 	rule, _, _ := d.ProposedRule(context.Background(), sb, requestID("fake-mise-gh"))
-	predicted, _ := predictAmbiguities(base, effective, approvalPlanOps(base, effective, rule.Name, (&ProposalScope{Binaries: []string{fakeMise}}).apply(*rule), nil))
+	predicted, _ := predictAmbiguities(base, effective, approvalPlanOps(base, effective, rule.Name, *rule, nil))
 	if len(predicted) != 1 || !strings.Contains(err.Error(), predicted[0].String()) {
 		t.Fatal(predicted, err)
 	}

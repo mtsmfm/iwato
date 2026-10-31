@@ -34,8 +34,6 @@ Saving is refused when:
 
 If a change made directly in OpenShell (its CLI) lands while saving, it may be replaced; the tab says so.
 
-A rule bound to a provider's credential cannot change its programs.
-
 Approved proposals stay approved, and presets stay in the list; taking a preset out later removes only the rules that are still as it made them.
 
 ## Approving

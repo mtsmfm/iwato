@@ -100,7 +100,7 @@ func TestUndoRoutes(t *testing.T) {
 	if code, _ := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"bad"}`); code != 400 {
 		t.Fatal("a bad request ID:", code)
 	}
-	if code, _ := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"`+requestID("fake-gh")+`","scope":{"binaries":["/**"]}}`); code != 400 {
+	if code, _ := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"`+requestID("fake-gh")+`","scope":{}}`); code != 400 {
 		t.Fatal("a scope on undo:", code)
 	}
 	if code, body := do("POST", "/api/sandboxes/dev/proposals/undo", `{"requestId":"`+requestID("fake-gh")+`"}`); code != 200 || !strings.Contains(body, `"version":3`) {
