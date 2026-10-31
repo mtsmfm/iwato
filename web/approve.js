@@ -131,7 +131,7 @@
   function hostWarnings(check, now = Date.now()) {
     const out = [];
     const host = check.host;
-    if (check.exfil) out.push({ level: 'red', text: t('review.warn.exfil', { host, service: check.exfil }), detail: t('review.warn.exfil.detail') });
+    if (check.exfil) out.push({ level: 'red', text: t('review.warn.exfil', { host }), detail: t('review.warn.exfil.detail') });
     if (check.filter === 'blocked') out.push({ level: 'red', text: t('review.warn.malware', { host }), detail: t('review.warn.malware.detail') });
     const days = check.registered ? Math.floor((now - check.registered * 1000) / dayMs) : -1;
     const date = check.registered ? new Date(check.registered * 1000).toISOString().slice(0, 10) : '';
