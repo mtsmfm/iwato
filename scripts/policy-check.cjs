@@ -121,7 +121,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await rule('allow_registry_npmjs_org_443').locator('.policy-chunk').getByRole('button', { name: '取り消す' }).click();
     await dialog.waitFor();
     const undoText = await page.locator('#confirm-text').innerText();
-    check(undoText.includes('規則ごと消えます') && undoText.includes('npm.pkg.github.com:443'), 'undoing says what goes with the rule');
+    check(undoText.includes('規則ごと消えます') && undoText.match(/\bnpm\.pkg\.github\.com:443\b/) !== null, 'undoing says what goes with the rule');
     await page.screenshot({ path: path.join(dir, 'undo-confirm.png') });
     await page.click('#confirm-ok');
     await pending.locator('.review-item', { hasText: /^registry\.npmjs\.org/ }).waitFor();
