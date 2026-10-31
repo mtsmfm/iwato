@@ -82,7 +82,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const ghRule = rule('allow_github_example_com_443');
     check(await ghRule.locator('.policy-chunk').count() === 2 && await ghRule.getByRole('button', { name: '規則「allow_github_example_com_443」を外す' }).count() === 0, 'a rule from two proposals lists both, with 取り消す and no 外す');
     await open('allow_registry_npmjs_org_443');
-    check((await rule('allow_registry_npmjs_org_443').innerText()).includes('22.11.0/bin/node を /sandbox/.local/share/mise/installs/node/*/bin/node に広げて承認'), 'a proposal approved with a glob says so');
+    check((await rule('allow_registry_npmjs_org_443').innerText()).includes('/sandbox/.local/share/mise/installs/node/*/bin/node'), 'a proposal approved with a glob shows it');
     const unlinked = current.locator('.policy-unlinked');
     check((await unlinked.innerText()).includes('allow_mise_versions_jdx_dev_443 — 規則がありません'), 'an approved proposal without its rule shows as a dashed row');
     const rejText = await rejectedList.innerText();
@@ -115,13 +115,13 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await page.evaluate(() => window.scrollTo(0, 0));
     }
 
-    // Undo: the proposal goes back to waiting; the glob it was widened to
-    // and the endpoint added after go with the rule.
+    // Undo: the proposal goes back to waiting; the endpoint added after
+    // goes with the rule.
     const dialog = page.locator('#confirm-panel');
     await rule('allow_registry_npmjs_org_443').locator('.policy-chunk').getByRole('button', { name: '取り消す' }).click();
     await dialog.waitFor();
     const undoText = await page.locator('#confirm-text').innerText();
-    check(undoText.includes('広げたプログラム (/sandbox/.local/share/mise/installs/node/*/bin/node) も外します') && undoText.includes('規則ごと消えます') && undoText.includes('npm.pkg.github.com:443'), 'undoing says what goes with the rule');
+    check(undoText.includes('規則ごと消えます') && undoText.includes('npm.pkg.github.com:443'), 'undoing says what goes with the rule');
     await page.screenshot({ path: path.join(dir, 'undo-confirm.png') });
     await page.click('#confirm-ok');
     await pending.locator('.review-item', { hasText: /^registry\.npmjs\.org/ }).waitFor();
@@ -453,7 +453,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await ciRule.locator('.policy-denied-item', { hasText: 'POST /api/builds' }).locator('input').check();
     await ciRule.getByRole('button', { name: '選んだものを許可に追加' }).click();
     await dialog.waitFor();
-    check((await page.locator('#confirm-text').innerText()).includes('「読み取りだけ」は、OpenShell が同じ意味の規則'), 'the dialog says the preset becomes rules');
+    check((await page.locator('#confirm-text').innerText()).includes('「読み取りだけ」を同じ意味の規則'), 'the dialog says the preset becomes rules');
     await page.click('#confirm-ok');
     await ciRule.getByText('POST /api/builds').waitFor();
     const ciText = await ciRule.innerText();

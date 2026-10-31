@@ -12,14 +12,7 @@
 #                    can also read the workspace's Modal Secrets.
 #
 # Client binaries:   python3 (the image's, mise's and uv's interpreters: the
-#                    `modal` CLI is a Python script, so the interpreter is
-#                    what matches and any Python program may use the token).
-#                    OpenShell matches the resolved executable, and the
-#                    python of a venv or `uv tool install modal`
-#                    (~/.local/share/uv/tools/modal/bin/python) is a symlink
-#                    to one of these, so that path alone would never match;
-#                    only a venv made with copies (`python -m venv --copies`)
-#                    would, which neither uv nor the docs set up.
+#                    `modal` CLI is a Python script). Rules allow every program (ADR 0022).
 #                    grpclib trusts only certifi's bundle, not SSL_CERT_FILE:
 #                    point it at the sandbox's bundle (`ln -sf "$SSL_CERT_FILE"
 #                    "$(python -m certifi)"` with modal's interpreter).

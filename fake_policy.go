@@ -42,7 +42,7 @@ const (
 
 // fakePolicy is the sandbox's revisions, oldest first; it starts with two.
 // The second is the current policy: rules from approved
-// proposals (one widened to a glob, one merged from two proposals), rules
+// proposals (one for a glob, one from two proposals), rules
 // by hand, and none for an approved proposal whose rule was taken out.
 // The caller holds d.mu.
 func (d *Fake) fakePolicy(name string) []fakeRevision {
@@ -67,7 +67,7 @@ func (d *Fake) fakePolicy(name string) []fakeRevision {
 		ghe.Enforcement = v1.NetworkEnforcementModeAudit
 		ghe.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/"}}}
 		second[fakeGHERule] = v1.NetworkPolicyRule{Name: fakeGHERule, Binaries: policyBinaries("/usr/bin/gh", "/usr/bin/git"), Endpoints: []v1.PolicyNetworkEndpoint{ghe}}
-		// Approved with node widened to a glob, reads only; an endpoint was
+		// Approved for a glob of node, reads only; an endpoint was
 		// added by hand after.
 		npm := restEndpoint("registry.npmjs.org", 443)
 		npm.Access = v1.NetworkAccessPresetReadOnly
@@ -152,7 +152,7 @@ func (d *Fake) fakeDraft(name string) []v1.PolicyChunk {
 		// (canonicalize_advisor_add_rule).
 		c("fake-mise-gh", "pending", "allow_api_github_com_443", fakeMise, auto(fakeMise, "api.github.com", 443), 2, ago(8), ago(3), rule("allow_api_github_com_443", []string{fakeMise}, misePlaceholder)),
 		c("fake-uploads", "pending", "allow_uploads_github_com_443", "/usr/bin/gh", "リリースにビルドしたファイルを上げる", 1, ago(5), ago(5), rule("allow_uploads_github_com_443", []string{"/usr/bin/gh"}, l4Endpoint("uploads.github.com", 443))),
-		// Approved: two into one rule, one widened to a glob, and one
+		// Approved: two into one rule, one for a glob, and one
 		// whose rule was taken out by hand.
 		c("fake-gh", "approved", fakeGHERule, "/usr/bin/gh", "PR の一覧と CI の結果を見る", 1, ago(2*day+40), ago(2*day+40), rule(fakeGHERule, []string{"/usr/bin/gh"}, gh)),
 		c("fake-git-api", "approved", fakeGHERule, "/usr/bin/git", auto("/usr/bin/git", fakeGHE, 443), 2, ago(day+90), ago(day+80), rule(fakeGHERule, []string{"/usr/bin/git"}, gh)),

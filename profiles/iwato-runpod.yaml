@@ -7,13 +7,11 @@
 # Client binaries:   runpodctl (Go: `mise use -g github:runpod/runpodctl`
 #                    installs it under mise's installs/github-runpod-runpodctl;
 #                    RunPod's install script puts it in /usr/local/bin, which
-#                    needs root, so that path is for images that have it),
-#                    python3 (the image's, mise's and uv's interpreters: the
-#                    `runpod` SDK and its `runpod`/`rp` CLI are Python), mise's
-#                    node (runpod-sdk, serverless only), curl and wget. Any
-#                    Python or Node program may use the key: OpenShell matches
-#                    the interpreter, not the script. wget is not in the
-#                    standard image (it is listed for images that have it).
+#                    needs root), python3 (the image's, mise's and uv's
+#                    interpreters: the `runpod` SDK and its `runpod`/`rp` CLI are
+#                    Python), mise's node (runpod-sdk, serverless only), curl
+#                    and wget. wget is not in the standard image. Rules allow
+#                    every program (ADR 0022).
 #                    `runpodctl update` replaces the executable in place, which
 #                    OpenShell's binary pinning refuses until the sandbox
 #                    restarts: update it with mise instead.

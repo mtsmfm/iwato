@@ -22,9 +22,9 @@
 #                    header to api.anthropic.com only.
 # Endpoint access:   Claude Code also reaches hosts that need no token
 #                    (downloads.claude.ai for updates, platform.claude.com,
-#                    raw.githubusercontent.com). They are not listed here
-#                    on purpose: an endpoint of a profile gets the token.
-#                    The network preset presets/packages.yaml allows them
+#                    raw.githubusercontent.com). They are not in
+#                    iwato/credential-hosts on purpose: a bound endpoint gets
+#                    the token. The presets agents and tools allow them
 #                    without it. Claude Code takes the scopes of
 #                    a token from CLAUDE_CODE_OAUTH_TOKEN from
 #                    CLAUDE_CODE_OAUTH_SCOPES (else user:inference only),

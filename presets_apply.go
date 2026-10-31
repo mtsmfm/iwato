@@ -177,7 +177,7 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 	}
 	if merged, err := simulateMerge(before, ops); err == nil {
 		if folded := foldedPresetRules(merged, rules); len(folded) > 0 {
-			failCode(w, 409, "preset_would_fold", map[string]any{"preset": ref.label(), "rules": folded}, ref.label()+" を入れると、OpenShell が規則を既存の規則にまとめてしまい、あとで外せなくなるので入れません: "+strings.Join(folded, "、")+"。重なる規則を外してから入れてください。")
+			failCode(w, 409, "preset_would_fold", map[string]any{"preset": ref.label(), "rules": folded}, ref.label()+" を入れると、規則が既存の規則にまとまり、あとで外せなくなるので入れません: "+strings.Join(folded, "、")+"。重なる規則を外してから入れてください。")
 			return
 		}
 	}
@@ -189,18 +189,18 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 	s.recordPolicyChange(sb.Name, PolicyChange{Version: version, Kind: "edit", Rule: opsRule(ops), At: time.Now().Unix()})
 	after, _, err := rt.PolicyLayers(ctx, sb)
 	if err != nil {
-		fail(w, 409, "入れた後のポリシーを確かめられません ("+ref.label()+" はプリセットの一覧に入れていません。ポリシーのタブで確かめてください): "+safeCLIError(err))
+		fail(w, 409, "入れた後のポリシーを確かめられません ("+ref.label()+" はプリセットの一覧に入れていません。「ポリシー」タブで確かめてください): "+safeCLIError(err))
 		return
 	}
 	if folded := foldedPresetRules(after, rules); len(folded) > 0 {
-		msg := ref.label() + " の規則を OpenShell が既存の規則にまとめたので、元に戻しました: " + strings.Join(folded, "、") + "。重なる規則を外してから入れてください。"
+		msg := ref.label() + " の規則が既存の規則にまとまったので、元に戻しました: " + strings.Join(folded, "、") + "。重なる規則を外してから入れてください。"
 		if undo := rollbackOps(before, after); len(undo) > 0 {
 			if v, err := rt.ApplyPolicyChange(withPolicyNote(ctx, "preset", "Take preset "+ref.label()+" out again: its rules were folded into others"), sb, undo); err != nil {
-				msg = ref.label() + " の規則を OpenShell が既存の規則にまとめ、元に戻せませんでした: " + strings.Join(folded, "、") + "。ポリシーのタブで、まとめられた規則から許可を外してください: " + safeCLIError(err)
+				msg = ref.label() + " の規則が既存の規則にまとまり、元に戻せませんでした: " + strings.Join(folded, "、") + "。「ポリシー」タブで、まとめられた規則から許可を外してください: " + safeCLIError(err)
 			} else {
 				s.recordPolicyChange(sb.Name, PolicyChange{Version: v, Kind: "edit", Rule: opsRule(undo), At: time.Now().Unix()})
 				if again, _, err := rt.PolicyLayers(ctx, sb); err != nil || len(rollbackOps(before, again)) > 0 {
-					msg = ref.label() + " の規則を OpenShell が既存の規則にまとめ、元に戻しきれませんでした: " + strings.Join(folded, "、") + "。ポリシーのタブで確かめてください。"
+					msg = ref.label() + " の規則が既存の規則にまとまり、元に戻しきれませんでした: " + strings.Join(folded, "、") + "。「ポリシー」タブで確かめてください。"
 				}
 			}
 		}

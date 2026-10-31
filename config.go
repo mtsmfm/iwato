@@ -52,8 +52,7 @@ type Config struct {
 	Timezone string `json:"timezone,omitempty"`
 	// Resources is how the page shows the sandboxes' resources (resources.go).
 	Resources *ResourceSettings `json:"resources,omitempty"`
-	// ProviderScopes were the providers' access scopes before ADR 0022:
-	// read and dropped.
+	// ProviderScopes is an old field: read and dropped.
 	ProviderScopes json.RawMessage `json:"providerScopes,omitempty"`
 	Sandboxes      []Sandbox       `json:"sandboxes"`
 }
@@ -110,7 +109,7 @@ type ProviderApply struct {
 	Attach   bool      `json:"attach"`
 	Receipt  string    `json:"receipt"`
 	At       time.Time `json:"at"`
-	// Scope was a scope change (before ADR 0022): read and ignored.
+	// Scope is an old field: read and ignored.
 	Scope bool `json:"scope,omitempty"`
 	// State is "" while pending, else withheld or failed (with Reason).
 	State  string `json:"state,omitempty"`

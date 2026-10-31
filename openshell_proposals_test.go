@@ -177,7 +177,7 @@ func TestProposalDecisionsFollowTheDraft(t *testing.T) {
 	}
 	// A rejected proposal can be approved, as proposed only (OpenShell
 	// edits pending ones only).
-	if _, err := o.DecideProposal(ctx, w, "approve", requestID("c2"), testDigest(o, ctx, w, requestID("c2")), &ProposalScope{ReadOnly: true}); err == nil || !strings.Contains(err.Error(), "提案どおり") {
+	if _, err := o.DecideProposal(ctx, w, "approve", requestID("c2"), testDigest(o, ctx, w, requestID("c2")), &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}}); err == nil || !strings.Contains(err.Error(), "提案どおり") {
 		t.Fatal("a rejected proposal was narrowed:", err)
 	}
 	if _, err := o.DecideProposal(ctx, w, "reject", requestID("c2"), testDigest(o, ctx, w, requestID("c2")), nil); err == nil {
@@ -204,16 +204,10 @@ func TestNarrowedApprovalInspectsRequests(t *testing.T) {
 	if strings.Join(f.approved, ",") != "c1 t1-edited" {
 		t.Fatal("the approval must bind to the edited rule:", f.approved)
 	}
-	if got := (ProposalScope{ReadOnly: true}).apply(*f.chunks[0].ProposedRule).Endpoints[0]; got.Access != v1.NetworkAccessPresetReadOnly || len(got.Rules) != 0 {
-		t.Fatalf("read-only: %+v", got)
-	}
-	if got := (ProposalScope{Audit: true}).apply(*f.chunks[0].ProposedRule).Endpoints[0]; got.Enforcement != v1.NetworkEnforcementModeAudit || got.Protocol != "rest" || len(got.Rules) != 1 {
-		t.Fatalf("audit: %+v", got)
-	}
 	if rules := proposalRules(f.chunks[0]); len(rules) != 1 || rules[0] != (ProposalRule{Method: "*", Path: "/owner/repo.git/**"}) {
 		t.Fatal("a proposal's rules:", rules)
 	}
-	for _, bad := range []ProposalScope{{}, {ReadOnly: true, Audit: true}, {ReadOnly: true, Rules: []ProposalRule{{Method: "GET", Path: "/"}}}, {Rules: []ProposalRule{{Method: "TRACE", Path: "/"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "a"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "/a b"}}}} {
+	for _, bad := range []ProposalScope{{}, {Rules: []ProposalRule{{Method: "TRACE", Path: "/"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "a"}}}, {Rules: []ProposalRule{{Method: "GET", Path: "/a b"}}}} {
 		if bad.Validate() == nil {
 			t.Errorf("accepted %+v", bad)
 		}
@@ -281,7 +275,7 @@ func TestProposalAllowedIPsShowAndSurviveNarrowing(t *testing.T) {
 		t.Errorf("allowed IPs: %+v", p.AllowedIPs)
 	}
 	every := []ProposalRule{{Method: "GET", Path: "/**", Host: "ci.tailnet.example"}, {Method: "GET", Path: "/**"}, {Method: "GET", Path: "/**", Host: "plain.example"}}
-	for _, scope := range []ProposalScope{{ReadOnly: true}, {Audit: true}, {Rules: every}} {
+	for _, scope := range []ProposalScope{{Rules: every}} {
 		got := scope.apply(*rule)
 		for i, e := range got.Endpoints {
 			if !slices.Equal(e.AllowedIPs, rule.Endpoints[i].AllowedIPs) || e.Host != rule.Endpoints[i].Host {
@@ -289,7 +283,7 @@ func TestProposalAllowedIPsShowAndSurviveNarrowing(t *testing.T) {
 			}
 		}
 	}
-	if _, err := o.DecideProposal(ctx, w, "approve", requestID("c1"), testDigest(o, ctx, w, requestID("c1")), &ProposalScope{ReadOnly: true}); err != nil {
+	if _, err := o.DecideProposal(ctx, w, "approve", requestID("c1"), testDigest(o, ctx, w, requestID("c1")), &ProposalScope{Rules: every}); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.chunks[0].ProposedRule.Endpoints[0].AllowedIPs; strings.Join(got, ",") != "100.64.0.0/10" {
@@ -332,8 +326,7 @@ func TestScopeHostsAndUninspected(t *testing.T) {
 	}
 }
 
-// The common approval: a versioned program widened to a glob, reads only,
-// on the paths seen.
+// The common approval: reads only, on the paths seen.
 func TestApprovalSetsProgramsAndReadOnlyPaths(t *testing.T) {
 	bin := "/sandbox/.claude/downloads/claude-2.1.293-linux-x64"
 	rule := &v1.NetworkPolicyRule{Name: "raw", Binaries: []v1.PolicyNetworkBinary{{Path: bin}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: "raw.githubusercontent.com", Port: 443, Ports: []uint32{443}, AllowedIPs: []string{"10.0.0.0/8"},
@@ -348,7 +341,10 @@ func TestApprovalSetsProgramsAndReadOnlyPaths(t *testing.T) {
 	if !slices.Equal(p.Binaries, []string{bin}) || len(p.Endpoints) != 1 || p.Endpoints[0].Host != "raw.githubusercontent.com" || !slices.Equal(p.Endpoints[0].Ports, []uint32{443}) {
 		t.Fatalf("pending: %+v", p)
 	}
-	scope := &ProposalScope{ReadOnly: true, Binaries: []string{"/sandbox/.claude/downloads/claude-*-linux-x64"}, Rules: []ProposalRule{{Path: "/a/b/install.sh"}, {Path: "/a/**"}, {Path: "/a/**"}}}
+	scope := &ProposalScope{Binaries: []string{"/**"}, Rules: []ProposalRule{
+		{Method: "GET", Path: "/a/b/install.sh"}, {Method: "HEAD", Path: "/a/b/install.sh"}, {Method: "OPTIONS", Path: "/a/b/install.sh"},
+		{Method: "GET", Path: "/a/**"}, {Method: "HEAD", Path: "/a/**"}, {Method: "OPTIONS", Path: "/a/**"},
+	}}
 	if err := scope.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -392,8 +388,7 @@ func TestApprovalSetsProgramsAndReadOnlyPaths(t *testing.T) {
 	}
 	for _, bad := range []ProposalScope{
 		{Binaries: []string{"claude-*"}}, {Binaries: []string{"/"}}, {Binaries: []string{"/a//b"}}, {Binaries: []string{"/a/"}}, {Binaries: []string{"/a b"}}, {Binaries: []string{"/a\u200bb"}}, {Binaries: []string{""}},
-		{ReadOnly: true, Rules: []ProposalRule{{Method: "POST", Path: "/a"}}}, {ReadOnly: true, Rules: []ProposalRule{{Path: "a"}}},
-		{Audit: true, Binaries: []string{"/x"}, Rules: []ProposalRule{{Method: "GET", Path: "/"}}},
+		{Rules: []ProposalRule{{Method: "GET", Path: "a"}}},
 	} {
 		if bad.Validate() == nil {
 			t.Errorf("accepted %+v", bad)

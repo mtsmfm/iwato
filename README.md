@@ -11,7 +11,7 @@
 
 - **Sandboxes on WSLc**: Iwato runs OpenShell's gateway in WSLc, with its own WSLc compute driver. Nothing else to install: no Docker Desktop, no account
 - **Network by approval**: a sandbox's network is denied by default. Agents propose the rules they need through OpenShell's Policy Advisor, and you approve or reject them in the page, with push notifications
-- **Credentials stay outside**: tokens live in OpenShell providers; the sandbox sees only placeholders, and each provider has a scope (for example which GitHub repositories may be written)
+- **Credentials stay outside**: tokens live in OpenShell providers; the sandbox sees only placeholders, and a token goes only to the destinations in the policy that carry it
 - **Terminals that keep running**: Iwato keeps the screens, and a daemon in the sandbox keeps the processes, so terminals survive closing the browser and restarting Iwato
 - **Your home persists**: `/home/dev` is a volume that survives recreating the sandbox
 - **Files, editor, ports, desktop**: the home as a network drive, an editor tab, dev servers at `http://<port>.<sandbox>.localhost:17600/`, and a desktop in the browser

@@ -56,7 +56,7 @@ network_policies:
       - { host: sum.golang.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
     binaries: ["/**"]
   # Shared with agents under one name: two names on one endpoint would be
-  # folded by OpenShell, and could not be taken out again.
+  # folded into one rule, and could not be taken out again.
   preset_storage_googleapis_com:
     endpoints:
       - host: storage.googleapis.com

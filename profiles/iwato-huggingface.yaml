@@ -8,10 +8,7 @@
 #                    transformers, diffusers and hf_xet all run in the
 #                    interpreter), mise's node (huggingface.js,
 #                    transformers.js), curl and wget, and git with its HTTPS
-#                    helper (git-lfs runs under git, so it matches git as an
-#                    ancestor). OpenShell matches the interpreter, not the
-#                    script, so any Python or Node program may use the token:
-#                    a narrower list is not possible for these tools.
+#                    helper. Rules allow every program (ADR 0022).
 # Credential scope:  HF_TOKEN, and HUGGING_FACE_HUB_TOKEN (the older name
 #                    huggingface_hub still reads: utils/_auth.py), sent as a
 #                    bearer authorization header (git: the Basic password) to
@@ -30,11 +27,9 @@
 #                    the short-lived token the Hub returns). huggingface_hub
 #                    drops the authorization header there (file_download.py:
 #                    "Remove authorization header when downloading a LFS blob
-#                    from a CDN"), so they need no credential and are not
-#                    listed: every endpoint of a profile with credentials is
-#                    credentialed (OpenShell would resolve the placeholder
-#                    there, and refuses an uninspected rule for it). Approve
-#                    them as ordinary rules (read-only) when proposed.
+#                    from a CDN"), so they need no credential and are not in
+#                    iwato/credential-hosts. Approve them as ordinary rules
+#                    (read-only) when proposed.
 # Verified:          from huggingface_hub's source (main, via GitHub).
 #                    The redirect hosts above are from the source, not
 #                    observed.

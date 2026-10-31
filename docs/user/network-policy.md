@@ -24,7 +24,7 @@ Decisions made elsewhere (for example with the `openshell` CLI) show up within a
 
 ### Editing the policy as YAML
 
-YAML in the policy tab shows the sandbox's rules (`network_policies`, in the format of presets) to edit as a whole, filling the tab. Edits you have not applied stay when you switch to List and back (YAML is marked Unsaved); while YAML shows, List shows how many proposals wait. Review changes checks the YAML and lists the rules it adds, removes and changes; Apply then makes the policy exactly as written. Settings fixed when the sandbox was created (`filesystem_policy`, `landlock`, `process`) are shown folded below it, read-only: OpenShell does not change them on a running sandbox. Provider rules are not in the YAML.
+YAML in the policy tab shows the sandbox's rules (`network_policies`, in the format of presets) to edit as a whole, filling the tab. Edits you have not applied stay when you switch to List and back (YAML is marked Unsaved); while YAML shows, List shows how many proposals wait. Review changes checks the YAML and lists the rules it adds, removes and changes; Apply then makes the policy exactly as written. Settings fixed when the sandbox was created (`filesystem_policy`, `landlock`, `process`) are shown folded below it, read-only: OpenShell does not change them on a running sandbox. A provider's token on an endpoint is not in the YAML: it stays while the endpoint keeps its host, ports and path, and Review changes names any token that would go. Rules of profiles with destinations of their own are not in the YAML either.
 
 Saving is refused when:
 
@@ -88,7 +88,7 @@ network_policies:
   allow_example_com_443:
     endpoints:
       - { host: example.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
-    binaries: [/usr/bin/curl]
+    binaries: ["/**"]
 ```
 
 When you save, Iwato checks that the preset does not conflict with the providers' rules. A preset that allows every host cannot be made: OpenShell refuses `*` and `**` as a host, and a rule with `allowed_ips` but no host would conflict with other rules and providers on the same port.

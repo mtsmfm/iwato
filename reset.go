@@ -341,7 +341,7 @@ func (s *Server) resetFiles(ownerFiles bool) []resetWarn {
 	s.mu.Lock()
 	next := s.config
 	s.mu.Unlock()
-	next.Sandboxes, next.ProviderScopes = []Sandbox{}, nil
+	next.Sandboxes = []Sandbox{}
 	if ownerFiles {
 		next.Ingress, next.TermTrace, next.Timezone = nil, false, ""
 	}

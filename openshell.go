@@ -485,7 +485,7 @@ func provisioningProblem(sb *v1.Sandbox) string {
 		if msg == "" {
 			msg = "Effective configuration could not be activated"
 		}
-		return "OpenShell がサンドボックスの設定を受け付けません: " + msg + "。ポリシーのタブで規則を直すと準備が続きます (OpenShell は 5 分で失敗にします)"
+		return "OpenShell がサンドボックスの設定を受け付けません: " + msg + "。「ポリシー」タブで規則を直すと準備が続きます (OpenShell は 5 分で失敗にします)"
 	}
 	for _, c := range sb.Status.Conditions {
 		if (c.Type != "Ready" && c.Type != "ConfigurationReady") || !strings.EqualFold(c.Status, "false") {
@@ -493,7 +493,7 @@ func provisioningProblem(sb *v1.Sandbox) string {
 		}
 		switch c.Reason {
 		case "ConfigurationInvalid":
-			return "OpenShell がサンドボックスの設定を受け付けません: " + c.Message + "。ポリシーのタブで規則を直すと準備が続きます (OpenShell は 5 分で失敗にします)"
+			return "OpenShell がサンドボックスの設定を受け付けません: " + c.Message + "。「ポリシー」タブで規則を直すと準備が続きます (OpenShell は 5 分で失敗にします)"
 		case "ProvisioningDeadlineElapsed", "ProvisioningTimedOut":
 			return "OpenShell がサンドボックスの準備をあきらめました: " + c.Message
 		}

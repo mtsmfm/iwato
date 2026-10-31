@@ -6,9 +6,8 @@
 # Client binaries:   python3 (the image's, mise's and uv's interpreters: the
 #                    Python SDK, scripts, comfy-cli and a ComfyUI running in
 #                    the sandbox), mise's node (the TypeScript SDK), curl and
-#                    wget. Any Python or Node program may use the key:
-#                    OpenShell matches the interpreter, not the script. wget is
-#                    not in the standard image.
+#                    wget. wget is not in the standard image. Rules allow every
+#                    program (ADR 0022).
 # Credential scope:  COMFY_CLOUD_API_KEY (the Cloud API docs) and
 #                    COMFY_API_KEY (the Comfy SDKs' docs): the same key from
 #                    platform.comfy.org. It is sent
@@ -31,10 +30,9 @@
 # Downloads:         /api/view and /api/v2/assets/ID/content answer with a 302
 #                    to a signed storage URL (about 6 hours), which carries its
 #                    own authorization: Comfy's docs fetch it without the key.
-#                    The host is not documented; it is not listed (every
-#                    endpoint of a profile with credentials is credentialed,
-#                    and OpenShell refuses an uninspected rule for it). Approve
-#                    it as an ordinary read-only rule when proposed.
+#                    The host is not documented; it is not in
+#                    iwato/credential-hosts. Approve it as an ordinary
+#                    read-only rule when proposed.
 # Verified:          from Comfy-Org/docs (development/cloud/overview.mdx,
 #                    api-reference.mdx, api-reference/v2/overview.mdx, via
 #                    GitHub). Not verified: OpenShell resolving a

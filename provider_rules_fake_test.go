@@ -157,7 +157,7 @@ func TestApprovalOffersTheCredential(t *testing.T) {
 				t.Fatal(code, body)
 			}
 		}
-		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"readOnly":true,"binaries":["/usr/bin/gh"],"attach":true,"offer":`+attach+`}}`)
+		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+id+`"`+digestField(s.rt, id)+`,"scope":{"rules":[{"method":"GET","path":"/**"}],"binaries":["/usr/bin/gh"],"attach":true,"offer":`+attach+`}}`)
 		if code != 200 {
 			t.Fatal(attach, code, body)
 		}

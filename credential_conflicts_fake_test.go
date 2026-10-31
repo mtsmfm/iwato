@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 )
 
 // An L4 rule approved earlier for api.anthropic.com: the attach is refused
@@ -71,7 +69,7 @@ func TestApprovalRefusesUninspectedCredentialRule(t *testing.T) {
 	}
 	for _, scope := range []string{"", `,"scope":{"binaries":["/usr/bin/*"]}`} {
 		code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-uploads")+`"`+digestField(s.rt, requestID("fake-uploads"))+``+scope+`}`)
-		if code != 409 || !strings.Contains(body, "github-personal (GitHub)") || !strings.Contains(body, "「読み取りだけ」か「メソッドとパスを指定」") {
+		if code != 409 || !strings.Contains(body, "github-personal (GitHub)") || !strings.Contains(body, "メソッドとパスを選んで") {
 			t.Fatal(scope, code, body)
 		}
 	}
@@ -79,13 +77,13 @@ func TestApprovalRefusesUninspectedCredentialRule(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-git")+`"`+digestField(s.rt, requestID("fake-git"))+`}`); code != 200 {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-uploads")+`"`+digestField(s.rt, requestID("fake-uploads"))+`,"scope":{"readOnly":true,"binaries":["/usr/bin/*"]}}`); code != 200 {
+	if code, body := do("POST", "/api/sandboxes/dev/proposals/approve", `{"requestId":"`+requestID("fake-uploads")+`"`+digestField(s.rt, requestID("fake-uploads"))+`,"scope":{"rules":[{"method":"GET","path":"/**"}],"binaries":["/usr/bin/*"]}}`); code != 200 {
 		t.Fatal(code, body)
 	}
 	sb, _ := s.lookupSandbox("dev")
 	rules, _ := d.PolicyRules(context.Background(), sb)
 	r := rules["allow_uploads_github_com_443"]
-	if e := r.Endpoints; len(e) != 1 || e[0].Protocol != "rest" || e[0].Access != v1.NetworkAccessPresetReadOnly || len(r.Binaries) != 1 || r.Binaries[0].Path != "/**" {
+	if e := r.Endpoints; len(e) != 1 || e[0].Protocol != "rest" || len(e[0].Rules) != 1 || len(r.Binaries) != 1 || r.Binaries[0].Path != "/**" {
 		t.Fatalf("%+v", r)
 	}
 }

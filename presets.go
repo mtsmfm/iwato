@@ -43,7 +43,7 @@ import (
 //	  allow_example_com_443:
 //	    endpoints:
 //	      - { host: example.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
-//	    binaries: [/usr/bin/curl]
+//	    binaries: ["/**"]
 //
 // A parameter's value must match its pattern and Iwato's own set (letters,
 // digits, . _ - /; no "..", no glob characters), and goes only into rule

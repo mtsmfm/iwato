@@ -36,8 +36,8 @@ import (
 //     (policy_prediction.go); a rule OpenShell refuses is reported and the
 //     others still go in.
 //
-// The proposals (pending, approved, rejected) and the policy history are
-// OpenShell's, per sandbox, and go with it.
+// The proposals (pending, approved, rejected) are OpenShell's, per sandbox,
+// and go with it. The policy's repository, with its history, stays.
 
 // CarriedPolicy is the old sandbox's network rules, as OpenShell's SDK
 // types in JSON. Raw, so that a change of those types never keeps the

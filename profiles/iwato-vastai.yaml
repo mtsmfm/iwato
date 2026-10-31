@@ -4,10 +4,8 @@
 #   openshell provider profile lint -f profiles/iwato-vastai.yaml
 #
 # Client binaries:   python3 (the image's, mise's and uv's interpreters:
-#                    `vastai` and vastai-sdk are Python), curl and wget. Any
-#                    Python program may use the key: OpenShell matches the
-#                    interpreter, not the script. wget is not in the standard
-#                    image (it is listed for images that have it).
+#                    `vastai` and vastai-sdk are Python), curl and wget. wget is
+#                    not in the standard image. Rules allow every program (ADR 0022).
 # Credential scope:  VAST_API_KEY (vast.py: the default of --api-key; the CLI
 #                    otherwise reads ~/.config/vastai/vast_api_key), sent as a
 #                    bearer authorization header (vast.py apiheaders) to

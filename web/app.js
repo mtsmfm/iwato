@@ -1492,7 +1492,7 @@
     '  allow_example_com_443:',
     '    endpoints:',
     '      - { host: example.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }',
-    '    binaries: [/usr/bin/curl]',
+    '    binaries: ["/**"]',
     ''].join('\n');
   const builtinText = (p, field, value) => p.source === 'user' ? value : window.IwatoI18n.localized('preset.' + text(p.id, 60) + '.' + field, value);
   async function loadPresets() {
@@ -2173,7 +2173,7 @@
           source: ['provider', 'proposal', 'hand'].includes(r.source) ? r.source : 'hand',
           provider: r.provider && typeof r.provider.name === 'string' ? { name: text(r.provider.name, 100), profile: text(r.provider.profile, 100), label: text(r.provider.label, 100) } : null,
           chunks: list(r.chunks, 20).filter((c) => c && /^[a-f0-9]{32}$/.test(c.id)).map((c) => ({ id: c.id, binary: text(c.binary, 512), binaries: strings(c.binaries, 8, 512),
-            widened: c.widened === true, source: c.source === 'auto' ? 'auto' : 'agent', intent: text(c.intent, 600), decidedAt: Number(c.decidedAt) || 0,
+            source: c.source === 'auto' ? 'auto' : 'agent', intent: text(c.intent, 600), decidedAt: Number(c.decidedAt) || 0,
             removesRule: c.removesRule === true, drops: strings(c.drops, 20, 300) })),
           binaries: list(r.binaries, 20).filter((b) => typeof b === 'string').map((b) => text(b, 300)),
           endpoints: list(r.endpoints, 20).filter((e) => e && typeof e.host === 'string').map((e) => ({
@@ -2850,7 +2850,7 @@
         for (const c of chunks) {
           const chunk = element('div', 'policy-chunk');
           // Approvals are for every program (ADR 0022): the proposing one is named.
-          const what = c.binaries.includes('/**') ? c.binary : c.widened ? t('policy.chunk.widened', { binary: c.binary, binaries: c.binaries.join(', ') }) : (c.binaries.join(', ') || c.binary);
+          const what = c.binaries.includes('/**') ? c.binary : (c.binaries.join(', ') || c.binary);
           const from = element('span', 'policy-src', t('policy.src.proposal'));
           from.dataset.source = c.source;
           chunk.append(from, element('span', 'policy-chunk-text', what + (c.intent ? ' ' + t('policy.quote', { text: c.intent }) : '') + ' · ' + t('policy.chunk.approvedAt', { time: clockTime(c.decidedAt, true) })));
@@ -3035,20 +3035,19 @@
       this.send(op, body, t('policy.removed'));
     }
 
-    // Undoing an approved proposal (chunk link c of rule r): OpenShell
-    // takes its program out of the rule and puts it back to pending;
-    // Iwato takes the glob it was widened to too. With restore (an
-    // unlinked proposal c), its rule goes back first, so that the undo has
-    // it to take out.
+    // Undoing an approved proposal (chunk link c of rule r): its programs
+    // go out of the rule and OpenShell puts it back to pending. With
+    // restore (an unlinked proposal c), its rule goes back first, so that
+    // the undo has it to take out.
     async undo(c, r, restore) {
       if (this.mutating || !state.authorized) return;
       let question;
       if (restore) {
         question = t('policy.restore.confirm', { proposal: (c.binaries[0] || '') + ' → ' + c.endpoints.map((e) => e.host + ':' + e.ports.join(',')).join(', '), rule: c.rule, sandbox: JSON.stringify(this.sandbox.name) });
       } else {
-        question = t('policy.undo.confirm', { rule: r.name, binary: c.binary || c.binaries[0], sandbox: JSON.stringify(this.sandbox.name), binaries: c.binaries.concat(c.binary).filter((b, i, a) => b && a.indexOf(b) === i && r.binaries.includes(b)).join(', ') });
-        if (c.widened) question += t('policy.undo.widened', { binaries: c.binaries.join(', ') });
+        question = t('policy.undo.confirm', { rule: r.name, binary: c.binary || c.binaries[0], sandbox: JSON.stringify(this.sandbox.name) });
         if (c.removesRule) question += t('policy.undo.removesRule', { rule: r.name });
+        else question += t('policy.undo.programs', { binaries: c.binaries.concat(c.binary).filter((b, i, a) => b && a.indexOf(b) === i && r.binaries.includes(b)).join(', ') });
         if (c.removesRule && c.drops.length) question += t('policy.undo.drops', { endpoints: c.drops.join(', ') });
       }
       if (!(await askConfirm(question, { ok: restore ? t('policy.restore.ok') : t('policy.undo'), danger: !restore }))) return;

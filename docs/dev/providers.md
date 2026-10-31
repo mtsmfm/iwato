@@ -31,15 +31,15 @@ OpenShell adds a provider's value only to inspected traffic (L7, `protocol: rest
 
 Iwato therefore:
 
-- reads the latest policy before attaching and, on a conflicting rule, does not attach and names the rule. **Remove this destination from the rule, and attach** removes that endpoint from the rule and then attaches. The rule's programs (e.g. curl) can no longer reach that endpoint; the provider's rules (`_provider_…`) allow only the provider's programs, inspected
-- while attached, refuses approving a proposal as proposed and hand-added rules that allow the endpoint uninspected. Narrowing them with **Read only** or **Allow writes** passes
+- reads the latest policy before attaching and, on a conflicting rule, does not attach and names the rule. **Remove this destination from the rule, and attach** removes that endpoint from the rule and then attaches. The provider's initial rule then allows it, inspected
+- while attached, refuses approving a proposal as proposed and hand-added rules that allow the endpoint uninspected. Narrowing them to inspected methods and paths passes
 - never uses `allow_uninspected_credentials` (it would send values uninspected)
 
-On real hardware: in a sandbox without providers, approve curl → api.anthropic.com:443 as proposed (or add an uninspected rule) → attaching the claude provider is refused with the rule's name → **Remove this destination from the rule, and attach** → it attaches and **Waiting to apply** goes away → the sandbox still starts after a restart.
+On real hardware: in a sandbox without providers, approve curl → api.anthropic.com:443 with its L4 row checked (or add an uninspected rule) → attaching the claude provider is refused with the rule's name → **Remove this destination from the rule, and attach** → it attaches and **Waiting to apply** goes away → the sandbox still starts after a restart.
 
 ### After switching to an Iwato with changed profiles
 
-At every start Iwato compares the profile content hash (`iwato/profile-hash`) and updates the gateway's profile when it differs (log: `updated the provider profile …`). Providers and sandbox policies are not rewritten. Running sandboxes take the new provider rules (`_provider_…`, including the program list) at the next config sync (about 10 seconds; OpenShell's profiles.mdx: "Running sandboxes observe the updated provider-derived policy on their next config sync"). Placeholders do not change, so no restart is needed; a denied request goes through when retried.
+At every start Iwato compares the profile content hash (`iwato/profile-hash`) and updates the gateway's profile when it differs (log: `updated the provider profile …`). Providers and sandbox policies are not rewritten, so a change to `presets/providers/` reaches a sandbox when the provider is attached again. Running sandboxes take the new `_provider_…` rule at the next config sync (about 10 seconds; OpenShell's profiles.mdx: "Running sandboxes observe the updated provider-derived policy on their next config sync"). Placeholders do not change, so no restart is needed; a denied request goes through when retried.
 
 ## (a) gh api user
 
@@ -48,7 +48,7 @@ At every start Iwato compares the profile content hash (`iwato/profile-hash`) an
    - Attaching to a running sandbox shows **Restart now** / **Later** at once and marks the row **Waiting to apply** until the sandbox picks it up (about 10 seconds). If it cannot (withheld / failed), the reason is shown; restart
 3. In a terminal, `sh providers-check.sh github`. Success: `GH_TOKEN` and `GITHUB_TOKEN` are placeholders and `login: <you>` is printed
 
-On failure, look at denied requests in the **Policy** tab. `credential_endpoint_mismatch` means the destination is outside the profile; `binary ... not allowed` means gh's path differs (is `readlink -f $(command -v gh)` `/usr/bin/gh`?).
+On failure, look at denied requests in the **Policy** tab. `credential_endpoint_mismatch` means the destination does not carry the credential.
 
 ## (b) git clone / push (private repository)
 
@@ -58,7 +58,7 @@ On failure, look at denied requests in the **Policy** tab. `credential_endpoint_
 
 ## (c) claude (iwato-claude-subscription, experimental)
 
-0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, preset `packages`) (the home `/home/dev` is always a volume, so no reinstall later). The profile's programs cover both (below)
+0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, the Agent CLIs preset) (the home `/home/dev` is always a volume, so no reinstall later)
 1. Add a provider of type **Claude Code** as in (l)
 2. Attach it to the sandbox and restart (or open a new terminal)
 3. `sh providers-check.sh claude`. `PROVIDER-OK` means Claude Code runs on the placeholder and OpenShell substitutes `Authorization: Bearer` to `api.anthropic.com`
@@ -68,8 +68,7 @@ To check, and on failure:
 
 - In the Claude Code 2.1.287 binary, `CLAUDE_CODE_OAUTH_TOKEN` is used as the Bearer as is, without checking the format (`sk-ant-oat01-`). A version that checks the format would not work
 - `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, if set, take precedence
-- The profile's endpoint is `api.anthropic.com` only. Telemetry and other destinations show up as proposals; approve or reject them
-- The profile's programs are claude's real executables: `/home/dev/.local/share/claude/versions/*` (the installer and auto-update) and `/home/dev/.local/share/mise/installs/claude/*/claude` (mise). Even when installed with mise, the auto-updated versions/ copy may run (`~/.local/bin/claude` points into versions/). Check the running one with `readlink /proc/$(pgrep -n claude)/exe`. A claude elsewhere gets no credential (a proposal `…/claude → api.anthropic.com:443` appears)
+- The provider's initial rule allows `api.anthropic.com` only. Telemetry and other destinations show up as proposals; approve or reject them
 
 ## (d) Atlassian MCP (iwato-atlassian)
 
@@ -104,9 +103,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
        claude mcp add --transport http atlassian 'https://mcp.atlassian.com/v2/mcp?tools=all' --header 'Authorization: Bearer ${ATLASSIAN_ACCESS_TOKEN}'
 
 8. `sh providers-check.sh atlassian`. Success: `ATLASSIAN_ACCESS_TOKEN` is a placeholder and `ATLASSIAN-OK <name>` comes back. In interactive `claude`, `/mcp` shows atlassian connected and a Jira issue can be read
-9. Narrowing by destination and program:
-   - `curl -s -H "Authorization: Bearer $ATLASSIAN_ACCESS_TOKEN" https://mcp.atlassian.com/v2/mcp` is denied (the profile's only program is claude; reject the proposal)
-   - sending the placeholder to another allowed destination gets 403 `credential_endpoint_mismatch` (substituted only on mcp.atlassian.com /v2/mcp)
+9. Narrowing by destination: sending the placeholder to another allowed destination gets 403 `credential_endpoint_mismatch` (substituted only on mcp.atlassian.com /v2/mcp)
 10. The MCP keeps working in the same claude for over an hour (past the access token's expiry; the placeholder does not change on refresh)
 11. Reconnect: revoke Iwato in Atlassian's profile (connected apps) → **Refresh now** (or the next automatic refresh) shows "Authorization needed again" → **Reconnect** to allow again. Sandboxes that have it become **Restart pending** (a new grant changes the placeholder); restart and repeat 8
 12. Read tools: the provider's initial rule allows only the read tools. In `claude`, reading a Jira issue works and creating one is denied (the policy tab shows the denied `tools/call`). Approving the proposal (or adding `createJiraIssue` to the rule's `tools/call` names in the YAML editor) makes creating work without a restart. Also note which `MCP-Protocol-Version` the requests carry (the rule accepts every revision OpenShell knows) and whether `claude` complains about the refused `DELETE` when it exits
@@ -116,15 +113,13 @@ On failure:
 - "Cannot register a client with Atlassian (dynamic client registration)": possibly refused by domain control. Client ID Metadata Documents need metadata published at an https URL, which Iwato does not have, so they are not used
 - "The gateway's first refresh failed": see "whether refresh needs resource" above; note the state and failure code
 - atlassian fails in `/mcp` with "Authorization header ... rejected": does `claude mcp get atlassian` still show `${ATLASSIAN_ACCESS_TOKEN}`? If it shows the placeholder string, it was registered with double quotes; `claude mcp remove atlassian` and redo 7. Also look at denied requests in the policy tab
-- The running claude's executable: `readlink /proc/$(pgrep -n claude)/exe` is `/home/dev/.local/share/claude/versions/*` or `/home/dev/.local/share/mise/installs/claude/*/claude`
 
 ## Model hubs, generation, GPU clouds and hosting (common)
 
 `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal` and `iwato-cloudflare` are not checked against real OpenShell (substitution). The comment at the top of each YAML gives the sources (official code and docs) and what could not be checked.
 
-- **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). It is replaced with the real value in HTTP headers (Bearer, Basic, any header), the path and the query (`?token=` etc.) of requests to the profile's endpoints (host, port, path). `auth_style` / `header_name` are display metadata and do not decide where substitution happens. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
-- **Programs**: these tools run on python (`hf`, `vastai`, `comfy`, ComfyUI, SDKs), node or curl. OpenShell matches the executable (or an ancestor process), not the script, so allowing python lets any python program reach the endpoint with the value. It cannot be narrower, so the profiles list the standard image's `/usr/bin/python3*`, mise's `/home/dev/.local/share/mise/installs/python/*/bin/python3*`, uv's `/home/dev/.local/share/uv/python/*/bin/python3*` (venv pythons link to these), mise's node, curl and wget (not in the standard image). Python elsewhere (pyenv, conda, …) gets proposals
-- **Download hosts (no value needed)**: Hugging Face's `cdn-lfs*.huggingface.co` and `*.hf.co` (Xet: `cas-bridge.xethub.hf.co` etc.), Civitai's signed-URL storage and Comfy Cloud's output storage carry their own authorization in signed URLs, and clients send no value there. They are not in the profiles: every endpoint of a profile with a value is a credential endpoint, so the placeholder would be substituted there too (the value could reach a CDN), and rules allowing those hosts uninspected (L4, as proposed) would be refused (above). Outside the profile they appear as ordinary proposals on the first download; check the program and host and approve with **Read only** (inspected, so a stray placeholder stops at `credential_endpoint_mismatch`)
+- **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). It is replaced with the real value in HTTP headers (Bearer, Basic, any header), the path and the query (`?token=` etc.) of requests to the policy's endpoints bound to the provider (host, port, path). `auth_style` / `header_name` are display metadata and do not decide where substitution happens. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
+- **Download hosts (no value needed)**: Hugging Face's `cdn-lfs*.huggingface.co` and `*.hf.co` (Xet: `cas-bridge.xethub.hf.co` etc.), Civitai's signed-URL storage and Comfy Cloud's output storage carry their own authorization in signed URLs, and clients send no value there. They are not in the providers' initial rules or `iwato/credential-hosts`: a bound endpoint would substitute the placeholder there too (the value could reach a CDN). They appear as ordinary proposals on the first download; check the host and approve the reads (inspected, so a stray placeholder stops at `credential_endpoint_mismatch`)
 - **Writes and billing**: Hugging Face uploads, Civitai generation (Buzz), creating or deleting Vast.ai instances and RunPod pods, and Cloudflare deploys are not allowed by the providers' initial rules. They show up as proposals; approving one with the credential attached allows it (ADR 0022). OpenRouter inference and running Comfy Cloud workflows are what those keys are for, so they are allowed
 
 To check (each with `sh providers-check.sh NAME`, never printing tokens; add a provider of the type, attach it and restart first):
@@ -136,22 +131,22 @@ To check (each with `sh providers-check.sh NAME`, never printing tokens; add a p
 
        curl -s https://openrouter.ai/api/v1/models -H "Authorization: Bearer $OPENROUTER_API_KEY" | head -c 200
 
-3. Python SDK: `OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OPENROUTER_API_KEY"])`. Other agents (OpenCode etc. with their own executables) get proposals, as their paths are not in the profile
+3. Python SDK: `OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OPENROUTER_API_KEY"])`.
 
 ## (f) Hugging Face (iwato-huggingface)
 
 1. Type **Hugging Face**, value: a User Access Token (`hf_...`; read is enough)
 2. `sh providers-check.sh huggingface`. Success: `HF_TOKEN` and `HUGGING_FACE_HUB_TOKEN` are placeholders, `name: <you>`, and `hf auth whoami` (older: `huggingface-cli whoami`) prints your name. Install `hf` with `uv tool install huggingface_hub` or `pip install --user huggingface_hub` (approve pypi.org etc. as proposals)
-3. The last line's small download triggers proposals for the CDN (`cdn-lfs*.huggingface.co` or `*.hf.co`). Approve with **Read only**, retry, and expect `200 https://…`. Also try `hf download OWNER/REPO` on a gated or private model
-4. git: `git clone https://huggingface.co/OWNER/REPO` (private: `https://USER:$HF_TOKEN@huggingface.co/...`; a Basic password placeholder is substituted too). git-lfs runs from git, so git's rules cover it
+3. The last line's small download triggers proposals for the CDN (`cdn-lfs*.huggingface.co` or `*.hf.co`). Approve the reads, retry, and expect `200 https://…`. Also try `hf download OWNER/REPO` on a gated or private model
+4. git: `git clone https://huggingface.co/OWNER/REPO` (private: `https://USER:$HF_TOKEN@huggingface.co/...`; a Basic password placeholder is substituted too)
 5. To check: the destinations of Xet transfers (`hf_xet`: `cas-server.xethub.hf.co`, `cas-bridge.xethub.hf.co` etc.) and `hf.co` short URLs. See denied requests in the policy tab. Uploads (`hf upload`) propose `POST /api/…/commit/…` etc.
 
 ## (g) Civitai (iwato-civitai)
 
 1. Type **Civitai**, value: a Civitai API key (account settings)
 2. `sh providers-check.sh civitai`. Success: `CIVITAI_API_TOKEN` and `CIVITAI_TOKEN` are placeholders, `/api/v1/me` returns your data and the `?token=` favourites list comes back (substituted both as Bearer and in the query)
-3. Download: `curl -fLOJ "https://civitai.com/api/download/models/ID?token=$CIVITAI_TOKEN"` with a model that needs a login. The storage host (unknown) shows up as a proposal; approve with **Read only** and add the host name to this document and the profile's comment
-4. Generation (`POST /v2/consumer/workflows` on orchestration.civitai.com) is proposed (approving allows writes for the provider). It spends Buzz, so try a cheap one
+3. Download: `curl -fLOJ "https://civitai.com/api/download/models/ID?token=$CIVITAI_TOKEN"` with a model that needs a login. The storage host (unknown) shows up as a proposal; approve the reads and add the host name to this document and the profile's comment
+4. Generation (`POST /v2/consumer/workflows` on orchestration.civitai.com) is proposed (approving it with the token attached allows it). It spends Buzz, so try a cheap one
 
 ## (h) Vast.ai (iwato-vastai)
 
@@ -159,7 +154,7 @@ To check (each with `sh providers-check.sh NAME`, never printing tokens; add a p
 2. Install `vastai` (`uv tool install vastai` or `pip install --user vastai`). `vastai set api-key` is not needed (it reads VAST_API_KEY)
 3. `sh providers-check.sh vastai`. Success: `VAST_API_KEY` is a placeholder, `vastai show user` returns the account and `vastai search offers` (PUT /api/v0/search/asks/) lists offers
 4. `vastai create instance …` is proposed (it costs money). If approved, check through `vastai destroy instance ID` afterwards (DELETE, also proposed)
-5. To check: whether `--explain` shows only console.vast.ai/api/v0. cloud.vast.ai and run.vast.ai (serverless, with the key in the JSON body) are not in the profile
+5. To check: whether `--explain` shows only console.vast.ai/api/v0. cloud.vast.ai and run.vast.ai (serverless, with the key in the JSON body) are not in the provider's rule
 
 ## (i) Comfy Cloud (iwato-comfy-cloud)
 
@@ -168,9 +163,8 @@ To check (each with `sh providers-check.sh NAME`, never printing tokens; add a p
 3. Running a workflow: run Comfy's documented example (`POST /api/prompt`, `wss://cloud.comfy.org/ws?clientId=…&token=$COMFY_CLOUD_API_KEY`, fetching outputs from where `GET /api/view`'s 302 points) in python. To check:
    - whether the WebSocket's `?token=` is substituted (the upgrade request's query; OpenShell's docs say queries are)
    - Partner Nodes: whether `/api/prompt` with the placeholder in `extra_data.api_key_comfy_org` passes (body substitution is enabled for `/api/prompt` only; whether the more specific `/api/prompt` wins over `/api/**`)
-   - the output storage (the 302's target, unknown) shows up as a proposal; approve with **Read only** and add the host name to this document and the profile's comment
+   - the output storage (the 302's target, unknown) shows up as a proposal; approve the reads and add the host name to this document and the profile's comment
    - image uploads (`POST /api/upload/image`, multipart) over 256 KiB pass (body substitution only on `/api/prompt`)
-4. When ComfyUI runs in the sandbox and uses Partner Nodes, it sends `X-API-KEY` to api.comfy.org. ComfyUI's python must be one of the profile's programs (mise, uv or the standard python)
 
 ## (j) RunPod (iwato-runpod)
 
@@ -178,7 +172,7 @@ To check (each with `sh providers-check.sh NAME`, never printing tokens; add a p
 
 1. Type **RunPod**, value: a RunPod API key. Install `runpodctl` with mise (`mise use -g github:runpod/runpodctl`) or the `runpod` Python SDK
 2. `RUNPOD_API_KEY` is a placeholder, and listing the account's pods with `runpodctl` or the SDK (`runpod.get_pods()`) works (GraphQL queries and REST GETs)
-3. Creating, starting or deleting a pod and serverless runs (`POST /v2/ID/run`) are proposed (they cost money). Approving widens the provider to **Allow writes**
+3. Creating, starting or deleting a pod and serverless runs (`POST /v2/ID/run`) are proposed (they cost money). Approving them with the token attached allows them
 4. To check: the destinations in the profile's comment (`api.runpod.io`, `rest.runpod.io`, `api.runpod.ai`, `hapi.runpod.net`); see denied requests in the policy tab
 
 ## (k) Grok Build with an xAI subscription (iwato-grok-subscription, experimental)
@@ -210,7 +204,7 @@ Precedence (Auth Precedence in grok's guide, `flow.rs`): a model's `api_key` > t
 1. Start the new exe. The log shows `imported the provider profile iwato-grok-subscription`
 2. Menu **Providers** → type **Grok Build** → **Connect to xAI**. A code and **Allow in xAI** appear. On a PC or a phone, log in on xAI's page, check the code matches and allow (within the time limit). Iwato shows "Connected as grok-subscription" and **The gateway refreshes it**, with the expiry and the next refresh
 3. Press **Refresh now** twice in the list; both succeed
-4. Attach it from the sandbox's ⋯ → **Providers** and **Restart now** (or choose it in the create form). Install grok with mise (`mise use -g grok`, preset `packages`)
+4. Attach it from the sandbox's ⋯ → **Providers** and **Restart now** (or choose it in the create form). Install grok with mise (`mise use -g grok`, the Agent CLIs preset)
 5. In a terminal, `cat ~/.config/iwato/env` shows an `export GROK_AUTH_PROVIDER_COMMAND=…` line conditional on `XAI_OAUTH_TOKEN`, `echo "$GROK_AUTH_PROVIDER_COMMAND"` prints the command, and `sh -c "$GROK_AUTH_PROVIDER_COMMAND"` prints `{"access_token":"<placeholder>",…,"issuer":"https://auth.x.ai"}` (the placeholder is not a secret, but do not paste it into an agent's conversation)
 6. `grok logout`, then `grok -p 'hello'`. A reply means grok sent the placeholder to `cli-chat-proxy.grok.com/v1` and OpenShell substituted it. Interactive `grok` starts right away, without a login screen
 7. The same grok keeps working for over an hour (the placeholder does not change on refresh)
@@ -219,7 +213,7 @@ Precedence (Auth Precedence in grok's guide, `flow.rs`): a model's `api_key` > t
 
 On failure:
 
-- Look at denied requests in the policy tab. Paths other than `/v1` on `cli-chat-proxy.grok.com`, and other hosts (trace uploads etc.), show up as proposals; decide whether they are needed. `binary ... not allowed` is grok's executable path (the profile's `binaries`)
+- Look at denied requests in the policy tab. Paths other than `/v1` on `cli-chat-proxy.grok.com`, and other hosts (trace uploads etc.), show up as proposals; decide whether they are needed.
 - "The gateway's first refresh failed": note the state and failure code (`oauth_invalid_grant`: rotation or client_id; `oauth_invalid_request`: extra parameters needed)
 
 ## (l) Claude Code with a Claude account sign-in (iwato-claude-subscription, experimental)
@@ -236,7 +230,7 @@ Iwato.exe signs in with Claude Code's public OAuth client (authorization code wi
 
 1. Type **Cloudflare**, value: a Cloudflare API token (not the global API key). Install wrangler with mise (`mise use -g npm:wrangler`) and set `CLOUDFLARE_ACCOUNT_ID` in the terminal
 2. `CLOUDFLARE_API_TOKEN` is a placeholder, and `wrangler whoami` and `wrangler deployments list` work (GETs). `wrangler d1 info DB` checks GraphQL queries (POST `/client/v4/graphql`)
-3. `wrangler deploy` is proposed (it needs writes, including the assets upload with its own JWT). Approving widens the provider to **Allow writes**
+3. `wrangler deploy` is proposed (it needs writes, including the assets upload with its own JWT). Approving them with the token attached allows them
 4. To check: cloudflared (`mise use -g cloudflared`) after `cloudflared tunnel login` (its token is in cert.pem, not the variable): `cloudflared tunnel list` passes and `cloudflared tunnel create` is proposed. See denied requests in the policy tab
 
 ## (n) Codex with a ChatGPT sign-in (iwato-codex-subscription, experimental)

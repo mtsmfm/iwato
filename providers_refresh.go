@@ -67,8 +67,3 @@ func truncate(s string, n int) string {
 	}
 	return string(r[:n]) + "…"
 }
-
-// needsReauthorization: the grant is gone; only a new one (再接続) helps.
-func (i RefreshInfo) needsReauthorization() bool {
-	return i.Status == "reauthorization_required" || i.Recovery == "reauthorize" || i.Status == "not_configured"
-}

@@ -7,8 +7,8 @@ import (
 
 // policyLocks serialise Iwato's writes to a sandbox's policy: every writer
 // (an edit, the YAML editor, approving, rejecting and undoing proposals,
-// presets, a recreate's carried rules, attaching and detaching providers
-// and changing a provider's scope) holds its sandbox's lock from reading
+// presets, a recreate's carried rules, attaching, detaching and fixing
+// providers, and a binding change) holds its sandbox's lock from reading
 // the policy (and the providers it checks against) until the gateway has
 // the change, so that no check runs on a policy another writer is about
 // to change. Order: providerMu first, then the sandboxes' locks in name

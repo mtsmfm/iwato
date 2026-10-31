@@ -2,7 +2,7 @@
 
 [日本語](ja/providers.md)
 
-A provider holds a credential (a token, an API key, an OAuth grant) in OpenShell's gateway. Programs in a sandbox with the provider attached see only a placeholder in an environment variable; OpenShell's proxy replaces it with the real value when a request takes it to the provider's hosts. Iwato never shows the values again.
+A provider holds a credential (a token, an API key, an OAuth grant) in OpenShell's gateway. Programs in a sandbox with the provider attached see only a placeholder in an environment variable; OpenShell's proxy replaces it with the real value when a request takes it to a destination that carries the credential. Iwato never shows the values again.
 
 ## Adding and attaching
 
@@ -19,7 +19,7 @@ Iwato's provider types:
 | Codex | `CODEX_CHATGPT_ACCESS_TOKEN`, `CODEX_CHATGPT_ACCOUNT_ID` | sign in with a ChatGPT account (below), sent to chatgpt.com/backend-api/codex and /backend-api/wham |
 | OpenAI API | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
-| Atlassian | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); only `claude` may send it, to mcp.atlassian.com/v2/mcp |
+| Atlassian | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); `claude` sends it to mcp.atlassian.com/v2/mcp |
 | GitHub | `GH_TOKEN`, `GITHUB_TOKEN` | used by `gh` and git over HTTPS. Reads, clone and fetch; writes and push need approved proposals |
 | Hugging Face | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` | downloads only; uploads need approved proposals. The file CDN (`*.hf.co` and the like) gets no value: approve its proposal as read only |
 | Civitai | `CIVITAI_API_TOKEN`, `CIVITAI_TOKEN` | read and download only; generation (uses Buzz) needs approved proposals. Where downloads are redirected gets no value: approve that proposal as read only |
@@ -29,7 +29,7 @@ Iwato's provider types:
 | Modal | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` | the `modal` CLI and Python client (gRPC over HTTP/2 to api.modal.com and api.modal2.com); also runs and deploys apps (costs money). **Caution:** a sandbox with it can run code on Modal, which has open internet access, so the sandbox's network policy no longer limits where data can go, and that code can read the workspace's Modal Secrets |
 | Cloudflare | `CLOUDFLARE_API_TOKEN` | read only (api.cloudflare.com/client/v4); deploys and DNS changes need approved proposals. Set `CLOUDFLARE_ACCOUNT_ID` yourself (it is not a secret) |
 
-Only GitHub and Atlassian were tried on real hardware so far. The profiles name the agents' executables where mise and the agents' own updaters put them (for example Claude Code under `/home/dev/.local/share/claude/versions/*` and mise's `/home/dev/.local/share/mise/installs/claude/*/claude`).
+Only GitHub and Atlassian were tried on real hardware so far.
 
 To see a type's OpenShell profile, use View the profile as YAML. A tag tells where it comes from (shipped with Iwato, custom, or read from the gateway). A profile imported with OpenShell's CLI is read from the gateway and written out in OpenShell's YAML format, so the original file's comments and layout are not kept.
 
@@ -62,7 +62,7 @@ Adding an Atlassian provider asks for scopes (by default Jira and Confluence rea
 
 ### Claude account sign-in for Claude Code
 
-Iwato signs in with Claude Code's own public client id (not one Anthropic issued to Iwato), as `claude auth login` does. On the PC, Sign in with Claude comes back to Iwato by itself; on a phone, use **Sign in on a phone (paste a code)** and paste the code Claude's page shows (`code#…`). The sandbox's `claude` reads `CLAUDE_CODE_OAUTH_TOKEN`; Iwato also sets the token's scopes (`CLAUDE_CODE_OAUTH_SCOPES`, in `~/.config/iwato/env`) so that `/usage` works. Open a new terminal after attaching the provider to a running sandbox. claude.ai connectors stay off: the provider does not allow their host. Check with `claude -p 'hello'`.
+Iwato signs in with Claude Code's own public client id (not one Anthropic issued to Iwato), as `claude auth login` does. On the PC, Sign in with Claude comes back to Iwato by itself; on a phone, use **Sign in on a phone (paste a code)** and paste the code Claude's page shows (`code#…`). The sandbox's `claude` reads `CLAUDE_CODE_OAUTH_TOKEN`; Iwato also sets the token's scopes (`CLAUDE_CODE_OAUTH_SCOPES`, in `~/.config/iwato/env`) so that `/usage` works. Open a new terminal after attaching the provider to a running sandbox. claude.ai connectors stay off: the provider's rule does not allow their host. Check with `claude -p 'hello'`.
 
 Anthropic's terms govern subscription (Free, Pro, Max) OAuth tokens: see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance). Here only Claude Code in the sandbox uses the token, but Iwato signs in with Claude Code's client id. If the gateway's first refresh fails, Iwato says so.
 

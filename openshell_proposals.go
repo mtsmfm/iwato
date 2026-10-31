@@ -474,26 +474,16 @@ func binaryPaths(r v1.NetworkPolicyRule) []string {
 }
 
 // ProposalScope narrows a proposal before it is approved: OpenShell then
-// inspects the HTTP requests (protocol rest, enforced) and lets only reads
-// (GET, HEAD, OPTIONS) or the listed methods and paths through. Reads and
-// paths combine: read-only with rules allows GET, HEAD and OPTIONS on each
-// rule's path (the rules then name no method).
+// inspects the HTTP requests (protocol rest, enforced) and lets only the
+// listed methods and paths through.
 //
-// Audit is the first step when the paths are not known yet (a blocked
-// connection never sent a request): OpenShell lets every request through and
-// only logs it. Iwato shows the logged methods and paths on the endpoint,
-// for the owner to enforce it with the ones it needs (openshell_audit.go).
-//
-// Binaries, when set, replace the proposed rule's programs, for instance a
-// versioned path widened to a glob (claude-*-linux-x64). Alone they leave the
-// endpoints as proposed.
+// Binaries replace the proposed rule's programs; the page sends every
+// program. Alone they leave the endpoints as proposed.
 //
 // Uninspected are the indexes of the proposed endpoints approved as
 // proposed (uninspected, L4); the others are narrowed, and left out without
 // rules of their own.
 type ProposalScope struct {
-	ReadOnly    bool           `json:"readOnly"`
-	Audit       bool           `json:"audit"`
 	Rules       []ProposalRule `json:"rules"`
 	Binaries    []string       `json:"binaries"`
 	Uninspected []int          `json:"uninspected,omitempty"`
@@ -508,7 +498,7 @@ type ProposalScope struct {
 // narrows: the scope changes the proposed endpoints (programs and
 // credentials do not).
 func (s *ProposalScope) narrows() bool {
-	return s != nil && (s.ReadOnly || s.Audit || len(s.Rules) > 0 || len(s.Uninspected) > 0)
+	return s != nil && (len(s.Rules) > 0 || len(s.Uninspected) > 0)
 }
 
 // ProposalRule allows one method ("*" for any) on paths matching a glob
@@ -523,19 +513,15 @@ type ProposalRule struct {
 
 var scopeMethods = map[string]bool{"*": true, "GET": true, "HEAD": true, "OPTIONS": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true}
 
-// readMethods are what read-only allows (OpenShell's read-only preset).
+// readMethods are OpenShell's read-only preset.
 var readMethods = []string{"GET", "HEAD", "OPTIONS"}
 
-// Validate accepts read-only (with paths or not), audit, or 1 to 16 rules
-// with a known method and an absolute path without spaces or control
-// characters; and up to 8 programs (validBinary). Programs alone keep the
-// proposed access.
+// Validate accepts up to 16 rules with a known method and an absolute path
+// without spaces or control characters, and up to 8 programs (validBinary).
+// Programs alone keep the proposed access.
 func (s ProposalScope) Validate() error {
-	if s.Audit && (s.ReadOnly || len(s.Rules) > 0) {
-		return errCode("scope_audit_alone", nil, "監査は読み取りだけやメソッドとパスと一緒には指定できません")
-	}
 	if !s.narrows() && len(s.Binaries) == 0 && s.Attach == nil && !s.Offer {
-		return errCode("scope_empty", nil, "読み取りだけ、監査、メソッドとパス、プログラムのどれかを指定してください")
+		return errCode("scope_empty", nil, "メソッドとパスかプログラムを指定してください")
 	}
 	if len(s.Binaries) > 8 {
 		return errCode("scope_binaries_too_many", nil, "プログラムは 8 個までです")
@@ -548,18 +534,7 @@ func (s ProposalScope) Validate() error {
 			return err
 		}
 	}
-	if !s.ReadOnly {
-		return validateRules(s.Rules)
-	}
-	// Read-only rules are paths; the methods are the reads.
-	paths := make([]ProposalRule, len(s.Rules))
-	for i, r := range s.Rules {
-		if r.Method != "" {
-			return errCode("scope_read_no_method", nil, "読み取りだけではメソッドを指定しません")
-		}
-		paths[i] = ProposalRule{Method: "GET", Path: r.Path}
-	}
-	return validateRules(paths)
+	return validateRules(s.Rules)
 }
 
 // validateRules accepts up to 16 rules with a known method and an absolute
@@ -568,7 +543,7 @@ func (s ProposalScope) Validate() error {
 // size, 256 KiB).
 func validateRules(rules []ProposalRule) error {
 	if len(rules) > 16 {
-		return errCode("scope_rules_too_many", nil, "規則は 16 個までです")
+		return errCode("scope_rules_too_many", nil, "メソッドとパスは 16 個までです")
 	}
 	for _, r := range rules {
 		if !scopeMethods[r.Method] {
@@ -652,7 +627,7 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 			endpoints = append(endpoints, e)
 			continue
 		}
-		if !s.ReadOnly && !s.Audit && len(s.Rules) == 0 {
+		if len(s.Rules) == 0 {
 			continue
 		}
 		e.Protocol, e.Enforcement = "rest", v1.NetworkEnforcementModeEnforce
@@ -662,35 +637,14 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 			e.TLS = v1.NetworkTLSModeUnspecified
 		}
 		e.Access, e.Rules = v1.NetworkAccessPresetUnspecified, nil
-		switch {
-		case s.ReadOnly && len(s.Rules) == 0:
-			e.Access = v1.NetworkAccessPresetReadOnly
-		case s.ReadOnly:
-			seen := map[string]bool{}
-			for _, r := range s.Rules {
-				if seen[r.Path] {
-					continue
-				}
-				seen[r.Path] = true
-				for _, m := range readMethods {
-					e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: m, Path: r.Path}})
-				}
+		for _, r := range s.Rules {
+			if strings.EqualFold(r.Host, e.Host) || r.Host == "" && len(hosts) == 1 {
+				e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: r.Method, Path: r.Path}})
 			}
-		case s.Audit:
-			// A REST endpoint needs rules; this one allows only GET / so
-			// that every other request is logged with its method and path.
-			e.Enforcement = v1.NetworkEnforcementModeAudit
-			e.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/"}}}
-		default:
-			for _, r := range s.Rules {
-				if strings.EqualFold(r.Host, e.Host) || r.Host == "" && len(hosts) == 1 {
-					e.Rules = append(e.Rules, v1.L7Rule{Allow: &v1.L7Allow{Method: r.Method, Path: r.Path}})
-				}
-			}
-			// None of its rules kept: the endpoint is left out.
-			if len(e.Rules) == 0 {
-				continue
-			}
+		}
+		// None of its rules kept: the endpoint is left out.
+		if len(e.Rules) == 0 {
+			continue
 		}
 		endpoints = append(endpoints, e)
 	}

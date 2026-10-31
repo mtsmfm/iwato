@@ -35,7 +35,7 @@ func TestApprovalAllowsEveryProgram(t *testing.T) {
 		_, err := o.DecideProposal(ctx, w, "approve", requestID(id), testDigest(o, ctx, w, requestID(id)), scope)
 		return err
 	}
-	if err := decide("c1", &ProposalScope{ReadOnly: true}); codeOf(err) != "scope_binaries_missing" {
+	if err := decide("c1", &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}}); codeOf(err) != "scope_binaries_missing" {
 		t.Fatal("a scope without programs:", err)
 	}
 	if err := decide("c1", &ProposalScope{Binaries: []string{"/usr/bin/gh"}}); err != nil {
@@ -44,7 +44,7 @@ func TestApprovalAllowsEveryProgram(t *testing.T) {
 	if got := f.chunks[0].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/**" {
 		t.Fatal("not every program:", got)
 	}
-	if err := decide("c2", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/*"}}); err != nil {
+	if err := decide("c2", &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}, Binaries: []string{"/usr/bin/*"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.chunks[1].ProposedRule.Binaries; len(got) != 1 || got[0].Path != "/**" {
@@ -68,8 +68,10 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	}
 	many.Endpoints = []v1.PolicyNetworkEndpoint{{Host: "a.example", Port: 443}}
 	var endpoints []v1.PolicyNetworkEndpoint
+	var everyHost []ProposalRule
 	for i := range proposalLimits.Endpoints + 1 {
 		endpoints = append(endpoints, v1.PolicyNetworkEndpoint{Host: fmt.Sprintf("h%d.example", i), Port: 443})
+		everyHost = append(everyHost, ProposalRule{Method: "GET", Path: "/**", Host: endpoints[i].Host})
 	}
 	wide := &v1.NetworkPolicyRule{Name: "wide", Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: endpoints}
 	// Rules count across endpoints: the limit is approvable, one more is not.
@@ -104,7 +106,7 @@ func TestApprovalRefusesWhatThePageCannotShow(t *testing.T) {
 	for _, c := range []struct {
 		id    string
 		scope *ProposalScope
-	}{{"many", nil}, {"wide", nil}, {"wide", &ProposalScope{ReadOnly: true, Binaries: []string{"/usr/bin/curl"}}}, {"gql", &ProposalScope{Audit: true, Binaries: []string{"/usr/bin/curl"}}}, {"rules1", nil}} {
+	}{{"many", nil}, {"wide", nil}, {"wide", &ProposalScope{Rules: everyHost, Binaries: []string{"/usr/bin/curl"}}}, {"gql", &ProposalScope{Rules: []ProposalRule{{Method: "GET", Path: "/**"}}, Binaries: []string{"/usr/bin/curl"}}}, {"rules1", nil}} {
 		if _, err := o.DecideProposal(ctx, w, "approve", requestID(c.id), testDigest(o, ctx, w, requestID(c.id)), c.scope); codeOf(err) != "proposal_unshown" {
 			t.Errorf("%s %+v: %v", c.id, c.scope, err)
 		}

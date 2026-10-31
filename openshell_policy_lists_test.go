@@ -39,7 +39,7 @@ func TestRulesLinkToTheirApprovedProposals(t *testing.T) {
 	chunks := []v1.PolicyChunk{
 		approvedChunk("gh", "allow_api", "/usr/bin/gh", []string{"/usr/bin/gh"}, "api.github.com", 100),
 		approvedChunk("git", "allow_api", "/usr/bin/git", []string{"/usr/bin/git"}, "api.github.com", 200),
-		// Widened to a glob in the approve dialog.
+		// Approved for a glob.
 		approvedChunk("node", "allow_npm", "/n/22.11.0/bin/node", []string{"/n/*/bin/node"}, "registry.npmjs.org", 300),
 		// Its rule was taken out; another's rule of its name lacks its program.
 		approvedChunk("mise", "allow_mise", "/usr/bin/mise", []string{"/usr/bin/mise"}, "mise.jdx.dev", 50),
@@ -64,12 +64,12 @@ func TestRulesLinkToTheirApprovedProposals(t *testing.T) {
 		t.Fatalf("merged rule: %+v", api)
 	}
 	// Undoing one of two leaves the rule (git keeps it).
-	if api.Chunks[0].RemovesRule || api.Chunks[0].Widened {
+	if api.Chunks[0].RemovesRule {
 		t.Fatalf("%+v", api.Chunks[0])
 	}
 	npm := byName["allow_npm"].Chunks
-	if len(npm) != 1 || !npm[0].Widened || !npm[0].RemovesRule || !slices.Equal(npm[0].Drops, []string{"npm.pkg.github.com:443"}) || !slices.Equal(npm[0].Binaries, []string{"/n/*/bin/node"}) {
-		t.Fatalf("widened rule: %+v", npm)
+	if len(npm) != 1 || !npm[0].RemovesRule || !slices.Equal(npm[0].Drops, []string{"npm.pkg.github.com:443"}) || !slices.Equal(npm[0].Binaries, []string{"/n/*/bin/node"}) {
+		t.Fatalf("glob rule: %+v", npm)
 	}
 	for _, name := range []string{"allow_pypi", "allow_other"} {
 		if r := byName[name]; r.Source != "hand" || len(r.Chunks) != 0 {
@@ -86,10 +86,10 @@ func TestRulesLinkToTheirApprovedProposals(t *testing.T) {
 	}
 }
 
-// Undoing takes out what OpenShell's UndoDraftChunk does not: the glob the
-// approval widened the program to, unless another approved proposal of the
-// rule holds it.
-func TestUndoPlanTakesTheWidenedGlob(t *testing.T) {
+// Undoing takes out what OpenShell's UndoDraftChunk does not: the other
+// programs of the approval, unless another approved proposal of the rule
+// holds them.
+func TestUndoPlanTakesTheApprovedPrograms(t *testing.T) {
 	rule := binaryRule("r", []string{"/n/*/bin/node", "/usr/bin/curl"}, "a.example")
 	node := approvedChunk("node", "r", "/n/22/bin/node", []string{"/n/*/bin/node"}, "a.example", 1)
 	curl := approvedChunk("curl", "r", "/usr/bin/curl", []string{"/usr/bin/curl"}, "a.example", 2)
