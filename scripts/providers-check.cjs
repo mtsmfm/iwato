@@ -467,7 +467,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
     const runpodRule = policy.locator('.policy-rule[data-rule=provider_runpod]');
     await runpodRule.waitFor();
-    check((await runpodRule.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: runpod', 'the rule is marked with the credential it carries');
+    check((await runpodRule.locator('.policy-src[data-source=provider-host]').innerText()) === 'トークン: runpod', 'the rule is marked with the credential it carries');
     await runpodRule.scrollIntoViewIfNeeded();
     await shot('attach-rules.png');
     await openPanel();

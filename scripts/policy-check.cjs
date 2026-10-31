@@ -78,7 +78,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const prov = rule('provider_github_personal');
     await open('provider_github_personal');
     const provText = await prov.innerText();
-    check((await prov.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal' && provText.includes('api.github.com:443 /** · 検査 (遮断)'), 'the provider\'s initial rule is marked with its credential: ' + provText.slice(0, 200));
+    check((await prov.locator('.policy-src[data-source=provider-host]').innerText()) === 'トークン: github-personal' && provText.includes('api.github.com:443 /** · 検査 (遮断)'), 'the provider\'s initial rule is marked with its credential: ' + provText.slice(0, 200));
     const ghRule = rule('allow_github_example_com_443');
     check(await ghRule.locator('.policy-chunk').count() === 2 && await ghRule.getByRole('button', { name: '規則「allow_github_example_com_443」を外す' }).count() === 0, 'a rule from two proposals lists both, with 取り消す and no 外す');
     await open('allow_registry_npmjs_org_443');
@@ -165,7 +165,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const reviewText = await reviewBox.innerText();
     check(reviewText.includes('OpenShell が止めた接続から作った下書き') && reviewText.includes('/sandbox/.local/share/claude/versions/2.1.293 (参考。許可はプログラムを問いません)') && reviewText.includes('あり (HTTP の要求を検査)'), 'the reason, the program as information, the inspection');
     const okWarn = await reviewBox.locator('.review-warn[data-level=ok]').innerText();
-    check(okWarn.includes('危険ドメインのチェック: 問題なし') && okWarn.includes('1.1.1.2 は通常の応答') && okWarn.includes('登録から 18 年'), 'nothing found: the facts: ' + okWarn);
+    check(okWarn.includes('危険ドメインのチェック: 問題なし') && okWarn.includes('1.1.1.2 の判定は問題なし') && okWarn.includes('登録から 18 年'), 'nothing found: the facts: ' + okWarn);
     await reviewBox.locator('.review-rule', { hasText: 'linux-x64' }).locator('input').uncheck();
     check((await reviewBox.locator('.review-rule', { hasText: 'linux-x64' }).getAttribute('data-off')) === 'true', 'an unchecked rule is struck through');
     await reviewBox.locator('.review-diff > summary').click();
@@ -203,7 +203,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const uploads = rule('allow_uploads_github_com_443');
     await uploads.waitFor();
     await open('allow_uploads_github_com_443');
-    check((await uploads.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'it carries the credential');
+    check((await uploads.locator('.policy-src[data-source=provider-host]').innerText()) === 'トークン: github-personal', 'it carries the credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     // OpenShell's proposal for api.github.com whose only rule is a GET /
@@ -277,7 +277,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(true, 'it turns 反映済み once the sandbox loaded it');
     await open('allow_github_com_443');
     check((await github.innerText()).includes('POST /mtsmfm/iwato.git/git-receive-pack'), 'the push was approved with the methods and paths seen');
-    check(await github.locator('.policy-src[data-source=provider-host]').innerText() === '認証情報: github-personal', 'the approved rule carries the provider\'s credential');
+    check(await github.locator('.policy-src[data-source=provider-host]').innerText() === 'トークン: github-personal', 'the approved rule carries the provider\'s credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
     check(true, 'and fades away');
     // The token can come off an endpoint more specific than the provider's.
@@ -314,7 +314,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await openItem(/cdn-x7k2q\.top/);
     await settled();
     const warns = await reviewBox.locator('.review-warn').evaluateAll((els) => els.map((e) => e.dataset.level + ' ' + e.innerText.replace(/\s+/g, ' ')));
-    check(warns[0].startsWith('red ! 危険ドメイン: 1.1.1.2 が cdn-x7k2q.top に 0.0.0.0 を返しました') && warns[1].startsWith('amber ▲ cdn-x7k2q.top は登録から 6 日のドメインです') && !warns.some((w) => w.startsWith('ok')), 'red, then amber: ' + warns.join(' / '));
+    check(warns[0].startsWith('red ! cdn-x7k2q.top は危険なドメインです') && warns[1].startsWith('amber ▲ cdn-x7k2q.top は登録から 6 日のドメインです') && !warns.some((w) => w.startsWith('ok')), 'red, then amber: ' + warns.join(' / '));
     check(await reviewBox.getByRole('button', { name: '承認', exact: true }).isEnabled(), 'warnings never block');
     await reviewBox.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(dir, 'review-danger.png') });
@@ -445,7 +445,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await dialog.waitFor();
     await page.click('#confirm-ok');
     await prov.getByText('POST /repos/mtsmfm/iwato/releases').waitFor();
-    check(await provDenied.count() === 0 && (await prov.locator('.policy-src[data-source=provider-host]').innerText()) === '認証情報: github-personal', 'the provider\'s endpoint allows it now, still with the credential');
+    check(await provDenied.count() === 0 && (await prov.locator('.policy-src[data-source=provider-host]').innerText()) === 'トークン: github-personal', 'the provider\'s endpoint allows it now, still with the credential');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
 
     // The history: the policy repository's commits, each with its diff

@@ -369,14 +369,14 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     const chips = (i) => nodes(pendingItems(env)[i]).filter((n) => n.className === 'review-chip').map((n) => n.dataset.level + ' ' + n.textContent);
     assert.deepEqual(chips(0), ['red 危険ドメイン', 'amber 新しいドメイン', 'amber 検査なし']);
     const warns = () => nodes(review(env)).filter((n) => n.className === 'review-warn').map((n) => n.dataset.level + ' ' + texts(n).split('\n')[1]);
-    assert.deepEqual(warns().slice(0, 2), ['red 危険ドメイン: 1.1.1.2 が bad.example に 0.0.0.0 を返しました', 'amber bad.example は登録から 6 日のドメインです']);
+    assert.deepEqual(warns().slice(0, 2), ['red bad.example は危険なドメインです', 'amber bad.example は登録から 6 日のドメインです']);
     assert.equal(find(review(env), '承認').disabled, false, 'warnings never block');
     pendingItems(env)[1].click(); await runTimers(env);
     assert.equal(warns()[0], 'red webhook.site は外部送信サービスです', 'an exfiltration service');
     assert(warns().some((w) => w === 'amber webhook.site: 解決先 IP を 10.0.0.0/8 に限定 (内部アドレスも許可)'), 'internal addresses are warned');
     pendingItems(env)[2].click(); await runTimers(env);
     assert.deepEqual(warns(), ['ok 危険ドメインのチェック: 問題なし (ok.example)']);
-    assert.match(texts(review(env)), /1\.1\.1\.2 は通常の応答。登録から 3 年/);
+    assert.match(texts(review(env)), /1\.1\.1\.2 の判定は問題なし。登録から 3 年/);
     assert.equal(env.requests.filter((r) => r.path.startsWith('/api/hostcheck')).length, 3, 'each host is checked once');
   }
   ok('the host checks show red and amber warnings in the list and the opened proposal, and the facts when nothing is found');
@@ -419,7 +419,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     tok.setConfirmHandler((q) => { tokShown = q; return true; });
     tok.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : response({...proposalItem, pending: [], rejected: [{...item, endpoints: [{host: 'x.example', ports: [443]}], attach: [{provider: 'gh', host: 'x.example', path: '/a'}]}]}));
     await readPolicy(tok); find(tok.policy().children[1].children[3], '承認する').click(); await flush();
-    assert.match(tokShown, /x\.example\/a への要求には gh のトークンが付きます/);
+    assert.match(tokShown, /x\.example\/a には今 gh のトークンが付いている/);
     assert.equal(scopeOf(tok).scope.attach, true);
   }
   ok('a rejected proposal is approved as proposed after a question that warns of a host gateway and Iwato\'s port, and names the credential it carries');
@@ -452,9 +452,9 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.match(A.reviewScope(many, manyRows).error, /16 個までです \(いま 19 個\)/);
   const day = 86400, now = Date.UTC(2026, 9, 31) / 1000;
   const warn = (c) => plain(A.hostWarnings({host: 'x.example', domain: 'x.example', exfil: '', filter: 'clean', rdap: 'found', ...c}, now * 1000)).map((w) => w.level + ' ' + w.text + ' / ' + w.detail);
-  assert.deepEqual(warn({registered: now - 29 * day}), ['amber x.example は登録から 29 日のドメインです / RDAP の登録日: 2026-10-02。', 'ok 危険ドメインのチェック: 問題なし (x.example) / 1.1.1.2 は通常の応答。外部送信サービスの一覧に該当なし']);
-  assert.deepEqual(warn({registered: now - 30 * day, filter: 'unknown'}), ['ok 危険ドメインのチェック: 問題なし (x.example) / 1.1.1.2 の応答は不明。登録から 30 日 (2026-10-01)。外部送信サービスの一覧に該当なし']);
-  assert.deepEqual(warn({rdap: 'unknown', filter: 'blocked'}).map((w) => w.split(' / ')[0]), ['red 危険ドメイン: 1.1.1.2 が x.example に 0.0.0.0 を返しました'], 'red: no facts line');
+  assert.deepEqual(warn({registered: now - 29 * day}), ['amber x.example は登録から 29 日のドメインです / RDAP の登録日: 2026-10-02。', 'ok 危険ドメインのチェック: 問題なし (x.example) / 1.1.1.2 の判定は問題なし。外部送信サービスの一覧に該当なし']);
+  assert.deepEqual(warn({registered: now - 30 * day, filter: 'unknown'}), ['ok 危険ドメインのチェック: 問題なし (x.example) / 1.1.1.2 では確認できず。登録から 30 日 (2026-10-01)。外部送信サービスの一覧に該当なし']);
+  assert.deepEqual(warn({rdap: 'unknown', filter: 'blocked'}).map((w) => w.split(' / ')[0]), ['red x.example は危険なドメインです'], 'red: no facts line');
   assert.deepEqual(plain(A.broadWrites([{kind: 'rule', host: '*.example.com', method: 'POST', path: '/a', checked: true, write: true}, {kind: 'rule', host: 'h', method: 'PUT', path: '/a', checked: true, write: true}, {kind: 'rule', host: 'h', method: '*', path: '**', checked: true, write: true}])), ['POST *.example.com/a', 'すべて h**'], 'a wildcard host or every path');
   ok('approve.js: the rows, the scope (as proposed when nothing was narrowed, the 16 limit), the host warnings, broad writes');
   }
