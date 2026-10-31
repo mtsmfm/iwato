@@ -4463,7 +4463,7 @@
       this.detail = element('p', 'card-detail');
       const toolbar = element('div', 'card-toolbar');
       // Made with an older supervisor than new sandboxes get: recreating updates it.
-      this.recreateBadge = bind(button('badge badge-recreate', '', () => { if (this.recreation.root.hidden) this.recreation.toggle(); }), 'card.recreateToUpdate');
+      this.recreateBadge = bind(button('badge badge-recreate', '', () => { if (this.recreation.root.hidden) this.toggleSide(this.recreation); }), 'card.recreateToUpdate');
       bindAttribute(this.recreateBadge, 'title', 'card.recreateToUpdate.title');
       this.recreateBadge.hidden = true;
       this.restartBadge.after(this.recreateBadge);
@@ -4476,9 +4476,9 @@
       this.stopButton = item(t('card.stop'), () => this.stop());
       this.connectButton = button('button-primary', t('card.connect'), () => this.connect());
       this.reconnectButton = bind(item('', () => this.connect()), 'card.reconnect');
-      this.deleteButton = bind(item('', () => this.deletion.toggle()), 'card.delete');
-      this.recreateButton = bind(item('', () => this.recreation.toggle()), 'card.recreate');
-      this.providerButton = bind(item('', () => this.providers.toggle()), 'card.providers');
+      this.deleteButton = bind(item('', () => this.toggleSide(this.deletion)), 'card.delete');
+      this.recreateButton = bind(item('', () => this.toggleSide(this.recreation)), 'card.recreate');
+      this.providerButton = bind(item('', () => this.toggleSide(this.providers)), 'card.providers');
       this.moreButton = button('button-subtle button-icon', '⋯', () => { if (this.actionMenu.hidden) this.openActionMenu(); else { this.closeActionMenu(); this.restoreFocus(); } });
       bindAttribute(this.moreButton, 'aria-label', 'card.more');
       this.moreButton.setAttribute('aria-haspopup', 'menu');
@@ -4785,6 +4785,14 @@
       if (!this.splitShown(key) || touchScreen()) return;
       if (key === 'editor') this.editor.focusTarget().focus();
       else if (this.terminal) this.terminal.focus();
+    }
+
+    // These panels share the body: one at a time. One that is working stays.
+    toggleSide(panel) {
+      const others = [this.deletion, this.recreation, this.providers].filter((p) => p !== panel && !p.root.hidden);
+      if (others.some((p) => p.busy)) return;
+      for (const p of others) p.close();
+      panel.toggle();
     }
 
     selectTab(key) {

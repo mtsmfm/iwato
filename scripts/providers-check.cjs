@@ -319,6 +319,12 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await card.getByRole('button', { name: 'その他の操作' }).click();
       await card.getByRole('menuitem', { name: 'プロバイダー' }).click();
     };
+    // One side panel at a time: delete opens over providers, not under it.
+    await openPanel();
+    await card.getByRole('button', { name: 'その他の操作' }).click();
+    await card.getByRole('menuitem', { name: '削除' }).click();
+    check(await card.locator('.delete-panel').isVisible() && await card.locator('.provider-panel').isHidden(), 'opening delete closes the provider panel');
+    await card.locator('.delete-panel').getByRole('button', { name: '閉じる' }).click();
     await openPanel();
     const side = card.locator('.provider-panel');
     await side.locator('.provider-row').first().waitFor();
