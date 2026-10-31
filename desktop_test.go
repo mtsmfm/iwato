@@ -329,9 +329,28 @@ func TestDesktopStartIsDetachedAndIdempotent(t *testing.T) {
 	}
 }
 
+// pathWithout is a directory of links to the system's programs, except name:
+// the sandbox image has the real desktop in /usr/bin.
+func pathWithout(t *testing.T, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, from := range []string{"/usr/bin", "/bin"} {
+		entries, err := os.ReadDir(from)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.Name() != name {
+				os.Symlink(filepath.Join(from, e.Name()), filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+	return dir
+}
+
 func TestDesktopStartWithoutTheDesktop(t *testing.T) {
 	d := prepareDesktop(t)
-	r := runCLI(t, d, []string{"start"}, "PATH=/usr/bin:/bin")
+	r := runCLI(t, d, []string{"start"}, "PATH="+pathWithout(t, "selkies-session"))
 	if r.code != 1 || !strings.Contains(r.out, "selkies-session not found") {
 		t.Fatalf("%+v", r)
 	}

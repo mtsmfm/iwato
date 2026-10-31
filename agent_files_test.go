@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -14,7 +15,8 @@ func runAgentFiles(t *testing.T, home, agents string) string {
 	if runtime.GOOS == "windows" {
 		t.Skip("needs /bin/sh")
 	}
-	cmd := exec.Command("/bin/sh", "-c", agentFilesScript, "iwato-agent-files", agents)
+	// exportHome would replace HOME with the real home volume inside a sandbox.
+	cmd := exec.Command("/bin/sh", "-c", strings.TrimPrefix(agentFilesScript, exportHome), "iwato-agent-files", agents)
 	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

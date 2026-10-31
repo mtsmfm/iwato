@@ -18,8 +18,6 @@ The setup needs network rules (all GET only):
 - Go: `proxy.golang.org`, `sum.golang.org` and `storage.googleapis.com` (`/proxy-golang-org-prod/*`)
 - the fonts, for python3: `github.com` (`/yuru7/moralerspace/releases/download/**`) and `release-assets.githubusercontent.com` (`/github-production-release-asset/754151133/*`)
 
-There, `/home/dev` and `selkies-session` exist, so `TestAgentFilesPlacedWhenAbsent`, `TestAgentFilesSkipWhatDoesNotFit` and `TestDesktopStartWithoutTheDesktop` fail regardless of the change.
-
 ## Running
 
 - `go run -tags uitest . serve -fake` runs the page against the fake backend the browser checks drive (`fake*.go`): no commands, no sandboxes, on any OS. It exists only in builds with the tag `uitest`; other builds (`scripts/build-exe.sh`, with or without `--debug`) have no `-fake`. Its terminal's `ccscroll` is a full-screen app that the wheel scrolls (to measure scrolling), `tui MS` redraws the whole screen every MS ms until a key (`tui MS LINES` prints LINES numbered lines instead), `propose HOST` adds an agent's proposal, and `-fake-latency 80ms` adds to the terminals' round trip. For the policy tab's speed: `-fake-policy FILE` (YAML with `network_policies`) makes dev's current rules, and `-fake-gateway-latency 30ms` adds to each gateway call; `BenchmarkPolicyEditCycle` (`-tags uitest`) times each edit route on a synthetic policy of a large sandbox's size (or on the file in `IWATO_BENCH_POLICY`), and `TestPolicyEditGatewayCalls` bounds the gateway calls each makes
