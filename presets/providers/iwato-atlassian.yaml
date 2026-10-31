@@ -17,7 +17,7 @@
 # every tool under its own name. versions: every MCP revision OpenShell
 # supports (a request without the header is read as 2025-03-26).
 id: iwato-atlassian
-label: Atlassian (MCP)
+label: Atlassian
 params:
   - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
 network_policies:

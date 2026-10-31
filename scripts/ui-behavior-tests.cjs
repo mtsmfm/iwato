@@ -1650,7 +1650,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
   const byText = (root, t) => walk(root, (n) => n.textContent === t)[0];
   const profiles = [{id: 'iwato-github', label: 'GitHub', note: '', credentials: [{name: 'token', label: 'トークン'}]},
-    {id: 'iwato-atlassian', label: 'Atlassian (MCP)', note: 'ATLASSIAN_ACCESS_TOKEN', oauth: true, guide: "claude mcp add --transport http atlassian https://mcp.atlassian.com/v2/mcp --header 'Authorization: Bearer ${ATLASSIAN_ACCESS_TOKEN}'", credentials: [{name: 'access_token', label: 'x'}]}];
+    {id: 'iwato-atlassian', label: 'Atlassian', note: 'ATLASSIAN_ACCESS_TOKEN', oauth: true, guide: "claude mcp add --transport http atlassian https://mcp.atlassian.com/v2/mcp --header 'Authorization: Bearer ${ATLASSIAN_ACCESS_TOKEN}'", credentials: [{name: 'access_token', label: 'x'}]}];
   const provs = [{name: 'atlassian-work', profile: 'iwato-atlassian', keys: ['ATLASSIAN_ACCESS_TOKEN'], attached: ['api'], refresh: {status: 'refreshed', expiresAt: '2026-10-08T05:00:00Z', nextRefreshAt: '2026-10-08T04:55:00Z'}},
     {name: 'atlassian-oss', profile: 'iwato-atlassian', keys: ['ATLASSIAN_ACCESS_TOKEN'], attached: [], refresh: {status: 'reauthorization_required', recovery: 'reauthorize', failureCode: 'oauth_invalid_grant'}}];
   const posts = []; let flow = null; let authorizeURL = 'https://auth.atlassian.com/authorize?client_id=c&state=s';
@@ -1669,7 +1669,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const at = await environment({fake: false, status: 'running'}); at.setProviderHandler(handler);
   at.els['provider-button'].listeners.click(); await flush();
   const group = at.els['provider-list'].children[0];
-  assert.equal(group.children[0].textContent, 'Atlassian (MCP)');
+  assert.equal(group.children[0].textContent, 'Atlassian');
   const guide = group.children[1]; assert.equal(guide.className, 'provider-guide'); assert.equal(guide.children[1].textContent, profiles[1].guide, 'the MCP command with single quotes');
   const [workRow, , ossRow] = group.children.slice(2);
   assert.match(workRow.children[0].children[2].textContent, /ゲートウェイが更新しています · 期限/); assert.equal(workRow.children[0].children[2].dataset.reauthorize, 'false');
@@ -1724,7 +1724,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // The card's panel: the command where an Atlassian provider is attached, reauthorization noted.
   const menuItem = (card, key) => { let found; const w = (n) => { if (n.dataset?.action === key) found = n; n.children.forEach(w); }; w(card); return found; };
   menuItem(at.card(), 'providers').click(); await flush();
-  const side = at.side('provider-panel'); const atlGroup = side.children[5].children.find((g) => g.children[0].textContent === 'Atlassian (MCP)');
+  const side = at.side('provider-panel'); const atlGroup = side.children[5].children.find((g) => g.children[0].textContent === 'Atlassian');
   assert.equal(atlGroup.children.at(-1).className, 'provider-guide');
   assert.match(atlGroup.children[2].children[0].children[2].textContent, /再認可が必要/);
   assert.equal(atlGroup.children[2].children[1].disabled, true, 'one Atlassian provider per sandbox');
@@ -1736,7 +1736,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
   const profiles = [{id: 'iwato-github', label: 'GitHub', note: '', defaultName: 'github', credentials: [{name: 'token', label: 'トークン'}]},
     {id: 'iwato-claude', label: 'Claude', note: '', defaultName: 'claude', credentials: [{name: 'oauth_token', label: 'トークン'}]},
-    {id: 'iwato-atlassian', label: 'Atlassian (MCP)', note: '', oauth: true, defaultName: 'atlassian', guide: 'claude mcp add', credentials: []},
+    {id: 'iwato-atlassian', label: 'Atlassian', note: '', oauth: true, defaultName: 'atlassian', guide: 'claude mcp add', credentials: []},
     {id: 'iwato-odd', label: 'Odd', note: '', defaultName: 'Bad Name', credentials: [{name: 'token', label: 'x'}]}];
   let provs = [{name: 'claude', profile: 'iwato-claude', keys: [], attached: []}, {name: 'claude-2', profile: 'iwato-claude', keys: [], attached: []}, {name: 'atlassian', profile: 'iwato-atlassian', keys: [], attached: []}];
   const posts = []; let flow = null;

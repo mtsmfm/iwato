@@ -172,7 +172,7 @@ const (
 	// near the expiry and after a 401. The placeholder never expires (the
 	// gateway refreshes behind it); expires_in only bounds how long grok
 	// keeps an old one after a reconnect.
-	grokAuthCommand = `[ -n "$` + grokOAuthCredentialKey + `" ] || { echo "` + grokOAuthCredentialKey + ` is not set: attach the Grok Build (xAI subscription) provider in Iwato and restart the sandbox" >&2; exit 1; }; ` +
+	grokAuthCommand = `[ -n "$` + grokOAuthCredentialKey + `" ] || { echo "` + grokOAuthCredentialKey + ` is not set: attach the Grok Build provider in Iwato and restart the sandbox" >&2; exit 1; }; ` +
 		`printf "{\"access_token\":\"%s\",\"expires_in\":900,\"issuer\":\"` + xaiIssuer + `\"}\n" "$` + grokOAuthCredentialKey + `"`
 )
 
@@ -205,7 +205,7 @@ var profileGroups = []string{groupAgent, groupSource, groupModels, groupCloud, g
 // profileGroups: TestProfileMetadata).
 var providerProfiles = []providerProfile{
 	{
-		ID: claudeSubscriptionProfileID, Label: "Claude Code (Claude でログイン)", Group: groupAgent,
+		ID: claudeSubscriptionProfileID, Label: "Claude Code", Group: groupAgent,
 		Note:        "CLAUDE_CODE_OAUTH_TOKEN。Claude のアカウントでログインし、サンドボックスの claude が api.anthropic.com に送ります。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
@@ -213,7 +213,7 @@ var providerProfiles = []providerProfile{
 		Hint:        "claude は CLAUDE_CODE_OAUTH_TOKEN があればそれを使います。サンドボックスで /login していたら、その記録より環境変数が優先されます。確かめるには claude -p 'hello'。",
 	},
 	{
-		ID: grokSubscriptionProfileID, Label: "Grok Build (xAI のサブスクリプション)", Group: groupAgent,
+		ID: grokSubscriptionProfileID, Label: "Grok Build", Group: groupAgent,
 		Note:        "XAI_OAUTH_TOKEN。xAI のアカウントでログインします。grok が cli-chat-proxy.grok.com/v1 と api.x.ai/v1 に送ります。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
@@ -221,7 +221,7 @@ var providerProfiles = []providerProfile{
 		Hint:        "Iwato がターミナルに GROK_AUTH_PROVIDER_COMMAND を設定し、grok はそれでこのトークンを使います (XAI_API_KEY より優先)。前に grok login していたら grok logout してください。付け外しは再起動で反映されます。確かめるには grok -p 'hello'。",
 	},
 	{
-		ID: codexSubscriptionProfileID, Label: "Codex (ChatGPT でログイン)", Group: groupAgent,
+		ID: codexSubscriptionProfileID, Label: "Codex", Group: groupAgent,
 		Note:        "CODEX_CHATGPT_ACCESS_TOKEN と CODEX_CHATGPT_ACCOUNT_ID。ChatGPT のアカウントでログインし、サンドボックスの codex が chatgpt.com/backend-api/codex と /backend-api/wham に送ります。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}, {Name: "account_id", Label: "アカウント ID"}},
 		OAuth:       true,
@@ -241,7 +241,7 @@ var providerProfiles = []providerProfile{
 		Hint:        "OpenAI 互換の SDK は base_url を https://openrouter.ai/api/v1 にし、キーに OPENROUTER_API_KEY を渡します。",
 	},
 	{
-		ID: atlassianProfileID, Label: "Atlassian (MCP)", Group: groupAgent,
+		ID: atlassianProfileID, Label: "Atlassian", Group: groupAgent,
 		Note:        "ATLASSIAN_ACCESS_TOKEN。Atlassian で OAuth の許可を取ります。claude が mcp.atlassian.com/v2/mcp に送るときだけ使い、最初は読み取りのツールだけです。",
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,

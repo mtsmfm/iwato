@@ -135,7 +135,7 @@ var xaiService = deviceService{
 	backend: func() deviceBackend { return newXAIOAuth() },
 	fake:    func(s *Server, origin string) deviceBackend { return fakeHooks.xai(s, origin) },
 	notMine: func(name string) (string, string) {
-		return "oauth_not_xai", name + " は Grok Build (xAI のサブスクリプション) のプロバイダーではありません"
+		return "oauth_not_xai", name + " は Grok Build のプロバイダーではありません"
 	},
 	startFailed: "oauth_xai_start_failed", startText: "xAI にログインを始められません: ",
 	expired:     "oauth_xai_expired",

@@ -14,12 +14,12 @@ Iwato's provider types:
 
 | Type | Variables | Notes |
 |---|---|---|
-| Claude Code (sign in with Claude) | `CLAUDE_CODE_OAUTH_TOKEN` | sign in with a Claude account (below), sent to api.anthropic.com |
-| Grok Build (xAI subscription) | `XAI_OAUTH_TOKEN` | sign in with an xAI account (below) |
-| Codex (sign in with ChatGPT) | `CODEX_CHATGPT_ACCESS_TOKEN`, `CODEX_CHATGPT_ACCOUNT_ID` | sign in with a ChatGPT account (below), sent to chatgpt.com/backend-api/codex and /backend-api/wham |
+| Claude Code | `CLAUDE_CODE_OAUTH_TOKEN` | sign in with a Claude account (below), sent to api.anthropic.com |
+| Grok Build | `XAI_OAUTH_TOKEN` | sign in with an xAI account (below) |
+| Codex | `CODEX_CHATGPT_ACCESS_TOKEN`, `CODEX_CHATGPT_ACCOUNT_ID` | sign in with a ChatGPT account (below), sent to chatgpt.com/backend-api/codex and /backend-api/wham |
 | OpenAI API | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
-| Atlassian (MCP) | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); only `claude` may send it, to mcp.atlassian.com/v2/mcp |
+| Atlassian | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); only `claude` may send it, to mcp.atlassian.com/v2/mcp |
 | GitHub | `GH_TOKEN`, `GITHUB_TOKEN` | used by `gh` and git over HTTPS. Reads, clone and fetch; writes and push need approved proposals |
 | Hugging Face | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` | downloads only; uploads need approved proposals. The file CDN (`*.hf.co` and the like) gets no value: approve its proposal as read only |
 | Civitai | `CIVITAI_API_TOKEN`, `CIVITAI_TOKEN` | read and download only; generation (uses Buzz) needs approved proposals. Where downloads are redirected gets no value: approve that proposal as read only |
@@ -29,7 +29,7 @@ Iwato's provider types:
 | Modal | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` | the `modal` CLI and Python client (gRPC over HTTP/2 to api.modal.com and api.modal2.com); also runs and deploys apps (costs money). **Caution:** a sandbox with it can run code on Modal, which has open internet access, so the sandbox's network policy no longer limits where data can go, and that code can read the workspace's Modal Secrets |
 | Cloudflare | `CLOUDFLARE_API_TOKEN` | read only (api.cloudflare.com/client/v4); deploys and DNS changes need approved proposals. Set `CLOUDFLARE_ACCOUNT_ID` yourself (it is not a secret) |
 
-Only GitHub and Atlassian (MCP) were tried on real hardware so far. The profiles name the agents' executables where mise and the agents' own updaters put them (for example Claude Code under `/home/dev/.local/share/claude/versions/*` and mise's `/home/dev/.local/share/mise/installs/claude/*/claude`).
+Only GitHub and Atlassian were tried on real hardware so far. The profiles name the agents' executables where mise and the agents' own updaters put them (for example Claude Code under `/home/dev/.local/share/claude/versions/*` and mise's `/home/dev/.local/share/mise/installs/claude/*/claude`).
 
 To see a type's OpenShell profile, use View the profile as YAML. A tag tells where it comes from (shipped with Iwato, custom, or read from the gateway). A profile imported with OpenShell's CLI is read from the gateway and written out in OpenShell's YAML format, so the original file's comments and layout are not kept.
 
@@ -37,14 +37,14 @@ Providers of a profile Iwato does not ship, such as those made with OpenShell's 
 
 ## Where credentials go
 
-A credential goes only to the policy's destinations that carry it ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)). Iwato's types have none of their own: attaching a provider adds its rule to the sandbox's policy, shown with **Credential: NAME**, and detaching takes out every destination that carries it. The rule allows what the type needs: GitHub reads (API GETs, GraphQL queries), clone and fetch; Claude Code, Grok Build and OpenRouter their APIs; Atlassian (MCP) the tools that only read; the others as in the table. The rule can be edited like any other.
+A credential goes only to the policy's destinations that carry it ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)). Iwato's types have none of their own: attaching a provider adds its rule to the sandbox's policy, shown with **Credential: NAME**, and detaching takes out every destination that carries it. The rule allows what the type needs: GitHub reads (API GETs, GraphQL queries), clone and fetch; Claude Code, Grok Build and OpenRouter their APIs; Atlassian the tools that only read; the others as in the table. The rule can be edited like any other.
 
 Writes come from proposals. Approving one under a destination that carries a credential carries it too by default; for a host the credential is meant for, the approve dialog offers it, off by default. A provider is global, but its rules are per sandbox.
 
 What the proxy cannot narrow, narrow in the credential itself:
 
 - GitHub: GraphQL arguments and the branches a push writes are not matched. Use a [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-secure/managing-your-personal-access-tokens) limited to the repositories and permissions you need.
-- Atlassian (MCP): a tool's arguments (which site or project) are not matched: narrow the OAuth scopes. Register the MCP with the command the providers view shows: it ends the URL with `?tools=all`, so every tool is called by its own name. Without it, Atlassian reaches most tools through `execute` tools, which name the tool in their arguments and so are not read tools; an MCP registered without it can be removed with `claude mcp remove atlassian` and added again.
+- Atlassian: a tool's arguments (which site or project) are not matched: narrow the OAuth scopes. Register the MCP with the command the providers view shows: it ends the URL with `?tools=all`, so every tool is called by its own name. Without it, Atlassian reaches most tools through `execute` tools, which name the tool in their arguments and so are not read tools; an MCP registered without it can be removed with `claude mcp remove atlassian` and added again.
 
 Providers made before this (each with a profile of its own) keep working as they were made and are marked so; add them again to have their rules in the policy.
 
@@ -58,7 +58,7 @@ For Atlassian, the Claude account sign-in and the xAI subscription, Iwato runs t
 
 ### Atlassian (Jira, Confluence)
 
-Adding an Atlassian (MCP) provider asks for scopes (by default Jira and Confluence read, write and search, the user's details, and `offline_access` for refreshing) and opens Atlassian's authorization page. On another device such as a phone, after allowing, copy the address of the page that failed to open and paste it into Iwato. In the sandbox, register the MCP server for `claude` with the command the providers view shows. The providers view shows the refresh state; Refresh now refreshes at once. When the grant needs authorizing again, use Reconnect (the same for the Claude sign-in and the xAI subscription); attached sandboxes need a restart after reconnecting, since the placeholder changes.
+Adding an Atlassian provider asks for scopes (by default Jira and Confluence read, write and search, the user's details, and `offline_access` for refreshing) and opens Atlassian's authorization page. On another device such as a phone, after allowing, copy the address of the page that failed to open and paste it into Iwato. In the sandbox, register the MCP server for `claude` with the command the providers view shows. The providers view shows the refresh state; Refresh now refreshes at once. When the grant needs authorizing again, use Reconnect (the same for the Claude sign-in and the xAI subscription); attached sandboxes need a restart after reconnecting, since the placeholder changes.
 
 ### Claude account sign-in for Claude Code
 

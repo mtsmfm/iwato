@@ -16,7 +16,7 @@
 mise use -g claude
 ```
 
-`~/.local/share/mise/installs/claude/<版>` に入ります。Claude Code 自身の更新は `~/.local/share/claude/versions/<版>` に入ります。API (`api.anthropic.com:443`) は「Claude Code (Claude でログイン)」のプロバイダー ([プロバイダー](providers.md)) を付けるか、提案を承認します。
+`~/.local/share/mise/installs/claude/<版>` に入ります。Claude Code 自身の更新は `~/.local/share/claude/versions/<版>` に入ります。API (`api.anthropic.com:443`) は「Claude Code」のプロバイダー ([プロバイダー](providers.md)) を付けるか、提案を承認します。
 
 ## Grok Build
 
@@ -24,7 +24,7 @@ mise use -g claude
 mise use -g grok
 ```
 
-`~/.local/share/mise/installs/grok/<版>` に入ります。grok 自身の更新は `~/.grok/downloads` に入ります。プロバイダーは「Grok Build (xAI のサブスクリプション)」(SuperGrok など個人の xAI のアカウントでログイン) を使います ([プロバイダー](providers.md))。
+`~/.local/share/mise/installs/grok/<版>` に入ります。grok 自身の更新は `~/.grok/downloads` に入ります。プロバイダーは「Grok Build」(SuperGrok など個人の xAI のアカウントでログイン) を使います ([プロバイダー](providers.md))。
 
 ## Codex
 
@@ -32,7 +32,7 @@ mise use -g grok
 mise use -g codex
 ```
 
-mise は GitHub の openai/codex のリリースから入れます。codex は新しい版を知らせるだけで、自分では更新しません (`mise use -g codex@latest` で更新します)。プロバイダーは「Codex (ChatGPT でログイン)」(ChatGPT のアカウント) か、API キーなら「OpenAI API」を使います ([プロバイダー](providers.md#codex-の-chatgpt-でのログイン))。
+mise は GitHub の openai/codex のリリースから入れます。codex は新しい版を知らせるだけで、自分では更新しません (`mise use -g codex@latest` で更新します)。プロバイダーは「Codex」(ChatGPT のアカウント) か、API キーなら「OpenAI API」を使います ([プロバイダー](providers.md#codex-の-chatgpt-でのログイン))。
 
 ## そのほかのエージェント
 

@@ -16,7 +16,7 @@ The agents' API hosts (`api.anthropic.com`, `api.x.ai`, `chatgpt.com`, …) are 
 mise use -g claude
 ```
 
-It installs into `~/.local/share/mise/installs/claude/<version>`; Claude Code's own updates go into `~/.local/share/claude/versions/<version>`. For the API (`api.anthropic.com:443`), attach a provider of type "Claude Code (sign in with Claude)" ([providers](providers.md)) or approve the proposal.
+It installs into `~/.local/share/mise/installs/claude/<version>`; Claude Code's own updates go into `~/.local/share/claude/versions/<version>`. For the API (`api.anthropic.com:443`), attach a provider of type "Claude Code" ([providers](providers.md)) or approve the proposal.
 
 ## Grok Build
 
@@ -24,7 +24,7 @@ It installs into `~/.local/share/mise/installs/claude/<version>`; Claude Code's 
 mise use -g grok
 ```
 
-It installs into `~/.local/share/mise/installs/grok/<version>`; grok's own updates go into `~/.grok/downloads`. Use the provider Grok Build (xAI subscription) (sign in with a personal xAI account such as SuperGrok). See [providers](providers.md#xai-subscription-for-grok-build).
+It installs into `~/.local/share/mise/installs/grok/<version>`; grok's own updates go into `~/.grok/downloads`. Use the provider Grok Build (sign in with a personal xAI account such as SuperGrok). See [providers](providers.md#xai-subscription-for-grok-build).
 
 ## Codex
 
@@ -32,7 +32,7 @@ It installs into `~/.local/share/mise/installs/grok/<version>`; grok's own updat
 mise use -g codex
 ```
 
-mise installs it from openai/codex's GitHub releases. codex only tells about new versions and does not update itself (update with `mise use -g codex@latest`). Use the provider Codex (sign in with ChatGPT) for a ChatGPT account, or OpenAI API for an API key. See [providers](providers.md#chatgpt-sign-in-for-codex).
+mise installs it from openai/codex's GitHub releases. codex only tells about new versions and does not update itself (update with `mise use -g codex@latest`). Use the provider Codex for a ChatGPT account, or OpenAI API for an API key. See [providers](providers.md#chatgpt-sign-in-for-codex).
 
 ## Other agents
 

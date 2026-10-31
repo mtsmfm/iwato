@@ -254,7 +254,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
       check((await box.innerText()).includes('ゲートウェイが更新しています') && !/fake-(access|refresh)/.test(await page.content()), 'Claude: done, refreshed, no token on the page');
       await shot('claude-done.png');
-      await byName('Claude Code (Claude でログイン)', 'claude-subscription').waitFor();
+      await byName('Claude Code', 'claude-subscription').waitFor();
       check(true, 'the Claude provider is listed');
       await box.getByRole('button', { name: '閉じる' }).click();
     }
@@ -276,7 +276,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await popup.close();
       await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
       check(!/fake-(access|refresh)/.test(await page.content()), 'Codex: done, no token on the page');
-      await byName('Codex (ChatGPT でログイン)', 'codex-subscription').waitFor();
+      await byName('Codex', 'codex-subscription').waitFor();
       check(true, 'the Codex provider is listed');
       await box.getByRole('button', { name: '閉じる' }).click();
     }

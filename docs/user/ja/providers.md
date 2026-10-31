@@ -14,12 +14,12 @@ Iwato のプロバイダーの種類:
 
 | 種類 | 変数 | 説明 |
 |---|---|---|
-| 「Claude Code (Claude でログイン)」 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude のアカウントでログイン (下記)。api.anthropic.com に送ります |
-| 「Grok Build (xAI のサブスクリプション)」 | `XAI_OAUTH_TOKEN` | xAI のアカウントでログイン (下記) |
-| 「Codex (ChatGPT でログイン)」 | `CODEX_CHATGPT_ACCESS_TOKEN`、`CODEX_CHATGPT_ACCOUNT_ID` | ChatGPT のアカウントでログイン (下記)。chatgpt.com/backend-api/codex と /backend-api/wham に送ります |
+| 「Claude Code」 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude のアカウントでログイン (下記)。api.anthropic.com に送ります |
+| 「Grok Build」 | `XAI_OAUTH_TOKEN` | xAI のアカウントでログイン (下記) |
+| 「Codex」 | `CODEX_CHATGPT_ACCESS_TOKEN`、`CODEX_CHATGPT_ACCOUNT_ID` | ChatGPT のアカウントでログイン (下記)。chatgpt.com/backend-api/codex と /backend-api/wham に送ります |
 | 「OpenAI API」 | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
-| 「Atlassian (MCP)」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。送れるのは `claude` だけで、送り先は mcp.atlassian.com/v2/mcp |
+| 「Atlassian」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。送れるのは `claude` だけで、送り先は mcp.atlassian.com/v2/mcp |
 | GitHub | `GH_TOKEN`、`GITHUB_TOKEN` | `gh` と HTTPS の git が使います。読み取りと clone・fetch。書き込みと push は提案の承認で |
 | Hugging Face | `HF_TOKEN`、`HUGGING_FACE_HUB_TOKEN` | ダウンロードだけ。アップロードはポリシーの提案の承認で。ファイルの CDN (`*.hf.co` など) には値を送らないので、その提案は読み取りで承認します |
 | Civitai | `CIVITAI_API_TOKEN`、`CIVITAI_TOKEN` | 読み取りとダウンロードだけ。生成 (Buzz を使う) は提案の承認で。ダウンロードの転送先には値を送らないので、その提案は読み取りで承認します |
@@ -29,7 +29,7 @@ Iwato のプロバイダーの種類:
 | Modal | `MODAL_TOKEN_ID`、`MODAL_TOKEN_SECRET` | `modal` CLI と Python クライアント (api.modal.com と api.modal2.com への HTTP/2 の gRPC)。アプリの実行やデプロイ (費用がかかる) もできます。**注意:** これを付けたサンドボックスは Modal でコードを実行できます。Modal からはインターネットに自由に出られるので、データの行き先はサンドボックスのネットワークポリシーで制限できなくなり、そのコードはワークスペースの Modal Secrets も読めます |
 | Cloudflare | `CLOUDFLARE_API_TOKEN` | 読み取りだけ (api.cloudflare.com/client/v4)。デプロイや DNS の変更は提案の承認で。`CLOUDFLARE_ACCOUNT_ID` は秘密ではないので自分で設定 |
 
-実機で確かめたのは今のところ GitHub と「Atlassian (MCP)」だけです。プロファイルは、mise とエージェント自身の更新機能が置く場所のエージェントの実行ファイルを指しています (例: Claude Code は `/home/dev/.local/share/claude/versions/*` と、mise の `/home/dev/.local/share/mise/installs/claude/*/claude`)。
+実機で確かめたのは今のところ GitHub と「Atlassian」だけです。プロファイルは、mise とエージェント自身の更新機能が置く場所のエージェントの実行ファイルを指しています (例: Claude Code は `/home/dev/.local/share/claude/versions/*` と、mise の `/home/dev/.local/share/mise/installs/claude/*/claude`)。
 
 種類ごとの OpenShell のプロファイルは「プロファイルを YAML で見る」で見られます。どこから来たものか (Iwato 同梱、カスタム、ゲートウェイから) を印で示します。OpenShell の CLI で取り込んだプロファイルはゲートウェイから読み、OpenShell の形式の YAML に書き出すので、元のファイルのコメントや書式は残りません。
 
@@ -37,14 +37,14 @@ Iwato にないプロファイルのプロバイダー (OpenShell の CLI で作
 
 ## 認証情報の送り先
 
-認証情報は、ポリシーの宛先のうち認証情報を付けたものにだけ送られます ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。Iwato の種類は自分の宛先を持たず、プロバイダーを付けるとその規則がサンドボックスのポリシーに加わり (「認証情報: 名前」と表示)、外すとその認証情報を付けた宛先がすべてポリシーから外れます。規則が許すのは種類に要るものです: GitHub は読み取り (API の GET、GraphQL の query) と clone・fetch、Claude Code・Grok Build・OpenRouter はそれぞれの API、「Atlassian (MCP)」は読み取るだけのツール、ほかは表のとおりです。規則はほかの規則と同じように直せます。
+認証情報は、ポリシーの宛先のうち認証情報を付けたものにだけ送られます ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。Iwato の種類は自分の宛先を持たず、プロバイダーを付けるとその規則がサンドボックスのポリシーに加わり (「認証情報: 名前」と表示)、外すとその認証情報を付けた宛先がすべてポリシーから外れます。規則が許すのは種類に要るものです: GitHub は読み取り (API の GET、GraphQL の query) と clone・fetch、Claude Code・Grok Build・OpenRouter はそれぞれの API、「Atlassian」は読み取るだけのツール、ほかは表のとおりです。規則はほかの規則と同じように直せます。
 
 書き込みは提案から許可します。認証情報を付けた宛先の下への提案を承認すると、最初から認証情報が付きます。認証情報の宛先のホストへの提案では、承認の画面で付けるかを選べます (最初は付けません)。プロバイダーはどのサンドボックスでも共通ですが、規則はサンドボックスごとです。
 
 プロキシで絞れないものは、認証情報自体で絞ってください:
 
 - GitHub: GraphQL の引数と、push で書き込むブランチは見られません。使うリポジトリと権限に絞った [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-secure/managing-your-personal-access-tokens) を使います。
-- 「Atlassian (MCP)」: ツールの引数 (どのサイト・プロジェクトか) は見られないので、OAuth のスコープで絞ります。MCP はプロバイダーの画面に出るコマンドで登録してください。URL の最後が `?tools=all` なので、どのツールも自分の名前で呼ばれます。付けないと Atlassian はほとんどのツールを `execute` 系のツール経由で呼び、そのツールは引数でツールの名前を渡すので読み取りのツールになりません。付けずに登録したものは `claude mcp remove atlassian` で消して登録し直せます。
+- 「Atlassian」: ツールの引数 (どのサイト・プロジェクトか) は見られないので、OAuth のスコープで絞ります。MCP はプロバイダーの画面に出るコマンドで登録してください。URL の最後が `?tools=all` なので、どのツールも自分の名前で呼ばれます。付けないと Atlassian はほとんどのツールを `execute` 系のツール経由で呼び、そのツールは引数でツールの名前を渡すので読み取りのツールになりません。付けずに登録したものは `claude mcp remove atlassian` で消して登録し直せます。
 
 これより前に作ったプロバイダー (それぞれ自分のプロファイルを持つもの) は、作ったときのまま動き、そう表示されます。規則をポリシーで扱うには追加し直してください。
 
@@ -58,7 +58,7 @@ Atlassian、Claude のアカウントでのログイン、xAI のサブスクリ
 
 ### Atlassian (Jira、Confluence)
 
-「Atlassian (MCP)」のプロバイダーを追加すると、スコープ (既定は Jira と Confluence の読み書き・検索、ユーザー情報、更新用の `offline_access`) を選んで Atlassian の認可ページを開きます。スマホなど別の端末で許可したときは、許可のあとに開けなかったページのアドレスをコピーして Iwato に貼り付けます。サンドボックスでは、「プロバイダー」に表示されるコマンドで `claude` に MCP サーバーを登録します。「プロバイダー」には更新の状態が出て、「今すぐ更新」ですぐに更新できます。許可を取り直す必要があるときは「再接続」を使います (Claude のログインと xAI のサブスクリプションも同じ)。再接続するとプレースホルダーが変わるので、付けているサンドボックスは再起動が要ります。
+「Atlassian」のプロバイダーを追加すると、スコープ (既定は Jira と Confluence の読み書き・検索、ユーザー情報、更新用の `offline_access`) を選んで Atlassian の認可ページを開きます。スマホなど別の端末で許可したときは、許可のあとに開けなかったページのアドレスをコピーして Iwato に貼り付けます。サンドボックスでは、「プロバイダー」に表示されるコマンドで `claude` に MCP サーバーを登録します。「プロバイダー」には更新の状態が出て、「今すぐ更新」ですぐに更新できます。許可を取り直す必要があるときは「再接続」を使います (Claude のログインと xAI のサブスクリプションも同じ)。再接続するとプレースホルダーが変わるので、付けているサンドボックスは再起動が要ります。
 
 ### Claude Code の Claude のアカウントでのログイン
 

@@ -369,7 +369,7 @@ func (s *Server) claudeStart(w http.ResponseWriter, r *http.Request) {
 		failCode(w, 404, "provider_missing", map[string]any{"name": body.Name}, "プロバイダー "+body.Name+" がありません")
 		return
 	case body.Reconnect && providerBase(list[i]) != claudeSubscriptionProfileID:
-		failCode(w, 409, "oauth_not_claude", map[string]any{"name": body.Name}, body.Name+" は Claude Code (Claude でログイン) のプロバイダーではありません")
+		failCode(w, 409, "oauth_not_claude", map[string]any{"name": body.Name}, body.Name+" は Claude Code のプロバイダーではありません")
 		return
 	case !body.Reconnect && body.Name != "" && i >= 0:
 		failCode(w, 409, "oauth_provider_exists", map[string]any{"name": body.Name}, "プロバイダー "+body.Name+" はもうあります。再接続はその行の「再接続」から")

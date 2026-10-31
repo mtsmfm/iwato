@@ -59,7 +59,7 @@ On failure, look at denied requests in the **Policy** tab. `credential_endpoint_
 ## (c) claude (iwato-claude-subscription, experimental)
 
 0. The standard image has no claude. Install it in the sandbox with mise (`mise use -g claude@latest`, preset `packages`) (the home `/home/dev` is always a volume, so no reinstall later). The profile's programs cover both (below)
-1. Add a provider of type **Claude Code (sign in with Claude)** as in (l)
+1. Add a provider of type **Claude Code** as in (l)
 2. Attach it to the sandbox and restart (or open a new terminal)
 3. `sh providers-check.sh claude`. `PROVIDER-OK` means Claude Code runs on the placeholder and OpenShell substitutes `Authorization: Bearer` to `api.anthropic.com`
 4. Check interactive `claude` too: `/status` shows `CLAUDE_CODE_OAUTH_TOKEN` as the auth
@@ -93,7 +93,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
 
    If `token_endpoint` is not `https://auth.atlassian.com/oauth/token`, Iwato stops ("Atlassian's token endpoint differs from the profile") and the profile needs an update
 3. In Atlassian admin, check that Rovo MCP's "domain control" allows clients returning to localhost (127.0.0.1) (skip if not an admin)
-4. Menu **Providers** → type **Atlassian (MCP)**, name `atlassian-work` → **Connect to Atlassian** → check the scopes, **Ask for authorization** → **Allow in Atlassian**
+4. Menu **Providers** → type **Atlassian**, name `atlassian-work` → **Connect to Atlassian** → check the scopes, **Ask for authorization** → **Allow in Atlassian**
    - Browser on the same PC: after logging in and allowing, Atlassian returns to `http://127.0.0.1:PORT/callback` with a page saying the authorization was received (「許可を受け取りました」). Iwato shows that it is connected and **The gateway refreshes it**, with the expiry and the next refresh
    - Phone (over the tailnet): the 127.0.0.1 page cannot open after allowing. Copy the URL from the address bar, paste it into Iwato's **Redirect URL** and **Send**
    - Without a return within 5 minutes the listener closes (start over)
@@ -208,7 +208,7 @@ Precedence (Auth Precedence in grok's guide, `flow.rs`): a model's `api_key` > t
 ### Steps
 
 1. Start the new exe. The log shows `imported the provider profile iwato-grok-subscription`
-2. Menu **Providers** → type **Grok Build (xAI subscription)** → **Connect to xAI**. A code and **Allow in xAI** appear. On a PC or a phone, log in on xAI's page, check the code matches and allow (within the time limit). Iwato shows "Connected as grok-subscription" and **The gateway refreshes it**, with the expiry and the next refresh
+2. Menu **Providers** → type **Grok Build** → **Connect to xAI**. A code and **Allow in xAI** appear. On a PC or a phone, log in on xAI's page, check the code matches and allow (within the time limit). Iwato shows "Connected as grok-subscription" and **The gateway refreshes it**, with the expiry and the next refresh
 3. Press **Refresh now** twice in the list; both succeed
 4. Attach it from the sandbox's ⋯ → **Providers** and **Restart now** (or choose it in the create form). Install grok with mise (`mise use -g grok`, preset `packages`)
 5. In a terminal, `cat ~/.config/iwato/env` shows an `export GROK_AUTH_PROVIDER_COMMAND=…` line conditional on `XAI_OAUTH_TOKEN`, `echo "$GROK_AUTH_PROVIDER_COMMAND"` prints the command, and `sh -c "$GROK_AUTH_PROVIDER_COMMAND"` prints `{"access_token":"<placeholder>",…,"issuer":"https://auth.x.ai"}` (the placeholder is not a secret, but do not paste it into an agent's conversation)
@@ -226,7 +226,7 @@ On failure:
 
 Iwato.exe signs in with Claude Code's public OAuth client (authorization code with PKCE: a loopback redirect on the PC, or Claude's page showing a code to paste from a phone) and hands the refresh token to the gateway, which refreshes the access token; the sandbox gets the `CLAUDE_CODE_OAUTH_TOKEN` placeholder (ADR 0009). The profile's comment gives the sources; it is not checked against real Anthropic. `TestClaudeFlow` covers the flow with a fake.
 
-1. Menu **Providers** → type **Claude Code (sign in with Claude)** → **Sign in to Claude** → **Sign in with Claude** (on a phone: **Sign in on a phone (paste a code)** and paste the code Claude's page shows)
+1. Menu **Providers** → type **Claude Code** → **Sign in to Claude** → **Sign in with Claude** (on a phone: **Sign in on a phone (paste a code)** and paste the code Claude's page shows)
 2. Press **Refresh now** twice; both succeed. If the first refresh fails, the UI says so (the gateway sends a form body; Claude Code sends JSON)
 3. Attach it and restart, then `sh providers-check.sh claude` as in (c)
 
@@ -251,7 +251,7 @@ Iwato.exe signs in at `auth.openai.com` with Codex's device code login (Codex's 
 
 ### Steps
 
-1. Menu **Providers** → type **Codex (sign in with ChatGPT)** → **Sign in with ChatGPT**. Enter the code at OpenAI's page; Iwato shows "Connected as codex-subscription"
+1. Menu **Providers** → type **Codex** → **Sign in with ChatGPT**. Enter the code at OpenAI's page; Iwato shows "Connected as codex-subscription"
 2. Press **Refresh now** twice; both succeed
 3. Attach it and restart; install codex with mise (`mise use -g codex`, the Agent CLIs preset)
 4. In a new terminal: `sh providers-check.sh codex` (both variables are placeholders, `auth.json` is Iwato's, `codex exec` replies)

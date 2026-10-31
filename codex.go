@@ -176,7 +176,7 @@ var codexService = deviceService{
 	backend: func() deviceBackend { return newCodexOAuth() },
 	fake:    func(s *Server, origin string) deviceBackend { return fakeHooks.codex(s, origin) },
 	notMine: func(name string) (string, string) {
-		return "oauth_not_codex", name + " は Codex (ChatGPT でログイン) のプロバイダーではありません"
+		return "oauth_not_codex", name + " は Codex のプロバイダーではありません"
 	},
 	startFailed: "oauth_codex_start_failed", startText: "OpenAI にログインを始められません: ",
 	expired:     "oauth_codex_expired",
