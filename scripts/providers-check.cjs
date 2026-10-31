@@ -289,13 +289,23 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const options = await page.locator('#create-providers select[data-profile=iwato-github]').locator('option').allInnerTexts();
     check(options.join(',') === 'なし,github-personal,github-work', 'the create form offers one GitHub provider at most (' + options.join(', ') + ')');
     await page.locator('#create-providers select[data-profile=iwato-github]').selectOption('github-work');
-    // The template: development by default; research fixes its presets.
-    const templates = page.locator('#create-presets input[name=create-template]');
-    check(await templates.count() === 3 && await page.locator('#create-presets input[name=create-template][value=development]').isChecked(), 'the create form offers the templates, development chosen');
-    const research = page.locator('#create-presets input[data-preset=research]');
-    check(!(await research.isChecked()) && await research.isEnabled() && await page.locator('#create-presets input[data-preset=packages]').isDisabled(), 'development fixes packages only');
-    await page.locator('#create-presets label', { hasText: '調査用' }).click();
-    check(await research.isChecked() && await research.isDisabled(), 'research fixes its presets');
+    // The presets: defaults, what a preset requires, and its rules behind 詳細.
+    const preset = (id) => page.locator('#create-presets input[data-preset=' + id + ']');
+    check(await page.locator('#create-presets input[type=radio]').count() === 0 && await preset('packages').isChecked() && await preset('tools').isChecked() && await preset('agents').isChecked() && !(await preset('research').isChecked()), 'packages, tools and agents start checked, references not');
+    await preset('tools').uncheck();
+    check(!(await preset('agents').isChecked()), 'unchecking tool installs unchecks the agents');
+    await preset('agents').check();
+    check(await preset('tools').isChecked(), 'checking the agents checks tool installs');
+    const rows = page.locator('#create-presets .create-preset-line');
+    check(await rows.evaluateAll((list) => list.every((el) => el.offsetHeight < 40)), 'each preset is one line');
+    const details = page.locator('#create-presets .create-preset').first().locator('.create-preset-details');
+    check(await details.isHidden(), 'the details start closed');
+    await shot('create-form.png');
+    await page.locator('#create-presets .create-preset-more').first().click();
+    const allowed = await details.innerText();
+    check(await details.isVisible() && /registry\.npmjs\.org:443/.test(allowed) && /POST \/-\/npm\/v1\/security\/advisories\/bulk/.test(allowed), 'the details list the rules: ' + allowed.slice(0, 80));
+    check(await details.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the details fit the width');
+    await shot('create-form-details.png');
     check(await page.locator('#create-panel').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the create form does not scroll sideways');
     await shot('create-providers.png');
     await page.keyboard.press('Escape');

@@ -253,7 +253,7 @@ Iwato.exe signs in at `auth.openai.com` with Codex's device code login (Codex's 
 
 1. Menu **Providers** → type **Codex (sign in with ChatGPT)** → **Sign in with ChatGPT**. Enter the code at OpenAI's page; Iwato shows "Connected as codex-subscription"
 2. Press **Refresh now** twice; both succeed
-3. Attach it and restart; install codex with mise (`mise use -g codex`, the development template)
+3. Attach it and restart; install codex with mise (`mise use -g codex`, the Agent CLIs preset)
 4. In a new terminal: `sh providers-check.sh codex` (both variables are placeholders, `auth.json` is Iwato's, `codex exec` replies)
 5. Interactive `codex` starts without a login screen and answers; `/status` shows the ChatGPT account
 6. Denied requests (apps `/backend-api/ps/mcp`, plugins, telemetry on `ab.chatgpt.com`) show in the policy tab; decide whether they are needed

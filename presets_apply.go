@@ -119,8 +119,7 @@ func (s *Server) setSandboxPresets(name string, change func([]PresetRef) []Prese
 }
 
 func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt presetRuntime, sb Sandbox, ref PresetRef) {
-	rules, err := presetRefRules(ref)
-	if err != nil {
+	if _, err := presetRefRules(ref); err != nil {
 		failErr(w, 400, err)
 		return
 	}
@@ -128,12 +127,19 @@ func (s *Server) applyPreset(ctx context.Context, w http.ResponseWriter, rt pres
 		failCode(w, 409, "preset_applied", map[string]any{"preset": ref.label()}, ref.label()+" はもう入っています")
 		return
 	}
+	// The presets it requires come with it, unless they are in already.
+	refs := slices.DeleteFunc(withRequiredPresets([]PresetRef{ref}), func(r PresetRef) bool { return slices.ContainsFunc(sb.Presets, r.same) })
+	if err := validPresetList(refs); err != nil {
+		failErr(w, 400, err)
+		return
+	}
+	rules := presetRules(refs)
 	exists, err := rt.Exists(ctx, sb)
 	if err != nil {
 		fail(w, 409, safeCLIError(err))
 		return
 	}
-	add := func(list []PresetRef) []PresetRef { return append(list, ref) }
+	add := func(list []PresetRef) []PresetRef { return append(list, refs...) }
 	if !exists {
 		// Created with it (sandboxPolicy), checked then by the gateway.
 		if err := s.setSandboxPresets(sb.Name, add); err != nil {
@@ -219,6 +225,12 @@ func (s *Server) removePreset(ctx context.Context, w http.ResponseWriter, rt pre
 		return
 	}
 	rest := slices.Delete(slices.Clone(sb.Presets), i, i+1)
+	for _, other := range rest {
+		if p := findPreset(other.ID); p != nil && slices.Contains(p.Requires, ref.ID) {
+			failCode(w, 409, "preset_required", map[string]any{"preset": ref.label(), "by": other.label()}, other.label()+" が "+ref.label()+" を必要としています。先にそちらを外してください")
+			return
+		}
+	}
 	drop := func(list []PresetRef) []PresetRef {
 		return slices.DeleteFunc(list, ref.same)
 	}

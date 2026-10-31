@@ -32,6 +32,8 @@ import (
 //	id: my-tools             # a-z, 0-9, -; the owner's are "user:ID"
 //	label: 表示名
 //	note: 説明
+//	default: true            # optional: checked in the create form
+//	requires: [tools]        # optional: preset IDs that come with this one
 //	params:                  # optional
 //	  - name: repo           # used as ${repo}
 //	    label: リポジトリ
@@ -70,6 +72,8 @@ type presetDoc struct {
 	ID              string                   `yaml:"id"`
 	Label           string                   `yaml:"label"`
 	Note            string                   `yaml:"note,omitempty"`
+	Default         bool                     `yaml:"default,omitempty"`
+	Requires        []string                 `yaml:"requires,omitempty"`
 	Params          []presetParamDoc         `yaml:"params,omitempty"`
 	NetworkPolicies map[string]presetRuleDoc `yaml:"network_policies"`
 }
@@ -89,14 +93,20 @@ type presetRuleDoc struct {
 
 // networkPreset is one preset, as the lists show it.
 type networkPreset struct {
-	ID     string           `json:"id"`
-	Label  string           `json:"label"`
-	Note   string           `json:"note"`
-	Params []presetParamDoc `json:"params"`
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Note  string `json:"note"`
+	// Default: checked in the create form. Requires: presets that come
+	// with this one.
+	Default  bool             `json:"default,omitempty"`
+	Requires []string         `json:"requires,omitempty"`
+	Params   []presetParamDoc `json:"params"`
 	// Source is builtin or user; File the owner's file name.
 	Source string   `json:"source"`
 	File   string   `json:"file,omitempty"`
 	Hosts  []string `json:"hosts"`
+	// Allows is what the rules let through, for the owner to read.
+	Allows []presetAllow `json:"allows"`
 	// rules hold ${NAME} where the parameters go.
 	rules    map[string]v1.NetworkPolicyRule
 	patterns map[string]*regexp.Regexp
@@ -288,7 +298,7 @@ func parsePresetYAML(b []byte, source string) (*networkPreset, error) {
 	if strings.TrimSpace(doc.Label) == "" || len(doc.Label) > 200 || len(doc.Note) > 2000 {
 		return nil, errCodeEn("preset_label_invalid", nil, "label (200 バイトまで) が要ります。note は 2000 バイトまでです", "label is required (up to 200 bytes); note is up to 2000 bytes", nil)
 	}
-	p := &networkPreset{ID: doc.ID, Label: doc.Label, Note: doc.Note, Source: source, Params: []presetParamDoc{}, Hosts: []string{},
+	p := &networkPreset{ID: doc.ID, Label: doc.Label, Note: doc.Note, Default: doc.Default, Requires: doc.Requires, Source: source, Params: []presetParamDoc{}, Hosts: []string{},
 		rules: map[string]v1.NetworkPolicyRule{}, patterns: map[string]*regexp.Regexp{}}
 	if source == "user" {
 		p.ID = userPresetPrefix + doc.ID
@@ -400,7 +410,71 @@ func parsePresetYAML(b []byte, source string) (*networkPreset, error) {
 			}
 		}
 	}
+	p.Allows = presetAllows(p.rules)
 	return p, nil
+}
+
+// presetAllow is one destination of a preset: "host:port" (and the
+// endpoint's path), with the methods and paths its rules allow.
+type presetAllow struct {
+	Target string            `json:"target"`
+	Rules  []presetAllowRule `json:"rules"`
+}
+
+// presetAllowRule is the paths allowed the same methods.
+type presetAllowRule struct {
+	Methods []string `json:"methods"`
+	Paths   []string `json:"paths"`
+}
+
+// presetAllows lists the rules by destination, in host order.
+func presetAllows(rules map[string]v1.NetworkPolicyRule) []presetAllow {
+	byTarget := map[string]map[string][]string{} // target, path, methods
+	for _, r := range rules {
+		for _, e := range r.Endpoints {
+			target := e.Host + ":" + joinPorts(effectivePorts(e)) + e.Path
+			paths := byTarget[target]
+			if paths == nil {
+				paths = map[string][]string{}
+				byTarget[target] = paths
+			}
+			add := func(path string, methods ...string) {
+				for _, m := range methods {
+					if !slices.Contains(paths[path], m) {
+						paths[path] = append(paths[path], m)
+					}
+				}
+			}
+			for _, x := range e.Rules {
+				if x.Allow != nil {
+					add(x.Allow.Path, x.Allow.Method)
+				}
+			}
+			if len(e.Rules) == 0 {
+				methods := accessMethods[accessNames[e.Access]]
+				if methods == nil { // not inspected, or no preset: everything
+					methods = []string{"*"}
+				}
+				add("**", methods...)
+			}
+		}
+	}
+	out := []presetAllow{}
+	for _, target := range slices.Sorted(maps.Keys(byTarget)) {
+		a := presetAllow{Target: target}
+		paths := byTarget[target]
+		for _, path := range slices.Sorted(maps.Keys(paths)) {
+			methods := slices.Sorted(slices.Values(paths[path]))
+			i := slices.IndexFunc(a.Rules, func(r presetAllowRule) bool { return slices.Equal(r.Methods, methods) })
+			if i < 0 {
+				a.Rules = append(a.Rules, presetAllowRule{Methods: methods})
+				i = len(a.Rules) - 1
+			}
+			a.Rules[i].Paths = append(a.Rules[i].Paths, path)
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 func presetParamUnknown(rule, name string) error {
@@ -600,56 +674,29 @@ func presetRules(refs []PresetRef) map[string]v1.NetworkPolicyRule {
 	return out
 }
 
-// A sandbox template is a named set of Iwato's presets a new sandbox
-// starts from (ADR 0022). The page words the labels (template.ID.*).
-type sandboxTemplate struct {
-	ID      string   `json:"id"`
-	Label   string   `json:"label"`
-	Presets []string `json:"presets"`
-}
-
-var sandboxTemplates = []sandboxTemplate{
-	{ID: "development", Label: "Development", Presets: []string{"packages"}},
-	{ID: "research", Label: "Research", Presets: []string{"packages", "research"}},
-}
-
-func findTemplate(id string) *sandboxTemplate {
-	i := slices.IndexFunc(sandboxTemplates, func(t sandboxTemplate) bool { return t.ID == id })
-	if i < 0 {
-		return nil
-	}
-	return &sandboxTemplates[i]
-}
-
-// withTemplate is the template's presets, then the others of refs.
-func withTemplate(id string, refs []PresetRef) ([]PresetRef, error) {
-	if id == "" {
-		return refs, nil
-	}
-	t := findTemplate(id)
-	if t == nil {
-		return nil, errCodeEn("template_unknown", map[string]any{"id": id},
-			fmt.Sprintf("%q というテンプレートはありません", id), fmt.Sprintf("No template %q", id), nil)
-	}
-	var out []PresetRef
-	for _, p := range t.Presets {
-		out = append(out, PresetRef{ID: p})
-	}
-	for _, r := range refs {
-		if !slices.ContainsFunc(out, r.same) {
-			out = append(out, r)
+// withRequiredPresets is refs and the presets they require.
+func withRequiredPresets(refs []PresetRef) []PresetRef {
+	out := slices.Clone(refs)
+	for i := 0; i < len(out); i++ {
+		p := findPreset(out[i].ID)
+		if p == nil {
+			continue
+		}
+		for _, id := range p.Requires {
+			if r := (PresetRef{ID: id}); !slices.ContainsFunc(out, r.same) {
+				out = append(out, r)
+			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 // presetView is what GET /api/presets answers: the presets, the owner's
-// files that could not be read, the owner's folder and the templates.
+// files that could not be read and the owner's folder.
 type presetView struct {
-	Templates []sandboxTemplate `json:"templates"`
-	Presets   []networkPreset   `json:"presets"`
-	Errors    []presetFileError `json:"errors"`
-	Folder    string            `json:"folder"`
+	Presets []networkPreset   `json:"presets"`
+	Errors  []presetFileError `json:"errors"`
+	Folder  string            `json:"folder"`
 }
 
 // handlePresets serves GET /api/presets (the owner's folder read again).
@@ -669,5 +716,5 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	if errs == nil {
 		errs = []presetFileError{}
 	}
-	jsonResponse(w, 200, presetView{Templates: sandboxTemplates, Presets: list, Errors: errs, Folder: dir})
+	jsonResponse(w, 200, presetView{Presets: list, Errors: errs, Folder: dir})
 }

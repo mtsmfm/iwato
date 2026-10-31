@@ -2,7 +2,7 @@
 
 [English](../network-policy.md)
 
-サンドボックスの通信は **既定ですべて拒否** されます ([ADR 0008](../../adr/0008-default-deny-network-with-policy-advisor.md))。新しいサンドボックスが通れるのはテンプレートとプリセットで許したものだけです。ほかは規則を承認するまで止められます。
+サンドボックスの通信は **既定ですべて拒否** されます ([ADR 0008](../../adr/0008-default-deny-network-with-policy-advisor.md))。新しいサンドボックスが通れるのはプリセットで許したものだけです。ほかは規則を承認するまで止められます。
 
 ## 規則の提案
 
@@ -54,36 +54,26 @@ Iwato が表示しきれない提案 (規則が 128 個を超えるものなど)
 
 却下した提案は「却下した提案」からあとで承認できます。提案どおりだけです (OpenShell は承認待ちの提案しか編集しません)。
 
-## テンプレート
-
-新しいサンドボックスは、作成フォームで選んだテンプレートから始まります。テンプレートは Iwato のプリセット (下記) に名前を付けたまとまりです。フォームではそのプリセットに印が付き、ほかのプリセットも足せます。
-
-| テンプレート | プリセット |
-|---|---|
-| 「開発用」(既定) | 「パッケージと Claude Code・Grok Build・Codex のダウンロード」 |
-| 「調査用」 | 「パッケージと Claude Code・Grok Build・Codex のダウンロード」「よく読む参照先」 |
-| 「なし」 | なし。宛先はすべて提案から承認します |
-
-サンドボックスのポリシーの履歴の最初のコミットに、テンプレートの名前が入ります。
-
 ## プリセット
 
-プリセットは名前の付いた規則のまとまりです。作成フォームで選ぶか、あとから「ポリシー」タブの「プリセット」で「入れる」「外す」ができます。外すと、プリセットが入れたままの規則だけを外します。作り直しても残ります。なくなったプリセット (Iwato から外されたもの、消した自分のファイル) には「プリセットが見つかりません」と出ます。その規則はふつうの規則としてポリシーに残り、「外す」は一覧から外すだけです。
+プリセットは名前の付いた規則のまとまりです。作成フォームで選ぶか (「詳細」に宛先・メソッド・パスが出ます)、あとから「ポリシー」タブの「プリセット」で「入れる」「外す」ができます。外すと、プリセットが入れたままの規則だけを外します。作り直しても残ります。ポリシーの履歴の最初のコミットに、始めたときのプリセットが入ります。なくなったプリセット (Iwato から外されたもの、消した自分のファイル) には「プリセットが見つかりません」と出ます。その規則はふつうの規則としてポリシーに残り、「外す」は一覧から外すだけです。サンドボックスのほかのプリセットが必要としているプリセットは、先には外せません。
 
 Iwato のプリセット:
 
 | プリセット | 許すもの |
 |---|---|
-| 「パッケージと Claude Code・Grok Build・Codex のダウンロード」 | どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS と、読むだけの POST: npm の audit、レジストリーのトークン、mise の版の問い合わせ): npm、PyPI (uv の Python も)、crates.io、Rust のツールチェーン (rustup)、Go のプロキシ、RubyGems、mise、Node.js と Go の本体、GitHub (github.com、api.github.com、リリース・アーカイブの転送先と raw)、Docker Hub と ghcr.io のイメージ。公開・アップロードは通りません。エージェントのインストールと更新: Claude Code (downloads.claude.ai、platform.claude.com)、grok (x.ai、storage.googleapis.com)、Codex (GitHub のリリース) |
+| 「パッケージ」(既定で入る) | どのプログラムからも読み取りだけ (GET・HEAD・OPTIONS と、npm の audit に要る POST): npm、PyPI、RubyGems、crates.io、Go のモジュール。公開やアップロードは通りません |
+| 「ツールのインストール」(既定で入る) | どのプログラムからも読み取りだけ: mise、Node.js・Go・Rust のツールチェーン、uv の Python、GitHub (github.com、api.github.com、リリース・アーカイブの転送先、raw) |
+| 「エージェントの CLI」(既定で入る。「ツールのインストール」も入る) | Claude Code・Grok Build・Codex のインストールと更新 |
 | 「よく読む参照先」 | どのプログラムからも読み取りだけ (GET・HEAD): Wikipedia (英語・日本語・画像)、arXiv (export.arxiv.org も)、MDN、docs.python.org、go.dev と pkg.go.dev、doc.rust-lang.org と docs.rs、nodejs.org、docs.ruby-lang.org と ruby-doc.org、GitHub Docs、man7.org、rfc-editor.org、`*.readthedocs.io`、Stack Overflow、Hacker News |
 
-プリセットは認証情報を付けません。エージェントの API はプロバイダーとともに付きます。プリセットの規則はどのプログラムにも許します ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。パッケージのプリセットは github.com と api.github.com を認証情報なしで読みます。GitHub のプロバイダーを付けると、そのトークンで読みます。
+プリセットは認証情報を付けません。エージェントの API はプロバイダーとともに付きます。プリセットの規則はどのプログラムにも許します ([ADR 0022](../../adr/0022-iwato-owns-the-sandbox-policy.md))。「ツールのインストール」は github.com と api.github.com を認証情報なしで読みます。GitHub のプロバイダーを付けると、そのトークンで読みます。
 
 ### 自分のプリセット
 
 「ポリシー」タブの「プリセット」で、自分のプリセットを追加・編集・削除できます (「新しいプリセット」「YAML を編集」「削除」)。設定フォルダーの `presets/*.yaml` に保存し、一覧を開くたびに読み直すので、ほかのエディタで直しても構いません。読めないファイルは理由を出します。自分のプリセットの ID は `user:ID` になるので、Iwato のものを隠しません。
 
-形式は OpenShell のポリシーの YAML の `network_policies` に、`id`・`label`・`note` と、任意の `params` を足したものです:
+形式は OpenShell のポリシーの YAML の `network_policies` に、`id`・`label`・`note` と、任意の `params`・`default` (`true` で作成フォームで最初から選択)・`requires` (一緒に入るプリセットの id) を足したものです:
 
 ```yaml
 id: my-preset

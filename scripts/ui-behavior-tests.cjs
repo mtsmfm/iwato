@@ -123,7 +123,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       if (path === '/api/sandboxes' && opt?.method === 'POST') { created.push(JSON.parse(opt.body)); return response({ok: true}); }
       if (path === '/api/sandboxes') return sandboxHandler ? sandboxHandler() : response({fake, sandboxes: noSandboxes ? created.map(w => ({name: w.name, status: w.status || 'not-created', detail: ''})) : [{...sandbox}], server: {version: '0.3.0', commit: '98cb328-dirty', built: '2026-10-04T03:04:00Z'}});
       if (path.endsWith('/paste-image')) return pasteHandler ? pasteHandler(path, opt) : response({path: '/home/dev/.cache/iwato/paste/20261010T000000Z-0123abcd.png'});
-      if (path === '/api/presets') return response({templates: [{id: 'development', label: 'Development', presets: ['packages']}, {id: 'research', label: 'Research', presets: ['packages', 'research']}], presets: [{id: 'packages', label: 'パッケージのダウンロード', note: 'npm など', source: 'builtin', hosts: ['registry.npmjs.org'], params: []}, {id: 'user:mirror', label: 'ミラーに書き込む', note: 'push', source: 'user', file: 'mirror.yaml', hosts: ['git.example.com'], params: [{name: 'repo', label: 'リポジトリ', placeholder: 'OWNER/REPO'}]}], errors: [{file: 'bad.yaml', error: 'field x not found'}, {file: 'odd.yaml', error: 'server text', code: 'preset_param_unknown', params: {rule: 'r', name: 'x'}}], folder: 'C:\\iwato\\presets'});
+      if (path === '/api/presets') return response({presets: [{id: 'packages', label: 'パッケージのダウンロード', note: 'npm など', source: 'builtin', default: true, hosts: ['registry.npmjs.org'], allows: [{target: 'registry.npmjs.org:443', rules: [{methods: ['GET', 'HEAD'], paths: ['**']}]}], params: []}, {id: 'user:mirror', label: 'ミラーに書き込む', note: 'push', source: 'user', file: 'mirror.yaml', hosts: ['git.example.com'], params: [{name: 'repo', label: 'リポジトリ', placeholder: 'OWNER/REPO'}]}, {id: 'agents', label: 'エージェントの CLI', note: '', source: 'builtin', requires: ['packages'], hosts: ['x.ai'], params: []}], errors: [{file: 'bad.yaml', error: 'field x not found'}, {file: 'odd.yaml', error: 'server text', code: 'preset_param_unknown', params: {rule: 'r', name: 'x'}}], folder: 'C:\\iwato\\presets'});
       if (/\/api\/sandboxes\/[^/]+\/presets$/.test(path)) return response({presets: [{id: 'packages', label: 'パッケージのダウンロード'}]});
       if (/\/presets\/(apply|remove)$/.test(path)) return response({ok: true, kept: path.endsWith('remove') ? ['allow_x_443'] : undefined});
       if (path.includes('/proposals') || path.includes('/policy/')) return proposalHandler ? proposalHandler(path, opt) : response({available: false, pending: [], recent: []});
@@ -462,7 +462,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     {name: 'api', binaries: ['/usr/bin/curl', '/usr/bin/wget'], endpoints: [{host: 'api.example.com', ports: [443, 8443], inspect: 'rest', enforcement: 'audit', access: 'read-only', rules: []}, {host: 'example.com', ports: [80], inspect: '', rules: []}]}]}};
   const pol = await environment({fake: false, status: 'running'}); const shaA = '1'.repeat(40), shaB = '2'.repeat(40);
   let drifted = false;
-  pol.setProposalHandler((path) => path.endsWith('/policy/commits') ? response({commits: [{sha: shaA, time: 9, subject: 'Approve proposal x <b>', kind: 'approve'}, {sha: shaB, time: 8, subject: 'Start from the template', kind: 'import', root: true}, {sha: 'bad'}]})
+  pol.setProposalHandler((path) => path.endsWith('/policy/commits') ? response({commits: [{sha: shaA, time: 9, subject: 'Approve proposal x <b>', kind: 'approve'}, {sha: shaB, time: 8, subject: 'Start from the presets packages', kind: 'import', root: true}, {sha: 'bad'}]})
     : path.endsWith('/policy/commits/' + shaA) ? response({commit: {sha: shaA}, diff: '--- a/policy.yaml\n+++ b/policy.yaml\n@@ -1 +1,2 @@\n network_policies:\n+  x: {}\n-  y: {}'})
     : path.endsWith('/policy/store') ? response(drifted ? {state: 'drift', version: 7, head: {sha: shaA}} : {state: 'synced', version: 3})
     : /\/policy\/[a-z-]+$/.test(path) || path.endsWith('/revert') || path.endsWith('/import') || path.endsWith('/overwrite') ? response({ok: true}) : response(drifted ? {...withPolicy, policy: {...withPolicy.policy, version: 7}} : withPolicy));
@@ -602,7 +602,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   find(pol.policy().children[1].children[1], 'プリセット').click(); await flush(); await flush();
   const presetBox = () => nodes(pol.policy().children[1].children[1]).find((x) => x.className === 'policy-presets');
   assert.match(texts(presetBox()), /パッケージのダウンロード/); assert.match(texts(presetBox()), /読めないプリセット bad\.yaml: field x not found/); assert.match(texts(presetBox()), /読めないプリセット odd\.yaml: 規則 r: \$\{x\} という params はありません/, 'a coded file error is worded by the page');
-  assert.equal(nodes(presetBox()).filter((x) => x.textContent === '入れる').length, 1, 'a preset without parameters that is in is not offered again');
+  assert.equal(nodes(presetBox()).filter((x) => x.textContent === '入れる').length, 2, 'a preset without parameters that is in is not offered again');
   pol.setConfirmHandler(null); pol.setConfirm(true);
   nodes(presetBox()).find((x) => x.dataset?.param === 'repo').value = ' mtsmfm/iwato ';
   find(presetBox(), '入れる').click(); await flush(); await flush();
@@ -926,7 +926,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   fresh.els['create-name'].value = 'Bad ID'; fresh.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
   assert.equal(fresh.requests.filter(r => r.path === '/api/sandboxes' && r.method === 'POST').length, 0); assert.match(fresh.els['create-status'].textContent, /英小文字/);
   fresh.els['create-name'].value = ' web '; fresh.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
-  const createReq = fresh.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST'); assert.deepEqual(JSON.parse(createReq.body), {name: 'web', image: '', template: 'development', presets: [], providers: []}); assert.equal(createReq.headers['X-CSRF-Token'], 'csrf123');
+  const createReq = fresh.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST'); assert.deepEqual(JSON.parse(createReq.body), {name: 'web', image: '', presets: ['packages'], providers: []}); assert.equal(createReq.headers['X-CSRF-Token'], 'csrf123');
   assert.equal(fresh.els['create-panel'].hidden, true); assert.equal(fresh.els['empty-state'].hidden, true); assert.equal(fresh.card().children[0].children[0].children[1].children[0].textContent, 'web');
   assert(fresh.requests.some((r) => r.path === '/api/sandboxes/web/start' && r.method === 'POST'), 'a new sandbox starts right away'); assert(fresh.sockets.some((ws) => /\/ws\/web/.test(ws.url)), 'and its terminal connects');
   ok('first sandbox is created explicitly from the UI with name validation and CSRF');
@@ -988,7 +988,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   sandbox.els['create-name'].value = 'box'; sandbox.els['create-image'].value = ' ubuntu:24.04 ';
   sandbox.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
   const sandboxReq = sandbox.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST');
-  assert.deepEqual(JSON.parse(sandboxReq.body), {name: 'box', image: 'ubuntu:24.04', template: 'development', presets: [], providers: []});
+  assert.deepEqual(JSON.parse(sandboxReq.body), {name: 'box', image: 'ubuntu:24.04', presets: ['packages'], providers: []});
   assert.equal(sandbox.els['create-image'].value, '');
   ok('a sandbox is created with its image (no paths to persist: only the home does)');
 
@@ -1395,6 +1395,16 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
 
   // The create form: one select per profile.
   pv.els['create-button'].listeners.click(); await flush();
+  const presetsBox = pv.els['create-presets'], presetBoxes = presetsBox.choices.map((c) => c.box);
+  const [pkgBox, , agentBox] = presetBoxes;
+  assert.equal(pkgBox.checked, true); assert.equal(agentBox.checked, false, 'only the default presets start checked');
+  agentBox.checked = true; pkgBox.checked = false; agentBox.listeners.change(); assert.equal(pkgBox.checked, true, 'a preset comes with what it requires');
+  pkgBox.checked = false; pkgBox.listeners.change(); assert.equal(agentBox.checked, false, 'and goes with what it requires');
+  pkgBox.checked = true;
+  const presetRow = presetsBox.children[1], details = presetRow.children.at(-1), more = presetRow.children[0].children[1];
+  assert.equal(details.hidden, true); assert.match(details.children[1].children[0].textContent, /registry\.npmjs\.org:443/); assert.match(details.children[1].children[1].textContent, /GET HEAD \*\*/);
+  more.click(); assert.equal(details.hidden, false); assert.equal(more.getAttribute('aria-expanded'), 'true');
+  ok('the create form: presets with defaults, what they require, and their rules behind 詳細');
   const picker = pv.els['create-providers']; assert.equal(picker.hidden, false);
   const selects = picker.children.slice(1).map((label) => label.children[1]);
   assert.deepEqual(selects.map((s) => s.dataset.profile), ['iwato-github', 'iwato-claude']);

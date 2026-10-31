@@ -6,7 +6,7 @@ The standard image contains no agent CLI and no agent settings. Install each age
 
 ## Network for installing
 
-The Development template (the create form's default) allows installing and updating the agents from the start ([templates](network-policy.md#templates)). It is the preset "Package, Claude Code, Grok Build and Codex downloads", which you can also put into a sandbox of another template from the policy tab.
+The presets Tool installs and Agent CLIs (both on by default in the create form) allow installing and updating the agents from the start ([presets](network-policy.md#presets)). You can also put them into a sandbox later from the policy tab.
 
 The agents' API hosts (`api.anthropic.com`, `api.x.ai`, `chatgpt.com`, …) are not in the presets: attach the agent's provider, or approve the agent's proposals ([providers](providers.md)). With the provider attached, `claude` works right after `mise use -g claude`. Anything else an agent needs, it proposes ([proposals](network-policy.md#how-rules-get-proposed)).
 

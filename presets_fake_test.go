@@ -153,16 +153,16 @@ func TestApplyAndRemovePresets(t *testing.T) {
 	if code, body := do("POST", "/api/sandboxes", `{"name":"bad","presets":["nope"]}`); code != 400 {
 		t.Fatal(code, body)
 	}
-	if code, body := do("POST", "/api/sandboxes", `{"name":"bad","template":"nope"}`); code != 400 {
-		t.Fatal(code, body)
-	}
-	// A template's presets go first; one named again is not repeated.
-	if code, body := do("POST", "/api/sandboxes", `{"name":"mise","template":"research","presets":["packages",`+repo+`],"providers":["github-personal"]}`); code != 200 {
+	// What a preset requires comes with it, and stays until it is gone.
+	if code, body := do("POST", "/api/sandboxes", `{"name":"mise","presets":["agents",`+repo+`],"providers":["github-personal"]}`); code != 200 {
 		t.Fatal(code, body)
 	}
 	sb, _ = s.lookupSandbox("mise")
-	if len(sb.Presets) != 3 || sb.Presets[0].ID != "packages" || sb.Presets[1].ID != "research" || sb.Presets[2].Params["repo"] != "mtsmfm/iwato" || sb.Template != "research" {
+	if len(sb.Presets) != 3 || sb.Presets[0].ID != "agents" || sb.Presets[1].Params["repo"] != "mtsmfm/iwato" || sb.Presets[2].ID != "tools" {
 		t.Fatalf("%+v", sb)
+	}
+	if code, body := do("POST", "/api/sandboxes/mise/presets/remove", `"tools"`); code != 409 || !strings.Contains(body, "preset_required") {
+		t.Fatal(code, body)
 	}
 	if _, ok := sandboxPolicy(sb).NetworkPolicies["mirror_mtsmfm_iwato"]; !ok {
 		t.Fatal("the first policy lacks the preset")

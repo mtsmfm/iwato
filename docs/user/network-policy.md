@@ -2,7 +2,7 @@
 
 [日本語](ja/network-policy.md)
 
-A sandbox's network is **denied by default** ([ADR 0008](../adr/0008-default-deny-network-with-policy-advisor.md)). A new sandbox can reach only what its template and presets allow. Everything else is refused until you approve a rule.
+A sandbox's network is **denied by default** ([ADR 0008](../adr/0008-default-deny-network-with-policy-advisor.md)). A new sandbox can reach only what its presets allow. Everything else is refused until you approve a rule.
 
 ## How rules get proposed
 
@@ -54,36 +54,26 @@ A proposal with more than Iwato can show (more than 128 rules, for example) or w
 
 A rejected proposal can be approved later from the rejected list, as proposed only (OpenShell edits pending proposals only).
 
-## Templates
-
-A new sandbox starts from a template chosen in the create form. A template is a named set of Iwato's presets (below); its presets show checked in the form, and you can add others.
-
-| Template | Presets |
-|---|---|
-| Development (the default) | Package, Claude Code, Grok Build and Codex downloads |
-| Research | Package, Claude Code, Grok Build and Codex downloads; Common references |
-| None | none: every destination is approved from proposals |
-
-The first commit of the sandbox's policy history names the template.
-
 ## Presets
 
-A preset is a named set of rules. Choose presets in the create form, or put them in and take them out later in the policy tab (Presets: Apply, Remove). Taking a preset out removes only the rules that are still as the preset made them. Presets are kept when a sandbox is recreated. A preset that no longer exists (removed from Iwato, or your file deleted) is marked "preset not found": its rules stay in the policy as ordinary rules, and Remove only takes it off the list.
+A preset is a named set of rules. Choose presets in the create form (Details shows each one's hosts, methods and paths), or put them in and take them out later in the policy tab (Presets: Apply, Remove). Taking a preset out removes only the rules that are still as the preset made them. Presets are kept when a sandbox is recreated. The first commit of the policy history names the presets the sandbox started from. A preset that no longer exists (removed from Iwato, or your file deleted) is marked "preset not found": its rules stay in the policy as ordinary rules, and Remove only takes it off the list. A preset another one in the sandbox requires cannot be taken out first.
 
 Iwato's presets:
 
 | Preset | What it allows |
 |---|---|
-| Package, Claude Code, Grok Build and Codex downloads | read-only (GET, HEAD, OPTIONS, and the POSTs that only read: npm's audit, the registries' tokens, mise's version queries) from any program: npm, PyPI (and uv's Python builds), crates.io, the Rust toolchains (rustup), the Go proxy, RubyGems, mise, the Node.js and Go downloads, GitHub (github.com, api.github.com, release and archive downloads, raw files), Docker Hub and ghcr.io images. No publishing or uploads. Installing and updating the agents: Claude Code (downloads.claude.ai, platform.claude.com), grok (x.ai, storage.googleapis.com), Codex (GitHub releases) |
-| Common references | read-only (GET, HEAD) from any program: Wikipedia (English, Japanese, images), arXiv (and export.arxiv.org), MDN, docs.python.org, go.dev and pkg.go.dev, doc.rust-lang.org and docs.rs, nodejs.org, docs.ruby-lang.org and ruby-doc.org, GitHub Docs, man7.org, rfc-editor.org, `*.readthedocs.io`, Stack Overflow, Hacker News |
+| Packages (on by default) | read-only (GET, HEAD, OPTIONS, and the POSTs npm's audit needs) from any program: npm, PyPI, RubyGems, crates.io, Go modules. No publishing or uploads |
+| Tool installs (on by default) | read-only from any program: mise, the Node.js, Go and Rust toolchains, uv's Python builds, GitHub (github.com, api.github.com, release and archive downloads, raw files) |
+| Agent CLIs (on by default; brings Tool installs) | installing and updating Claude Code, Grok Build and Codex |
+| Reading references | read-only (GET, HEAD) from any program: Wikipedia (English, Japanese, images), arXiv (and export.arxiv.org), MDN, docs.python.org, go.dev and pkg.go.dev, doc.rust-lang.org and docs.rs, nodejs.org, docs.ruby-lang.org and ruby-doc.org, GitHub Docs, man7.org, rfc-editor.org, `*.readthedocs.io`, Stack Overflow, Hacker News |
 
-Presets carry no credentials: the agents' APIs come with their providers. Preset rules allow every program ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)). The package preset reads github.com and api.github.com without a credential; with the GitHub provider attached, they are read with its token.
+Presets carry no credentials: the agents' APIs come with their providers. Preset rules allow every program ([ADR 0022](../adr/0022-iwato-owns-the-sandbox-policy.md)). Tool installs reads github.com and api.github.com without a credential; with the GitHub provider attached, they are read with its token.
 
 ### Your own presets
 
 Add, edit and delete your own presets under Presets in the policy tab (New preset, Edit YAML, Delete). They are stored as `presets/*.yaml` in the config folder, and are read again whenever the list is shown, so you can also edit them with another editor; a file that cannot be read is listed with the reason. Your presets get the id `user:ID`, so they never shadow Iwato's.
 
-The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`:
+The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`, `default` (`true`: checked in the create form) and `requires` (preset ids that come with it):
 
 ```yaml
 id: my-preset

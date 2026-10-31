@@ -201,8 +201,12 @@ func (o *OpenShell) syncStore(ctx context.Context, w Sandbox) (*storeSync, error
 	switch st.State {
 	case "none":
 		message := fmt.Sprintf("Import the policy from OpenShell (version %d)", st.Version)
-		if t := findTemplate(w.Template); t != nil {
-			message = fmt.Sprintf("Start from the template %s (OpenShell version %d)", t.Label, st.Version)
+		if len(w.Presets) > 0 {
+			var ids []string
+			for _, r := range w.Presets {
+				ids = append(ids, r.ID)
+			}
+			message = fmt.Sprintf("Start from the presets %s (OpenShell version %d)", strings.Join(ids, ", "), st.Version)
 		}
 		return o.importPolicy(ctx, w, sync, message)
 	case "drift":

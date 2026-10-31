@@ -11,8 +11,7 @@ Create a sandbox with **Create a sandbox** in the sidebar:
 - **Name**: a lowercase letter first, then lowercase letters, digits and hyphens, up to 32 characters. It also names the sandbox's published ports (`5173.NAME.localhost`), so a name that is not a valid DNS label gets no local port links ([publishing](publishing.md))
 - **Image**: empty for Iwato's standard image (below), or any image, as with `openshell sandbox create --from` (for example `ubuntu:24.04`)
 - **Use the GPU**: passes this PC's GPU into the sandbox (WSL's GPU; no choice of model or count). It can be changed later by **Recreate**, and appears only where a GPU is available. See [desktop and GPU](desktop.md)
-- **Template**: the first network rules. **Development** (the default) reads package registries, mise and GitHub releases and lets Claude Code, Grok Build and Codex install and update; **Research** adds reading common references; **None** starts without rules ([network policy](network-policy.md#templates))
-- **Network presets**: more sets of rules for the first policy ([network policy](network-policy.md#presets))
+- **Network presets**: the first network rules. Packages, Tool installs and Agent CLIs start checked; Reading references does not. Details shows what each allows ([network policy](network-policy.md#presets))
 - **Providers**: credentials to attach ([providers](providers.md))
 
 A new sandbox starts and connects its terminal. The sandbox's card has **Start** and a menu (⋯) with **Stop**, **Delete**, **Recreate** and **Providers**.

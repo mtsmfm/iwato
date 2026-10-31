@@ -44,7 +44,7 @@ network_policies:
 `
 
 // sharedPreset is an owner's preset with a rule of the same name as
-// packages' (downloads.claude.ai) and one of its own.
+// agents' (downloads.claude.ai) and one of its own.
 const sharedPreset = `id: shared
 label: 共有する規則
 network_policies:
@@ -57,7 +57,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: /install.sh }
     binaries: [/usr/bin/curl]
-  preset_packages_downloads_claude_ai:
+  preset_agents_downloads_claude_ai:
     endpoints:
       - host: downloads.claude.ai
         port: 443
@@ -138,10 +138,97 @@ func TestBuiltinPresetsFitTheProviders(t *testing.T) {
 	}
 }
 
+// Any choice of Iwato's presets composes: with each provider, applied one
+// by one in a running sandbox, and taken out again without losing what the
+// others need (a host two presets share has one rule name).
+func TestBuiltinPresetCombinations(t *testing.T) {
+	refs := allBuiltinPresets()
+	if len(refs) != 4 {
+		t.Fatal(refs)
+	}
+	for mask := range 1 << len(refs) {
+		var chosen []PresetRef
+		for i, r := range refs {
+			if mask&(1<<i) != 0 {
+				chosen = append(chosen, r)
+			}
+		}
+		rules := presetRules(chosen)
+		if a := findEndpointAmbiguities(rules); len(a) > 0 {
+			t.Fatalf("%v: %v", chosen, a)
+		}
+		for _, p := range providerProfiles {
+			with := cloneRules(rules)
+			initial, err := providerInitialRules(p.ID, "p")
+			if err != nil {
+				t.Fatal(err)
+			}
+			maps.Copy(with, initial)
+			if a := findEndpointAmbiguities(with); len(a) > 0 {
+				t.Fatalf("%v with %s: %v", chosen, p.ID, a)
+			}
+		}
+		for _, r := range refs {
+			mine, _ := presetRefRules(r)
+			if i := slices.IndexFunc(chosen, r.same); i < 0 {
+				var ops []v1.PolicyMergeOperation
+				for _, name := range slices.Sorted(maps.Keys(mine)) {
+					ops = append(ops, v1.PolicyMergeOperation{AddRule: &v1.AddNetworkRule{RuleName: name, Rule: mine[name]}})
+				}
+				merged, err := simulateMerge(rules, ops)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if f := foldedPresetRules(merged, mine); len(f) > 0 {
+					t.Fatalf("%v then %s folds: %v", chosen, r.ID, f)
+				}
+			} else {
+				rest := slices.Delete(slices.Clone(chosen), i, i+1)
+				ops, kept := presetRemoval(rules, mine, rules, presetRules(rest))
+				after, err := simulateMerge(rules, ops)
+				if err != nil || len(kept) > 0 {
+					t.Fatal(err, kept)
+				}
+				want := presetRules(rest)
+				if len(after) != len(want) {
+					t.Fatalf("%v without %s: %v", chosen, r.ID, slices.Sorted(maps.Keys(after)))
+				}
+				for name, rule := range want {
+					if !samePresetRule(after[name], rule) {
+						t.Fatalf("%v without %s: %s is %+v", chosen, r.ID, name, after[name])
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestPresetDefaultsAndRequires(t *testing.T) {
+	for id, on := range map[string]bool{"packages": true, "tools": true, "agents": true, "research": false} {
+		if findPreset(id).Default != on {
+			t.Fatal(id)
+		}
+	}
+	got := withRequiredPresets([]PresetRef{{ID: "agents"}})
+	if len(got) != 2 || got[1].ID != "tools" {
+		t.Fatal(got)
+	}
+	var npm *presetAllow
+	allows := findPreset("packages").Allows
+	for i := range allows {
+		if allows[i].Target == "registry.npmjs.org:443" {
+			npm = &allows[i]
+		}
+	}
+	if npm == nil || !slices.Equal(npm.Rules[0].Methods, []string{"GET", "HEAD", "OPTIONS"}) || !slices.Equal(npm.Rules[0].Paths, []string{"**"}) || npm.Rules[1].Methods[0] != "POST" || len(npm.Rules[1].Paths) != 3 {
+		t.Fatalf("%+v", npm)
+	}
+}
+
 // Presets with a rule of one name: the rule joins their programs.
 func TestPresetsOfOneRuleNameJoin(t *testing.T) {
 	withUserPresets(t, map[string]string{"shared.yaml": sharedPreset})
-	rule := presetRules([]PresetRef{{ID: "packages"}, {ID: "user:shared"}})["preset_packages_downloads_claude_ai"]
+	rule := presetRules([]PresetRef{{ID: "agents"}, {ID: "user:shared"}})["preset_agents_downloads_claude_ai"]
 	var paths []string
 	for _, b := range rule.Binaries {
 		paths = append(paths, b.Path)
@@ -273,7 +360,7 @@ network_policies:
 // as the others make it, and leaves a rule changed since.
 func TestPresetRemoval(t *testing.T) {
 	withUserPresets(t, map[string]string{"shared.yaml": sharedPreset})
-	mise, shared := PresetRef{ID: "packages"}, PresetRef{ID: "user:shared"}
+	mise, shared := PresetRef{ID: "agents"}, PresetRef{ID: "user:shared"}
 	all := presetRules([]PresetRef{mise, shared})
 	base := map[string]v1.NetworkPolicyRule{}
 	for name, r := range all {
@@ -297,7 +384,7 @@ func TestPresetRemoval(t *testing.T) {
 			got = append(got, "add "+op.AddRule.RuleName)
 		}
 	}
-	if !slices.Equal(got, []string{"remove preset_packages_downloads_claude_ai", "add preset_packages_downloads_claude_ai"}) || !slices.Equal(kept, []string{"allow_claude_ai_443"}) {
+	if !slices.Equal(got, []string{"remove preset_agents_downloads_claude_ai", "add preset_agents_downloads_claude_ai"}) || !slices.Equal(kept, []string{"allow_claude_ai_443"}) {
 		t.Fatalf("%v %v", got, kept)
 	}
 	// A rule of the preset that OpenShell folded into another: named, with
@@ -309,8 +396,8 @@ func TestPresetRemoval(t *testing.T) {
 		t.Fatalf("%v", kept)
 	}
 	// Putting a fold back: the changed rule as it was, the new one out.
-	before := map[string]v1.NetworkPolicyRule{"hand": base["preset_packages_downloads_claude_ai"]}
-	after := map[string]v1.NetworkPolicyRule{"hand": all["preset_packages_downloads_claude_ai"], "new": folded, "_provider_x": folded}
+	before := map[string]v1.NetworkPolicyRule{"hand": base["preset_agents_downloads_claude_ai"]}
+	after := map[string]v1.NetworkPolicyRule{"hand": all["preset_agents_downloads_claude_ai"], "new": folded, "_provider_x": folded}
 	got = nil
 	for _, op := range rollbackOps(before, after) {
 		switch {

@@ -454,7 +454,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const history = panel.locator('.policy-history');
     await history.locator('.policy-commit').first().waitFor();
     const commits = await history.locator('.policy-commit-what').allInnerTexts();
-    check(commits.some((c) => c.startsWith('Approve proposal fake-git as rule allow_github_com_443')) && /^Start from the template|^Import the policy/.test(commits.at(-1)) && await history.locator('.policy-commit').last().getByRole('button', { name: /を取り消す$/ }).count() === 0, 'the commits, newest first; the first cannot be undone: ' + commits.slice(-2).join(' / '));
+    check(commits.some((c) => c.startsWith('Approve proposal fake-git as rule allow_github_com_443')) && /^Start from the presets|^Import the policy/.test(commits.at(-1)) && await history.locator('.policy-commit').last().getByRole('button', { name: /を取り消す$/ }).count() === 0, 'the commits, newest first; the first cannot be undone: ' + commits.slice(-2).join(' / '));
     const presetCommit = history.locator('.policy-commit').filter({ hasText: 'Allow requests on' }).first();
     await presetCommit.getByRole('button', { name: /の差分を見る$/ }).click();
     await history.locator('.policy-commit-diff .diff-add').first().waitFor();

@@ -1551,15 +1551,16 @@
         // Iwato's presets come in Japanese; the dictionary has other languages.
         id: text(p.id, 60), label: builtinText(p, 'label', text(p.label, 200)), note: builtinText(p, 'note', text(p.note, 2000)), source: p.source === 'user' ? 'user' : 'builtin', file: text(p.file, 200),
         hosts: list(p.hosts, 60).filter((h) => typeof h === 'string').map((h) => text(h, 253)),
+        default: p.default === true,
+        requires: list(p.requires, 20).filter((id) => typeof id === 'string').map((id) => text(id, 60)),
+        allows: list(p.allows, 100).filter((a) => a && typeof a.target === 'string').map((a) => ({
+          target: text(a.target, 300),
+          rules: list(a.rules, 40).filter(Boolean).map((r) => ({ methods: list(r.methods, 12).map((m) => text(m, 16)), paths: list(r.paths, 40).map((x) => text(x, 300)) }))
+        })),
         params: list(p.params, 4).filter((x) => x && typeof x.name === 'string').map((x) => ({ name: text(x.name, 20), label: text(x.label, 200), placeholder: text(x.placeholder, 100) }))
       })),
       errors: list(data?.errors, 50).filter((e) => e && typeof e.file === 'string').map((e) => ({ file: text(e.file, 300), error: text(e.error, 1000), code: e.code, params: e.params })),
-      folder: text(data?.folder, 1000),
-      templates: list(data?.templates, 10).filter((x) => x && typeof x.id === 'string' && x.id).map((x) => ({
-        id: text(x.id, 40), label: window.IwatoI18n.localized('template.' + text(x.id, 40) + '.label', text(x.label, 200)),
-        note: window.IwatoI18n.localized('template.' + text(x.id, 40) + '.note', ''),
-        presets: list(x.presets, 20).filter((id) => typeof id === 'string').map((id) => text(id, 60))
-      }))
+      folder: text(data?.folder, 1000)
     };
   }
   // A preset's parameter inputs (one text box each).
@@ -1584,52 +1585,60 @@
     for (const input of inputs) params[input.dataset.param] = String(input.value || '').trim();
     return { id: preset.id, params };
   }
-  // The template (a named set of Iwato's presets, presets.go) and the
-  // presets: a template's presets show checked and fixed.
+  // One line per preset; 「詳細」 opens the note and what its rules allow.
+  function presetDetails(preset) {
+    const box = element('div', 'create-preset-details');
+    box.hidden = true;
+    if (preset.note) box.append(element('p', 'panel-meta', preset.note));
+    for (const a of preset.allows) {
+      const row = element('div', 'preset-allow');
+      row.append(element('div', 'preset-allow-target', a.target));
+      for (const r of a.rules) row.append(element('div', 'preset-allow-rule', r.methods.join(' ') + ' ' + r.paths.join(' ')));
+      box.append(row);
+    }
+    return box;
+  }
   function renderCreatePresets() {
     const holder = $('create-presets');
     const list = presetView.presets;
-    const templates = presetView.templates || [];
-    holder.hidden = !list.length && !templates.length;
+    holder.hidden = !list.length;
     holder.choices = [];
-    holder.template = templates.length ? 'development' : '';
-    const radios = [...templates, { id: '', label: t('template.none.label'), note: t('template.none.note'), presets: [] }].map((tpl) => {
-      const label = element('label', 'create-provider create-template');
-      const radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = 'create-template';
-      radio.value = tpl.id;
-      radio.checked = tpl.id === holder.template;
-      radio.addEventListener('change', () => { if (radio.checked) { holder.template = tpl.id; sync(); } });
-      label.append(radio, element('span', '', tpl.label), element('span', 'panel-meta', tpl.note));
-      return label;
-    });
+    // A preset comes with what it requires, and goes with what it requires.
+    const follow = (preset, on) => {
+      for (const c of holder.choices) {
+        if (c.box.checked === on || !(on ? preset.requires.includes(c.preset.id) : c.preset.requires.includes(preset.id))) continue;
+        c.box.checked = on;
+        follow(c.preset, on);
+      }
+    };
     const rows = list.map((preset) => {
       const row = element('div', 'create-preset');
-      const label = element('label', 'create-provider');
+      const line = element('div', 'create-preset-line');
+      const label = element('label', 'create-preset-label');
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.dataset.preset = preset.id;
-      label.append(box, element('span', '', preset.label + (preset.source === 'user' ? t('presets.mine') : '')), element('span', 'panel-meta', preset.note));
+      box.checked = preset.default;
+      box.addEventListener('change', () => follow(preset, box.checked));
+      label.append(box, element('span', '', preset.label + (preset.source === 'user' ? t('presets.mine') : '')));
+      const details = presetDetails(preset);
+      const more = button('button-subtle create-preset-more', t('create.presetDetails'), () => {
+        details.hidden = !details.hidden;
+        more.setAttribute('aria-expanded', String(!details.hidden));
+      });
+      more.setAttribute('aria-expanded', 'false');
+      more.setAttribute('aria-label', preset.label + ': ' + t('create.presetDetails'));
+      line.append(label, more);
       const inputs = presetParamInputs(preset);
-      row.append(label, ...inputs);
-      holder.choices.push({ box, ref: () => presetRef(preset, inputs) });
+      row.append(line, ...inputs, details);
+      holder.choices.push({ box, preset, ref: () => presetRef(preset, inputs) });
       return row;
     });
-    function sync() {
-      const fixed = templates.find((x) => x.id === holder.template)?.presets || [];
-      for (const c of holder.choices) {
-        const inTemplate = fixed.includes(c.box.dataset.preset);
-        if (c.box.disabled && !inTemplate) c.box.checked = false;
-        c.box.disabled = inTemplate;
-        if (inTemplate) c.box.checked = true;
-      }
-    }
-    holder.replaceChildren(...(templates.length ? [element('p', 'panel-meta', t('create.template')), ...radios] : []), ...(list.length ? [element('p', 'panel-meta', t('create.presets'))] : []), ...rows);
-    sync();
+    holder.replaceChildren(...(list.length ? [element('p', 'panel-meta', t('create.presets'))] : []), ...rows);
+    for (const c of holder.choices) if (c.box.checked) follow(c.preset, true);
   }
   function createPresetChoice() {
-    return ($('create-presets').choices || []).filter((c) => c.box.checked && !c.box.disabled).map((c) => c.ref());
+    return ($('create-presets').choices || []).filter((c) => c.box.checked).map((c) => c.ref());
   }
   function createProviderChoice() {
     const out = [];
@@ -1738,7 +1747,6 @@
       const body = {
         name,
         image: String($('create-image').value || '').trim(),
-        template: $('create-presets').template ?? 'development',
         presets: createPresetChoice(),
         providers: createProviderChoice(),
         gpu: !$('create-gpu-label').hidden && $('create-gpu').checked
@@ -3248,7 +3256,15 @@
       if (this.mutating || !state.authorized) return;
       const ref = presetRef(preset, inputs);
       const values = typeof ref === 'string' ? '' : ' (' + Object.values(ref.params).join(', ') + ')';
-      if (!(await askConfirm(t('presets.apply.confirm', { preset: preset.label + values, sandbox: JSON.stringify(this.sandbox.name), hosts: preset.hosts.join(', ') }), { ok: t('presets.apply') }))) return;
+      const withRequired = [preset];
+      for (const p of withRequired) {
+        for (const id of p.requires) {
+          const other = presetView.presets.find((x) => x.id === id);
+          if (other && !withRequired.includes(other) && !this.presetData.some((x) => x.id === id)) withRequired.push(other);
+        }
+      }
+      const hosts = [...new Set(withRequired.flatMap((p) => p.hosts))].join(', ');
+      if (!(await askConfirm(t('presets.apply.confirm', { preset: preset.label + values, sandbox: JSON.stringify(this.sandbox.name), hosts }), { ok: t('presets.apply') }))) return;
       await this.post('/presets/apply', ref, t('presets.apply.done'));
       this.loadPresets();
     }

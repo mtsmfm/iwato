@@ -1,9 +1,9 @@
-# Iwato's network preset for the research template (ADR 0022): common
-# references and documentation, read only (GET and HEAD) from any program.
+# Iwato's network preset for common references and documentation, read only
+# (GET and HEAD) from any program.
 # No search engines: their forms post. No hosts that take a credential.
 id: research
 label: よく読む参照先
-note: Wikipedia (英語・日本語)・arXiv・MDN・Python・Go・Rust・Node.js・Ruby の文書・GitHub Docs・man7.org (Linux の man)・RFC・Read the Docs・Stack Overflow・Hacker News を、どのプログラムからも読み取りだけ (GET・HEAD) 許可します
+note: Wikipedia・arXiv・各言語の文書・Stack Overflow などを読み取りだけで見られます
 network_policies:
   # Wikipedia and its images.
   preset_research_en_wikipedia_org:
@@ -52,7 +52,8 @@ network_policies:
     endpoints:
       - { host: "docs.rs", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
     binaries: ["/**"]
-  preset_research_nodejs_org:
+  # Shared with tools under one name (see storage.googleapis.com in packages).
+  preset_nodejs_org:
     endpoints:
       - { host: "nodejs.org", port: 443, protocol: rest, enforcement: enforce, rules: [{ allow: { method: GET, path: "/**" } }, { allow: { method: HEAD, path: "/**" } }] }
     binaries: ["/**"]
