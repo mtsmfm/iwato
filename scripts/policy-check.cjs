@@ -132,11 +132,28 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.click('#confirm-ok');
     await pending.locator('.review-item', { hasText: /^mise-versions\.jdx\.dev/ }).waitFor();
     check(await unlinked.count() === 0 && await rule('allow_mise_versions_jdx_dev_443').count() === 0, 'the rule went back and out again: the proposal waits again');
-    // A rejected proposal: approved as proposed.
-    await rejectedList.locator('.proposal-item', { hasText: '/usr/bin/curl' }).getByRole('button', { name: '承認する' }).click();
-    await dialog.waitFor();
-    check((await page.locator('#confirm-text').innerText()).includes('提案どおり') && (await page.locator('#approve-risks').innerText()).includes('検査せずに許可します (L4)'), 'a rejected proposal is approved as proposed, its L4 warned');
-    await page.click('#confirm-ok');
+    // A rejected proposal opens the same review; it goes as proposed.
+    // A host (a regex, dots escaped) as a whole word, not a substring of
+    // another host.
+    const hostRE = (host) => new RegExp('^' + host.source + '(?![a-z0-9.-])');
+    const openRejected = async (host) => {
+      const row = rejectedList.locator('.proposal-item').filter({ has: page.locator('.proposal-where', { hasText: hostRE(host) }) });
+      await row.getByRole('button', { name: '承認する', exact: true }).click();
+      await row.locator('.review-host').filter({ hasText: hostRE(host) }).waitFor();
+      await page.waitForFunction(() => { const b = document.querySelector('.terminal-card.selected .policy-rejected .review-detail'); return b && !b.querySelector('.review-warn[data-level=wait]') && b.querySelector('.review-diff-body').textContent; });
+      return row.locator('.review-detail');
+    };
+    const asked = await openRejected(/mise-versions\.jdx\.dev/);
+    check(await asked.locator('input:visible').count() === 0 && await asked.getByRole('button', { name: '却下', exact: true }).count() === 0, 'a rejected proposal has no checkboxes and no 却下');
+    check(/^検査せずにすべての通信を通す \(L4\) — mise-versions\.jdx\.dev$/.test((await asked.locator('.review-rule').innerText()).trim()), 'its one row is the L4 it is approved as');
+    check(/提案どおりにしか承認できない/.test(await asked.locator('.review-rules + .panel-meta').innerText()), 'a note says why it cannot be narrowed');
+    check(/検査せずに許可します \(L4\)/.test(await asked.locator('.review-warn[data-level=amber]').first().innerText()), 'its L4 is warned');
+    check(/^\s*host: mise-versions\.jdx\.dev$/m.test((await asked.locator('.review-diff-body').textContent()).replace(/^\+\s*-?/gm, '')), 'the preview shows the rule it adds');
+    check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the opened rejected proposal fits');
+    await asked.screenshot({ path: path.join(dir, 'rejected-review.png') });
+    const askedAnswer = page.waitForResponse((r) => r.url().endsWith('/proposals/approve'));
+    await asked.getByRole('button', { name: '承認', exact: true }).click();
+    check((await askedAnswer).status() === 200, 'it is approved from there');
     await rule('allow_mise_versions_jdx_dev_443').waitFor();
     check((await rejectedList.innerText()).startsWith('却下した提案 (1)'), 'it left the rejected list for the policy');
     await page.waitForFunction(() => !document.querySelector('.terminal-card.selected .apply-badge'), null, { timeout: 30000 });
@@ -146,9 +163,6 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // a phone. What it allows, narrowed by unchecking; the host checks;
     // the rule it adds as YAML.
     const reviewBox = pending.locator('.review-detail');
-    // A host (a regex, dots escaped) as a whole word, not a substring of
-    // another host.
-    const hostRE = (host) => new RegExp('^' + host.source + '(?![a-z0-9.-])');
     const item = (host, also) => { const l = pending.locator('.review-item').filter({ hasText: hostRE(host) }); return also ? l.filter({ hasText: also }) : l; };
     const openItem = async (host, also) => { await item(host, also).click(); await reviewBox.locator('.review-host').filter({ hasText: hostRE(host) }).waitFor(); };
     const rows = () => reviewBox.locator('.review-rule').evaluateAll((els) => els.map((e) => (e.querySelector('input').checked ? '+ ' : '- ') + e.innerText.replace(/\s+/g, ' ').trim()));
@@ -335,6 +349,13 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await page.click('#confirm-ok');
     await pending.getByText('承認待ちはありません。').waitFor();
     check(/cdn-x7k2q\.top/.test(await rejectedList.innerText()), 'all were rejected');
+    // Rejected or waiting, a dangerous host is red.
+    for (const [host, says] of [[/cdn-x7k2q\.top/, /^!\s*cdn-x7k2q\.top は危険なドメインです/], [/webhook\.site/, /^!\s*webhook\.site は外部送信サービスです/]]) {
+      const box = await openRejected(host);
+      check(says.test(await box.locator('.review-warn[data-level=red]').first().innerText()), 'a rejected proposal for a dangerous host shows the red warning: ' + host.source);
+      await box.getByRole('button', { name: '閉じる', exact: true }).click();
+      await box.waitFor({ state: 'detached' });
+    }
 
     // A rule by hand: two ports, methods and paths, audit.
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();

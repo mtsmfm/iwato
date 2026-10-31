@@ -52,7 +52,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
     'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
-    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'approve-head', 'approve-risks', 'approve-proposal', 'approve-proposal-body', 'policy-host-risk', 'update-button', 'res-totals', 'shortcut-toast'];
+    'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'policy-host-risk', 'update-button', 'res-totals', 'shortcut-toast'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
   for (const id of ids) { const m = id.match(/^approve-scope-(\w+)$/); if (m) els[id].value = m[1]; }
   els['terminal-grid'].append(els['empty-state']); els.notice.hidden = true; els['fake-banner'].hidden = true;
@@ -395,34 +395,47 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.match(env.policy().children[0].children[3].textContent, /2 件を却下しました/);
   }
   ok('rejecting sends the reason typed; reject-all asks in the page, then rejects each');
-  // A rejected proposal is approved as proposed: a host gateway and
-  // Iwato's own port are warned, and the port cannot be approved.
+  // A rejected proposal opens the same review, its rows read-only: the
+  // host checks and the rule warnings, Iwato's port refused, the token
+  // checkbox; it goes as proposed.
   {
-    const gw = await environment({fake: false});
-    const item = {...proposal, id: 'b'.repeat(32), state: 'rejected', binaries: ['/**'], endpoints: [{host: 'host.docker.internal', ports: [17600]}]};
-    gw.setProposalHandler(() => response({...proposalItem, pending: [], rejected: [item], hostGateways: ['host.docker.internal'], listenPort: 17600}));
-    await readPolicy(gw);
-    let gwShown = null;
-    gw.setConfirmHandler(() => { gwShown = [texts(gw.els['approve-risks']), gw.els['confirm-ok'].disabled]; return true; });
-    const rejSec = gw.policy().children[1].children[3];
-    find(rejSec, '承認する').click(); await flush();
-    assert.match(gwShown[0], /host\.docker\.internal は Iwato が動くマシンのループバックに届きます/);
-    assert.match(gwShown[0], /ポート 17600 は Iwato 自身のポートです/); assert.match(gwShown[0], /検査せずに許可します \(L4\)/);
-    assert.equal(gwShown[1], true, 'Iwato\'s port cannot be approved');
-    assert.equal(mutations(gw).filter((r) => /approve$/.test(r.path)).length, 0);
-    const ok2 = await environment({fake: false}); ok2.setConfirm(true);
-    ok2.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : response({...proposalItem, pending: [], rejected: [{...item, endpoints: [{host: 'x.example', ports: [443]}]}]}));
-    await readPolicy(ok2); find(ok2.policy().children[1].children[3], '承認する').click(); await flush();
-    assert.deepEqual(scopeOf(ok2), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**'], attach: false}}, 'as proposed, no credential unless named');
-    // The credential it carries by default is named in the question, and sent.
-    const tok = await environment({fake: false}); let tokShown = '';
-    tok.setConfirmHandler((q) => { tokShown = q; return true; });
-    tok.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : response({...proposalItem, pending: [], rejected: [{...item, endpoints: [{host: 'x.example', ports: [443]}], attach: [{provider: 'gh', host: 'x.example', path: '/a'}]}]}));
-    await readPolicy(tok); find(tok.policy().children[1].children[3], '承認する').click(); await flush();
-    assert.match(tokShown, /x\.example\/a には今 gh のトークンが付いている/);
-    assert.equal(scopeOf(tok).scope.attach, true);
+    const rejectedProposal = {...proposal, id: 'b'.repeat(32), state: 'rejected', binaries: ['/**'], endpoints: [{host: 'host.docker.internal', ports: [17600]}]};
+    const openRejected = async (item, more = {}, preview = {yaml: 'allow_x:\n  endpoints: []\n'}) => {
+      const env = await environment({fake: false});
+      env.setProposalHandler((path) => path.endsWith('/approve') ? response({ok: true}) : path.endsWith('/preview') ? response(preview) : response({...proposalItem, pending: [], rejected: [item], ...more}));
+      if (more.host) env.setHostHandler(more.host);
+      await readPolicy(env);
+      find(env.policy().children[1].children[3], '承認する').click(); await flush(); await runTimers(env);
+      return env;
+    };
+    const opened = (env) => nodes(env.policy().children[1].children[3]).find((n) => n.className === 'review-detail');
+    const gw = await openRejected(rejectedProposal, {hostGateways: ['host.docker.internal'], listenPort: 17600});
+    assert.match(texts(opened(gw)), /host\.docker\.internal は Iwato が動くマシンのループバックに届きます/);
+    assert.match(texts(opened(gw)), /ポート 17600 は Iwato 自身のポートです/); assert.match(texts(opened(gw)), /検査せずに許可します \(L4\)/);
+    assert.equal(find(opened(gw), '承認').disabled, true, 'Iwato\'s port cannot be approved');
+    const fine = {...rejectedProposal, endpoints: [{host: 'x.example', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'POST', path: '/hook'}]}]};
+    const red = await openRejected(fine, {host: (host) => ({host, domain: host, exfil: 'webhook', filter: 'clean', rdap: 'found', registered: 1200000000})});
+    assert.match(texts(opened(red)), /x\.example は外部送信サービスです/, 'the red warning shows, read for this proposal alone');
+    assert.equal(nodes(opened(red)).filter((n) => n.type === 'checkbox' && !n.parent.hidden).length, 0, 'the rules are read-only');
+    assert.equal(find(opened(red), '却下'), undefined); assert(find(opened(red), '閉じる')); assert.match(texts(opened(red)), /提案どおりにしか承認できない/);
+    assert.match(texts(nodes(opened(red)).find((n) => n.className === 'review-rules')), /^POST\n\/hook$/);
+    const previewed = red.requests.filter((r) => r.path.endsWith('/proposals/preview'));
+    assert.deepEqual(JSON.parse(previewed.at(-1).body), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'the preview asks with the digest');
+    find(opened(red), '承認').click(); await flush();
+    assert.deepEqual(scopeOf(red), {requestId: 'b'.repeat(32), digest: 'd'.repeat(64), scope: {binaries: ['/**']}}, 'as proposed, with the digest');
+    // Closed: the list's button again, nothing sent.
+    const closed = await openRejected(fine);
+    find(opened(closed), '閉じる').click(); await flush();
+    assert.equal(opened(closed), undefined); assert(find(closed.policy().children[1].children[3], '承認する')); assert.equal(mutations(closed).length, 0);
+    // The credential it would carry is a checkbox, as for a pending one, and an endpoint left uninspected next to an inspected one still goes as proposed.
+    const mixed = {...fine, endpoints: [fine.endpoints[0], {host: 'y.example', ports: [443]}]};
+    const tok = await openRejected(mixed, {}, {yaml: 'allow_x:\n  endpoints: []\n', attach: [{provider: 'gh', host: 'x.example', path: '/a'}]});
+    const box = nodes(opened(tok)).filter((n) => n.type === 'checkbox').find((n) => !n.parent.hidden);
+    assert.equal(box.checked, true); assert.match(texts(opened(tok)), /gh のトークン/);
+    toggle(box); find(opened(tok), '承認').click(); await flush();
+    assert.deepEqual(scopeOf(tok).scope, {binaries: ['/**'], attach: false}, 'unchecked, the token stays out');
   }
-  ok('a rejected proposal is approved as proposed after a question that warns of a host gateway and Iwato\'s port, and names the credential it carries');
+  ok('a rejected proposal opens the same review: red host checks, rule warnings, Iwato\'s port refused, read-only rows, the token checkbox, approved as proposed with its digest');
   {
   // web/approve.js, with the page's dictionary (Japanese).
   const box = {window: {}, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box); vm.runInNewContext(approveSource, box); const A = box.window.IwatoApprove;
@@ -1577,10 +1590,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.match(texts(rejItems()[0]), /に却下 · 却下後も 2 回、最後は \d\d:\d\d/); assert.match(texts(rejItems()[1]), /OpenShell が自動で却下 \(承認済みの提案と同じ宛先\)/); assert.doesNotMatch(texts(rejItems()[2]), /却下後も/);
   find(lists.policy().children[1].children[3], 'もっと見る (ほか 2 件)').click(); await flush();
   assert.equal(rejItems().length, 12);
-  lists.setConfirmHandler((q) => /提案どおり/.test(q));
   find(rejItems()[0], '承認する').click(); await flush();
+  find(rejItems()[0], '承認').click(); await flush();
   const appr = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/approve');
-  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {binaries: ['/**'], attach: false}});
+  assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {binaries: ['/**']}});
   ok('the rejected list shows the newest 10 then more, the hits since, OpenShell\'s own rejections, and approves as proposed');
   }
 

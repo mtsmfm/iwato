@@ -49,7 +49,8 @@
   // saw (placeholder) lists the methods on every path, reads checked; an
   // uninspected one also gets a row to allow it as proposed (L4, ep its
   // index), checked when the port is not a web one. An access preset lists
-  // its methods on every path.
+  // its methods on every path. A rejected proposal goes as proposed, so it
+  // lists what it allows and an uninspected endpoint is its L4 row alone.
   function reviewRows(item) {
     const rows = [];
     const add = (host, method, path, checked) => {
@@ -58,10 +59,16 @@
     for (const [i, e] of (item.endpoints || []).entries()) {
       const host = e.host || '';
       const uninspected = !inspectedEndpoint(e);
-      if (uninspected || item.placeholder || (!e.access && !(e.rules || []).length)) {
+      const l4Row = (checked) => rows.push({ kind: 'l4', host, ep: i, label: destParts([e]).map((d) => d.host + d.port)[0], checked, write: true });
+      if (item.rejected) {
+        if (uninspected) {
+          l4Row(true);
+          continue;
+        }
+      } else if (uninspected || item.placeholder || (!e.access && !(e.rules || []).length)) {
         const web = looksHTTP([e]);
         for (const m of ['GET', 'HEAD', ...writeMethods]) add(host, m, '/**', web && isRead(m));
-        if (uninspected) rows.push({ kind: 'l4', host, ep: i, label: destParts([e]).map((d) => d.host + d.port)[0], checked: !web, write: true });
+        if (uninspected) l4Row(!web);
         continue;
       }
       for (const m of presetMethods[e.access] || []) add(host, m, '/**', true);
@@ -89,13 +96,18 @@
   // The approval: {scope (null: nothing to send), error}. Every program
   // (ADR 0022); the checked rules per host and the endpoints whose L4 row is
   // checked (uninspected), or as proposed when nothing was narrowed or every
-  // endpoint is allowed uninspected. grant is the token checkboxes: attach
-  // (inherited; null when not shown) and offer.
+  // endpoint is allowed uninspected; a rejected proposal only as proposed.
+  // grant is the token checkboxes: attach (inherited; null when not shown)
+  // and offer.
   function reviewScope(item, rows, grant = {}) {
     const out = { scope: null, error: '' };
     const scope = { binaries: ['/**'] };
     if (grant.attach === true || grant.attach === false) scope.attach = grant.attach;
     if (grant.offer === true) scope.offer = true;
+    if (item.rejected) {
+      out.scope = scope;
+      return out;
+    }
     const l4 = rows.filter((r) => r.kind === 'l4' && r.checked);
     const all = l4.length > 0 && l4.length === (item.endpoints || []).length;
     if (!all && !(l4.length === 0 && asProposed(item, rows))) {
@@ -159,7 +171,6 @@
 
   // The destinations for the owner: the host, and the ports unless just 443.
   const destParts = (endpoints) => endpoints.map((e) => ({ host: e.host || t('policy.anyHost'), port: e.ports.length && !(e.ports.length === 1 && e.ports[0] === 443) ? ':' + e.ports.join(',') : '' }));
-  const ruleLabel = (r) => (r.method === '*' ? t('review.allMethods') : r.method) + ' ' + (r.path || t('approve.path.none'));
 
   // IPv4 a.b.c.d in an allowed_ips entry (an address or a CIDR).
   function ipIn(ip, entry) {
@@ -205,28 +216,5 @@
     return { lines, error };
   }
 
-  // The whole proposal, line by line: the programs, then each endpoint
-  // with its settings, rules, deny rules and allowed_ips.
-  function details({ proposed = [], endpoints = [] }) {
-    const out = [t('approve.detail.programs', { programs: proposed.join(', ') || '-' })];
-    for (const e of endpoints) {
-      const head = [(e.host || t('policy.anyHost')) + (e.ports.length ? ':' + e.ports.join(',') : '')];
-      head.push(e.protocol ? 'protocol: ' + e.protocol : t('approve.detail.uninspected'));
-      if (e.tls) head.push('tls: ' + e.tls);
-      if (e.enforcement) head.push('enforcement: ' + e.enforcement);
-      if (e.access) head.push('access: ' + e.access);
-      if (e.path) head.push('path: ' + e.path);
-      for (const [flag, name] of [['allowEncodedSlash', 'allow_encoded_slash'], ['websocketCredentialRewrite', 'websocket_credential_rewrite'], ['requestBodyCredentialRewrite', 'request_body_credential_rewrite'], ['allowUninspectedCredentials', 'allow_uninspected_credentials']]) {
-        if (e[flag]) head.push(name);
-      }
-      if (e.credential) head.push(t('approve.detail.credential', { provider: e.credential }));
-      out.push(head.join(' · '));
-      for (const r of e.rules || []) out.push('  ' + t('approve.detail.allow', { rule: ruleLabel(r) }));
-      for (const r of e.deny || []) out.push('  ' + t('approve.detail.deny', { rule: ruleLabel(r) }));
-      if (e.allowedIps?.length) out.push('  allowed_ips: ' + e.allowedIps.join(', '));
-    }
-    return out;
-  }
-
-  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, ruleLabel, risks, details, gatewayHit };
+  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
 })();

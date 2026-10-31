@@ -52,7 +52,7 @@ A rule on Iwato's own port is refused, from the approval, a rule added by hand a
 
 A proposal with more than Iwato can show (more than 128 rules, for example) or with settings it does not show (GraphQL, MCP, request signing) can be approved only narrowed: reject it, or write the rule in YAML.
 
-A rejected proposal can be approved later from the rejected list, as proposed only (OpenShell edits pending proposals only).
+A rejected proposal can be approved later from the rejected list: Approve opens the same review, with the same warnings. Its rules are shown but cannot be unchecked, because OpenShell approves a rejected proposal only as proposed. To narrow it, approve it, Undo it on its rule, then approve it narrowed.
 
 ## Presets
 

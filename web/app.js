@@ -212,57 +212,9 @@
     return [...$('approve-rules').children].map((row) => ({ method: row.children[0].value, path: String(row.children[1].value || '').trim() })).filter((r) => r.path);
   }
 
-  // Approving a rejected proposal: OpenShell approves those only as
-  // proposed, so the dialog shows it and what it widens (the logic is
-  // web/approve.js). Resolves to true when confirmed.
   const approveLogic = window.IwatoApprove;
   const pathLabel = approveLogic.pathLabel;
   const accessLabel = (access) => ({ 'read-only': t('policy.access.read'), 'read-write': t('policy.access.readwrite'), full: t('policy.access.full') })[access];
-  // The top of the dialog: the destination and the agent's reason.
-  function showApproveHead(item) {
-    const head = $('approve-head');
-    head.replaceChildren(...approveLogic.destParts(item.endpoints || []).map((d) => {
-      const line = element('p', 'approve-host', d.host);
-      if (d.port) line.append(element('span', 'approve-port', d.port));
-      return line;
-    }));
-    // Without endpoints, OpenShell's summary instead.
-    if (!head.children.length && item.summary) head.append(element('p', 'approve-intent', item.summary));
-    if (item.intent) head.append(element('p', 'approve-intent', t('policy.quote', { text: item.intent })));
-    head.hidden = false;
-  }
-  function hideApproveHead() {
-    $('approve-head').hidden = true;
-    $('approve-risks').hidden = true;
-    $('approve-proposal').hidden = true;
-  }
-  function showApproveRisks(lines) {
-    const box = $('approve-risks');
-    box.replaceChildren(element('p', 'approve-writes-title', t('approve.risks.title')), ...lines.map((w) => element('p', 'approve-writes-line', w)));
-    box.hidden = !lines.length;
-  }
-  function showApproveProposal(item) {
-    const lines = approveLogic.details({ proposed: item.binaries || [], endpoints: item.endpoints || [] });
-    $('approve-proposal-body').replaceChildren(...lines.map((l) => element('code', 'approve-proposal-line', l)));
-    $('approve-proposal').open = false;
-    $('approve-proposal').hidden = false;
-  }
-  async function askApprove(question, item) {
-    policyFormFor = '';
-    showApproveHead(item);
-    showApproveProposal(item);
-    // What the page cannot show of the proposal: not approvable as proposed.
-    const unshown = item.unshown?.length ? window.IwatoRefusals.unshown(item.unshown) : '';
-    const risk = approveLogic.risks({ endpoints: item.endpoints || [], listenPort: policyGuard.listenPort, gateways: policyGuard.gateways });
-    const l4 = (item.endpoints || []).some((e) => e.protocol !== 'rest' || e.tls === 'skip');
-    const internal = item.allowedIps.map((x) => t('policy.approve.internal', { host: x.host || t('policy.anyHost'), ips: allowedIPsLabel(x.host, x.ips) }));
-    showApproveRisks([unshown, risk.error, l4 && t('review.warn.l4'), ...internal, ...risk.lines.filter((l) => l !== risk.error)].filter(Boolean));
-    $('confirm-ok').disabled = Boolean(unshown || risk.error);
-    const yes = await askConfirm(question, { ok: t('approve.ok') });
-    $('confirm-ok').disabled = false;
-    hideApproveHead();
-    return yes && !unshown && !risk.error;
-  }
   // An endpoint for a new rule (every program, ADR 0022), or (rule given)
   // for an existing one, which keeps its programs. Resolves to the edit to
   // post, or null. prefill starts a new rule from requests an endpoint
@@ -2128,6 +2080,9 @@
       this.selected = '';
       this.reviewing = null;
       this.hostChecks = new Map();
+      // The rejected proposal opened to approve it.
+      this.rejectedId = '';
+      this.rejectedReview = null;
       // The views, 一覧 (the lists) and YAML, switched in the header that
       // stays at the top while the lists scroll.
       this.list = element('div', 'policy-list');
@@ -2170,7 +2125,7 @@
       };
       const methodPaths = (value, max, name) => list(value, max, name).filter((r) => r && typeof r.path === 'string' && typeof r.method === 'string').map((r) => ({ method: text(r.method, 10), path: text(r.path, 512) }));
       const credentials = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512), required: a.required === true }));
-      return { id: p.id, digest: /^[0-9a-f]{64}$/.test(p.digest) ? p.digest : '', unshown, summary: text(p.summary, 600), createdAt: Number(p.createdAt), source: p.source === 'auto' ? 'auto' : 'agent', intent: text(p.intent, 600), notes: text(p.notes, 600), rule: text(p.rule, 200),
+      return { id: p.id, digest: /^[0-9a-f]{64}$/.test(p.digest) ? p.digest : '', rejected: p.state === 'rejected', unshown, summary: text(p.summary, 600), createdAt: Number(p.createdAt), source: p.source === 'auto' ? 'auto' : 'agent', intent: text(p.intent, 600), notes: text(p.notes, 600), rule: text(p.rule, 200),
         hits: Number(p.hits) || 0, firstSeen: Number(p.firstSeen) || 0, lastSeen: Number(p.lastSeen) || 0,
         rules: methodPaths(p.rules, lim.rules, 'rules'),
         allowedIps: list(p.allowedIps, lim.endpoints, 'endpoints').filter((x) => x && typeof x.host === 'string').map((x) => ({ host: text(x.host, 253), ips: allowedIPsList(x.ips) })).filter((x) => x.ips.length),
@@ -2374,9 +2329,8 @@
       return tag;
     }
 
-    // A rejected proposal: approved again as proposed (OpenShell edits
-    // pending ones only).
-    proposalNode(p) {
+    // A rejected proposal, with its review when opened (review).
+    proposalNode(p, review) {
       const row = element('div', 'proposal-item');
       row.dataset.kind = 'rejected';
       const meta = element('p', 'panel-meta proposal-meta');
@@ -2388,11 +2342,15 @@
       const after = element('span', 'proposal-after', when);
       after.dataset.after = String(p.hitsAfter > 0 || p.seenAfter);
       meta.append(after);
-      const approve = button('button-start', t('policy.approveRejected'), () => this.approveRejected(p));
+      const approve = button('button-start', t('policy.approveRejected'), () => this.openRejected(p));
       approve.disabled = this.mutating || !state.authorized;
       const actions = element('div', 'panel-buttons');
       actions.append(approve);
       row.append(this.proposalWhat(p), meta);
+      if (review) {
+        row.append(review);
+        return row;
+      }
       if (p.intent) row.append(element('p', 'proposal-intent', t('policy.quote', { text: p.intent })));
       if (p.notes) row.append(element('p', 'panel-meta proposal-notes', t('policy.notes', { notes: p.notes })));
       row.append(actions);
@@ -2452,7 +2410,7 @@
       parts.all.textContent = t('review.rejectAll');
       parts.all.disabled = this.mutating || !state.authorized;
       const old = this.reviewing?.node;
-      const node = this.reviewNode(items.find((p) => p.id === this.selected));
+      const node = this.reviewNode('reviewing', items.find((p) => p.id === this.selected));
       if (node !== old || node.parentNode !== parts.layout) {
         old?.remove();
         parts.layout.append(node);
@@ -2491,15 +2449,15 @@
     // The opened proposal, kept across renders (what was unchecked, the
     // token checkbox, the reason typed); rebuilt for another proposal or
     // version, or a change of language.
-    reviewNode(p) {
+    reviewNode(slot, p) {
       const key = p.id + '\n' + p.digest + '\n' + window.IwatoI18n.language();
-      if (this.reviewing?.key !== key) this.reviewing = this.buildReview(p, key);
-      this.updateReview();
-      return this.reviewing.node;
+      if (this[slot]?.key !== key) this[slot] = this.buildReview(slot, p, key);
+      this.updateReview(this[slot]);
+      return this[slot].node;
     }
 
-    buildReview(p, key) {
-      const r = { key, p, rows: approveLogic.reviewRows(p), attach: null, preview: null };
+    buildReview(slot, p, key) {
+      const r = { slot, key, p, rows: approveLogic.reviewRows(p), attach: null, preview: null, inputs: [] };
       const node = element('section', 'review-detail');
       node.setAttribute('aria-label', t('review.label', { where: this.proposalWhere(p) }));
       const title = element('div', 'review-title');
@@ -2519,21 +2477,25 @@
       rules.append(element('h6', 'review-sec-title', t('review.rules')));
       const multi = new Set(p.endpoints.map((e) => e.host)).size > 1;
       const list = element('div', 'review-rules');
-      r.inputs = r.rows.map((row, i) => {
-        const label = element('label', 'review-rule');
+      for (const [i, row] of r.rows.entries()) {
+        // A rejected proposal's rows are only shown: it goes as proposed.
+        const label = element(p.rejected ? 'div' : 'label', 'review-rule');
         label.dataset.write = String(row.write);
         label.dataset.kind = row.kind;
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = row.checked;
-        input.id = 'review-rule-' + p.id + '-' + i;
-        input.addEventListener('change', () => { row.checked = input.checked; this.updateReview(); });
-        if (row.kind === 'l4') label.append(input, element('span', 'review-rule-text', t('review.l4', { host: row.label })));
-        else label.append(input, element('span', 'review-method', row.method === '*' ? t('review.allMethods') : row.method), element('span', 'review-path', (multi ? row.host : '') + pathLabel(row.path)));
+        if (!p.rejected) {
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = row.checked;
+          input.id = 'review-rule-' + p.id + '-' + i;
+          input.addEventListener('change', () => { row.checked = input.checked; this.updateReview(r); });
+          label.append(input);
+          r.inputs.push({ input, label, row });
+        }
+        if (row.kind === 'l4') label.append(element('span', 'review-rule-text', t('review.l4', { host: row.label })));
+        else label.append(element('span', 'review-method', row.method === '*' ? t('review.allMethods') : row.method), element('span', 'review-path', (multi ? row.host : '') + pathLabel(row.path)));
         list.append(label);
-        return { input, label, row };
-      });
-      rules.append(list, element('p', 'panel-meta', t('review.rules.hint')));
+      }
+      rules.append(list, element('p', 'panel-meta', t(p.rejected ? 'review.rules.rejected' : 'review.rules.hint')));
       r.warns = element('div', 'review-warns');
       r.warns.setAttribute('role', 'status');
       const warnSec = element('div', 'review-sec');
@@ -2554,23 +2516,26 @@
         return { label, input, words };
       };
       ({ label: r.grant, input: r.attachInput, words: r.grantText } = grantBox());
-      r.attachInput.addEventListener('change', () => { r.attachTouched = true; this.updateReview(); });
+      r.attachInput.addEventListener('change', () => { r.attachTouched = true; this.updateReview(r); });
       ({ label: r.offerGrant, input: r.offerInput, words: r.offerText } = grantBox());
-      r.offerInput.addEventListener('change', () => this.updateReview());
+      r.offerInput.addEventListener('change', () => this.updateReview(r));
       const diff = element('details', 'review-diff');
       r.diff = element('pre', 'review-diff-body');
       diff.append(element('summary', '', t('review.diff')), r.diff);
       r.error = element('p', 'panel-error review-error');
       r.error.setAttribute('role', 'alert');
       const actions = element('div', 'review-actions');
-      r.reason = element('input', 'text-input review-reason');
-      r.reason.type = 'text';
-      r.reason.maxLength = 500;
-      r.reason.placeholder = t('review.reason');
-      r.reason.setAttribute('aria-label', t('review.reason'));
-      r.reject = button('button-disconnect', t('review.reject'), () => this.rejectReview());
-      r.approve = button('button-start', t('policy.approve'), () => this.approveReview());
-      actions.append(r.reason, r.reject, r.approve);
+      r.approve = button('button-start', t('policy.approve'), () => this.approveReview(r));
+      if (p.rejected) actions.append(button('button-subtle', t('common.close'), () => this.closeRejected()), r.approve);
+      else {
+        r.reason = element('input', 'text-input review-reason');
+        r.reason.type = 'text';
+        r.reason.maxLength = 500;
+        r.reason.placeholder = t('review.reason');
+        r.reason.setAttribute('aria-label', t('review.reason'));
+        r.reject = button('button-disconnect', t('review.reject'), () => this.rejectReview(r));
+        actions.append(r.reason, r.reject, r.approve);
+      }
       node.append(diff, r.error, actions);
       r.node = node;
       return r;
@@ -2578,9 +2543,7 @@
 
     // The parts of the opened proposal that follow its checkboxes, the host
     // checks and the preview.
-    updateReview() {
-      const r = this.reviewing;
-      if (!r) return;
+    updateReview(r) {
       const p = r.p;
       const l4 = r.rows.some((x) => x.kind === 'l4' && x.checked);
       const skip = approveLogic.uninspectedHosts(p, r.rows);
@@ -2632,7 +2595,7 @@
           return box;
         }));
       }
-      this.previewReview();
+      this.previewReview(r);
       // A proposal the page cannot show whole is approved only narrowed.
       const unshown = p.unshown.length && built.scope && !built.scope.rules ? window.IwatoRefusals.unshown(p.unshown) : '';
       const error = built.error || unshown || risk.error || r.preview?.error || '';
@@ -2640,22 +2603,21 @@
       r.error.hidden = !error;
       const off = this.mutating || !state.authorized;
       r.approve.disabled = off || Boolean(error);
-      r.reject.disabled = off;
+      if (r.reject) r.reject.disabled = off;
       r.attachInput.disabled = r.offerInput.disabled = this.mutating;
     }
 
     // The rule the approval writes, as policy.yaml will hold it, read from
     // the server once the checkboxes settle; it also says when OpenShell
     // would refuse it.
-    previewReview() {
-      const r = this.reviewing;
-      if (!r || !r.built?.scope || this.mutating || !state.authorized) return;
+    previewReview(r) {
+      if (!r.built?.scope || this.mutating || !state.authorized) return;
       const body = { requestId: r.p.id, digest: r.p.digest, scope: r.built.scope };
       const key = JSON.stringify(body);
       if (r.previewKey === key) return;
       r.previewKey = key;
-      clearTimeout(this.previewTimer);
-      this.previewTimer = setTimeout(async () => {
+      clearTimeout(r.previewTimer);
+      r.previewTimer = setTimeout(async () => {
         let preview;
         try {
           const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/preview', { method: 'POST', body: JSON.stringify(body), timeoutMs: 30000 });
@@ -2664,24 +2626,22 @@
         } catch (error) {
           preview = { yaml: '', error: error.message, raw: error.raw || '' };
         }
-        if (this.disposed || this.reviewing !== r || r.previewKey !== key) return;
+        if (this.disposed || this[r.slot] !== r || r.previewKey !== key) return;
         // A refusal keeps the credentials the last preview said.
         r.preview = preview.grants ? preview : { ...preview, grants: r.preview?.grants };
         const lines = preview.yaml ? ['network_policies:', ...preview.yaml.replace(/\n$/, '').split('\n').map((l) => '+   ' + l)] : [];
         r.diff.replaceChildren(...lines.map((l, i) => element('span', i ? 'diff-add' : 'diff-ctx', l + '\n')));
-        this.updateReview();
+        this.updateReview(r);
       }, 250);
     }
 
-    async approveReview() {
-      const r = this.reviewing;
-      if (!r?.built?.scope || this.mutating || !state.authorized) return;
+    async approveReview(r) {
+      if (!r.built?.scope || this.mutating || !state.authorized) return;
       await this.post('/proposals/approve', { requestId: r.p.id, digest: r.p.digest, scope: r.built.scope }, t('policy.approve.done'));
     }
 
-    async rejectReview() {
-      const r = this.reviewing;
-      if (!r || this.mutating || !state.authorized) return;
+    async rejectReview(r) {
+      if (this.mutating || !state.authorized) return;
       const body = { requestId: r.p.id, digest: r.p.digest };
       const reason = String(r.reason.value || '').trim();
       if (reason) body.reason = reason;
@@ -2698,24 +2658,42 @@
       });
     }
 
-    async approveRejected(item) {
-      if (this.mutating || this.refreshing || !state.authorized) return;
-      const name = JSON.stringify(this.sandbox.name);
-      // The credential it carries by default is named, and sent only then.
-      const token = item.attach.length ? '\n\n' + t('policy.approve.rejectedToken', { provider: [...new Set(item.attach.map((a) => a.provider))].join(', '), where: item.attach.map((a) => a.host + a.path).join(', ') }) : '';
-      if (!(await askApprove(t('policy.approve.rejectedQuestion', { name }) + '\n' + item.summary + '\n\n' + t('policy.approve.rejectedEffect') + token, item))) return;
-      await this.post('/proposals/approve', { requestId: item.id, digest: item.digest, scope: { binaries: ['/**'], attach: item.attach.length > 0 } }, t('policy.approve.done'));
+    // The rejected list; the proposal opened in it stays through the
+    // renders that change nothing (its keyboard focus, the diff opened).
+    renderRejected(data) {
+      const all = data?.available ? data.rejected : [];
+      const shown = this.allRejected ? all : all.slice(0, 10);
+      const open = shown.find((p) => p.id === this.rejectedId);
+      if (!open) {
+        if (data?.available) this.rejectedId = '';
+        this.rejectedReview = null;
+      }
+      if (open) this.checkHosts(open);
+      const review = open ? this.reviewNode('rejectedReview', open) : null;
+      const key = JSON.stringify([all.length, shown, this.rejectedId, this.allRejected, this.mutating, state.authorized, window.IwatoI18n.language(), formatTime(0)]);
+      if (key === this.rejectedKey) return;
+      this.rejectedKey = key;
+      const focused = review?.contains(document.activeElement) ? document.activeElement : null;
+      this.rejected.replaceChildren();
+      if (!all.length) return;
+      this.rejected.append(element('h4', 'policy-sec-title', t('policy.rejected.title', { count: all.length })));
+      for (const p of shown) this.rejected.append(this.proposalNode(p, p === open ? review : null));
+      if (all.length > 10) {
+        this.rejected.append(button('button-subtle policy-more-rejected', this.allRejected ? t('policy.rejected.fewer') : t('policy.rejected.more', { count: all.length - 10 }), () => { this.allRejected = !this.allRejected; this.render(); }));
+      }
+      focused?.focus();
     }
 
-    renderRejected(data) {
-      this.rejected.replaceChildren();
-      if (!data?.available || !data.rejected.length) return;
-      this.rejected.append(element('h4', 'policy-sec-title', t('policy.rejected.title', { count: data.rejected.length })));
-      const shown = this.allRejected ? data.rejected : data.rejected.slice(0, 10);
-      for (const p of shown) this.rejected.append(this.proposalNode(p));
-      if (data.rejected.length > 10) {
-        this.rejected.append(button('button-subtle policy-more-rejected', this.allRejected ? t('policy.rejected.fewer') : t('policy.rejected.more', { count: data.rejected.length - 10 }), () => { this.allRejected = !this.allRejected; this.render(); }));
-      }
+    openRejected(p) {
+      if (this.mutating || !state.authorized) return;
+      this.rejectedId = p.id;
+      this.render();
+      this.rejectedReview?.node.scrollIntoView?.({ block: 'nearest' });
+    }
+
+    closeRejected() {
+      this.rejectedId = '';
+      this.render();
     }
 
     renderPolicy(policy) {
