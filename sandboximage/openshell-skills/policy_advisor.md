@@ -1,5 +1,8 @@
-<!-- From NVIDIA OpenShell v0.1.6 (crates/openshell-supervisor-process/src/skills/policy_advisor.md), Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES, Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0). Modified by Iwato: this comment and the section "Iwato additions" at the end were added. -->
+<!-- From NVIDIA OpenShell v0.1.6 (crates/openshell-supervisor-process/src/skills/policy_advisor.md), Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES, Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0). Modified by Iwato: this comment, the note under the title and the section "Iwato additions" at the end were added. -->
 # OpenShell Policy Advisor
+
+**In Iwato, "Iwato additions" at the end comes first:** where it differs from
+the text below (exact binaries, auto-approval), follow it.
 
 Use this when OpenShell blocks a network request and the response or logs say
 `policy_denied`.
