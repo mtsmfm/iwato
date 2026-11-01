@@ -2078,6 +2078,7 @@
       this.store = null;
       // The opened proposal, and the host checks of the proposals' hosts.
       this.selected = '';
+      this.wanted = '';
       this.reviewing = null;
       this.hostChecks = new Map();
       // The rejected proposal opened to approve it.
@@ -2393,11 +2394,13 @@
         this.reviewing = null;
         return;
       }
+      // The list's poll can know a proposal before this snapshot does.
+      if (items.some((p) => p.id === this.wanted)) { this.selected = this.wanted; this.wanted = null; }
       if (!items.some((p) => p.id === this.selected)) this.selected = items[0].id;
       for (const p of items) this.checkHosts(p);
       const focused = parts.list.contains(document.activeElement) ? document.activeElement.dataset?.review : '';
       parts.list.replaceChildren(...items.map((p) => {
-        const item = button('review-item', '', () => { this.selected = p.id; this.render(); this.reviewing?.node.scrollIntoView?.({ block: 'nearest' }); });
+        const item = button('review-item', '', () => { this.selected = p.id; this.wanted = null; this.render(); this.reviewing?.node.scrollIntoView?.({ block: 'nearest' }); });
         item.className = 'review-item';
         item.dataset.review = p.id;
         item.setAttribute('aria-current', String(p.id === this.selected));
@@ -5008,7 +5011,7 @@
       const fresh = waiting.some((p) => !this.proposalsLater.has(p.id));
       this.proposalBar.hidden = !fresh || this.root.dataset.tab === 'policy';
       if (this.proposalBar.hidden) return;
-      const p = waiting[0];
+      const p = this.nextProposal(waiting);
       const where = p.endpoints.map((e) => (e.host || t('policy.anyHost')) + (e.ports.length ? ':' + e.ports.join(',') : '')).join(', ') || p.summary || p.rule;
       const program = p.binaries[0] ? ' (' + p.binaries[0].split('/').pop() + (p.binaries.length > 1 ? t('policy.more', { count: p.binaries.length - 1 }) : '') + ')' : '';
       this.proposalText.textContent = t('proposalBar.text', { count: waiting.length, what: where + program });
@@ -5016,10 +5019,15 @@
       this.proposalReview.disabled = !state.authorized;
     }
 
-    // The policy tab, with the first of the agent's proposals opened.
+    // The proposal the line names: the first not put off with あとで.
+    nextProposal(waiting) {
+      return waiting.find((p) => !this.proposalsLater.has(p.id)) || waiting[0];
+    }
+
+    // The policy tab, with the proposal the line names opened.
     reviewProposals() {
-      const first = this.waitingProposals()[0];
-      if (first) this.policy.selected = first.id;
+      const next = this.nextProposal(this.waitingProposals());
+      if (next) this.policy.wanted = next.id;
       this.policy.showView('list');
       this.selectTab('policy');
     }

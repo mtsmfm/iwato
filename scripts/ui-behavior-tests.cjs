@@ -686,9 +686,14 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, source: 'auto'}]})); await readPolicy(tabbed); assert.equal(policyTab.children[0].hidden, true); assert.notEqual(tabbed.policy().dataset.state, 'pending-approval', 'only automatic proposals are not the waiting state'); assert.match(tabbed.policy().children[0].children[1].textContent, /自動提案 1 件/);
   { // Hidden, the tab follows the list's pending proposals, without reading the whole policy.
     const listWith = (pending) => () => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: '', pending}]});
-    const bar = tabbed.card().children.find((n) => n.className === 'proposal-bar'); const reads = proposalReads(tabbed).length;
+    const bar = tabbed.card().children.find((n) => n.className === 'proposal-bar'); let reads = proposalReads(tabbed).length;
     tabbed.setSandboxHandler(listWith([...proposalItem.pending, {...proposal, id: 'e'.repeat(32)}, {...proposal, id: 'f'.repeat(32), source: 'auto'}])); await tabbed.tickPoll();
     assert.equal(policyTab.children[0].textContent, '2'); assert.equal(tabbed.document.title, '(2) Iwato'); assert.equal(bar.hidden, false, 'a new proposal brings the line back'); assert.equal(proposalReads(tabbed).length, reads);
+    // 確認 opens the proposal the line names, which the tab's last read does not have yet.
+    tabbed.setProposalHandler(() => response({...proposalItem, pending: [...proposalItem.pending, {...proposal, id: 'e'.repeat(32)}]}));
+    assert.match(bar.children[0].textContent, /./); bar.children[1].click(); await flush(); await flush();
+    assert.equal(nodes(tabbed.card()).find((n) => n.dataset?.review && n.getAttribute?.('aria-current') === 'true')?.dataset.review, 'e'.repeat(32), '確認 opens the new proposal');
+    tabbed.setProposalHandler(() => response(proposalItem)); termTab.click(); await flush(); reads = proposalReads(tabbed).length;
     tabbed.setSandboxHandler(listWith([])); await tabbed.tickPoll(); assert.equal(policyTab.children[0].hidden, true); assert.equal(tabbed.document.title, 'Iwato');
     tabbed.setSandboxHandler(() => response({fake: false, sandboxes: [{name: 'api', status: 'stopped', detail: ''}]})); await tabbed.tickPoll(); assert.equal(proposalReads(tabbed).length, reads, 'a stopped sandbox keeps what was read'); }
   ok('proposals live in the card\'s policy tab; its badge and the page title count the agent\'s ones waiting for the owner');
