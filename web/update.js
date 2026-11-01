@@ -131,13 +131,17 @@
           if (target) await api('/api/update/switch', { method: 'POST', body: JSON.stringify({ tag: target.tag, commit: target.build.commit }) });
           else await api('/api/update/apply', { method: 'POST', body: JSON.stringify({ commit: this.data.latest.commit }) });
         } catch (error) {
-          this.fail(error.message);
-          authFailed(error);
-          return;
+          // An earlier try or another tab is at it: follow that one.
+          if (error.code !== 'update_busy') {
+            this.fail(error.message);
+            authFailed(error);
+            return;
+          }
         }
-        // The server goes away while it restarts; the same login comes back with it.
+        // The server goes away while it restarts; the same login comes back
+        // with it. The server gives a download 30 minutes.
         const started = Date.now();
-        while (Date.now() - started < 5 * 60 * 1000) {
+        while (Date.now() - started < 35 * 60 * 1000) {
           await sleep(1500);
           let v;
           try {

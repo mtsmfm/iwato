@@ -2654,6 +2654,20 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   down = false; current = {version: '0.3.0', commit: 'abcdef1'}; await tick();
   assert.equal(reloaded, 1, 'the new server answers: the page reloads');
   ok('update: the button, the gateway dialog with the sandboxes that restart, CSRF, the wait and the reload');
+  // An update already running answers busy: the dialog follows it instead of failing.
+  const busy = await environment({status: 'running'});
+  busy.setSandboxHandler(() => response({fake: true, sandboxes: [{...busy.sandbox}], server: {version: '0.3.0', commit: '98cb328'}, update: next}));
+  await busy.tickPoll();
+  busy.setUpdateHandler((path) => path === '/api/update/apply'
+    ? response({error: '更新しています', code: 'update_busy'}, 409)
+    : response({enabled: true, current: {version: '0.3.0', commit: '98cb328'}, latest: next, supported: true, gateway: true, restart: [], phase: 'downloading'}));
+  busy.document.body = new Element();
+  busy.els['update-button'].click(); await flush();
+  const busyDialog = walk(busy.document.body, (n) => n.className.includes('update-dialog'))[0];
+  walk(busyDialog, (n) => n.tagName === 'button' && n.textContent === '更新')[0].click(); await flush();
+  assert.equal(walk(busyDialog, (n) => n.attributes.role === 'status')[0].textContent, 'ダウンロードしています…', 'no failure');
+  assert([...busy.timeouts.values()].some((timer) => timer.ms === 1500), 'it polls the running update');
+  ok('update: a running update is followed, not reported as a failure');
   }
   {
   // A pull request's build: trying one from edge (its full head commit and
