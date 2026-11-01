@@ -322,13 +322,22 @@ func (u *selfUpdate) get(ctx context.Context, target string, w io.Writer, limit 
 	if err != nil || !u.allowed(t) {
 		return fmt.Errorf("refused URL %s", target)
 	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stall := time.AfterFunc(updateStall, func() { cancel(errUpdateStalled) })
+	defer stall.Stop()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return err
 	}
 	res, err := u.client.Do(req)
 	if err != nil {
-		return err
+		// A redirect's URL is signed: the error goes to the log and the page.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			ue.URL, _, _ = strings.Cut(ue.URL, "?")
+		}
+		return stalled(ctx, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusNotFound {
@@ -340,11 +349,39 @@ func (u *selfUpdate) get(ctx context.Context, target string, w io.Writer, limit 
 	if res.ContentLength > limit {
 		return fmt.Errorf("GET %s: too large", target)
 	}
-	n, err := io.Copy(w, io.LimitReader(res.Body, limit+1))
+	n, err := io.Copy(w, io.LimitReader(stallReader{res.Body, stall}, limit+1))
 	if err == nil && n > limit {
 		err = fmt.Errorf("GET %s: too large", target)
 	}
+	return stalled(ctx, err)
+}
+
+// updateStall is how long a request may go without data before it fails,
+// so that a dead connection does not hold the update for its whole limit.
+var updateStall = time.Minute
+
+var errUpdateStalled = errors.New("no data for a while")
+
+// stalled names the stall as the cause of err, when it was.
+func stalled(ctx context.Context, err error) error {
+	if err != nil && errors.Is(context.Cause(ctx), errUpdateStalled) {
+		return errUpdateStalled
+	}
 	return err
+}
+
+// stallReader restarts the stall timer on every read that brings data.
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.timer.Reset(updateStall)
+	}
+	return n, err
 }
 
 func (u *selfUpdate) fetchMeta(ctx context.Context, tag string) (buildMeta, error) {

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -253,5 +255,27 @@ func TestUpdatePRGone(t *testing.T) {
 	r := testUpdateOn(t, srv, "release")
 	if err := r.switchTo(context.Background(), "edge", strings.Repeat("2", 40)); err == nil {
 		t.Error("a release build switched")
+	}
+}
+
+func TestUpdateGetStalls(t *testing.T) {
+	old := updateStall
+	updateStall = 50 * time.Millisecond
+	t.Cleanup(func() { updateStall = old })
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("start"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	u := testUpdate(t, srv)
+	err := u.get(context.Background(), srv.URL+"/asset", io.Discard, 1024)
+	if !errors.Is(err, errUpdateStalled) {
+		t.Fatalf("err = %v", err)
 	}
 }
