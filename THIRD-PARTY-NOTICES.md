@@ -18,7 +18,7 @@ Go modules (sources and checksums: `go.mod`, `go.sum`):
 From [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) v0.1.6, Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES, Apache-2.0 (full text in `LICENSES/Apache-2.0.txt`). OpenShell v0.1.6 ships no NOTICE file. Files below that Iwato changed say so in their headers or in the notes here:
 
 - the compute driver and extension protos in `internal/openshell/proto/` (unmodified) and the Go code generated from them (`internal/openshell/computev1/`, `internal/openshell/extensionv1/`)
-- the Policy Advisor guide in `sandboximage/openshell-skills/`: `policy-advisor/SKILL.md` unmodified; `policy_advisor.md` modified (the section "Iwato additions" at its end is Iwato's own). Each has a header comment naming its source; the image ships the license next to them (`LICENSE-Apache-2.0.txt`)
+- the Policy Advisor guide in `sandboximage/openshell-skills/`: `policy-advisor/SKILL.md` unmodified; `policy_advisor.md` modified (the note under its title and the section "Iwato additions" at its end are Iwato's own). Each has a header comment naming its source; the image ships the license next to them (`LICENSE-Apache-2.0.txt`)
 - `profiles/iwato-github.yaml` and `profiles/iwato-openrouter.yaml` are adapted from `providers/github.yaml` and `providers/openrouter.yaml` (the changes are listed in their headers); the fake's `openai` profile (`fake_providers.go`) is `providers/openai.yaml`
 - ports to Go of OpenShell code: the WSLc compute driver `internal/openshell/wslc/` follows the Docker driver (`crates/openshell-driver-docker`), and `endpoint_ambiguity.go` the endpoint ambiguity check (`crates/openshell-policy/src/ambiguity.rs`)
 - the patch and scripts in `docs/dev/upstream/` modify or drive OpenShell
