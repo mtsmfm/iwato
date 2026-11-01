@@ -2,7 +2,7 @@
 # OpenShell Policy Advisor
 
 **In Iwato, "Iwato additions" at the end comes first:** where it differs from
-the text below (exact binaries, auto-approval), follow it.
+the text below (exact binaries, auto-approval, git), follow it.
 
 Use this when OpenShell blocks a network request and the response or logs say
 `policy_denied`.
@@ -237,6 +237,9 @@ needs.
   write a helper or rebuild anything to fit a rule.
 - **A proposal cannot carry a credential.** The owner attaches a provider's
   token when approving; say in `intent_summary` when the request needs it.
+- **git over HTTPS is inspected.** Despite step 4, propose a REST rule with the
+  repository's paths, such as `POST /OWNER/REPO.git/git-receive-pack` on
+  `github.com:443`. A token cannot be attached to an uninspected rule.
 - **Versions are `*`.** Write a version number in a URL path as `*`, so the
   rule keeps working after an update and the next version does not need
   another approval: `/go/go*.linux-amd64.tar.gz`. `*` matches one path
