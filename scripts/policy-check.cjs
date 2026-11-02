@@ -442,9 +442,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await inTerminal('deny lost.example', 'propose lost.example', 'deny lost.example');
     const lostNote = panel.locator('.policy-lost');
     await lostNote.waitFor();
-    check(/^OpenShell が自動で却下して、代わりの提案も残っていないものが 1 件あります: lost\.example。あなたはまだ決めていません。/.test(await lostNote.innerText()), 'a proposal lost to a draft is called out: ' + await lostNote.innerText());
+    check(/^lost\.example の提案 \(1 件\) は、確認する前に自動で取り下げられました。/.test(await lostNote.innerText()), 'a proposal lost to a draft is called out: ' + await lostNote.innerText());
     const lostRow = rejectedList.locator('.proposal-item').first();
-    check(hostRE(/lost\.example/).test(await lostRow.locator('.proposal-where').innerText()) && /^あなたはまだ決めていません。代わりの提案も残っていません。/m.test(await lostRow.locator('.proposal-lost').innerText()), 'it heads the rejected list, with why');
+    check(hostRE(/lost\.example/).test(await lostRow.locator('.proposal-where').innerText()) && /^確認する前に自動で取り下げられました。/m.test(await lostRow.locator('.proposal-lost').innerText()), 'it heads the rejected list, with why');
     await page.screenshot({ path: path.join(dir, 'lost.png') });
     await lostRow.getByRole('button', { name: '承認する', exact: true }).click();
     await lostRow.locator('.review-detail').getByRole('button', { name: '承認', exact: true }).click();
