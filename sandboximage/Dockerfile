@@ -40,7 +40,7 @@
 # run time (no s6 /init, no writes to /etc, no ldconfig). Root is used only
 # here, to install. A failure in the desktop steps fails the whole build, with a
 # message saying which step: do not make them optional.
-FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends bash bash-completion ca-certificates git gh tmux curl ripgrep less fzf zoxide eza bat jq python3 brotli \
     && rm -rf /var/lib/apt/lists/* \
