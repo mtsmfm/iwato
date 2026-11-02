@@ -594,6 +594,13 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       const toast = page.locator('#shortcut-toast');
       const was = await tab();
       typed = '';
+      // Alt+1–9: the Nth terminal of the shown sandbox.
+      await page.keyboard.press('Alt+1');
+      await page.waitForTimeout(400);
+      check(await tab() === 0 && await onShown(), 'Alt+1 shows the first terminal with the keyboard');
+      await page.keyboard.press('Alt+' + (was + 1));
+      await page.waitForTimeout(400);
+      check(await tab() === was && await onShown() && typed === '', 'Alt+' + (was + 1) + ' shows that terminal, and nothing is typed');
       await page.keyboard.press('Control+2');
       await page.waitForTimeout(400);
       check(await shown() === names[1], 'Ctrl+2 shows ' + names[1]);
