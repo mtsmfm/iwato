@@ -81,6 +81,70 @@ func TestPolicyYAMLRoutes(t *testing.T) {
 	}
 }
 
+// The editor shows bindings and a save does what its text says: unchanged
+// is no change, a line taken out is named, and a new one is checked.
+func TestPolicyYAMLBindings(t *testing.T) {
+	_, _, do := providerServer(t)
+	if code, body := do("POST", "/api/sandboxes/dev/start", `{}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	type loaded struct {
+		Version uint32 `json:"version"`
+		YAML    string `json:"yaml"`
+	}
+	load := func() loaded {
+		var got loaded
+		code, body := do("GET", "/api/sandboxes/dev/policy/yaml", "")
+		if code != 200 || json.Unmarshal([]byte(body), &got) != nil {
+			t.Fatal(code, body)
+		}
+		return got
+	}
+	post := func(version uint32, yaml string, apply bool) (int, string, PolicyYAMLDiff) {
+		b, _ := json.Marshal(map[string]any{"version": version, "yaml": yaml, "apply": apply})
+		code, body := do("POST", "/api/sandboxes/dev/policy/yaml", string(b))
+		var v struct {
+			Diff PolicyYAMLDiff `json:"diff"`
+		}
+		json.Unmarshal([]byte(body), &v)
+		return code, body, v.Diff
+	}
+	const line = "        credential_binding:\n          provider: huggingface\n"
+	bind := func(doc, host string) string {
+		at := "- host: " + host + "\n"
+		if !strings.Contains(doc, at) {
+			t.Fatal(doc)
+		}
+		return strings.Replace(doc, at, at+line, 1)
+	}
+	got := load()
+	if code, body, _ := post(got.Version, bind(got.YAML, "registry.npmjs.org"), false); code != 409 || !strings.Contains(body, "binding_not_attached") {
+		t.Fatal("not attached:", code, body)
+	}
+	if code, body := do("POST", "/api/sandboxes/dev/providers/attach", `{"provider":"huggingface"}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	got = load()
+	if code, body, _ := post(got.Version, bind(got.YAML, "pypi.org"), false); code != 409 || !strings.Contains(body, "policy_yaml_binding_not_inspected") {
+		t.Fatal("not inspected:", code, body)
+	}
+	edited := bind(got.YAML, "registry.npmjs.org")
+	if code, body, diff := post(got.Version, edited, true); code != 200 || len(diff.Bound) != 1 || diff.Bound[0].Provider != "huggingface" {
+		t.Fatal("bind:", code, body)
+	}
+	got = load()
+	if !strings.Contains(got.YAML, line) {
+		t.Fatal(got.YAML)
+	}
+	if code, body, _ := post(got.Version, got.YAML, false); code != 409 || !strings.Contains(body, "policy_yaml_unchanged") {
+		t.Fatal("unchanged:", code, body)
+	}
+	code, body, diff := post(got.Version, strings.Replace(got.YAML, line, "", 1), false)
+	if code != 200 || len(diff.Changed) != 1 || len(diff.Unbound) != 1 || diff.Unbound[0].Host != "registry.npmjs.org:443" || diff.Unbound[0].Provider != "huggingface" {
+		t.Fatal("unbind:", code, body)
+	}
+}
+
 // A save during which a change landed elsewhere (between Iwato's version
 // check and the gateway's update) says that change may be gone.
 func TestPolicyYAMLWarnsOfAnOverwrite(t *testing.T) {

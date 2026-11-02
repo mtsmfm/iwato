@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -133,24 +134,13 @@ func (s *Server) setPolicyBinding(ctx context.Context, w http.ResponseWriter, r 
 		return
 	}
 	rt, ok := s.rt.(providerPolicyRuntime)
-	prt, hasProviders := s.rt.(providerRuntime)
-	if !ok || !hasProviders {
+	if !ok {
 		fail(w, 409, "policy unavailable")
 		return
 	}
 	if b.Provider != "" {
-		list, attached, err := s.providerState(ctx, prt)
-		if err != nil {
-			failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(err)}, "プロバイダーを確かめられません: "+safeCLIError(err))
-			return
-		}
-		i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == b.Provider })
-		if !slices.Contains(attached[sb.Name], b.Provider) || i < 0 {
-			failCode(w, 409, "binding_not_attached", map[string]any{"provider": b.Provider}, b.Provider+" はこのサンドボックスに付いていません")
-			return
-		}
-		if _, ok := builtinProfile(list[i].Profile); !ok {
-			failCode(w, 409, "binding_profile_endpoints", map[string]any{"provider": b.Provider}, b.Provider+" のプロファイルは宛先を持つので、OpenShell が自分で認証情報を付けます")
+		if err := s.bindingRefusal(ctx, sb, b.Provider); err != nil {
+			failErr(w, 409, err)
 			return
 		}
 	}
@@ -161,4 +151,25 @@ func (s *Server) setPolicyBinding(ctx context.Context, w http.ResponseWriter, r 
 	}
 	s.recordPolicyChange(sb.Name, change)
 	jsonResponse(w, 200, map[string]any{"ok": true, "version": change.Version})
+}
+
+// bindingRefusal says why an endpoint of sb cannot carry provider's
+// credential (nil when it can).
+func (s *Server) bindingRefusal(ctx context.Context, sb Sandbox, provider string) error {
+	rt, ok := s.rt.(providerRuntime)
+	if !ok {
+		return errors.New("policy unavailable")
+	}
+	list, attached, err := s.providerState(ctx, rt)
+	if err != nil {
+		return errCode("provider_unverifiable", map[string]any{"detail": safeCLIError(err)}, "プロバイダーを確かめられません: "+safeCLIError(err))
+	}
+	i := slices.IndexFunc(list, func(p ProviderInfo) bool { return p.Name == provider })
+	if !slices.Contains(attached[sb.Name], provider) || i < 0 {
+		return errCode("binding_not_attached", map[string]any{"provider": provider}, provider+" はこのサンドボックスに付いていません")
+	}
+	if _, ok := builtinProfile(list[i].Profile); !ok {
+		return errCode("binding_profile_endpoints", map[string]any{"provider": provider}, provider+" のプロファイルは宛先を持つので、OpenShell が自分で認証情報を付けます")
+	}
+	return nil
 }
