@@ -14,7 +14,7 @@ The switch at the top of the tab, which stays in place while you scroll, chooses
 
 - **Waiting for approval**: proposals waiting for you, the agent's first, with one opened beside them (below them on a phone; see [Approving](#approving)). **Reject all** rejects every one after a question
 - **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Rules of providers whose profile has destinations of its own (imported with OpenShell's CLI) are read-only. A rule whose destinations carry a provider's credential is marked **Credential: NAME**. For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
-- **Rejected proposals**
+- **Rejected proposals**. OpenShell rejects a waiting proposal on its own when a newer one for the same host, port and program comes, and a blocked request counts. When nothing is left in its place, the tab says so above the waiting list for a day; you have not decided it, and you can approve it here as proposed
 
 The tab also has: **Add a rule** (for every program, like approvals), adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, attaching or removing a provider's token on an endpoint whose host the provider's credential is meant for (**Attach / Remove NAME's token**), **History** (each change with its reason and diff; **Revert** undoes one as a new change, except the first), and **Presets**.
 

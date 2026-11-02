@@ -426,6 +426,55 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await box.waitFor({ state: 'detached' });
     }
 
+    // A blocked request while a proposal waits. OpenShell's draft for an
+    // endpoint it already drafted rejects the proposal and leaves nothing:
+    // the page says so, and the proposal can still be approved.
+    const inTerminal = async (...cmds) => {
+      await term.click();
+      for (const cmd of cmds) {
+        await card.locator('.iw-input').focus();
+        await page.keyboard.type(cmd);
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(300);
+      }
+      await card.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    };
+    await inTerminal('deny lost.example', 'propose lost.example', 'deny lost.example');
+    const lostNote = panel.locator('.policy-lost');
+    await lostNote.waitFor();
+    check(/^OpenShell が自動で却下して、代わりの提案も残っていないものが 1 件あります: lost\.example。あなたはまだ決めていません。/.test(await lostNote.innerText()), 'a proposal lost to a draft is called out: ' + await lostNote.innerText());
+    const lostRow = rejectedList.locator('.proposal-item').first();
+    check(hostRE(/lost\.example/).test(await lostRow.locator('.proposal-where').innerText()) && /^あなたはまだ決めていません。代わりの提案も残っていません。/m.test(await lostRow.locator('.proposal-lost').innerText()), 'it heads the rejected list, with why');
+    await page.screenshot({ path: path.join(dir, 'lost.png') });
+    await lostRow.getByRole('button', { name: '承認する', exact: true }).click();
+    await lostRow.locator('.review-detail').getByRole('button', { name: '承認', exact: true }).click();
+    await lostNote.waitFor({ state: 'hidden' });
+    check(true, 'approved from the list, it is no longer called out');
+    // Superseded during a batch: the same rule under a new chunk goes through
+    // that chunk; another rule stays out, and the page says why.
+    await inTerminal('propose copied.example', 'propose other.example');
+    await pickOf(/other\.example/).waitFor();
+    await page.route(/\/proposals\/approve-many$/, async (route) => {
+      await inTerminal('deny copied.example', 'refine other.example');
+      await route.continue();
+    });
+    const raceAnswer = page.waitForResponse((r) => /\/proposals\/approve-many$/.test(r.url()), { timeout: 30000 });
+    await many.click();
+    await dialog.waitFor();
+    await page.click('#confirm-ok');
+    const raceBody = await (await raceAnswer).json();
+    await page.unroute(/\/proposals\/approve-many$/);
+    check(raceBody.approved.length === 1 && raceBody.skipped.length === 1 && raceBody.skipped[0].code === 'proposal_superseded', 'the copy is approved, the other rule is skipped: ' + JSON.stringify(raceBody.skipped));
+    const supersededNote = panel.locator('.panel-error', { hasText: '1 件は承認しませんでした' });
+    await supersededNote.waitFor();
+    check(/^other\.example: 別の内容の提案に置き換えられたので、承認しませんでした。/m.test(await supersededNote.innerText()), 'the skipped one says why: ' + await supersededNote.innerText());
+    await item(/other\.example/).waitFor();
+    check(true, 'the proposal that replaced it waits');
+    await pending.getByRole('button', { name: 'まとめて却下' }).click();
+    await dialog.waitFor();
+    await page.click('#confirm-ok');
+    await pending.getByText('承認待ちはありません。').waitFor();
+
     // A rule by hand: two ports, methods and paths, audit.
     await current.getByRole('button', { name: '規則を追加', exact: true }).click();
     await dialog.waitFor();

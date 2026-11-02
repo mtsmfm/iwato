@@ -382,22 +382,102 @@ func fakeLogs() []v1.LogLine {
 }
 
 // fakeGateway answers OpenShell's policy API for the fake, so that the
+var fakeHost = regexp.MustCompile(`^[a-z0-9.-]{1,100}$`)
+
+func fakeRuleName(host string) string {
+	return "allow_" + strings.NewReplacer(".", "_", "-", "_").Replace(host) + "_443"
+}
+
+// fakeSupersede rejects the other pending chunks of id's endpoint, as the
+// gateway does after each submission, whatever state id is in. The caller
+// holds d.mu.
+func (d *Fake) fakeSupersede(sandbox, id string, now time.Time) {
+	chunks := d.fakeDraft(sandbox)
+	i := slices.IndexFunc(chunks, func(c v1.PolicyChunk) bool { return c.ID == id })
+	for j := range chunks {
+		if o := &chunks[j]; o.ID != id && o.Status == "pending" && sameEndpoint(*o, chunks[i]) {
+			o.Status, o.DecidedAt, o.RejectionReason = "rejected", now, supersededRejection+id
+		}
+	}
+}
+
+// fakeRefine is fakePropose with a rule of its own: reads under /v1 (the
+// fake terminal's refine HOST).
+func (d *Fake) fakeRefine(sandbox, host string) string {
+	if !fakeHost.MatchString(host) {
+		return "refine: bad host"
+	}
+	e := restEndpoint(host, 443)
+	e.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/v1/**"}}}
+	return d.fakeSubmit(sandbox, host, e)
+}
+
 // fakePropose adds an agent's pending proposal for HOST:443 (the fake
 // terminal's propose HOST).
 func (d *Fake) fakePropose(sandbox, host string) string {
-	if !regexp.MustCompile(`^[a-z0-9.-]{1,100}$`).MatchString(host) {
+	if !fakeHost.MatchString(host) {
 		return "propose: bad host"
 	}
+	return d.fakeSubmit(sandbox, host, l4Endpoint(host, 443))
+}
+
+func (d *Fake) fakeSubmit(sandbox, host string, e v1.PolicyNetworkEndpoint) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	chunks := d.fakeDraft(sandbox)
-	name := "allow_" + strings.NewReplacer(".", "_", "-", "_").Replace(host) + "_443"
+	name := fakeRuleName(host)
 	id := fmt.Sprintf("fake-propose-%d", len(chunks))
 	now := time.Now()
 	d.drafts[sandbox] = append(chunks, v1.PolicyChunk{ID: id, Status: "pending", RuleName: name, Binary: "/usr/bin/curl", Rationale: "propose " + host,
 		HitCount: 1, FirstSeen: now, LastSeen: now, CreatedAt: now, ReviewToken: "t-" + id,
-		ProposedRule: &v1.NetworkPolicyRule{Name: name, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint(host, 443)}}})
+		ProposedRule: &v1.NetworkPolicyRule{Name: name, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{e}}})
+	d.fakeSupersede(sandbox, id, now)
 	return "proposed " + name
+}
+
+// fakeDeny is a blocked curl to HOST:443 reaching the gateway as OpenShell's
+// draft (the fake terminal's deny HOST), with the gateway's two surprises.
+// The draft keeps one row per endpoint: a later denial only counts on it, in
+// whatever state it is, and still supersedes what waits. A first denial takes
+// the rule of the newest chunk of the endpoint if that one waits, so it
+// replaces an agent's proposal with a copy.
+func (d *Fake) fakeDeny(sandbox, host string) string {
+	if !fakeHost.MatchString(host) {
+		return "deny: bad host"
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	chunks := d.fakeDraft(sandbox)
+	now := time.Now()
+	if d.denied == nil {
+		d.denied = map[string]string{}
+	}
+	key := sandbox + "|" + host
+	if id, ok := d.denied[key]; ok {
+		i := slices.IndexFunc(chunks, func(c v1.PolicyChunk) bool { return c.ID == id })
+		chunks[i].HitCount++
+		chunks[i].LastSeen = now
+		d.fakeSupersede(sandbox, id, now)
+		return "denied " + host
+	}
+	id := fmt.Sprintf("fake-deny-%d", len(chunks))
+	name := fakeRuleName(host)
+	row := v1.PolicyChunk{ID: id, Status: "pending", RuleName: name, Binary: "/usr/bin/curl", Rationale: "Allow curl to connect to " + host + ":443 (HTTPS).",
+		HitCount: 1, FirstSeen: now, LastSeen: now, CreatedAt: now, ReviewToken: "t-" + id,
+		ProposedRule: &v1.NetworkPolicyRule{Name: name, Binaries: policyBinaries("/usr/bin/curl"), Endpoints: []v1.PolicyNetworkEndpoint{l4Endpoint(host, 443)}}}
+	newest := -1
+	for i, c := range chunks {
+		if sameEndpoint(c, row) && (newest < 0 || c.CreatedAt.After(chunks[newest].CreatedAt)) {
+			newest = i
+		}
+	}
+	if newest >= 0 && chunks[newest].Status == "pending" {
+		row.RuleName, row.ProposedRule = chunks[newest].RuleName, chunks[newest].ProposedRule
+	}
+	d.denied[key] = id
+	d.drafts[sandbox] = append(chunks, row)
+	d.fakeSupersede(sandbox, id, now)
+	return "denied " + host
 }
 
 // fakeDrift changes the policy as OpenShell's CLI would: a revision with a
@@ -430,8 +510,8 @@ func (g fakeGateway) chunk(sandbox, id string) (*v1.PolicyChunk, error) {
 }
 
 // GetDraft answers the chunks of the status asked for (all without one),
-// and, as the gateway, the draft version over all of them: the fake drafts
-// its proposals once, so it stays 1.
+// and, as the gateway, the draft version over all of them: it moves with
+// each new chunk.
 func (g fakeGateway) GetDraft(_ context.Context, _, sandbox string, opts ...v1.GetDraftOption) (*v1.DraftPolicy, error) {
 	g.d.gatewayCall("GetDraft")
 	g.d.mu.Lock()
@@ -444,11 +524,7 @@ func (g fakeGateway) GetDraft(_ context.Context, _, sandbox string, opts ...v1.G
 			chunks = append(chunks, c)
 		}
 	}
-	version := uint64(0)
-	if len(all) > 0 {
-		version = 1
-	}
-	return &v1.DraftPolicy{Chunks: chunks, DraftVersion: version}, nil
+	return &v1.DraftPolicy{Chunks: chunks, DraftVersion: uint64(len(all))}, nil
 }
 
 func (g fakeGateway) GetStatus(_ context.Context, _, sandbox string, opts ...v1.GetStatusOption) (*v1.PolicyStatusResult, error) {

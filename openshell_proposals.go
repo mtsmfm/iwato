@@ -130,16 +130,25 @@ func (o *OpenShell) Proposals(ctx context.Context, w Sandbox) (ProposalView, err
 		return v, err
 	}
 	v.Available = true
+	lost := lostProposals(chunks, time.Now())
 	for _, c := range chunks {
 		switch c.Status {
 		case "pending":
 			v.Pending = append(v.Pending, pendingProposal(requestID(c.ID), c))
 		case "rejected":
-			v.Rejected = append(v.Rejected, rejectedProposal(c))
+			r := rejectedProposal(c)
+			r.Lost = lost[c.ID]
+			v.Rejected = append(v.Rejected, r)
 		}
 	}
 	sort.Slice(v.Pending, func(i, j int) bool { return v.Pending[i].CreatedAt < v.Pending[j].CreatedAt })
-	sort.SliceStable(v.Rejected, func(i, j int) bool { return v.Rejected[i].DecidedAt > v.Rejected[j].DecidedAt })
+	sort.SliceStable(v.Rejected, func(i, j int) bool {
+		a, b := v.Rejected[i], v.Rejected[j]
+		if a.Lost != b.Lost {
+			return a.Lost
+		}
+		return a.DecidedAt > b.DecidedAt
+	})
 	if len(v.Rejected) > maxRejected {
 		v.Rejected = v.Rejected[:maxRejected]
 	}
@@ -403,6 +412,14 @@ const approvalBudget = 90 * time.Second
 // proposal the policy now covers (reconcile_pending_chunks_covered_by_policy).
 const coveredRejection = "covered by active policy revision "
 
+// supersededRejection starts OpenShell's reason when a newer submission for
+// the same host, port and program replaced a pending proposal; the chunk id
+// follows.
+const supersededRejection = "superseded by chunk "
+
+// lostFor is how long a lost proposal (lostProposals) is called out.
+const lostFor = 24 * time.Hour
+
 // ProposalApproval is one proposal of a batch, as DecideProposal takes it.
 type ProposalApproval struct {
 	ID     string         `json:"id"`
@@ -522,7 +539,10 @@ func sameName(c, shown v1.PolicyChunk) v1.PolicyChunk {
 // may have changed it), and approves it into rules. OpenShell rejects a
 // pending proposal an approval just covered: approved anyway, so that its
 // /wait answers approved; as proposed in OpenShell, whose policy covers it
-// already, and narrowed by its scope in the repository.
+// already, and narrowed by its scope in the repository. A proposal superseded
+// since the owner saw it goes through the chunk that holds it now, when that
+// is the same rule and still undecided (latestChunk); a rejected chunk goes as
+// proposed.
 func (o *OpenShell) approveItem(ctx context.Context, w Sandbox, pol v1.PolicyInterface, rules map[string]v1.NetworkPolicyRule, it ProposalApproval, shown v1.PolicyChunk, check approvalCheck) (PolicyChange, error) {
 	none := PolicyChange{}
 	chunk, _, err := draftChunk(ctx, pol, w.Name, it.ID, "pending", "rejected", "approved")
@@ -533,11 +553,27 @@ func (o *OpenShell) approveItem(ctx context.Context, w Sandbox, pol v1.PolicyInt
 		return none, errCode("request_not_found", nil, "この依頼は見つかりません")
 	}
 	covered := chunk.Status == "rejected" && strings.HasPrefix(chunk.RejectionReason, coveredRejection)
-	if chunk.Status != "pending" && !covered {
+	superseded := chunk.Status == "rejected" && strings.HasPrefix(chunk.RejectionReason, supersededRejection)
+	if chunk.Status != "pending" && !covered && !superseded {
 		return none, errCode("request_decided", nil, "この依頼は決定済みです")
 	}
 	if it.Digest != proposalDigest(sameName(*chunk, shown)) {
 		return none, errProposalChanged()
+	}
+	if superseded {
+		draft, err := pol.GetDraft(ctx, openshellWorkspace, w.Name)
+		if err != nil {
+			return none, err
+		}
+		if latest := latestChunk(*chunk, chunkIndex(draft.Chunks)); latest.ID != chunk.ID {
+			if latest.Status != "pending" && !strings.HasPrefix(latest.RejectionReason, supersededRejection) {
+				return none, errCode("proposal_superseded_decided", nil, "別の提案に置き換えられ、その提案はもう決定済みです")
+			}
+			if proposalDigest(sameName(latest, *chunk)) != proposalDigest(*chunk) {
+				return none, errCode("proposal_superseded", nil, "別の内容の提案に置き換えられたので、承認しませんでした。新しい提案を確かめてください")
+			}
+			chunk = &latest
+		}
 	}
 	if chunk.ProposedRule == nil {
 		return none, errCode("proposal_empty", nil, "この提案には規則がありません")
@@ -546,6 +582,10 @@ func (o *OpenShell) approveItem(ctx context.Context, w Sandbox, pol v1.PolicyInt
 	if err != nil {
 		return none, err
 	}
+	rejected := chunk.Status == "rejected"
+	if rejected && !covered && scope.narrows() {
+		return none, errCode("rejected_as_proposed", nil, "却下した提案は OpenShell では提案どおりにしか承認できません")
+	}
 	if check != nil {
 		proposed := *chunk.ProposedRule
 		proposed.Name = cmp.Or(proposed.Name, chunk.RuleName)
@@ -553,7 +593,75 @@ func (o *OpenShell) approveItem(ctx context.Context, w Sandbox, pol v1.PolicyInt
 			return none, err
 		}
 	}
-	return o.approveInto(ctx, w, pol, rules, chunk, scope, covered, proposalDigest(*chunk))
+	return o.approveInto(ctx, w, pol, rules, chunk, scope, rejected, proposalDigest(*chunk))
+}
+
+// chunkIndex is the chunks by their ID.
+func chunkIndex(chunks []v1.PolicyChunk) map[string]v1.PolicyChunk {
+	m := make(map[string]v1.PolicyChunk, len(chunks))
+	for _, c := range chunks {
+		m[c.ID] = c
+	}
+	return m
+}
+
+// latestChunk follows c's supersede reasons to the chunk that holds the
+// decision now. A blocked request that folds into OpenShell's existing draft
+// for the endpoint supersedes the waiting proposal even when that draft was
+// decided long ago: such a chunk replaced nothing, so the chain ends before
+// it. Two chunks can then name each other.
+func latestChunk(c v1.PolicyChunk, chunks map[string]v1.PolicyChunk) v1.PolicyChunk {
+	seen := map[string]bool{c.ID: true}
+	for c.Status == "rejected" {
+		id, ok := strings.CutPrefix(c.RejectionReason, supersededRejection)
+		next, known := chunks[id]
+		if !ok || !known || seen[id] || next.Status != "pending" && next.DecidedAt.Before(c.DecidedAt) {
+			break
+		}
+		seen[id] = true
+		c = next
+	}
+	return c
+}
+
+// sameEndpoint says whether two chunks share the key OpenShell supersedes
+// by: host, port and program.
+func sameEndpoint(a, b v1.PolicyChunk) bool {
+	key := func(c v1.PolicyChunk) (string, uint32) {
+		if c.ProposedRule == nil || len(c.ProposedRule.Endpoints) == 0 {
+			return "", 0
+		}
+		e := c.ProposedRule.Endpoints[0]
+		port := e.Port
+		if ports := endpointPorts(e); len(ports) > 0 {
+			port = ports[0]
+		}
+		return strings.ToLower(e.Host), port
+	}
+	ah, ap := key(a)
+	bh, bp := key(b)
+	return ah != "" && ah == bh && ap == bp && a.Binary == b.Binary
+}
+
+// lostProposals are the chunks OpenShell rejected as superseded with nothing
+// left in their place: the end of a chain (latestChunk) that nothing waits
+// or was decided after, recently. Nobody decided them, and they can still be
+// approved as proposed.
+func lostProposals(chunks []v1.PolicyChunk, now time.Time) map[string]bool {
+	index := chunkIndex(chunks)
+	lost := map[string]bool{}
+	for _, c := range chunks {
+		if c.Status != "rejected" || !strings.HasPrefix(c.RejectionReason, supersededRejection) || now.Sub(c.DecidedAt) >= lostFor {
+			continue
+		}
+		newer := slices.ContainsFunc(chunks, func(o v1.PolicyChunk) bool {
+			return o.ID != c.ID && sameEndpoint(o, c) && (o.Status == "pending" || o.DecidedAt.After(c.DecidedAt) || o.CreatedAt.After(c.DecidedAt))
+		})
+		if !newer && latestChunk(c, index).ID == c.ID {
+			lost[c.ID] = true
+		}
+	}
+	return lost
 }
 
 // approvalPlan is the rule approving chunk (narrowed by scope) adds to
@@ -937,13 +1045,15 @@ func pendingProposal(id string, c v1.PolicyChunk) PendingProposal {
 // after: HitsAfter is how many times since (-1 when unknown), SeenAfter
 // whether it came again at all. Auto names OpenShell's own rejections:
 // "superseded" (a newer proposal for the same host, port and program) or
-// "covered" (an approved proposal already covers it).
+// "covered" (an approved proposal already covers it). Lost: superseded with
+// nothing left in its place (lostProposals).
 type RejectedProposal struct {
 	PendingProposal
 	DecidedAt int64  `json:"decidedAt"`
 	HitsAfter int32  `json:"hitsAfter"`
 	SeenAfter bool   `json:"seenAfter"`
 	Auto      string `json:"auto,omitempty"`
+	Lost      bool   `json:"lost,omitempty"`
 }
 
 type rejectNoteKey struct{}
@@ -992,7 +1102,7 @@ func rejectedProposal(c v1.PolicyChunk) RejectedProposal {
 	r := RejectedProposal{PendingProposal: pendingProposal(requestID(c.ID), c), DecidedAt: unixOrZero(c.DecidedAt), HitsAfter: -1}
 	r.State = "rejected"
 	switch {
-	case strings.HasPrefix(c.RejectionReason, "superseded by chunk "):
+	case strings.HasPrefix(c.RejectionReason, supersededRejection):
 		r.Auto = "superseded"
 	case strings.HasPrefix(c.RejectionReason, "already covered by approved chunk "):
 		r.Auto = "covered"

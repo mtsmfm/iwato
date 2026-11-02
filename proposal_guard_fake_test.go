@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 )
@@ -124,6 +125,99 @@ func TestApproveManyCoveredProposal(t *testing.T) {
 	}
 	if f.chunks[0].Status != "approved" || f.chunks[1].Status != "rejected" {
 		t.Fatal(f.chunks[0].Status, f.chunks[1].Status)
+	}
+}
+
+// A blocked request while a proposal waits: OpenShell's draft takes its place
+// (the same rule under a new chunk), or, with an older draft for the endpoint,
+// rejects it and leaves nothing. What the owner picked still ends approved.
+func TestApproveManySupersededWhileReviewed(t *testing.T) {
+	_, d, do := providerServer(t)
+	if code, body := do("POST", "/api/sandboxes/dev/start", `{}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	ctx, w, o := context.Background(), newSandbox("dev"), d.openShell()
+	proposal := func(list []PendingProposal, rule string) PendingProposal {
+		t.Helper()
+		i := slices.IndexFunc(list, func(p PendingProposal) bool { return p.Rule == rule })
+		if i < 0 {
+			t.Fatalf("no %s in %+v", rule, list)
+		}
+		return list[i]
+	}
+	d.fakePropose("dev", "copied.example")
+	d.fakeDeny("dev", "older.example")
+	d.fakePropose("dev", "older.example")
+	v, err := o.Proposals(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied, older := proposal(v.Pending, "allow_copied_example_443"), proposal(v.Pending, "allow_older_example_443")
+	d.fakeDeny("dev", "copied.example")
+	d.fakeDeny("dev", "older.example")
+
+	v, err = o.Proposals(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lost []string
+	for _, r := range v.Rejected {
+		if r.Lost {
+			lost = append(lost, r.ID)
+		}
+	}
+	if !slices.Equal(lost, []string{older.ID}) || v.Rejected[0].ID != older.ID {
+		t.Fatalf("lost %v, rejected %+v", lost, v.Rejected)
+	}
+
+	batch, err := o.ApproveProposals(ctx, w, []ProposalApproval{{ID: copied.ID, Digest: copied.Digest}, {ID: older.ID, Digest: older.Digest}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Changes) != 2 || len(batch.Skipped) != 0 || batch.Changes[0].Request != copied.ID {
+		t.Fatalf("%+v", batch)
+	}
+	chunks := d.fakeDraft("dev")
+	state := map[string]string{}
+	for _, c := range chunks {
+		state[c.RuleName+" "+c.Rationale] = c.Status
+	}
+	if state["allow_copied_example_443 Allow curl to connect to copied.example:443 (HTTPS)."] != "approved" || state["allow_older_example_443 propose older.example"] != "approved" {
+		t.Fatalf("%+v", state)
+	}
+	p, err := o.currentPolicy(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"allow_copied_example_443", "allow_older_example_443"} {
+		if !slices.ContainsFunc(p.Rules, func(r PolicyRuleView) bool { return r.Name == name }) {
+			t.Fatalf("no rule %s", name)
+		}
+	}
+	if v, _ := o.Proposals(ctx, w); slices.ContainsFunc(v.Rejected, func(r RejectedProposal) bool { return r.Lost }) {
+		t.Fatalf("still lost: %+v", v.Rejected)
+	}
+}
+
+// One replaced by another rule, or by a proposal already decided, stays out
+// of the batch with a reason of its own.
+func TestApproveManySupersededByAnother(t *testing.T) {
+	rule := func(host string) *v1.NetworkPolicyRule {
+		return &v1.NetworkPolicyRule{Binaries: []v1.PolicyNetworkBinary{{Path: "/usr/bin/curl"}}, Endpoints: []v1.PolicyNetworkEndpoint{{Host: host, Port: 443, Ports: []uint32{443}}}}
+	}
+	early, late := time.Unix(100, 0), time.Unix(200, 0)
+	f := &fakePolicy{chunks: []v1.PolicyChunk{
+		{ID: "other", Status: "rejected", RejectionReason: supersededRejection + "wider", DecidedAt: early, ReviewToken: "t", RuleName: "r", Binary: "/usr/bin/curl", ProposedRule: rule("a.example.com")},
+		{ID: "wider", Status: "pending", ReviewToken: "t", RuleName: "r", Binary: "/usr/bin/curl", ProposedRule: rule("b.example.com")},
+		{ID: "decided", Status: "rejected", RejectionReason: supersededRejection + "owner", DecidedAt: early, ReviewToken: "t", RuleName: "s", Binary: "/usr/bin/curl", ProposedRule: rule("c.example.com")},
+		{ID: "owner", Status: "rejected", RejectionReason: rejectReason(1, ""), DecidedAt: late, ReviewToken: "t", RuleName: "s", Binary: "/usr/bin/curl", ProposedRule: rule("c.example.com")},
+	}}
+	o := &OpenShell{pol: f, sandboxConfig: f.sandboxConfig, logs: noLogs, updateConfig: f.update}
+	batch, err := o.ApproveProposals(context.Background(), newSandbox("dev"), []ProposalApproval{
+		{ID: requestID("other"), Digest: proposalDigest(f.chunks[0])}, {ID: requestID("decided"), Digest: proposalDigest(f.chunks[2])},
+	}, nil)
+	if err != nil || len(batch.Changes) != 0 || len(batch.Skipped) != 2 || batch.Skipped[0].Code != "proposal_superseded" || batch.Skipped[1].Code != "proposal_superseded_decided" {
+		t.Fatalf("%v %+v", err, batch)
 	}
 }
 

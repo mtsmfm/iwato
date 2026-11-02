@@ -63,10 +63,13 @@ func TestProposalsReadDecidedChunksOnlyWhenTheyMayHaveChanged(t *testing.T) {
 	lists(view(), 1, 2)
 	reads("1 0")
 
-	// A decision elsewhere (the CLI) shows once the kept ones are old.
+	// A chunk that stops waiting without a new draft version is read at once.
 	f.decide("p2", "rejected")
-	lists(view(), 0, 2)
-	o.drafts.m["dev"] = decidedDraft{version: o.drafts.m["dev"].version, at: time.Now().Add(-decidedFor), chunks: o.drafts.m["dev"].chunks}
 	lists(view(), 0, 3)
 	reads("2 1")
+	// Others' changes (a hit count) show once the kept ones are old.
+	lists(view(), 0, 3)
+	o.drafts.m["dev"] = decidedDraft{version: o.drafts.m["dev"].version, at: time.Now().Add(-decidedFor), chunks: o.drafts.m["dev"].chunks}
+	lists(view(), 0, 3)
+	reads("3 2")
 }

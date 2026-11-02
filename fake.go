@@ -37,6 +37,8 @@ type Fake struct {
 	// drafts are each sandbox's proposals as OpenShell keeps them
 	// (fake_policy.go).
 	drafts map[string][]v1.PolicyChunk
+	// denied is the id of OpenShell's one draft per sandbox and host.
+	denied map[string]string
 	// policies are each sandbox's network policy revisions (fake_policy.go).
 	policies map[string][]fakeRevision
 	// config names the volumes; volumes are the persisted paths' (by name).
@@ -388,6 +390,12 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			case strings.HasPrefix(line, "propose "):
 				// An agent's proposal through policy.local.
 				response = t.d.fakePropose(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "propose ")))
+			case strings.HasPrefix(line, "refine "):
+				// A proposal of another rule for the same endpoint.
+				response = t.d.fakeRefine(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "refine ")))
+			case strings.HasPrefix(line, "deny "):
+				// A blocked request, which OpenShell drafts a proposal from.
+				response = t.d.fakeDeny(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "deny ")))
 			case strings.HasPrefix(line, "echo "):
 				response = strings.TrimPrefix(line, "echo ")
 			case line == "clear":

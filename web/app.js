@@ -2147,7 +2147,7 @@
           tls: text(e.tls, 20), path: text(e.path, 512), rules: methodPaths(e.rules, lim.rules, 'rules'), deny: methodPaths(e.deny, lim.deny, 'deny_rules'), allowedIps: allowedIPsList(e.allowedIps), credential: text(e.credential, 100),
           allowEncodedSlash: e.allowEncodedSlash === true, websocketCredentialRewrite: e.websocketCredentialRewrite === true, requestBodyCredentialRewrite: e.requestBodyCredentialRewrite === true, allowUninspectedCredentials: e.allowUninspectedCredentials === true })),
         decidedAt: Number(p.decidedAt) || 0, hitsAfter: Number.isInteger(p.hitsAfter) ? p.hitsAfter : -1, seenAfter: p.seenAfter === true,
-        auto: ['superseded', 'covered'].includes(p.auto) ? p.auto : '', ruleExists: p.ruleExists === true, placeholder: p.placeholder === true,
+        auto: ['superseded', 'covered'].includes(p.auto) ? p.auto : '', lost: p.lost === true, ruleExists: p.ruleExists === true, placeholder: p.placeholder === true,
         // The providers' credentials the approved endpoints carry by
         // default (attach) and can carry (offer): ADR 0022.
         attach: credentialList(p.attach), offer: credentialList(p.offer) };
@@ -2360,6 +2360,11 @@
       const actions = element('div', 'panel-buttons');
       actions.append(approve);
       row.append(this.proposalWhat(p), meta);
+      if (p.lost) {
+        const lost = element('p', 'panel-meta proposal-after proposal-lost', t('policy.lost.item'));
+        lost.dataset.after = 'true';
+        row.append(lost);
+      }
       if (review) {
         row.append(review);
         return row;
@@ -2399,10 +2404,15 @@
         side.append(head, list, foot);
         const layout = element('div', 'review-layout');
         layout.append(side);
-        this.pending.append(title, none, layout);
-        this.pendingParts = { title, none, list, all, many, everything, headText, layout };
+        const lost = element('p', 'panel-meta proposal-after policy-lost');
+        lost.dataset.after = 'true';
+        this.pending.append(title, lost, none, layout);
+        this.pendingParts = { title, lost, none, list, all, many, everything, headText, layout };
       }
       const parts = this.pendingParts;
+      const lost = data.rejected.filter((p) => p.lost);
+      parts.lost.hidden = !lost.length;
+      parts.lost.textContent = lost.length ? t('policy.lost.notice', { count: lost.length, hosts: window.IwatoI18n.list(lost.map((p) => this.proposalWhere(p))) }) : '';
       const items = [...data.pending.filter((p) => p.source === 'agent'), ...data.pending.filter((p) => p.source !== 'agent')];
       this.pendingItems = items;
       parts.title.textContent = t('policy.pending.title', { count: items.length });

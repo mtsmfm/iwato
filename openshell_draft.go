@@ -37,6 +37,9 @@ type decidedDraft struct {
 	version uint64
 	at      time.Time
 	chunks  []v1.PolicyChunk
+	// pending are the chunks that waited at that read: a denial that folds
+	// into an existing draft rejects one without a new draft version.
+	pending []string
 }
 
 // forgetDraft drops the sandbox's decided chunks: Iwato changed them (or
@@ -66,17 +69,17 @@ func (o *OpenShell) draftChunks(ctx context.Context, pol v1.PolicyInterface, san
 		if err != nil {
 			return nil, err
 		}
-		if pending.DraftVersion == cached.version {
-			// A chunk decided elsewhere and put back to pending (an undo)
-			// is the fresh one.
-			out := make([]v1.PolicyChunk, 0, len(pending.Chunks)+len(cached.chunks))
-			ids := map[string]bool{}
-			for _, ch := range pending.Chunks {
-				if ch.Status == "pending" {
-					ids[ch.ID] = true
-					out = append(out, ch)
-				}
+		// A chunk decided elsewhere and put back to pending (an undo) is
+		// the fresh one.
+		out := make([]v1.PolicyChunk, 0, len(pending.Chunks)+len(cached.chunks))
+		ids := map[string]bool{}
+		for _, ch := range pending.Chunks {
+			if ch.Status == "pending" {
+				ids[ch.ID] = true
+				out = append(out, ch)
 			}
+		}
+		if pending.DraftVersion == cached.version && !slices.ContainsFunc(cached.pending, func(id string) bool { return !ids[id] }) {
 			for _, ch := range cached.chunks {
 				if !ids[ch.ID] {
 					out = append(out, ch)
@@ -90,9 +93,12 @@ func (o *OpenShell) draftChunks(ctx context.Context, pol v1.PolicyInterface, san
 		return nil, err
 	}
 	var decided []v1.PolicyChunk
+	var pending []string
 	for _, ch := range draft.Chunks {
 		if ch.Status != "pending" {
 			decided = append(decided, ch)
+		} else {
+			pending = append(pending, ch.ID)
 		}
 	}
 	c.mu.Lock()
@@ -100,7 +106,7 @@ func (o *OpenShell) draftChunks(ctx context.Context, pol v1.PolicyInterface, san
 		if c.m == nil {
 			c.m = map[string]decidedDraft{}
 		}
-		c.m[sandbox] = decidedDraft{version: draft.DraftVersion, at: time.Now(), chunks: decided}
+		c.m[sandbox] = decidedDraft{version: draft.DraftVersion, at: time.Now(), chunks: decided, pending: pending}
 	}
 	c.mu.Unlock()
 	return draft.Chunks, nil
