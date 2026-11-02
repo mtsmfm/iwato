@@ -335,8 +335,8 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 @media(pointer:coarse){.policy-rule .policy-binding{min-height:36px;font-size:12px}}
 @media(max-width:820px){.review-layout{grid-template-columns:minmax(0,1fr)}.policy-commit{grid-template-columns:auto minmax(0,1fr);}.policy-commit-time{grid-column:2}.policy-commit-actions{grid-column:1/-1;justify-content:flex-end}}
 .review-list-head{display:flex;align-items:center;gap:8px;padding:2px 9px;font-size:12px;color:var(--muted);cursor:pointer}.review-list-head input,.review-pick input{width:16px;height:16px;margin:0;accent-color:var(--green)}
-.review-row{display:flex;align-items:stretch;min-width:0}.review-pick{display:flex;align-items:center;padding:0 0 0 9px;flex:none;cursor:pointer}.review-row>.review-item{flex:1}
+.review-row{display:flex;align-items:stretch;min-width:0}.review-pick{display:flex;align-items:center;padding:0 9px 0 9px;flex:none;cursor:pointer}.review-row>.review-item{flex:1}
 .review-list-foot{gap:6px;flex-wrap:wrap}
 .confirm-details{margin:0 0 14px}.review-many{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.review-many-item{background:#12171b;border:1px solid #2a333a;border-radius:7px;padding:7px 10px;min-width:0}.review-many-item[data-level=red]{border-color:#654047}
 .review-many-item p{margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}.review-many-host{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-weight:600}.review-many-line{color:var(--muted)}.review-many-warn[data-level=red]{color:var(--red)}.review-many-warn[data-level=amber]{color:var(--amber,#e0b65c)}.review-many-warn[data-level=wait]{color:var(--muted)}
-@media(pointer:coarse),(max-width:720px){.review-pick{padding:0 6px 0 12px}.review-list-head{padding:8px 12px;min-height:36px}.review-pick input,.review-list-head input{width:20px;height:20px}.review-list-foot .button{min-height:40px}}
+@media(pointer:coarse),(max-width:720px){.review-pick{padding:0 11px 0 12px}.review-list-head{padding:8px 12px;min-height:36px}.review-pick input,.review-list-head input{width:20px;height:20px}.review-list-foot .button{min-height:40px}}
