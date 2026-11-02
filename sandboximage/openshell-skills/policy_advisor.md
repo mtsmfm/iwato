@@ -223,10 +223,11 @@ The new submission wins by structural overlap.
 
 ## Iwato additions
 
-Not part of OpenShell's guide. The owner reviews every proposal in Iwato and
-wants to be asked as seldom as is safe, without a wider reach than the task
-needs.
+Not part of OpenShell's guide. The owner reviews every proposal in Iwato.
 
+- **Propose freely.** Submit every rule the task needs without hesitating or
+  asking first, and keep doing so until the owner tells you to stop. Each rule
+  stays as narrow as the task allows.
 - **Nothing auto-approves.** Automatic approval is off, so "Auto-approval"
   above does not apply: every proposal waits for the owner, and changing a
   host or dropping a credential to avoid a finding gains nothing.
