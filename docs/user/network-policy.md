@@ -50,6 +50,10 @@ A rule on Iwato's own port is refused, from the approval, a rule added by hand a
 
 A proposal with more than Iwato can show (more than 128 rules, for example) or with settings it does not show (GraphQL, MCP, request signing) can be approved only narrowed: reject it, or write the rule in YAML.
 
+After you approve a proposal, it leaves the list and the next one is ready: you do not have to wait for the sandbox to load the change, or for the approval to finish.
+
+To approve several at once, check them in the list and press **Approve selected**. They start checked, except red ones (**Select all** leaves those to you). Each is approved with the settings it opens with, whatever you changed in an opened proposal: uninspected drafts narrowed to `GET` and `HEAD`, a token that would go with it by default on, a token you could add off. Iwato first lists what each one allows, its token and its warnings; a host check that has not finished shows as unknown. They become one change in the policy history and reach the sandbox together, each as its own rule. One that cannot be approved stays waiting and is listed with the reason; the others go ahead.
+
 A rejected proposal can be approved later from the rejected list: Approve opens the same review, with the same warnings. Its rules are shown but cannot be unchecked, because OpenShell approves a rejected proposal only as proposed. To narrow it, approve it, Undo it on its rule, then approve it narrowed.
 
 ## Presets

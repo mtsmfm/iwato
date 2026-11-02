@@ -479,6 +479,20 @@ func (g fakeGateway) ApproveDraftChunk(_ context.Context, _, sandbox, id, _ stri
 		return nil, fmt.Errorf("proposal is not applicable: candidate invalid: %w", err)
 	}
 	c.Status, c.DecidedAt, c.LastSeen, c.RejectionReason = "approved", time.Now(), time.Now(), ""
+	// As the gateway's evaluation of the others: a rule name the policy
+	// does not have.
+	revs := g.d.fakePolicy(sandbox)
+	composed := g.d.fakeCompose(sandbox, revs[len(revs)-1].rules)
+	chunks := g.d.fakeDraft(sandbox)
+	for i := range chunks {
+		if o := &chunks[i]; o.Status == "pending" {
+			if o.RuleName = freeRuleName(composed, o.RuleName); o.ProposedRule != nil {
+				r := *o.ProposedRule
+				r.Name = o.RuleName
+				o.ProposedRule = &r
+			}
+		}
+	}
 	return &v1.ApproveResult{PolicyVersion: uint32(len(g.d.policies[sandbox]))}, nil
 }
 
@@ -606,6 +620,10 @@ func (d *Fake) PendingProposals(ctx context.Context, w Sandbox) ([]PendingPropos
 
 func (d *Fake) DecideProposal(ctx context.Context, w Sandbox, action, id, digest string, scope *ProposalScope) (PolicyChange, error) {
 	return d.openShell().DecideProposal(ctx, w, action, id, digest, scope)
+}
+
+func (d *Fake) ApproveProposals(ctx context.Context, w Sandbox, items []ProposalApproval, check approvalCheck) (ApprovalBatch, error) {
+	return d.openShell().ApproveProposals(ctx, w, items, check)
 }
 
 func (d *Fake) PreviewApproval(ctx context.Context, w Sandbox, id, digest string, scope *ProposalScope) (ApprovalPreview, error) {

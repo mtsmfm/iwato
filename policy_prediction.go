@@ -851,14 +851,18 @@ func (s *Server) failGateway(ctx context.Context, w http.ResponseWriter, sb Sand
 }
 
 // checkApproval refuses an approval (the proposed rule, narrowed by scope)
-// that OpenShell would refuse as ambiguous.
-func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rule v1.NetworkPolicyRule, scope *ProposalScope) error {
+// that OpenShell would refuse as ambiguous, against over when given (the
+// sandbox's policy otherwise).
+func (s *Server) checkApproval(ctx context.Context, sb Sandbox, name string, rule v1.NetworkPolicyRule, scope *ProposalScope, over map[string]v1.NetworkPolicyRule) error {
 	base, effective, ok, err := s.policyLayers(ctx, sb)
 	if !ok {
 		return nil
 	}
 	if err != nil {
 		return errCode("policy_unverifiable", map[string]any{"detail": safeCLIError(err)}, "ポリシーを確かめられません: "+safeCLIError(err))
+	}
+	if over != nil {
+		base = over
 	}
 	r := rule
 	var attach *bool

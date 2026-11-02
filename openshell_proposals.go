@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -222,17 +223,8 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 	}
 	if action == "approve" && chunk.ProposedRule != nil {
 		var err error
-		if scope, err = scope.against(*chunk.ProposedRule); err != nil {
+		if scope, err = shownScope(*chunk.ProposedRule, scope); err != nil {
 			return none, err
-		}
-		rule := *chunk.ProposedRule
-		if scope != nil {
-			// The rule is approved for every program, not the proposal's.
-			rule = scope.apply(rule)
-			rule.Binaries = nil
-		}
-		if parts := proposalUnshown(rule); len(parts) > 0 {
-			return none, errProposalUnshown(parts)
 		}
 	}
 	if rejected && scope.narrows() {
@@ -260,35 +252,83 @@ func (o *OpenShell) decideProposal(ctx context.Context, w Sandbox, action, reque
 	return o.approveChunk(ctx, w, pol, chunk, scope, rejected, digest)
 }
 
-// approveChunk approves a proposal as its own rule (ADR 0022): the rule
-// approvedRule makes of the (narrowed) proposal. The proposal is first
-// edited into that rule and approved in OpenShell, which adds it under a
-// rule name of its own (the gateway picks one the policy does not have) and
-// marks the proposal approved, so the agent's /wait answers approved; then
-// the repository's policy with the rule is committed and applied as a
-// whole, which replaces OpenShell's merge with the same rule. A rejected
-// proposal cannot be edited: it is approved as proposed, and the
-// repository still gets approvedRule of it.
+// shownScope is the scope checked against the rule it narrows, which the
+// page must be able to show whole (proposalUnshown).
+func shownScope(proposed v1.NetworkPolicyRule, scope *ProposalScope) (*ProposalScope, error) {
+	scope, err := scope.against(proposed)
+	if err != nil {
+		return nil, err
+	}
+	rule := proposed
+	if scope != nil {
+		// The rule is approved for every program, not the proposal's.
+		rule = scope.apply(rule)
+		rule.Binaries = nil
+	}
+	if parts := proposalUnshown(rule); len(parts) > 0 {
+		return nil, errProposalUnshown(parts)
+	}
+	return scope, nil
+}
+
+// approveChunk approves one proposal and applies the repository's policy
+// with its rule.
 func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyInterface, chunk *v1.PolicyChunk, scope *ProposalScope, rejected bool, digest string) (PolicyChange, error) {
 	none := PolicyChange{}
 	sync, err := o.syncStore(ctx, w)
 	if err != nil {
 		return none, err
 	}
-	plan, err := o.approvalPlan(ctx, w, sync.rules, chunk, scope)
+	planned := cloneRules(sync.rules)
+	change, err := o.approveInto(ctx, w, pol, planned, chunk, scope, rejected, digest)
 	if err != nil {
 		return none, err
 	}
-	planned := cloneRules(sync.rules)
+	v, err := o.commitPolicy(ctx, w, sync, planned, PolicyNote{Kind: "approve", Message: approvalMessage(change)})
+	if err != nil {
+		return none, fmt.Errorf("OpenShell は提案を承認しましたが、Iwato の規則として適用できませんでした: %w", err)
+	}
+	change.Version = v
+	return change, nil
+}
+
+func approvalMessage(changes ...PolicyChange) string {
+	if len(changes) == 1 {
+		c := changes[0]
+		return fmt.Sprintf("Approve proposal %s as rule %s\n\n%s", c.chunk, c.Rule, c.Summary)
+	}
+	lines := make([]string, len(changes))
+	for i, c := range changes {
+		lines[i] = fmt.Sprintf("Proposal %s as rule %s: %s", c.chunk, c.Rule, c.Summary)
+	}
+	return fmt.Sprintf("Approve %d proposals\n\n%s", len(changes), strings.Join(lines, "\n"))
+}
+
+// approveInto approves a proposal as its own rule (ADR 0022) and adds that
+// rule to rules: the rule approvedRule makes of the (narrowed) proposal. The
+// proposal is first edited into that rule and approved in OpenShell, which
+// adds it under a rule name of its own (the gateway picks one the policy
+// does not have) and marks the proposal approved, so the agent's /wait
+// answers approved; the repository's policy with the rule, committed and
+// applied as a whole by the caller, then replaces OpenShell's merge with the
+// same rule. A rejected proposal cannot be edited: it is approved as
+// proposed, and the repository still gets approvedRule of it.
+func (o *OpenShell) approveInto(ctx context.Context, w Sandbox, pol v1.PolicyInterface, rules map[string]v1.NetworkPolicyRule, chunk *v1.PolicyChunk, scope *ProposalScope, rejected bool, digest string) (PolicyChange, error) {
+	none := PolicyChange{}
+	plan, err := o.approvalPlan(ctx, w, rules, chunk, scope)
+	if err != nil {
+		return none, err
+	}
+	planned := cloneRules(rules)
 	planned[plan.Name] = plan
-	if err := o.checkWithProviders(ctx, w, sync.rules, planned); err != nil {
+	if err := o.checkWithProviders(ctx, w, rules, planned); err != nil {
 		return none, fmt.Errorf("proposal is not applicable: candidate invalid: %w", err)
 	}
 	host := ""
 	if len(plan.Endpoints) > 0 {
 		host = plan.Endpoints[0].Host
 	}
-	change := PolicyChange{Kind: "approve", Host: host, Summary: chunkSummary(*chunk), At: time.Now().Unix()}
+	change := PolicyChange{Kind: "approve", Host: host, Summary: chunkSummary(*chunk), At: time.Now().Unix(), chunk: chunk.ID}
 	token := chunk.ReviewToken
 	name := ""
 	if rejected {
@@ -344,19 +384,176 @@ func (o *OpenShell) approveChunk(ctx context.Context, w Sandbox, pol v1.PolicyIn
 			name = approved.RuleName
 		}
 	}
-	if _, taken := sync.rules[name]; name != "" && name != plan.Name && !taken {
-		delete(planned, plan.Name)
+	if _, taken := rules[name]; name != "" && name != plan.Name && !taken {
 		plan.Name = name
-		planned[name] = plan
 	}
+	rules[plan.Name] = plan
 	change.Rule = plan.Name
-	message := fmt.Sprintf("Approve proposal %s as rule %s\n\n%s", chunk.ID, plan.Name, change.Summary)
-	v, err := o.commitPolicy(ctx, w, sync, planned, PolicyNote{Kind: "approve", Message: message})
-	if err != nil {
-		return none, fmt.Errorf("OpenShell は提案を承認しましたが、Iwato の規則として適用できませんでした: %w", err)
-	}
-	change.Version = v
 	return change, nil
+}
+
+// maxApprovals is the most one batch approves: as many as the page lists.
+const maxApprovals = 50
+
+// approvalBudget is how long a batch starts new approvals: what is left of
+// the request's time finishes the one under way and applies the policy.
+const approvalBudget = 90 * time.Second
+
+// coveredRejection starts OpenShell's reason when it rejects a pending
+// proposal the policy now covers (reconcile_pending_chunks_covered_by_policy).
+const coveredRejection = "covered by active policy revision "
+
+// ProposalApproval is one proposal of a batch, as DecideProposal takes it.
+type ProposalApproval struct {
+	ID     string         `json:"id"`
+	Digest string         `json:"digest"`
+	Scope  *ProposalScope `json:"scope,omitempty"`
+}
+
+// ProposalSkip is a proposal a batch left waiting, and why (an error code).
+type ProposalSkip struct {
+	ID          string               `json:"id"`
+	Code        string               `json:"code"`
+	Params      map[string]any       `json:"params,omitempty"`
+	Error       string               `json:"error"`
+	Ambiguities []AmbiguityView      `json:"ambiguities,omitempty"`
+	Conflicts   []CredentialConflict `json:"conflicts,omitempty"`
+}
+
+func proposalSkip(id string, err error) ProposalSkip {
+	var a *errAmbiguity
+	if errors.As(err, &a) {
+		return ProposalSkip{ID: id, Code: a.code, Params: a.params, Error: a.msg, Ambiguities: a.views, Conflicts: a.conflicts}
+	}
+	var c *codedError
+	if errors.As(err, &c) && c.msg == err.Error() {
+		return ProposalSkip{ID: id, Code: c.code, Params: c.params, Error: c.msg}
+	}
+	detail := safeCLIError(err)
+	return ProposalSkip{ID: id, Code: "approve_many_refused", Params: map[string]any{"detail": detail}, Error: "OpenShell が承認しませんでした: " + detail}
+}
+
+// ApprovalBatch is what approving several proposals did: one change per
+// approved proposal, all of one revision, and the ones left waiting.
+type ApprovalBatch struct {
+	Changes []PolicyChange
+	Skipped []ProposalSkip
+}
+
+// approvalCheck is the server's check of a proposed rule against rules, the
+// policy with the batch's approvals so far.
+type approvalCheck func(rules map[string]v1.NetworkPolicyRule, proposed v1.NetworkPolicyRule, scope *ProposalScope) error
+
+// ApproveProposals approves several proposals, each as approveInto does (a
+// rule of its own, its /wait answered), and applies them as one commit. One
+// that cannot be approved is skipped; each approval sees the earlier ones'
+// rules. An error with Changes means OpenShell approved those but the apply
+// failed: as with approveChunk, OpenShell then holds rules the repository
+// does not, which the policy screen shows as a drift.
+func (o *OpenShell) ApproveProposals(ctx context.Context, w Sandbox, items []ProposalApproval, check approvalCheck) (ApprovalBatch, error) {
+	out := ApprovalBatch{Skipped: []ProposalSkip{}}
+	pol, err := o.policy(ctx)
+	if err != nil {
+		return out, err
+	}
+	defer o.forgetDraft(w.Name)
+	sync, err := o.syncStore(ctx, w)
+	if err != nil {
+		return out, err
+	}
+	planned := cloneRules(sync.rules)
+	before, err := pol.GetDraft(ctx, openshellWorkspace, w.Name, v1.WithStatusFilter("pending"))
+	if err != nil {
+		return out, err
+	}
+	shown := map[string]v1.PolicyChunk{}
+	for _, c := range before.Chunks {
+		shown[requestID(c.ID)] = c
+	}
+	// Checked between approvals: one cancelled halfway could be approved in
+	// OpenShell with no rule here.
+	stop := time.Now().Add(approvalBudget)
+	for _, it := range items {
+		err := errCode("approve_many_timeout", nil, "時間内に処理できませんでした。もう一度承認してください")
+		var change PolicyChange
+		if time.Now().Before(stop) {
+			change, err = o.approveItem(ctx, w, pol, planned, it, shown[it.ID], check)
+		}
+		if err != nil {
+			out.Skipped = append(out.Skipped, proposalSkip(it.ID, err))
+			continue
+		}
+		change.Request = it.ID
+		out.Changes = append(out.Changes, change)
+	}
+	if len(out.Changes) == 0 {
+		return out, nil
+	}
+	v, err := o.commitPolicy(ctx, w, sync, planned, PolicyNote{Kind: "approve", Message: approvalMessage(out.Changes...)})
+	if err != nil {
+		return out, fmt.Errorf("OpenShell は提案を承認しましたが、Iwato の規則として適用できませんでした: %w", err)
+	}
+	if v == 0 {
+		v = o.withVersion(ctx, w, PolicyChange{}).Version
+	}
+	for i := range out.Changes {
+		out.Changes[i].Version = v
+	}
+	return out, nil
+}
+
+// sameName is the chunk under the names it had in shown: OpenShell renames a
+// waiting proposal whose rule name an approval took, which changes nothing
+// the owner saw.
+func sameName(c, shown v1.PolicyChunk) v1.PolicyChunk {
+	if shown.ID == "" {
+		return c
+	}
+	c.RuleName = shown.RuleName
+	if c.ProposedRule != nil && shown.ProposedRule != nil {
+		r := *c.ProposedRule
+		r.Name = shown.ProposedRule.Name
+		c.ProposedRule = &r
+	}
+	return c
+}
+
+// approveItem checks one proposal of a batch, read now (an earlier approval
+// may have changed it), and approves it into rules. OpenShell rejects a
+// pending proposal an approval just covered: approved anyway, so that its
+// /wait answers approved; as proposed in OpenShell, whose policy covers it
+// already, and narrowed by its scope in the repository.
+func (o *OpenShell) approveItem(ctx context.Context, w Sandbox, pol v1.PolicyInterface, rules map[string]v1.NetworkPolicyRule, it ProposalApproval, shown v1.PolicyChunk, check approvalCheck) (PolicyChange, error) {
+	none := PolicyChange{}
+	chunk, _, err := draftChunk(ctx, pol, w.Name, it.ID, "pending", "rejected", "approved")
+	if err != nil {
+		return none, err
+	}
+	if chunk == nil {
+		return none, errCode("request_not_found", nil, "この依頼は見つかりません")
+	}
+	covered := chunk.Status == "rejected" && strings.HasPrefix(chunk.RejectionReason, coveredRejection)
+	if chunk.Status != "pending" && !covered {
+		return none, errCode("request_decided", nil, "この依頼は決定済みです")
+	}
+	if it.Digest != proposalDigest(sameName(*chunk, shown)) {
+		return none, errProposalChanged()
+	}
+	if chunk.ProposedRule == nil {
+		return none, errCode("proposal_empty", nil, "この提案には規則がありません")
+	}
+	scope, err := shownScope(*chunk.ProposedRule, it.Scope)
+	if err != nil {
+		return none, err
+	}
+	if check != nil {
+		proposed := *chunk.ProposedRule
+		proposed.Name = cmp.Or(proposed.Name, chunk.RuleName)
+		if err := check(rules, proposed, scope); err != nil {
+			return none, err
+		}
+	}
+	return o.approveInto(ctx, w, pol, rules, chunk, scope, covered, proposalDigest(*chunk))
 }
 
 // approvalPlan is the rule approving chunk (narrowed by scope) adds to

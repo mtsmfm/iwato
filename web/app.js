@@ -120,10 +120,12 @@
     else typingCard?.restoreFocus();
     done(value);
   }
-  function askConfirm(text, { ok = t('confirm.ok'), danger = false } = {}) {
+  function askConfirm(text, { ok = t('confirm.ok'), danger = false, details = null } = {}) {
     // One question at a time; the page behind is inert until it is answered.
     if (pendingConfirm) return Promise.resolve(false);
     $('confirm-text').textContent = text;
+    $('confirm-details').replaceChildren(...(details ? [details] : []));
+    $('confirm-details').hidden = !details;
     $('confirm-ok').textContent = ok;
     $('confirm-ok').className = 'button ' + (danger ? 'button-disconnect' : 'button-primary');
     confirmReturn = document.activeElement;
@@ -363,6 +365,12 @@
     $('connection-count').textContent = String([...cards.values()].filter((card) => card.connection === 'connected').length);
   }
 
+  const validConflicts = (value) => Array.isArray(value) ? value.filter((c) => c && typeof c.rule === 'string').slice(0, 20).map((c) => ({
+          rule: text(c.rule, 200), host: text(c.host, 253), ports: (Array.isArray(c.ports) ? c.ports : []).filter(Number.isInteger).slice(0, 16), mode: text(c.mode, 32),
+          provider: text(c.provider, 64), label: text(c.label, 100), profile: text(c.profile, 128), binaries: (Array.isArray(c.binaries) ? c.binaries : []).filter((b) => typeof b === 'string').slice(0, 16).map((b) => b.slice(0, 512))
+        })) : null;
+  const validAmbiguities = (value) => Array.isArray(value) ? value.filter((a) => a && typeof a.rule === 'string').slice(0, 20).map(validAmbiguity) : null;
+
   async function api(path, options = {}) {
     const { timeoutMs = 20000, ...requestOptions } = options;
     const controller = new AbortController();
@@ -380,13 +388,10 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         // Details the page can act on (credential conflicts: the rules named).
-        const conflicts = Array.isArray(data.conflicts) ? data.conflicts.filter((c) => c && typeof c.rule === 'string').slice(0, 20).map((c) => ({
-          rule: text(c.rule, 200), host: text(c.host, 253), ports: (Array.isArray(c.ports) ? c.ports : []).filter(Number.isInteger).slice(0, 16), mode: text(c.mode, 32),
-          provider: text(c.provider, 64), label: text(c.label, 100), profile: text(c.profile, 128), binaries: (Array.isArray(c.binaries) ? c.binaries : []).filter((b) => typeof b === 'string').slice(0, 16).map((b) => b.slice(0, 512))
-        })) : null;
+        const conflicts = validConflicts(data.conflicts);
         // Endpoints OpenShell would find ambiguous (the rules named), and
         // the pairs of the gateway's own refusal.
-        const ambiguities = Array.isArray(data.ambiguities) ? data.ambiguities.filter((a) => a && typeof a.rule === 'string').slice(0, 20).map(validAmbiguity) : null;
+        const ambiguities = validAmbiguities(data.ambiguities);
         const gateway = validGatewayAmbiguities(data.gatewayAmbiguities);
         const message = typeof data.error === 'string'
           ? window.IwatoRefusals.message(data.code, data.params, { conflicts, ambiguities, gateway }, data.error.slice(0, 1000))
@@ -2019,6 +2024,9 @@
     return header;
   }
 
+  // The providers' credentials of an approved rule, as the server lists them.
+  const credentialList = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512), required: a.required === true }));
+
   // The sandbox's network policy as OpenShell keeps it, in three lists:
   // the proposals (OpenShell's draft chunks: the agent's, through Policy
   // Advisor, and OpenShell's own from blocked connections) waiting for the
@@ -2034,6 +2042,11 @@
       this.waitingAgent = null;
       this.refreshing = null;
       this.mutating = false;
+      // The proposals being approved: out of the list, the panel still in use.
+      this.approving = new Set();
+      // The batch's checkboxes the owner touched, by proposal.
+      this.picks = new Map();
+      this.batchable = new WeakMap();
       this.disposed = false;
       this.generation = 0;
       // Rules opened on a phone (collapsed to a line there), and whether
@@ -2125,7 +2138,6 @@
         return value.slice(0, max);
       };
       const methodPaths = (value, max, name) => list(value, max, name).filter((r) => r && typeof r.path === 'string' && typeof r.method === 'string').map((r) => ({ method: text(r.method, 10), path: text(r.path, 512) }));
-      const credentials = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512), required: a.required === true }));
       return { id: p.id, digest: /^[0-9a-f]{64}$/.test(p.digest) ? p.digest : '', rejected: p.state === 'rejected', unshown, summary: text(p.summary, 600), createdAt: Number(p.createdAt), source: p.source === 'auto' ? 'auto' : 'agent', intent: text(p.intent, 600), notes: text(p.notes, 600), rule: text(p.rule, 200),
         hits: Number(p.hits) || 0, firstSeen: Number(p.firstSeen) || 0, lastSeen: Number(p.lastSeen) || 0,
         rules: methodPaths(p.rules, lim.rules, 'rules'),
@@ -2138,7 +2150,7 @@
         auto: ['superseded', 'covered'].includes(p.auto) ? p.auto : '', ruleExists: p.ruleExists === true, placeholder: p.placeholder === true,
         // The providers' credentials the approved endpoints carry by
         // default (attach) and can carry (offer): ADR 0022.
-        attach: credentials(p.attach), offer: credentials(p.offer) };
+        attach: credentialList(p.attach), offer: credentialList(p.offer) };
     }
 
     validate(data) {
@@ -2249,7 +2261,7 @@
         // (and editable) while it is stopped, failed or being made.
         if (data.available && this.sandbox.status !== 'running') label += t('policy.status.stopped');
       }
-      if (this.mutating) label = t('policy.status.sending');
+      if (this.mutating || this.approving.size) label = t('policy.status.sending');
       if (this.status.textContent !== label) this.status.textContent = label;
       this.root.dataset.state = agent ? 'pending-approval' : data?.available ? 'ready' : 'unavailable';
       this.renderDrift();
@@ -2373,14 +2385,22 @@
         const list = element('div', 'review-list');
         list.setAttribute('role', 'list');
         const all = button('button-disconnect review-reject-all', '', () => this.rejectAll(this.pendingItems || []));
+        const many = button('button-start review-approve-many', '', () => this.approveMany());
         const foot = element('div', 'review-list-foot');
-        foot.append(all);
+        foot.append(all, many);
+        const everything = document.createElement('input');
+        everything.type = 'checkbox';
+        everything.className = 'review-select-all';
+        everything.addEventListener('change', () => this.pickAll(everything.checked));
+        const head = element('label', 'review-list-head');
+        const headText = element('span');
+        head.append(everything, headText);
         const side = element('div', 'review-side');
-        side.append(list, foot);
+        side.append(head, list, foot);
         const layout = element('div', 'review-layout');
         layout.append(side);
         this.pending.append(title, none, layout);
-        this.pendingParts = { title, none, list, all, layout };
+        this.pendingParts = { title, none, list, all, many, everything, headText, layout };
       }
       const parts = this.pendingParts;
       const items = [...data.pending.filter((p) => p.source === 'agent'), ...data.pending.filter((p) => p.source !== 'agent')];
@@ -2398,7 +2418,9 @@
       if (items.some((p) => p.id === this.wanted)) { this.selected = this.wanted; this.wanted = null; }
       if (!items.some((p) => p.id === this.selected)) this.selected = items[0].id;
       for (const p of items) this.checkHosts(p);
-      const focused = parts.list.contains(document.activeElement) ? document.activeElement.dataset?.review : '';
+      let focusLater = null;
+      const focused = parts.list.contains(document.activeElement) ? document.activeElement : null;
+      const refocus = focused?.dataset ? [focused.dataset.review, focused.dataset.pick] : [];
       parts.list.replaceChildren(...items.map((p) => {
         const item = button('review-item', '', () => { this.selected = p.id; this.wanted = null; this.render(); this.reviewing?.node.scrollIntoView?.({ block: 'nearest' }); });
         item.className = 'review-item';
@@ -2407,11 +2429,34 @@
         const chips = element('span', 'review-chips');
         chips.append(...this.reviewChips(p).map(([level, label]) => { const c = element('span', 'review-chip', label); c.dataset.level = level; return c; }));
         item.append(element('span', 'review-item-host', this.proposalWhere(p)), element('span', 'review-item-src', (p.source === 'auto' ? t('policy.source.auto') : t('policy.source.agent')) + ' · ' + t('policy.hits', { count: p.hits })), chips);
-        return item;
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.dataset.pick = p.id;
+        box.checked = this.picked(p);
+        box.disabled = !this.approvable(p);
+        box.setAttribute('aria-label', t('review.pick', { where: this.proposalWhere(p) }));
+        box.addEventListener('change', () => { this.picks.set(p.id, { digest: p.digest, on: box.checked }); this.render(); });
+        const pick = element('label', 'review-pick');
+        pick.append(box);
+        const row = element('div', 'review-row');
+        row.setAttribute('role', 'listitem');
+        row.append(pick, item);
+        if (refocus[0] === p.id) focusLater = item;
+        if (refocus[1] === p.id) focusLater = box;
+        return row;
       }));
-      if (focused) [...parts.list.children].find((n) => n.dataset.review === focused)?.focus();
+      focusLater?.focus();
+      for (const id of this.picks.keys()) if (!items.some((p) => p.id === id)) this.picks.delete(id);
+      const chosen = items.filter((p) => this.picked(p)).length;
+      const open = items.filter((p) => this.approvable(p) && !this.dangerous(p));
+      parts.everything.checked = open.length > 0 && open.every((p) => this.picked(p));
+      parts.everything.indeterminate = chosen > 0 && !parts.everything.checked;
+      parts.everything.disabled = !open.length;
+      parts.headText.textContent = t('review.selectAll');
       parts.all.textContent = t('review.rejectAll');
       parts.all.disabled = this.mutating || !state.authorized;
+      parts.many.textContent = this.batchChecking ? t('review.many.checking') : t('review.approveMany', { count: chosen });
+      parts.many.disabled = !chosen || this.batchChecking || this.mutating || !state.authorized;
       const old = this.reviewing?.node;
       const node = this.reviewNode('reviewing', items.find((p) => p.id === this.selected));
       if (node !== old || node.parentNode !== parts.layout) {
@@ -2548,7 +2593,6 @@
     // checks and the preview.
     updateReview(r) {
       const p = r.p;
-      const l4 = r.rows.some((x) => x.kind === 'l4' && x.checked);
       const skip = approveLogic.uninspectedHosts(p, r.rows);
       for (const { input, label, row } of r.inputs) {
         const covered = row.kind === 'rule' && skip.has(row.host);
@@ -2573,19 +2617,7 @@
       if (!r.attachTouched) r.attachInput.checked = grants.attach.length > 0;
       const built = approveLogic.reviewScope(p, r.rows, { attach: grants.attach.length ? r.attachInput.checked : null, offer: grants.offer.length > 0 && r.offerInput.checked });
       r.built = built;
-      const risk = approveLogic.risks({ endpoints: p.endpoints, wide: l4, listenPort: policyGuard.listenPort, gateways: policyGuard.gateways });
-      const warns = [];
-      for (const host of [...new Set(p.endpoints.map((e) => e.host).filter(Boolean))]) {
-        const c = this.hostChecks.get(host);
-        if (c) warns.push(...approveLogic.hostWarnings(c));
-        else warns.push({ level: 'wait', text: t('review.checking', { host }), detail: '' });
-      }
-      warns.push(...approveLogic.rowWarnings(r.rows));
-      for (const x of p.allowedIps) warns.push({ level: 'amber', text: t('policy.approve.internal', { host: x.host || t('policy.anyHost'), ips: allowedIPsLabel(x.host, x.ips) }), detail: '' });
-      for (const line of risk.lines) warns.push({ level: line === risk.error ? 'red' : 'amber', text: line, detail: '' });
-      // Red first, then amber, the facts last.
-      const order = { red: 0, amber: 1, wait: 2, ok: 3 };
-      warns.sort((a, b) => order[a.level] - order[b.level]);
+      const { warns, risk } = this.reviewWarnings(p, r.rows);
       const key = JSON.stringify(warns);
       if (r.warnKey !== key) {
         r.warnKey = key;
@@ -2605,9 +2637,29 @@
       if (r.error.textContent !== error) errorContent(r.error, error, r.preview?.raw || '');
       r.error.hidden = !error;
       const off = this.mutating || !state.authorized;
-      r.approve.disabled = off || Boolean(error);
+      // Not before its first preview: the proposal that follows an approval
+      // takes that one's place, so a double tap must not approve it unseen.
+      r.approve.disabled = off || Boolean(error) || !r.preview;
       if (r.reject) r.reject.disabled = off;
       r.attachInput.disabled = r.offerInput.disabled = this.mutating;
+    }
+
+    // A proposal's warnings as its rows stand, red first, the facts last,
+    // and the endpoints' risks.
+    reviewWarnings(p, rows) {
+      const risk = approveLogic.risks({ endpoints: p.endpoints, wide: rows.some((x) => x.kind === 'l4' && x.checked), listenPort: policyGuard.listenPort, gateways: policyGuard.gateways });
+      const warns = [];
+      for (const host of [...new Set(p.endpoints.map((e) => e.host).filter(Boolean))]) {
+        const c = this.hostChecks.get(host);
+        if (c) warns.push(...approveLogic.hostWarnings(c));
+        else warns.push({ level: 'wait', text: t('review.checking', { host }), detail: '', host });
+      }
+      warns.push(...approveLogic.rowWarnings(rows));
+      for (const x of p.allowedIps) warns.push({ level: 'amber', text: t('policy.approve.internal', { host: x.host || t('policy.anyHost'), ips: allowedIPsLabel(x.host, x.ips) }), detail: '' });
+      for (const line of risk.lines) warns.push({ level: line === risk.error ? 'red' : 'amber', text: line, detail: '' });
+      const order = { red: 0, amber: 1, wait: 2, ok: 3 };
+      warns.sort((a, b) => order[a.level] - order[b.level]);
+      return { warns, risk };
     }
 
     // The rule the approval writes, as policy.yaml will hold it, read from
@@ -2624,8 +2676,7 @@
         let preview;
         try {
           const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/preview', { method: 'POST', body: JSON.stringify(body), timeoutMs: 30000 });
-          const grants = (value) => (Array.isArray(value) ? value.slice(0, 32) : []).filter((a) => a && typeof a.provider === 'string' && typeof a.host === 'string').map((a) => ({ provider: text(a.provider, 64), host: text(a.host, 253), path: text(a.path, 512), required: a.required === true }));
-          preview = { yaml: text(data?.yaml, 100000), error: '', grants: { attach: grants(data?.attach), offer: grants(data?.offer) } };
+          preview = { yaml: text(data?.yaml, 100000), error: '', grants: { attach: credentialList(data?.attach), offer: credentialList(data?.offer) } };
         } catch (error) {
           preview = { yaml: '', error: error.message, raw: error.raw || '' };
         }
@@ -2640,7 +2691,154 @@
 
     async approveReview(r) {
       if (!r.built?.scope || this.mutating || !state.authorized) return;
-      await this.post('/proposals/approve', { requestId: r.p.id, digest: r.p.digest, scope: r.built.scope }, t('policy.approve.done'));
+      const body = { requestId: r.p.id, digest: r.p.digest, scope: r.built.scope };
+      if (r.p.rejected) await this.post('/proposals/approve', body, t('policy.approve.done'));
+      else await this.sendApproval([r.p.id], '/proposals/approve', body, () => t('policy.approve.done'));
+    }
+
+    // An approval holds nothing back: the proposals sent leave the list at
+    // once and the owner goes on with the others, now and while the sandbox
+    // loads the change (nothing waits for that). The server's policy lock
+    // takes the requests in turn. done words the answer.
+    async sendApproval(ids, path, body, done) {
+      if (this.disposed || !state.authorized) return;
+      for (const id of ids) this.approving.add(id);
+      this.generation += 1;
+      this.showActionError('');
+      this.dropApproving();
+      this.render();
+      try {
+        // Longer than a batch ahead in the server's queue.
+        const result = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + path, { method: 'POST', body: JSON.stringify(body), timeoutMs: 150000 });
+        const note = done(result);
+        this.done.textContent = note;
+        this.done.hidden = !note;
+        clearTimeout(this.doneTimer);
+        this.doneTimer = setTimeout(() => { this.done.hidden = true; }, 30000);
+      } catch (error) {
+        this.showActionError(error.status === 400 || error.status === 409 ? error.message : t('policy.unknownResult', { message: error.message }), error.raw);
+        if (error.status === 401 || error.status === 403) invalidateSession();
+      } finally {
+        for (const id of ids) this.approving.delete(id);
+        this.actedAt = Date.now();
+        this.storeAt = -1;
+        // A read begun before the answer may still list them as waiting.
+        this.generation += 1;
+        if (!this.disposed) {
+          await this.refreshing;
+          await this.refresh();
+        }
+      }
+    }
+
+    dropApproving() {
+      if (this.snapshot) this.snapshot.pending = this.snapshot.pending.filter((p) => !this.approving.has(p.id));
+    }
+
+    // A red warning is off unless the owner checked it.
+    dangerous(p) {
+      return p.endpoints.some((e) => { const c = this.hostChecks.get(e.host); return c && (c.exfil || c.filter === 'blocked'); });
+    }
+
+    // Whether a batch can take the proposal as its review starts.
+    approvable(p) {
+      if (!this.batchable.has(p)) {
+        const d = approveLogic.defaults(p);
+        const risk = approveLogic.risks({ endpoints: p.endpoints, listenPort: policyGuard.listenPort, gateways: policyGuard.gateways });
+        this.batchable.set(p, !d.error && !risk.error && !(p.unshown.length && d.scope && !d.scope.rules));
+      }
+      return this.batchable.get(p);
+    }
+
+    picked(p) {
+      const pick = this.picks.get(p.id);
+      if (!this.approvable(p)) return false;
+      return pick?.digest === p.digest ? pick.on : !this.dangerous(p);
+    }
+
+    // すべて選ぶ leaves red ones as they are: each is the owner's own check.
+    pickAll(on) {
+      for (const p of this.pendingItems || []) {
+        if (!this.approvable(p) || (on && this.dangerous(p))) continue;
+        this.picks.set(p.id, { digest: p.digest, on });
+      }
+      this.render();
+    }
+
+    // A proposal of the batch as its review starts: what the server would
+    // add (a refusal in error) and the warnings.
+    async batchEntry(p) {
+      const d = approveLogic.defaults(p);
+      const entry = { p, scope: d.scope, methods: d.methods, l4: d.l4, warns: this.reviewWarnings(p, d.rows).warns.filter((w) => w.level !== 'ok'), attach: [], offer: [], error: '' };
+      try {
+        const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/preview', { method: 'POST', body: JSON.stringify({ requestId: p.id, digest: p.digest, scope: d.scope }), timeoutMs: 30000 });
+        entry.attach = credentialList(data?.attach);
+        entry.offer = credentialList(data?.offer);
+      } catch (error) {
+        entry.error = error.message;
+      }
+      return entry;
+    }
+
+    // What the batch's confirmation says of each proposal.
+    batchNode(e) {
+      const row = element('li', 'review-many-item');
+      row.dataset.review = e.p.id;
+      row.append(element('p', 'review-many-host', this.proposalWhere(e.p)));
+      if (e.error) {
+        row.dataset.level = 'red';
+        row.append(element('p', 'review-many-line', t('review.many.excluded', { reason: e.error })));
+        return row;
+      }
+      const allowed = [...e.methods, ...e.l4.map((host) => t('review.many.l4', { host }))].join(', ');
+      const providers = (list) => [...new Set(list.map((a) => a.provider))].join(', ');
+      const token = e.attach.length ? t(e.attach.some((a) => a.required) ? 'review.many.tokenRequired' : 'review.many.token', { provider: providers(e.attach) })
+        : e.offer.length ? t('review.many.tokenOffer', { provider: providers(e.offer) }) : t('review.many.noToken');
+      row.append(element('p', 'review-many-line', t('review.many.allows', { what: allowed })), element('p', 'review-many-line', token));
+      row.dataset.token = String(e.attach.length > 0);
+      for (const w of e.warns) {
+        const line = element('p', 'review-many-warn', w.level === 'wait' ? t('review.many.unknown', { host: w.host }) : w.text);
+        line.dataset.level = w.level;
+        row.append(line);
+      }
+      if (e.warns.some((w) => w.level === 'red')) row.dataset.level = 'red';
+      return row;
+    }
+
+    // The checked proposals, each with its review's starting choices, after
+    // a confirmation that lists what they allow.
+    async approveMany() {
+      const items = (this.pendingItems || []).filter((p) => this.picked(p));
+      if (!items.length || this.batchChecking || this.mutating || !state.authorized) return;
+      this.batchChecking = true;
+      this.render();
+      const entries = [];
+      for (let i = 0; i < items.length; i += 4) entries.push(...await Promise.all(items.slice(i, i + 4).map((p) => this.batchEntry(p))));
+      this.batchChecking = false;
+      this.render();
+      if (this.disposed) return;
+      const going = entries.filter((e) => !e.error);
+      if (!going.length) {
+        this.showActionError(entries.map((e) => this.proposalWhere(e.p) + ': ' + e.error).join('\n'));
+        return;
+      }
+      const details = element('ul', 'review-many');
+      details.append(...entries.map((e) => this.batchNode(e)));
+      const ok = await askConfirm(t('review.approveMany.confirm', { count: going.length }), { ok: t('review.approveMany.ok'), danger: going.some((e) => e.warns.some((w) => w.level === 'red')), details });
+      if (!ok || this.disposed) return;
+      const refused = new Map(entries.filter((e) => e.error).map((e) => [e.p.id, this.proposalWhere(e.p) + ': ' + e.error]));
+      const body = { approvals: going.map((e) => ({ id: e.p.id, digest: e.p.digest, scope: e.scope })) };
+      await this.sendApproval(going.map((e) => e.p.id), '/proposals/approve-many', body, (result) => {
+        const skipped = Array.isArray(result?.skipped) ? result.skipped.filter((x) => x && typeof x.id === 'string').slice(0, 50) : [];
+        for (const x of skipped) {
+          const item = items.find((p) => p.id === x.id);
+          const parts = { conflicts: validConflicts(x.conflicts), ambiguities: validAmbiguities(x.ambiguities) };
+          refused.set(x.id, (item ? this.proposalWhere(item) : x.id) + ': ' + window.IwatoRefusals.message(x.code, x.params, parts, text(x.error, 1000)));
+        }
+        if (refused.size) this.showActionError(t('review.approveMany.skipped', { count: refused.size }) + '\n' + [...refused.values()].join('\n'));
+        const count = going.length - skipped.length;
+        return count ? t('review.approveMany.done', { count }) : '';
+      });
     }
 
     async rejectReview(r) {
@@ -3539,12 +3737,14 @@
           const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals');
           if (this.disposed || epoch !== this.generation) return;
           this.snapshot = this.validate(data);
+          this.dropApproving();
           this.waitingAgent = this.snapshot.pending.filter((p) => p.source === 'agent');
           this.showError(this.snapshot.error);
           // An open history follows new revisions, and so does the drift.
           const version = this.snapshot.policy?.version;
           if (!this.history.hidden && version !== this.historyAt) { this.historyAt = version; this.loadHistory(); }
-          if (this.snapshot.available && version !== this.storeAt) { this.storeAt = version; this.loadStore(); }
+          // While approvals go, OpenShell's merges look like a drift.
+          if (this.snapshot.available && version !== this.storeAt && !this.approving.size) { this.storeAt = version; this.loadStore(); }
         } catch (error) {
           if (this.disposed || epoch !== this.generation) return;
           this.clear(t('policy.loadFailed', { message: error.message }));
@@ -3560,7 +3760,7 @@
 
     // The sandbox list's pending proposals, while the tab is not shown.
     setWaiting(list) {
-      if (this.disposed || this.mutating || this.refreshing) return;
+      if (this.disposed || this.mutating || this.refreshing || this.approving.size) return;
       this.waitingAgent = list.filter((p) => p && /^[a-f0-9]{32}$/.test(p.id) && p.state === 'pending-approval').map((p) => this.validateProposal(p)).filter((p) => p.source === 'agent');
       this.onChange?.();
     }

@@ -2,7 +2,8 @@
 // The policy tab in a real browser against `serve -fake`: the three lists
 // (waiting, the effective policy with provider rules and rules from
 // proposals, rejected), the opened proposal (narrowing, the token, the host
-// checks' warnings, the diff, rejecting with a reason, reject-all), undoing
+// checks' warnings, the diff, rejecting with a reason, reject-all, approving
+// several), undoing
 // a proposal, putting an approved proposal's rule back, the rules piece by
 // piece, the token on an endpoint, adding a rule through the dialog, taking
 // a method and path out, the history with its diffs and revert, a drift,
@@ -329,18 +330,86 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await settled();
     const warns = await reviewBox.locator('.review-warn').evaluateAll((els) => els.map((e) => e.dataset.level + ' ' + e.innerText.replace(/\s+/g, ' ')));
     check(warns[0].startsWith('red ! cdn-x7k2q.top は危険なドメインです') && warns[1].startsWith('amber ▲ cdn-x7k2q.top は登録から 6 日のドメインです') && !warns.some((w) => w.startsWith('ok')), 'red, then amber: ' + warns.join(' / '));
-    check(await reviewBox.getByRole('button', { name: '承認', exact: true }).isEnabled(), 'warnings never block');
+    await page.waitForFunction(() => [...document.querySelectorAll('.terminal-card.selected .review-detail .review-actions button')].some((b) => b.textContent === '承認' && !b.disabled));
+    check(true, 'warnings never block');
     await reviewBox.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(dir, 'review-danger.png') });
     await openItem(/webhook\.site/);
     await settled();
     check(/webhook\.site は外部送信サービスです/.test(await reviewBox.locator('.review-warn[data-level=red]').innerText()), 'an exfiltration service is red');
+    // まとめて承認: a checkbox per proposal, red ones off, and a confirmation
+    // in the page that lists what goes.
+    const pickOf = (host) => pending.locator('.review-row').filter({ has: page.locator('.review-item-host', { hasText: hostRE(host) }) }).locator('.review-pick input');
+    const many = pending.locator('.review-approve-many');
+    const everything = pending.locator('.review-select-all');
+    const waitingAll = await pending.locator('.review-item').count();
+    const countOn = 'まとめて承認 (' + (waitingAll - 2) + ')';
+    check(!(await pickOf(/cdn-x7k2q\.top/).isChecked()) && !(await pickOf(/webhook\.site/).isChecked()), 'a red proposal starts unchecked');
+    check(await pickOf(/http-intake\.logs\.us5\.datadoghq\.com/).isChecked() && (await many.innerText()) === countOn, 'the others start checked, and the button counts them: ' + await many.innerText());
+    check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the checkboxes fit');
+    await everything.uncheck();
+    check((await many.innerText()) === 'まとめて承認 (0)' && await many.isDisabled(), 'nothing checked: nothing to approve');
+    await everything.check();
+    check((await many.innerText()) === countOn && !(await pickOf(/webhook\.site/).isChecked()), 'すべて選ぶ leaves the red ones to the owner');
+    await everything.uncheck();
+    await pickOf(/api\.github\.com/).check();
+    await pickOf(/http-intake\.logs\.us5\.datadoghq\.com/).check();
+    await pickOf(/webhook\.site/).check();
+    await pending.locator('.review-side').screenshot({ path: path.join(dir, 'many-list.png') });
+    await many.click();
+    await dialog.waitFor();
+    const manyRows = page.locator('#confirm-details .review-many-item');
+    const manyRow = (host) => manyRows.filter({ has: page.locator('.review-many-host', { hasText: hostRE(host) }) });
+    check(/^次の 3 件を承認しますか/.test(await page.locator('#confirm-text').innerText()) && await manyRows.count() === 3 && await page.locator('#confirm-ok').getAttribute('class') === 'button button-disconnect', 'the confirmation lists each proposal, as a danger with a red one: ' + await page.locator('#confirm-text').innerText());
+    const prRow = await manyRow(/api\.github\.com/).innerText();
+    check(/許可: POST/.test(prRow) && /トークン: github-personal を付ける/.test(prRow), 'a token that goes with it is said: ' + prRow);
+    const datadogRow = await manyRow(/http-intake\.logs\.us5\.datadoghq\.com/).innerText();
+    check(/許可: GET, HEAD/.test(datadogRow) && /トークン: なし/.test(datadogRow) && /提案は L4/.test(datadogRow), 'an L4 draft goes narrowed to GET and HEAD, with its warning: ' + datadogRow);
+    check(/webhook\.site は外部送信サービスです/.test(await manyRow(/webhook\.site/).locator('.review-many-warn[data-level=red]').innerText()), 'a red warning shows in the confirmation');
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && await page.locator('#confirm-panel .login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the confirmation fits its width');
+    await page.screenshot({ path: path.join(dir, 'many-confirm.png') });
+    await page.click('#confirm-cancel');
+    await pickOf(/webhook\.site/).uncheck();
+    // A proposal that changed since it was shown is skipped and reported
+    // while the other goes (the request's digest stands in for the change).
+    // The answer is held back: the panel stays in use meanwhile.
+    await page.route(/\/proposals\/approve-many$/, async (route) => {
+      const body = JSON.parse(route.request().postData());
+      body.approvals[0].digest = '0'.repeat(64);
+      await new Promise((r) => { setTimeout(r, 1500); });
+      await route.continue({ postData: JSON.stringify(body) });
+    });
+    await many.click();
+    await dialog.waitFor();
+    const manyAnswer = page.waitForResponse((r) => /\/proposals\/approve-many$/.test(r.url()));
+    await page.click('#confirm-ok');
+    await page.waitForFunction((n) => document.querySelectorAll('.terminal-card.selected .review-item').length === n, waitingAll - 2);
+    check(await pending.getByRole('button', { name: 'まとめて却下' }).isEnabled() && await pickOf(/webhook\.site/).isEnabled(), 'while a batch is sent, the panel stays in use');
+    const manyBody = await (await manyAnswer).json();
+    check(manyBody.approved.length === 1 && manyBody.approved[0].rule === 'allow_http_intake_logs_us5_datadoghq_com_443' && manyBody.skipped.length === 1 && manyBody.skipped[0].code === 'proposal_changed', 'one approved, one skipped with a code: ' + JSON.stringify(manyBody.skipped));
+    await page.unroute(/\/proposals\/approve-many$/);
+    const skippedNote = panel.locator('.panel-error', { hasText: '1 件は承認しませんでした' });
+    await skippedNote.waitFor();
+    check(/^api\.github\.com: 提案が表示したあとに変わりました/m.test(await skippedNote.innerText()), 'the skipped one is reported by its host, translated: ' + await skippedNote.innerText());
+    await panel.locator('.proposal-done', { hasText: '1 件を承認しました' }).waitFor();
+    const loadBadge = rule('allow_http_intake_logs_us5_datadoghq_com_443').locator('.apply-badge[data-state=pending]');
+    await loadBadge.waitFor();
+    // Waiting for the sandbox to load it holds nothing back: the next
+    // approval goes through before the first is loaded.
+    await item(/api\.github\.com/).click();
+    await reviewBox.locator('.review-host').filter({ hasText: /^api\.github\.com/ }).waitFor();
+    check(await approve() === 200 && await loadBadge.count() === 1, 'an approval goes through while the last one waits to load');
+    await rule('allow_api_github_com_443_2').waitFor();
+    await page.screenshot({ path: path.join(dir, 'many-after.png') });
     // Rejecting with a reason; then まとめて却下 asks in the page.
+    await openItem(/webhook\.site/);
     await reviewBox.locator('.review-reason').fill('使いません');
     const rejectAnswer = page.waitForRequest((r) => r.url().endsWith('/proposals/reject'));
     await reviewBox.getByRole('button', { name: '却下', exact: true }).click();
     check(JSON.parse((await rejectAnswer).postData()).reason === '使いません', 'the reason goes with the rejection');
     await item(/webhook\.site/).waitFor({ state: 'detached' });
+    // The list is read again after a decision.
+    await pending.locator('.review-item').first().waitFor();
     const waitingNow = await pending.locator('.review-item').count();
     await pending.getByRole('button', { name: 'まとめて却下' }).click();
     await dialog.waitFor();
@@ -690,7 +759,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await expReview.locator('.review-rule').count() === 100 && await fits(), 'all 100 rules are rows');
     const manyApprove = expReview.getByRole('button', { name: '承認', exact: true });
     await manyApprove.scrollIntoViewIfNeeded();
-    check(await manyApprove.isEnabled() && await inView(manyApprove), '承認 is reachable at the end');
+    await page.waitForFunction(() => [...document.querySelectorAll('.terminal-card.selected .review-detail .review-actions button')].some((b) => b.textContent === '承認' && !b.disabled));
+    check(await inView(manyApprove), '承認 is reachable at the end');
     await page.screenshot({ path: path.join(dir, 'review-many.png') });
     await manyApprove.click();
     await exp.locator('.policy-current').getByText('allow_many_example').first().waitFor();

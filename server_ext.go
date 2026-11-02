@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -113,7 +114,8 @@ func (s *Server) handleSandbox(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProposals shows the sandbox's proposals (GET) and approves or rejects
-// one (POST approve|reject with its request ID).
+// one (POST approve|reject with its request ID) or approves several (POST
+// approve-many).
 func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts []string) {
 	rt, hasRT := s.rt.(proposalRuntime)
 	if r.Method == http.MethodGet && len(parts) == 2 {
@@ -154,12 +156,16 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 		jsonResponse(w, 200, v)
 		return
 	}
-	if r.Method != http.MethodPost || len(parts) != 3 || !proposalOps[parts[2]] && parts[2] != "preview" {
+	if r.Method != http.MethodPost || len(parts) != 3 || !proposalOps[parts[2]] && parts[2] != "preview" && parts[2] != "approve-many" {
 		fail(w, 405, "method/operation not allowed")
 		return
 	}
 	sb, ok := s.sandboxFor(w, parts, 3)
 	if !ok || !s.require(w, r, true) {
+		return
+	}
+	if parts[2] == "approve-many" {
+		s.approveMany(w, r, sb)
 		return
 	}
 	var body struct {
@@ -204,10 +210,11 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 		s.previewApproval(w, sb, body.RequestID, body.Digest, body.Scope)
 		return
 	}
+	// The time starts with the turn: the owner may queue approvals.
+	defer s.lockPolicy(sb.Name)()
 	ctx, cancel := timeout(s.ctx, 30*time.Second)
 	defer cancel()
 	ctx = withRejectNote(refuseDrift(ctx), body.Reason)
-	defer s.lockPolicy(sb.Name)()
 	if parts[2] == "undo" || parts[2] == "restore" {
 		s.undoProposal(ctx, w, sb, body.RequestID, parts[2] == "restore")
 		return
@@ -224,10 +231,7 @@ func (s *Server) handleProposals(w http.ResponseWriter, r *http.Request, parts [
 	jsonResponse(w, 200, map[string]any{"ok": true, "version": change.Version})
 }
 
-// approvable checks the rule an approval would join the policy with (as
-// proposed, or narrowed): it may carry an attached provider's credential
-// uninspected, which OpenShell refuses, or reach Iwato's own port. It
-// writes the refusal.
+// approvable checks the rule an approval would add. It writes the refusal.
 func (s *Server) approvable(ctx context.Context, w http.ResponseWriter, sb Sandbox, request, shown string, scope *ProposalScope) bool {
 	if pr, ok := s.rt.(proposedRuleRuntime); ok {
 		rule, digest, e := pr.ProposedRule(ctx, sb, request)
@@ -240,36 +244,115 @@ func (s *Server) approvable(ctx context.Context, w http.ResponseWriter, sb Sandb
 				failErr(w, 409, errProposalChanged())
 				return false
 			}
-			merged := *rule
-			if scope != nil {
-				merged = scope.apply(merged)
-			}
-			if e := s.iwatoPortRefusal(map[string]v1.NetworkPolicyRule{orDefault(merged.Name, "proposal"): merged}); e != nil {
-				failErr(w, 409, e)
-				return false
-			}
-			scopes, e := s.attachedScopes(ctx, sb)
-			if e != nil {
-				failCode(w, 409, "provider_unverifiable", map[string]any{"detail": safeCLIError(e)}, "プロバイダーを確かめられません: "+safeCLIError(e))
-				return false
-			}
-			name := merged.Name
-			if name == "" {
-				name = "proposal"
-			}
-			if cs := credentialConflicts(map[string]v1.NetworkPolicyRule{name: merged}, scopes); len(cs) > 0 {
-				failCheck(w, conflictRefusal(cs))
-				return false
-			}
-			// An endpoint already in the policy (a provider's, say) that
-			// overlaps with other settings: OpenShell refuses the approval.
-			if e := s.checkApproval(ctx, sb, name, *rule, scope); e != nil {
+			if e := s.approvalRefusal(ctx, sb, nil, *rule, scope); e != nil {
 				failCheck(w, e)
 				return false
 			}
 		}
 	}
 	return true
+}
+
+// approvalRefusal says why a proposed rule (as proposed, or narrowed) cannot
+// join rules (nil: the sandbox's policy): it may carry an attached
+// provider's credential uninspected, which OpenShell refuses, reach Iwato's
+// own port, or overlap an endpoint already there (a provider's, say) with
+// other settings.
+func (s *Server) approvalRefusal(ctx context.Context, sb Sandbox, rules map[string]v1.NetworkPolicyRule, rule v1.NetworkPolicyRule, scope *ProposalScope) error {
+	merged := rule
+	if scope != nil {
+		merged = scope.apply(merged)
+	}
+	name := orDefault(merged.Name, "proposal")
+	one := map[string]v1.NetworkPolicyRule{name: merged}
+	if e := s.iwatoPortRefusal(one); e != nil {
+		return e
+	}
+	scopes, e := s.scopesOver(ctx, sb, rules)
+	if e != nil {
+		return errCode("provider_unverifiable", map[string]any{"detail": safeCLIError(e)}, "プロバイダーを確かめられません: "+safeCLIError(e))
+	}
+	if cs := credentialConflicts(one, scopes); len(cs) > 0 {
+		return conflictRefusal(cs)
+	}
+	return s.checkApproval(ctx, sb, name, rule, scope, rules)
+}
+
+// batchApprovalRuntime approves several proposals in one revision.
+type batchApprovalRuntime interface {
+	ApproveProposals(ctx context.Context, sb Sandbox, items []ProposalApproval, check approvalCheck) (ApprovalBatch, error)
+}
+
+// approveManyTime is how long a batch takes at most (approvalBudget and
+// the last approval and apply); the page waits a little longer.
+const approveManyTime = 120 * time.Second
+
+// approveMany approves the proposals listed under one policy lock: one
+// commit and one whole policy, with each proposal's own rule. Those that
+// cannot be approved are listed with why; the others go on.
+func (s *Server) approveMany(w http.ResponseWriter, r *http.Request, sb Sandbox) {
+	var body struct {
+		Approvals []ProposalApproval `json:"approvals"`
+	}
+	if decodeLimit(w, r, &body, 1<<20) != nil || len(body.Approvals) == 0 {
+		fail(w, 400, "invalid approvals")
+		return
+	}
+	if len(body.Approvals) > maxApprovals {
+		failCode(w, 400, "approve_many_too_many", map[string]any{"max": maxApprovals}, fmt.Sprintf("一度に承認できるのは %d 件までです", maxApprovals))
+		return
+	}
+	seen := map[string]bool{}
+	for _, a := range body.Approvals {
+		if !ownerID.MatchString(a.ID) || seen[a.ID] {
+			fail(w, 400, "invalid pending request ID")
+			return
+		}
+		seen[a.ID] = true
+		if !digestPattern.MatchString(a.Digest) {
+			failCode(w, 400, "proposal_digest_missing", nil, "表示した提案がわかりません。表示し直してください")
+			return
+		}
+		if a.Scope != nil {
+			if e := a.Scope.Validate(); e != nil {
+				failErr(w, 400, e)
+				return
+			}
+		}
+	}
+	rt, ok := s.rt.(batchApprovalRuntime)
+	if !ok {
+		fail(w, 409, "proposals unavailable")
+		return
+	}
+	defer s.lockPolicy(sb.Name)()
+	ctx, cancel := timeout(s.ctx, approveManyTime)
+	defer cancel()
+	ctx = refuseDrift(withGatewayReads(ctx))
+	batch, e := rt.ApproveProposals(ctx, sb, body.Approvals, func(rules map[string]v1.NetworkPolicyRule, proposed v1.NetworkPolicyRule, scope *ProposalScope) error {
+		return s.approvalRefusal(ctx, sb, rules, proposed, scope)
+	})
+	approved := make([]map[string]string, 0, len(batch.Changes))
+	for _, c := range batch.Changes {
+		approved = append(approved, map[string]string{"id": c.Request, "rule": c.Rule})
+	}
+	if e != nil && len(batch.Changes) > 0 {
+		detail := safeCLIError(e)
+		failCodeWith(w, 409, "approve_many_apply_failed", map[string]any{"count": len(batch.Changes), "detail": detail}, detail, map[string]any{"approved": approved, "skipped": batch.Skipped})
+		return
+	}
+	if e != nil {
+		s.failGateway(ctx, w, sb, e)
+		return
+	}
+	for _, c := range batch.Changes {
+		s.recordPolicyChange(sb.Name, c)
+	}
+	version := uint32(0)
+	if len(batch.Changes) > 0 {
+		version = batch.Changes[0].Version
+	}
+	jsonResponse(w, 200, map[string]any{"ok": true, "version": version, "approved": approved, "skipped": batch.Skipped})
 }
 
 // approvalPreviewRuntime shows the rule an approval would write.
