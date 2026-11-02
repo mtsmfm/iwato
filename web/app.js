@@ -4845,17 +4845,26 @@
       return unseen;
     }
 
+    termList() {
+      return this.termNames.includes(this.termName) ? this.termNames : [...this.termNames, this.termName];
+    }
+
+    // The Nth terminal of the tabs, while they show.
+    termAt(index) {
+      return this.termTabs.hidden ? undefined : this.termList()[index];
+    }
+
     renderTermTabs() {
       const unseen = this.stoppedUnseen();
-      const names = this.termNames.includes(this.termName) ? this.termNames : [...this.termNames, this.termName];
+      const names = this.termList();
       this.termTabs.hidden = !this.termMulti || this.sandbox.status !== 'running';
-      const nodes = names.map((name) => {
+      const nodes = names.map((name, index) => {
         const tab = element('span', 'term-tab');
         tab.setAttribute('aria-selected', String(name === this.termName));
         const label = termLabel(name);
         const select = button('term-select', label, () => this.switchTerm(name));
         select.setAttribute('role', 'tab');
-        select.title = t('term.name', { name: label });
+        select.title = t('term.name', { name: label }) + (index < 9 ? ' (Alt+' + (index + 1) + ')' : '');
         if (this.termOutdated.includes(name)) {
           select.append(element('span', 'term-outdated', t('term.outdated')));
           select.title += t('term.outdated.title');
@@ -5938,8 +5947,22 @@
       endSwitch(event.key !== 'Escape' && !event.ctrlKey);
       return;
     }
-    if (!event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
     const digit = /^Digit([1-9])$/.exec(event.code || '');
+    if (digit && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.isComposing && !dialogOpen()) {
+      // Alt+1–9: the Nth terminal of the shown sandbox; without one, the
+      // terminal gets the key.
+      const card = cards.get(state.selected);
+      const name = card?.termAt(digit[1] - 1);
+      if (!name) return;
+      event.preventDefault();
+      event.stopPropagation();
+      reportPresence(true);
+      card.switchTerm(name);
+      // A hardware keyboard on a phone too.
+      card.terminal?.focus();
+      return;
+    }
+    if (!event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
     if (!(digit && !event.shiftKey) && event.code !== 'Tab') return;
     if (dialogOpen()) return;
     event.preventDefault();

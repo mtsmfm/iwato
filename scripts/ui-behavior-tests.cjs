@@ -2465,6 +2465,11 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   event = press(sc, 'Digit9'); assert(event.defaultPrevented); assert.equal(shown(), 'web', 'no ninth sandbox: nothing');
   const one = await environment({status: 'running'}); await flush(); one.els['log-panel'].hidden = true; const before = one.sockets.length;
   event = press(one, 'Tab'); release(one); await flush(); assert(event.defaultPrevented); assert.equal(one.sockets.length, before, 'one sandbox: nothing'); assert.equal(one.els['shortcut-toast'].hidden, true);
+  { // Alt+1–9: the Nth terminal of the shown sandbox.
+    const alt = (code, {shift = false} = {}) => { const event = {type: 'keydown', code, key: code.slice(-1), ctrlKey: false, shiftKey: shift, altKey: true, metaKey: false, isComposing: false, keyCode: 0, defaultPrevented: false, stopPropagation() {}, preventDefault() { this.defaultPrevented = true; }}; sc.win.listeners.keydown(event); return event; };
+    assert.equal(alt('Digit9').defaultPrevented, false, 'no such terminal: the key goes to the terminal');
+    assert.equal(alt('Digit2', {shift: true}).defaultPrevented, false, 'Alt+Shift is not the shortcut');
+  }
   ok('Ctrl+1–9 shows a sandbox, Ctrl+Tab the recently shown ones; the terminal gets neither, composing and dialogs leave them alone');
   }
   {
