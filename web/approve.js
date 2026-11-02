@@ -136,6 +136,17 @@
       .map((r) => (r.method === '*' ? t('review.allMethods') : r.method) + ' ' + r.host + r.path);
   }
 
+  // Approving with what an opened proposal starts with (a batch): its rows,
+  // its scope ({scope, error}, no token choice: the server's default), and
+  // what stays allowed.
+  function defaults(item) {
+    const rows = reviewRows(item);
+    const skip = uninspectedHosts(item, rows);
+    const kept = rows.filter((r) => r.checked && !(r.kind === 'rule' && skip.has(r.host)));
+    const methods = [...new Set(kept.filter((r) => r.kind === 'rule').map((r) => r.method === '*' ? t('review.allMethods') : r.method))];
+    return { rows, ...reviewScope(item, rows), methods, l4: kept.filter((r) => r.kind === 'l4').map((r) => r.label) };
+  }
+
   const dayMs = 24 * 60 * 60 * 1000;
   // A host's check (host_check.go) as warnings: red (an exfiltration
   // service, the filtering resolver's block), amber (registered under 30
@@ -216,5 +227,5 @@
     return { lines, error };
   }
 
-  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
+  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, defaults, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
 })();

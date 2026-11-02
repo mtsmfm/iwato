@@ -14,7 +14,7 @@ The switch at the top of the tab, which stays in place while you scroll, chooses
 
 - **Waiting for approval**: proposals waiting for you, the agent's first, with one opened beside them (below them on a phone; see [Approving](#approving)). **Reject all** rejects every one after a question
 - **Approved list**: the sandbox's effective policy. Rules from approved proposals can be undone (**Undo**). Rules of providers whose profile has destinations of its own (imported with OpenShell's CLI) are read-only. A rule whose destinations carry a provider's credential is marked **Credential: NAME**. For inspected endpoints, the requests the gateway passed in audit mode and the requests it blocked are listed (from the last 2,000 lines of the sandbox's log), because a blocked method or path does not become a proposal
-- **Rejected proposals**
+- **Rejected proposals**. OpenShell rejects a waiting proposal on its own when a newer one for the same host, port and program comes, and a blocked request counts. When nothing is left in its place, the tab says so above the waiting list for a day; you have not decided it, and you can approve it here as proposed
 
 The tab also has: **Add a rule** (for every program, like approvals), adding a host or a method and path to a rule (**Add a destination**, **Add methods and paths**), removing parts of a rule, attaching or removing a provider's token on an endpoint whose host the provider's credential is meant for (**Attach / Remove NAME's token**), **History** (each change with its reason and diff; **Revert** undoes one as a new change, except the first), and **Presets**.
 
@@ -49,6 +49,10 @@ The opened proposal shows the agent's reason (none for OpenShell's own drafts), 
 A rule on Iwato's own port is refused, from the approval, a rule added by hand and the YAML editor alike. When OpenShell would refuse the rule (endpoints on the same host, port and path whose settings differ), the opened proposal says why and Approve waits. The approval is for the version you saw: when the proposal changed in the meantime, Iwato refuses it and shows the new version.
 
 A proposal with more than Iwato can show (more than 128 rules, for example) or with settings it does not show (GraphQL, MCP, request signing) can be approved only narrowed: reject it, or write the rule in YAML.
+
+After you approve a proposal, it leaves the list and the next one is ready: you do not have to wait for the sandbox to load the change, or for the approval to finish.
+
+To approve several at once, check them in the list and press **Approve selected**. They start checked, except red ones (**Select all** leaves those to you). Each is approved with the settings it opens with, whatever you changed in an opened proposal: uninspected drafts narrowed to `GET` and `HEAD`, a token that would go with it by default on, a token you could add off. Iwato first lists what each one allows, its token and its warnings; a host check that has not finished shows as unknown. They become one change in the policy history and reach the sandbox together, each as its own rule. One that cannot be approved stays waiting and is listed with the reason; the others go ahead.
 
 A rejected proposal can be approved later from the rejected list: Approve opens the same review, with the same warnings. Its rules are shown but cannot be unchecked, because OpenShell approves a rejected proposal only as proposed. To narrow it, approve it, Undo it on its rule, then approve it narrowed.
 

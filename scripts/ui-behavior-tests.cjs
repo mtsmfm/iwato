@@ -50,7 +50,7 @@ const response = (data, status = 200) => ({ok: status >= 200 && status < 300, st
 async function environment({touch = false, fullscreen = true, noSandboxes = false, token = true, fake = true, status = 'not-created', unauthorized = false, savedTerm = null, search = '', terms = null, push = false, androidApp = false, languages = ['ja-JP']} = {}) {
   const ids = ['terminal-grid', 'notice-title', 'notice-text', 'notice', 'server-label', 'server-state', 'connection-count', 'empty-title', 'empty-text', 'empty-state', 'refresh-button', 'fake-banner', 'sandbox-nav', 'menu-button', 'sidebar', 'sidebar-actions', 'app-shell',
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
-    'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
+    'confirm-details', 'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
     'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'policy-host-risk', 'update-button', 'res-totals', 'shortcut-toast'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
@@ -274,8 +274,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const boxes = (env) => nodes(review(env)).filter((n) => n.type === 'checkbox');
   const ruleRows = (env) => nodes(review(env)).filter((n) => n.className === 'review-rule').map((r) => [r.children[0].checked, texts(r).replace(/\n/g, ' '), r.dataset.off]);
   const toggle = (box) => { box.checked = !box.checked; box.listeners.change(); };
-  const approveFirst = async (env) => { find(review(env), '承認').click(); await flush(); };
   // The host checks and the preview wait on short timers.
+  const approveFirst = async (env) => { await runTimers(env); find(review(env), '承認').click(); await flush(); };
   const runTimers = async (env) => { for (let i = 0; i < 2; i++) { for (const [id, x] of [...env.timeouts]) if (x.ms === 30 || x.ms === 250) { env.timeouts.delete(id); x.fn(); } await flush(); } };
   const scopeOf = (env) => JSON.parse(mutations(env).at(-1).body);
   const eg = await environment({fake: false}); eg.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response(proposalItem)); await readPolicy(eg);
@@ -290,7 +290,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   eg.card().children[2].children[0].children[1].click(); await flush(); assert(eg.intervals.some((i) => i.ms === 2000 && !i.cleared), 'the policy tab follows closely just after the owner acted');
   ok('the policy tab opens a proposal beside the list and approves it as proposed for every program, with its request ID and digest');
 
-  const approveEnv = async (pending, more = {}) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : /\/preview$/.test(path) ? response({yaml: 'allow_x:\n  endpoints: []\n'}) : response({...proposalItem, pending: [pending], ...more})); await readPolicy(env); return env; };
+  const approveEnv = async (pending, more = {}) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : /\/preview$/.test(path) ? response({attach: pending.attach, offer: pending.offer, yaml: 'allow_x:\n  endpoints: []\n'}) : response({...proposalItem, pending: [pending], ...more})); await readPolicy(env); return env; };
   {
     // Narrowed: an unchecked rule leaves the approval; the rest go as rules.
     const narrow = await approveEnv(proposal);
@@ -633,12 +633,39 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const guardedBefore = proposalReads(guarded).length; policyRefresh(guarded).click(); policyRefresh(guarded).click(); await guarded.tickPoll(); assert.equal(proposalReads(guarded).length, guardedBefore + 1);
   pendingRead.resolve(response(proposalItem)); await flush(); assert.equal(pendingItems(guarded).length, 1);
   ok('concurrent proposal reads coalesce');
-  const mutationWait = deferred(); const busy = await environment({fake: false}); busy.setConfirm(true); busy.setProposalHandler((path) => path.endsWith('/approve') ? mutationWait.promise : response(proposalItem)); await readPolicy(busy);
-  await approveFirst(busy); const busyReads = proposalReads(busy).length;
+  const mutationWait = deferred(); const busy = await environment({fake: false}); busy.setConfirm(true); busy.setProposalHandler((path) => path.endsWith('/reject') ? mutationWait.promise : /\/preview$/.test(path) ? response({yaml: 'x: 1\n'}) : response(proposalItem)); await readPolicy(busy); await runTimers(busy);
+  find(review(busy), '却下').click(); await flush(); const busyReads = proposalReads(busy).length;
   assert.equal(find(review(busy), '却下').disabled, true); find(review(busy), '却下').click(); policyRefresh(busy).click(); await busy.tickPoll();
   assert.equal(proposalReads(busy).length, busyReads, 'no reads while a decision is in flight'); assert.equal(mutations(busy).length, 1);
   mutationWait.resolve(response({ok: true})); await flush(); assert(proposalReads(busy).length > busyReads);
   ok('an in-flight decision blocks repeated decisions and polling reads until it completes');
+  {
+    // An approval leaves the list at once and holds nothing back: the next
+    // one goes while it is under way, once its own preview answered.
+    const wait = deferred(); const second = {...proposal, id: 'b'.repeat(32), digest: 'e'.repeat(64), endpoints: [{...proposal.endpoints[0], host: 'pypi.org'}]};
+    const going = await environment({fake: false}); going.setConfirm(true);
+    going.setProposalHandler((path) => path.endsWith('/approve') ? wait.promise : /\/preview$/.test(path) ? response({yaml: 'x: 1\n'}) : response({...proposalItem, pending: [proposal, second]})); await readPolicy(going);
+    await approveFirst(going);
+    assert.equal(pendingItems(going).length, 1, 'the approved one left the list');
+    assert.equal(find(review(going), '承認').disabled, true, 'not before the next one\'s preview: a double tap does not approve it');
+    await going.tickPoll(); await runTimers(going);
+    assert.equal(pendingItems(going).length, 1, 'a read does not bring it back while it is sent');
+    assert.equal(find(review(going), '承認').disabled, false, 'the next one can go while the first is under way');
+    find(review(going), '承認').click(); await flush();
+    assert.equal(mutations(going).length, 2); assert.equal(JSON.parse(mutations(going)[1].body).requestId, 'b'.repeat(32));
+    wait.resolve(response({ok: true})); await flush();
+    ok('an approval leaves the list at once and the next one can go while it is sent');
+  }
+  {
+    // A batch's starting choices are the opened proposal's.
+    const box = {window: {}, navigator: {languages: ['ja']}}; vm.runInNewContext(i18nSource, box); vm.runInNewContext(approveSource, box); const {defaults} = box.window.IwatoApprove;
+    const plain = (x) => JSON.parse(JSON.stringify(x));
+    const l4 = defaults({endpoints: [{host: 'x.example', ports: [443], protocol: '', rules: []}]});
+    assert.deepEqual(plain([l4.scope, l4.methods, l4.l4]), [{rules: [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}]}, ['GET', 'HEAD'], []]);
+    const ssh = defaults({endpoints: [{host: 'x.example', ports: [22], protocol: '', rules: []}]});
+    assert.deepEqual(plain([ssh.scope, ssh.methods, ssh.l4]), [{}, [], ['x.example:22']]);
+    ok('a batch approves with what the opened proposal starts with: L4 drafts narrowed to GET and HEAD');
+  }
   const hidden = await environment({fake: false}); assert.equal(hidden.intervals[0].ms, 10000); const visibleRequests = hidden.requests.length; hidden.document.hidden = true; await hidden.tickPoll(); policyRefresh(hidden).click(); await flush(); assert.equal(hidden.requests.length, visibleRequests); hidden.document.hidden = false; hidden.document.listeners.visibilitychange(); await flush(); assert(hidden.requests.length > visibleRequests); assert.equal(mutations(hidden).length, 0);
   ok('10-second polling and manual status reads pause while hidden; visibility recovery remains read-only');
   const errors = await environment({fake: false}); errors.setProposalHandler(() => response({error: '<script>bad status</script>'}, 503)); await readPolicy(errors); const errorNode = errors.policy().children[0].children[2];
@@ -1596,6 +1623,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   find(lists.policy().children[1].children[3], 'もっと見る (ほか 2 件)').click(); await flush();
   assert.equal(rejItems().length, 12);
   find(rejItems()[0], '承認する').click(); await flush();
+  for (const [id, x] of [...lists.timeouts]) if (x.ms === 250) { lists.timeouts.delete(id); x.fn(); }
+  await flush();
   find(rejItems()[0], '承認').click(); await flush();
   const appr = lists.requests.filter((r) => r.path === '/api/sandboxes/api/proposals/approve');
   assert.deepEqual(JSON.parse(appr.at(-1).body), {requestId: rejected[0].id, digest: rejected[0].digest, scope: {}});

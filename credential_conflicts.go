@@ -229,6 +229,12 @@ type proposedRuleRuntime interface {
 // attachedScopes are the credentialed endpoints of the providers attached
 // to the sandbox.
 func (s *Server) attachedScopes(ctx context.Context, sb Sandbox) ([]credScope, error) {
+	return s.scopesOver(ctx, sb, nil)
+}
+
+// scopesOver is attachedScopes with the bindings of rules, or of the
+// sandbox's policy when nil.
+func (s *Server) scopesOver(ctx context.Context, sb Sandbox, rules map[string]v1.NetworkPolicyRule) ([]credScope, error) {
 	rt, ok := s.rt.(providerRuntime)
 	if !ok {
 		return nil, nil
@@ -243,14 +249,12 @@ func (s *Server) attachedScopes(ctx context.Context, sb Sandbox) ([]credScope, e
 			scopes = append(scopes, providerScopes(p.Name, p.Profile)...)
 		}
 	}
-	if rr, ok := s.rt.(policyRulesRuntime); ok {
-		rules, err := rr.PolicyRules(ctx, sb)
-		if err != nil {
+	if rr, ok := s.rt.(policyRulesRuntime); ok && rules == nil {
+		if rules, err = rr.PolicyRules(ctx, sb); err != nil {
 			return nil, err
 		}
-		scopes = append(scopes, boundScopes(rules, list)...)
 	}
-	return scopes, nil
+	return append(scopes, boundScopes(rules, list)...), nil
 }
 
 // boundScopes are the credentialed endpoints the policy's bindings make

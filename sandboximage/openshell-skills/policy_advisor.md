@@ -266,6 +266,15 @@ needs.
 - **Read wide, write narrow.** Inside that scope, `GET`, `HEAD` and `OPTIONS`
   may use `**`. `PUT`, `POST`, `PATCH` and `DELETE` name the exact path, with `*`
   only for an id or a number (`/repos/ORG/REPO/pulls/*/merge`).
+- **Do not retry a blocked request while its proposal waits.** OpenShell
+  drafts a proposal from each blocked request within about 10 seconds, and any
+  new submission for the same host, port and program rejects what waits, even
+  when the draft leaves nothing waiting in its place.
+- **`rejected` with "superseded by chunk X" is not the owner's answer.** Read
+  `GET /v1/proposals/X`: when `pending`, wait on X; when `approved`, go on; when
+  rejected by the owner, that is the answer. When X is itself superseded, follow
+  it; when that leads back to a chunk you have seen, nothing waits any more:
+  submit your proposal again.
 - **A changed executable stays denied.** OpenShell pins the hash of each
   executable in a connection (the process and every parent) on first use. A
   denial that says "binary integrity check failed" or "executable changed"

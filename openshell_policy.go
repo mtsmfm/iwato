@@ -504,6 +504,9 @@ type PolicyChange struct {
 	At      int64  `json:"at"`
 	// AppliedAt is when Iwato first saw the sandbox load it.
 	AppliedAt int64 `json:"appliedAt,omitempty"`
+	// Request and chunk are the approved proposal's IDs.
+	Request string `json:"-"`
+	chunk   string
 }
 
 // opsRule is the rule that merge operations touch.
