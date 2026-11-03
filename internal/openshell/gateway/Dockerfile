@@ -73,11 +73,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends git build-essen
     && rm -rf /var/lib/apt/lists/*
 RUN set -e; [ "$OPENSHELL_TAG" = v0.1.6 ] || { echo "openshell.patch is for OpenShell v0.1.6, not $OPENSHELL_TAG" >&2; exit 1; }; \
     a=$(uname -m); case "$a" in \
-      x86_64) want=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71 ;; \
-      aarch64) want=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433 ;; \
+      x86_64) want=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4 ;; \
+      aarch64) want=a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697 ;; \
       *) echo "unsupported architecture $a" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/1.29.1/$a-unknown-linux-gnu/rustup-init"; \
+    curl -fsSL -o /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/1.29.2/$a-unknown-linux-gnu/rustup-init"; \
     echo "$want  /tmp/rustup-init" | sha256sum --check --strict -; \
     chmod +x /tmp/rustup-init; /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain 1.95.0; rm /tmp/rustup-init
 ENV PATH=/root/.cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.95.0

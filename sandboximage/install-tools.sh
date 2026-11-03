@@ -3,12 +3,12 @@
 # checksums together. mise lives in a directory dev owns, so `mise
 # self-update` works without sudo (until the sandbox is created again).
 set -eu
-MISE_VERSION=2026.10.17
+MISE_VERSION=2026.10.20
 STARSHIP_VERSION=1.27.0
 case "$(uname -m)" in
-  x86_64) mt=x64; ms=f6e5e457103252eca6032dbc5c29bff7e0c73f1bc0f915541e7658ba360d4287
+  x86_64) mt=x64; ms=bfeb49cc86189d259e4eadbde30841e6bb7e9b4d669588fc2cc746e31d1cf632
           st=x86_64; ss=10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89 ;;
-  aarch64) mt=arm64; ms=86d4db8bb1277ce164d75c0ba12179830ab172c318598f878f8286d27978e4f2
+  aarch64) mt=arm64; ms=bc9c9eeed54f4a26fc88b4acc9a61804cbab4cd95c7d4d29cd47b6e3f1ea52c8
           st=aarch64; ss=341f5cbf24699fa0b27ec88965ad25f862ea09e15d35a543fd6ffdff1d2aa00d ;;
   *) echo "unsupported architecture" >&2; exit 1 ;;
 esac
