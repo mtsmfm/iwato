@@ -31,8 +31,9 @@ import (
 // filesystem drops a path (openshell-server grpc/validation.rs
 // validate_static_fields_unchanged; added paths would only apply at the
 // next start, as Landlock is fixed once the workload runs). So the YAML
-// holds network_policies alone, and fixed shows the rest read-only; the
-// providers' rules (_provider_*) are no revision's, and are not in it.
+// holds network_policies alone, with the endpoints' credential_binding, and
+// fixed shows the rest read-only; the providers' rules (_provider_*) are no
+// revision's, and are not in it.
 //
 // Saving commits the rules and applies them as a whole
 // (openshell_policy_store.go), so the rules are exactly the YAML's: the
@@ -45,9 +46,11 @@ import (
 //
 // Before saving, a rule added or changed is checked as an edit is: its
 // shape and the endpoint ambiguity it would bring with the other rules and
-// the providers' (OpenShell's refusal, predicted). Rules left as they were
-// are sent as the gateway gave them. Without apply the answer is the difference (added,
-// removed and changed rules), which the page shows before applying.
+// the providers' (OpenShell's refusal, predicted), and a binding as
+// POST policy/binding checks it. Rules left as they were are sent as the
+// gateway gave them. Without apply the answer is the difference (added,
+// removed and changed rules, bindings added and removed), which the page
+// shows before applying.
 //
 // Iwato's records stay as an edit leaves them: Sandbox.Presets keeps the
 // presets (taking one out later removes only its rules that are still as
@@ -85,14 +88,15 @@ type PolicyYAMLRule struct {
 	Hosts []string `json:"hosts"`
 }
 
-// PolicyYAMLDiff is what a save changes. Unbound are the credentials
-// bound to endpoints (credential_binding) that the save takes away: the
-// YAML does not show bindings, so an edited endpoint keeps its own as long
-// as its host, ports and path stay; one that changes or goes loses it.
+// PolicyYAMLDiff is what a save changes. Bound and Unbound are the
+// credentials (credential_binding) it adds to and takes from endpoints: a
+// YAML without a binding removes it, so the owner sees where a token stops
+// and starts going.
 type PolicyYAMLDiff struct {
 	Added   []PolicyYAMLRule    `json:"added"`
 	Removed []PolicyYAMLRule    `json:"removed"`
 	Changed []PolicyYAMLRule    `json:"changed"`
+	Bound   []PolicyYAMLBinding `json:"bound"`
 	Unbound []PolicyYAMLBinding `json:"unbound"`
 }
 
@@ -134,9 +138,9 @@ func encodeYAML(v any) (string, error) {
 func policyRulesYAML(rules map[string]v1.NetworkPolicyRule) (string, error) {
 	doc := policyYAMLDoc{NetworkPolicies: map[string]presetRuleDoc{}}
 	for name, r := range rules {
-		d := presetRuleDoc{Endpoints: []endpointDoc{}, Binaries: []binaryDoc{}}
+		d := presetRuleDoc{Endpoints: []boundEndpointDoc{}, Binaries: []binaryDoc{}}
 		for _, e := range r.Endpoints {
-			d.Endpoints = append(d.Endpoints, policyEndpointDoc(e))
+			d.Endpoints = append(d.Endpoints, boundEndpointDocOf(e))
 		}
 		for _, b := range r.Binaries {
 			d.Binaries = append(d.Binaries, binaryDoc{Path: b.Path})
@@ -310,11 +314,14 @@ func parsePolicyYAML(b []byte) (map[string]v1.NetworkPolicyRule, error) {
 			rule.Binaries = append(rule.Binaries, v1.PolicyNetworkBinary{Path: b.Path})
 		}
 		for i, e := range d.Endpoints {
-			pe, err := e.proto()
+			if e.CredentialBinding != nil && e.CredentialBinding.Provider == "" {
+				return nil, bad(fmt.Errorf("規則 %s endpoints[%d]: credential_binding に provider がありません", key, i))
+			}
+			x, err := e.endpoint()
 			if err != nil {
 				return nil, bad(fmt.Errorf("規則 %s endpoints[%d]: %w", key, i, err))
 			}
-			rule.Endpoints = append(rule.Endpoints, policyEndpoint(pe))
+			rule.Endpoints = append(rule.Endpoints, x)
 		}
 		rules[key] = rule
 	}
@@ -355,11 +362,10 @@ func checkPolicyYAMLRule(name string, r v1.NetworkPolicyRule) error {
 	return nil
 }
 
-// canonEndpoint compares endpoints as the editor shows them: without the
-// gateway's markers and with the ports as a set.
-// A credential binding is not in the YAML either: a changed rule keeps it
-// on the endpoints it kept. MCP's flags are compared as written (unset
-// means true to OpenShell, which prunedJSON would not tell from false).
+// canonEndpoint compares endpoints apart from their binding: without the
+// gateway's markers and with the ports as a set. MCP's flags are compared
+// as written (unset means true to OpenShell, which prunedJSON would not
+// tell from false).
 func canonEndpoint(e v1.PolicyNetworkEndpoint) string {
 	e.Ports, e.Port = effectivePorts(e), 0
 	e.AdvisorProposed, e.ProviderCredentialed, e.CredentialBinding = false, false, nil
@@ -393,14 +399,7 @@ func sameYAMLRuleJSON(a, b v1.NetworkPolicyRule) bool {
 		slices.Sort(out)
 		return slices.Compact(out)
 	}
-	strip := func(r v1.NetworkPolicyRule) v1.NetworkPolicyRule {
-		r = cloneRule(r)
-		for i := range r.Endpoints {
-			r.Endpoints[i].CredentialBinding = nil
-		}
-		return r
-	}
-	return samePresetRule(strip(a), strip(b)) && slices.Equal(canon(a), canon(b))
+	return samePresetRule(a, b) && slices.Equal(canon(a), canon(b))
 }
 
 // yamlNorm takes out of a rule what sameYAMLRule ignores, in the same way,
@@ -413,13 +412,13 @@ func yamlNorm(r v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 	for i := range r.Endpoints {
 		e := &r.Endpoints[i]
 		e.Ports, e.Port = effectivePorts(*e), 0
-		e.AdvisorProposed, e.ProviderCredentialed, e.CredentialBinding = false, false, nil
+		e.AdvisorProposed, e.ProviderCredentialed = false, false
 	}
 	return r
 }
 
-// sameEndpointPlace: the same host, ports and path (an endpoint's
-// identity, which a credential binding stays with).
+// sameEndpointPlace: the same host, ports and path (where a credential
+// goes, whatever else of the endpoint changes).
 func sameEndpointPlace(a, b v1.PolicyNetworkEndpoint) bool {
 	pa, pb := slices.Sorted(slices.Values(effectivePorts(a))), slices.Sorted(slices.Values(effectivePorts(b)))
 	return strings.EqualFold(a.Host, b.Host) && a.Path == b.Path && slices.Equal(slices.Compact(pa), slices.Compact(pb))
@@ -427,13 +426,11 @@ func sameEndpointPlace(a, b v1.PolicyNetworkEndpoint) bool {
 
 // policyYAMLPlan is the policy a save makes from the YAML's rules: the
 // rules left as they were are the gateway's, as it gave them; a changed
-// rule keeps the gateway's markers on the endpoints it did not change, and
-// the credential binding of an endpoint in the same place (host, ports and
-// path; the YAML does not show bindings, nor add them). The bindings that
-// go are listed (Unbound).
+// rule keeps the gateway's markers on the endpoints it did not change.
+// Bindings are the YAML's.
 func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.NetworkPolicyRule, PolicyYAMLDiff) {
 	out := map[string]v1.NetworkPolicyRule{}
-	diff := PolicyYAMLDiff{Added: []PolicyYAMLRule{}, Removed: []PolicyYAMLRule{}, Changed: []PolicyYAMLRule{}, Unbound: []PolicyYAMLBinding{}}
+	diff := PolicyYAMLDiff{Added: []PolicyYAMLRule{}, Removed: []PolicyYAMLRule{}, Changed: []PolicyYAMLRule{}, Bound: []PolicyYAMLBinding{}, Unbound: []PolicyYAMLBinding{}}
 	view := func(name string, r v1.NetworkPolicyRule) PolicyYAMLRule {
 		v := PolicyYAMLRule{Name: name, Hosts: []string{}}
 		for _, e := range r.Endpoints {
@@ -457,35 +454,56 @@ func policyYAMLPlan(old, edited map[string]v1.NetworkPolicyRule) (map[string]v1.
 			diff.Changed = append(diff.Changed, view(name, r))
 			r = cloneRule(r)
 			for i, e := range r.Endpoints {
-				r.Endpoints[i].CredentialBinding = nil
 				if j := slices.IndexFunc(was.Endpoints, func(x v1.PolicyNetworkEndpoint) bool { return canonEndpoint(x) == canonEndpoint(e) }); j >= 0 {
 					r.Endpoints[i].AdvisorProposed = was.Endpoints[j].AdvisorProposed
-				}
-				if j := slices.IndexFunc(was.Endpoints, func(x v1.PolicyNetworkEndpoint) bool { return x.CredentialBinding != nil && sameEndpointPlace(x, e) }); j >= 0 {
-					b := *was.Endpoints[j].CredentialBinding
-					r.Endpoints[i].CredentialBinding = &b
 				}
 			}
 		}
 		out[name] = r
 	}
+	// The bindings of rule in from that against does not have.
+	gone := func(rule string, from, against []v1.PolicyNetworkEndpoint) []PolicyYAMLBinding {
+		var list []PolicyYAMLBinding
+		for _, e := range from {
+			if e.CredentialBinding != nil && !slices.ContainsFunc(against, func(x v1.PolicyNetworkEndpoint) bool {
+				return bindingProvider(x) == bindingProvider(e) && sameEndpointPlace(x, e)
+			}) {
+				list = append(list, PolicyYAMLBinding{Rule: rule, Host: endpointLabel(e.Host, endpointPorts(e)), Path: e.Path, Provider: bindingProvider(e)})
+			}
+		}
+		return list
+	}
 	for _, name := range slices.Sorted(maps.Keys(old)) {
 		if _, ok := edited[name]; !ok {
 			diff.Removed = append(diff.Removed, view(name, old[name]))
 		}
-		for _, e := range old[name].Endpoints {
-			if e.CredentialBinding == nil {
+		diff.Unbound = append(diff.Unbound, gone(name, old[name].Endpoints, out[name].Endpoints)...)
+	}
+	for _, name := range slices.Sorted(maps.Keys(out)) {
+		diff.Bound = append(diff.Bound, gone(name, out[name].Endpoints, old[name].Endpoints)...)
+	}
+	return out, diff
+}
+
+// checkYAMLBindings refuses what POST policy/binding refuses, for the
+// bound endpoints a save adds or changes (touched names their rules).
+func (s *Server) checkYAMLBindings(ctx context.Context, sb Sandbox, old, rules map[string]v1.NetworkPolicyRule, touched []string) error {
+	for _, name := range touched {
+		for _, e := range rules[name].Endpoints {
+			if e.CredentialBinding == nil || slices.ContainsFunc(old[name].Endpoints, func(x v1.PolicyNetworkEndpoint) bool {
+				return bindingProvider(x) == bindingProvider(e) && canonEndpoint(x) == canonEndpoint(e)
+			}) {
 				continue
 			}
-			kept := slices.ContainsFunc(out[name].Endpoints, func(x v1.PolicyNetworkEndpoint) bool {
-				return x.CredentialBinding != nil && x.CredentialBinding.Provider == e.CredentialBinding.Provider && sameEndpointPlace(x, e)
-			})
-			if !kept {
-				diff.Unbound = append(diff.Unbound, PolicyYAMLBinding{Rule: name, Host: endpointLabel(e.Host, endpointPorts(e)), Path: e.Path, Provider: e.CredentialBinding.Provider})
+			if !bindable(e) {
+				return errCode("policy_yaml_binding_not_inspected", map[string]any{"rule": name, "host": e.Host}, "規則 "+name+": "+e.Host+" は要求を検査しないので credential_binding を付けられません")
+			}
+			if err := s.bindingRefusal(ctx, sb, e.CredentialBinding.Provider); err != nil {
+				return err
 			}
 		}
 	}
-	return out, diff
+	return nil
 }
 
 // policyYAMLRuntime reads and replaces a sandbox's network policy as a
@@ -625,6 +643,10 @@ func (s *Server) handlePolicyYAML(w http.ResponseWriter, r *http.Request, parts 
 	}
 	if err := s.iwatoPortRefusal(changed); err != nil {
 		failErr(w, 400, err)
+		return
+	}
+	if err := s.checkYAMLBindings(ctx, sb, old, rules, touched); err != nil {
+		failErr(w, 409, err)
 		return
 	}
 	// OpenShell's endpoint ambiguity, with the providers' rules.

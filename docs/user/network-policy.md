@@ -24,12 +24,13 @@ Decisions made elsewhere (for example with the `openshell` CLI) show up within a
 
 ### Editing the policy as YAML
 
-YAML in the policy tab shows the sandbox's rules (`network_policies`, in the format of presets) to edit as a whole, filling the tab. Edits you have not applied stay when you switch to List and back (YAML is marked Unsaved); while YAML shows, List shows how many proposals wait. Review changes checks the YAML and lists the rules it adds, removes and changes; Apply then makes the policy exactly as written. Settings fixed when the sandbox was created (`filesystem_policy`, `landlock`, `process`) are shown folded below it, read-only: OpenShell does not change them on a running sandbox. A provider's token on an endpoint is not in the YAML: it stays while the endpoint keeps its host, ports and path, and Review changes names any token that would go. Rules of profiles with destinations of their own are not in the YAML either.
+YAML in the policy tab shows the sandbox's rules (`network_policies`, in OpenShell's format) to edit as a whole, filling the tab. Edits you have not applied stay when you switch to List and back (YAML is marked Unsaved); while YAML shows, List shows how many proposals wait. Review changes checks the YAML and lists the rules it adds, removes and changes; Apply then makes the policy exactly as written. Settings fixed when the sandbox was created (`filesystem_policy`, `landlock`, `process`) are shown folded below it, read-only: OpenShell does not change them on a running sandbox. A provider's token on an endpoint is its `credential_binding: {provider: NAME}`: keep the line to keep the token, add it to attach one, delete it to take it off. Review changes names every token that would be attached or taken off, so check this list when you paste an older copy without those lines. Rules of profiles with destinations of their own are not in the YAML either.
 
 Saving is refused when:
 
 - the YAML cannot be read, or a rule added or changed is incomplete (every rule needs `endpoints` and `binaries`)
 - endpoints would conflict with other rules or the providers' rules (OpenShell refuses those)
+- a `credential_binding` names a provider that is not attached or whose profile has destinations of its own, or sits on an endpoint that does not inspect requests
 - the policy changed after you loaded it (an approval, for example; the editor says so as soon as it happens). Reload to edit the current policy. Without edits, the YAML is read again by itself
 
 If a change made directly in OpenShell (its CLI) lands while saving, it may be replaced; the tab says so.
@@ -75,7 +76,7 @@ Presets carry no credentials: the agents' APIs come with their providers. Preset
 
 Add, edit and delete your own presets under Presets in the policy tab (New preset, Edit YAML, Delete). They are stored as `presets/*.yaml` in the config folder, and are read again whenever the list is shown, so you can also edit them with another editor; a file that cannot be read is listed with the reason. Your presets get the id `user:ID`, so they never shadow Iwato's.
 
-The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`, `default` (`true`: checked in the create form) and `requires` (preset ids that come with it):
+The format is the `network_policies` of OpenShell's policy YAML, plus `id`, `label`, `note` and optional `params`, `default` (`true`: checked in the create form) and `requires` (preset ids that come with it). A preset cannot have `credential_binding`:
 
 ```yaml
 id: my-preset

@@ -761,6 +761,27 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     const reloaded = await yamlValue(yamlArea);
     check(reloaded.startsWith('network_policies:') && !reloaded.includes('yaml_tool'), 'reloading puts the current policy in the editor');
     check(await yamlBox.locator('p.preset-error:not(.policy-yaml-stale)').isHidden() && await yamlBox.locator('.policy-yaml-stale').isHidden(), 'reloading reads the current policy');
+    // Tokens are in the text: what it says is what a save does.
+    const bindingLine = /^ +credential_binding:\n +provider: github-personal\n/m;
+    check(bindingLine.test(reloaded), 'the YAML shows the credential binding');
+    await yamlBox.getByRole('button', { name: '変更を確認' }).click();
+    await yamlBox.locator('p.preset-error', { hasText: '変更がありません' }).waitFor();
+    check(true, 'loaded and saved as it is, nothing changes');
+    // The endpoint whose token came off above (the provider's own needs one).
+    const atGithub = reloaded.indexOf('\n  allow_github_com_443:\n');
+    await yamlFill(yamlArea, reloaded.slice(0, atGithub) + reloaded.slice(atGithub).replace(bindingLine, ''));
+    await yamlBox.getByRole('button', { name: '変更を確認' }).click();
+    await dialog.waitFor();
+    check(/^⚠ \S+: \S+ から github-personal のトークンを外します/m.test(await page.locator('#confirm-text').innerText()), 'a binding line taken out is named in the confirmation');
+    await page.screenshot({ path: path.join(dir, 'policy-yaml-unbound.png') });
+    await page.click('#confirm-cancel');
+    await yamlFill(yamlArea, reloaded.replace(bindingLine, (m) => m.replace('github-personal', 'not-attached')));
+    await yamlBox.getByRole('button', { name: '変更を確認' }).click();
+    await yamlBox.locator('p.preset-error', { hasText: 'not-attached はこのサンドボックスに付いていません' }).waitFor();
+    check(true, 'a binding to a provider that is not attached is refused');
+    await yamlBox.locator('.policy-yaml-head').getByRole('button', { name: '読み込み直す' }).click();
+    await page.click('#confirm-ok');
+    await page.waitForFunction(() => { const el = document.querySelector('.terminal-card.selected .policy-yaml-editor .cm-editor'); return el && !window.IwatoCodeMirror.EditorView.findFromDOM(el).state.doc.toString().includes('not-attached'); });
     await seg('list').click();
     // A stopped sandbox keeps its policy tab: the rules can be fixed before starting it again.
     await card.getByRole('button', { name: 'その他の操作' }).click();

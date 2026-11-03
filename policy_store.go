@@ -249,13 +249,40 @@ type storeRuleDoc struct {
 }
 
 type storeEndpointDoc struct {
+	boundEndpointDoc `yaml:",inline"`
+	AdvisorProposed  bool `yaml:"advisor_proposed,omitempty"`
+}
+
+// boundEndpointDoc is an endpoint with its credential binding, as the
+// policy's YAML (the editor's too) writes it.
+type boundEndpointDoc struct {
 	endpointDoc       `yaml:",inline"`
 	CredentialBinding *storeBindingDoc `yaml:"credential_binding,omitempty"`
-	AdvisorProposed   bool             `yaml:"advisor_proposed,omitempty"`
 }
 
 type storeBindingDoc struct {
 	Provider string `yaml:"provider"`
+}
+
+func boundEndpointDocOf(e v1.PolicyNetworkEndpoint) boundEndpointDoc {
+	d := boundEndpointDoc{endpointDoc: policyEndpointDoc(e)}
+	if b := e.CredentialBinding; b != nil {
+		d.CredentialBinding = &storeBindingDoc{Provider: b.Provider}
+	}
+	return d
+}
+
+// endpoint is the endpoint in the SDK's types.
+func (d boundEndpointDoc) endpoint() (v1.PolicyNetworkEndpoint, error) {
+	pe, err := d.proto()
+	if err != nil {
+		return v1.PolicyNetworkEndpoint{}, err
+	}
+	x := policyEndpoint(pe)
+	if b := d.CredentialBinding; b != nil {
+		x.CredentialBinding = &types.NetworkCredentialBinding{Provider: b.Provider}
+	}
+	return x, nil
 }
 
 // storeRules renders rules for policy.yaml (the providers' left out).
@@ -267,11 +294,7 @@ func storeRules(rules map[string]v1.NetworkPolicyRule) map[string]storeRuleDoc {
 		}
 		d := storeRuleDoc{Name: name, Endpoints: []storeEndpointDoc{}, Binaries: []binaryDoc{}}
 		for _, e := range r.Endpoints {
-			ed := storeEndpointDoc{endpointDoc: policyEndpointDoc(e), AdvisorProposed: e.AdvisorProposed}
-			if b := e.CredentialBinding; b != nil {
-				ed.CredentialBinding = &storeBindingDoc{Provider: b.Provider}
-			}
-			d.Endpoints = append(d.Endpoints, ed)
+			d.Endpoints = append(d.Endpoints, storeEndpointDoc{boundEndpointDoc: boundEndpointDocOf(e), AdvisorProposed: e.AdvisorProposed})
 		}
 		for _, b := range r.Binaries {
 			d.Binaries = append(d.Binaries, binaryDoc{Path: b.Path})
@@ -322,15 +345,11 @@ func decodeStoreRules(b []byte) (map[string]v1.NetworkPolicyRule, error) {
 			rule.Binaries = append(rule.Binaries, v1.PolicyNetworkBinary{Path: b.Path})
 		}
 		for i, e := range d.Endpoints {
-			pe, err := e.proto()
+			x, err := e.endpoint()
 			if err != nil {
 				return nil, fmt.Errorf("%s: %s endpoints[%d]: %w", policyFile, key, i, err)
 			}
-			x := policyEndpoint(pe)
 			x.AdvisorProposed = e.AdvisorProposed
-			if e.CredentialBinding != nil {
-				x.CredentialBinding = &types.NetworkCredentialBinding{Provider: e.CredentialBinding.Provider}
-			}
 			rule.Endpoints = append(rule.Endpoints, x)
 		}
 		rules[key] = rule

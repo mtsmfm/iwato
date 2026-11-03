@@ -86,9 +86,10 @@ type presetParamDoc struct {
 }
 
 type presetRuleDoc struct {
-	Name      string        `yaml:"name,omitempty"`
-	Endpoints []endpointDoc `yaml:"endpoints"`
-	Binaries  []binaryDoc   `yaml:"binaries"`
+	Name string `yaml:"name,omitempty"`
+	// A preset's are refused a binding (parsePresetYAML).
+	Endpoints []boundEndpointDoc `yaml:"endpoints"`
+	Binaries  []binaryDoc        `yaml:"binaries"`
 }
 
 // networkPreset is one preset, as the lists show it.
@@ -350,6 +351,11 @@ func parsePresetYAML(b []byte, source string) (*networkPreset, error) {
 			rule.Binaries = append(rule.Binaries, v1.PolicyNetworkBinary{Path: b.Path})
 		}
 		for i, e := range d.Endpoints {
+			if e.CredentialBinding != nil {
+				return nil, errCodeEn("preset_credential_binding", map[string]any{"rule": key, "index": i},
+					fmt.Sprintf("規則 %s endpoints[%d]: プリセットに credential_binding は書けません。トークンはポリシーのほうで付けてください", key, i),
+					fmt.Sprintf("rule %s endpoints[%d]: a preset cannot have credential_binding; attach the token in the policy", key, i), nil)
+			}
 			pe, err := e.proto()
 			if err != nil {
 				return nil, errCodeEn("preset_endpoint_invalid", map[string]any{"rule": key, "index": i, "detail": err.Error()},

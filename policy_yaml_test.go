@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"math/rand"
 	"reflect"
@@ -89,9 +90,8 @@ func TestPolicyYAMLPlan(t *testing.T) {
 		t.Fatal("a removed rule stayed")
 	}
 
-	// A credential binding (not in the YAML) stays with an edited
-	// endpoint in the same place (host, ports, path); one that moves
-	// loses it, and the save says so.
+	// Bindings are the YAML's. The difference lists them by place (host,
+	// ports, path), whatever else of the endpoint changes.
 	boundEp := func(host, path string) v1.PolicyNetworkEndpoint {
 		e := ep(host)
 		e.Path = path
@@ -104,18 +104,42 @@ func TestPolicyYAMLPlan(t *testing.T) {
 		return e
 	}
 	old = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{boundEp("api.example.com", "/v1/**"), boundEp("up.example.com", "/**")}}}
-	edited = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{plain("API.example.com", "/v1/**"), plain("up.example.com", "/v2/**"), plain("new.example.com", "/v1/**")}}}
+	kept := plain("API.example.com", "/v1/**")
+	kept.CredentialBinding = &types.NetworkCredentialBinding{Provider: "work"}
+	added := plain("new.example.com", "/v1/**")
+	added.CredentialBinding = &types.NetworkCredentialBinding{Provider: "other"}
+	edited = map[string]v1.NetworkPolicyRule{"b": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{kept, plain("up.example.com", "/**"), added}}}
 	rules, diff = policyYAMLPlan(old, edited)
 	got := rules["b"].Endpoints
-	if got[0].CredentialBinding == nil || got[0].CredentialBinding.Provider != "work" || got[1].CredentialBinding != nil || got[2].CredentialBinding != nil {
+	if got[0].CredentialBinding == nil || got[1].CredentialBinding != nil || got[2].CredentialBinding == nil {
 		t.Fatalf("bindings: %+v", got)
 	}
 	if len(diff.Unbound) != 1 || diff.Unbound[0].Host != "up.example.com:443" || diff.Unbound[0].Path != "/**" || diff.Unbound[0].Provider != "work" {
 		t.Fatalf("unbound: %+v", diff.Unbound)
 	}
+	if len(diff.Bound) != 1 || diff.Bound[0].Host != "new.example.com:443" || diff.Bound[0].Provider != "other" {
+		t.Fatalf("bound: %+v", diff.Bound)
+	}
+	// Only the binding differs: the rule changes, the marker stays.
+	marked := boundEp("api.example.com", "/**")
+	marked.AdvisorProposed = true
+	bare := marked
+	bare.AdvisorProposed, bare.CredentialBinding = false, nil
+	rules, diff = policyYAMLPlan(map[string]v1.NetworkPolicyRule{"m": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{marked}}}, map[string]v1.NetworkPolicyRule{"m": {Binaries: bin, Endpoints: []v1.PolicyNetworkEndpoint{bare}}})
+	if len(diff.Changed) != 1 || len(diff.Unbound) != 1 || rules["m"].Endpoints[0].CredentialBinding != nil || !rules["m"].Endpoints[0].AdvisorProposed {
+		t.Fatalf("%+v %+v", diff, rules)
+	}
 	// A rule taken out lists its bindings too.
 	if _, d := policyYAMLPlan(old, map[string]v1.NetworkPolicyRule{}); len(d.Unbound) != 2 {
 		t.Fatalf("%+v", d)
+	}
+}
+
+// A preset carries no binding: presets/providers/* get theirs at attach.
+func TestPresetRefusesBinding(t *testing.T) {
+	_, err := parsePresetYAML([]byte("id: x\nlabel: X\nnetwork_policies:\n  r:\n    endpoints:\n      - { host: a.example.com, port: 443, credential_binding: { provider: p } }\n    binaries: [/usr/bin/curl]\n"), "user")
+	if c := (*codedError)(nil); !errors.As(err, &c) || c.code != "preset_credential_binding" {
+		t.Fatal(err)
 	}
 }
 
