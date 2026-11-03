@@ -2093,6 +2093,11 @@
       this.selected = '';
       this.wanted = '';
       this.reviewing = null;
+      // OpenShell's drafts, folded unless opened in this browser.
+      this.draftSelected = '';
+      this.draftReviewing = null;
+      this.draftsOpen = false;
+      try { this.draftsOpen = localStorage.getItem('iwato-policy-drafts') === 'open'; } catch (_) { /* storage unavailable */ }
       this.hostChecks = new Map();
       // The rejected proposal opened to approve it.
       this.rejectedId = '';
@@ -2375,67 +2380,100 @@
       return row;
     }
 
-    // The proposals waiting (the agent's first): a list to pick from, and
-    // the one opened beside it (ADR 0022). Only the list is rebuilt, so the
-    // opened one keeps the keyboard (the reason being typed).
+    // The proposals waiting: the agent's, and under them OpenShell's drafts
+    // from blocked connections, folded (they come with every blocked
+    // connection). Each is a list to pick from and the one opened beside it
+    // (ADR 0022). Only the lists are rebuilt, so the opened one keeps the
+    // keyboard (the reason being typed).
     renderPending(data) {
       if (!data?.available) {
         this.pending.replaceChildren();
-        this.pendingParts = this.reviewing = null;
+        this.pendingParts = this.reviewing = this.draftReviewing = null;
         return;
       }
       if (!this.pendingParts) {
         const title = element('h4', 'policy-sec-title');
         const none = element('p', 'panel-meta');
-        const list = element('div', 'review-list');
-        list.setAttribute('role', 'list');
-        const all = button('button-disconnect review-reject-all', '', () => this.rejectAll(this.pendingItems || []));
-        const many = button('button-start review-approve-many', '', () => this.approveMany());
-        const foot = element('div', 'review-list-foot');
-        foot.append(all, many);
-        const everything = document.createElement('input');
-        everything.type = 'checkbox';
-        everything.className = 'review-select-all';
-        everything.addEventListener('change', () => this.pickAll(everything.checked));
-        const head = element('label', 'review-list-head');
-        const headText = element('span');
-        head.append(everything, headText);
-        const side = element('div', 'review-side');
-        side.append(head, list, foot);
-        const layout = element('div', 'review-layout');
-        layout.append(side);
         const lost = element('p', 'panel-meta proposal-after policy-lost');
         lost.dataset.after = 'true';
-        this.pending.append(title, lost, none, layout);
-        this.pendingParts = { title, lost, none, list, all, many, everything, headText, layout };
+        const agent = this.pendingGroup('agent');
+        const draftGroup = this.pendingGroup('auto');
+        const toggle = button('policy-drafts-toggle', '', () => {
+          this.draftsOpen = !this.draftsOpen;
+          try { localStorage.setItem('iwato-policy-drafts', this.draftsOpen ? 'open' : 'closed'); } catch (_) { /* storage unavailable */ }
+          this.render();
+        });
+        const note = element('p', 'panel-meta policy-drafts-note');
+        const drafts = element('div', 'policy-drafts');
+        drafts.append(toggle, note, draftGroup.layout);
+        this.pending.append(title, lost, none, agent.layout, drafts);
+        this.pendingParts = { title, lost, none, agent, draftGroup, toggle, note, drafts };
       }
       const parts = this.pendingParts;
       const lost = data.rejected.filter((p) => p.lost);
       parts.lost.hidden = !lost.length;
       parts.lost.textContent = lost.length ? t('policy.lost.notice', { count: lost.length, hosts: window.IwatoI18n.list(lost.map((p) => this.proposalWhere(p))) }) : '';
-      const items = [...data.pending.filter((p) => p.source === 'agent'), ...data.pending.filter((p) => p.source !== 'agent')];
-      this.pendingItems = items;
-      parts.title.textContent = t('policy.pending.title', { count: items.length });
-      parts.none.textContent = t('policy.pending.none');
-      parts.none.hidden = items.length > 0;
-      parts.layout.hidden = !items.length;
+      const agent = data.pending.filter((p) => p.source === 'agent');
+      const drafts = data.pending.filter((p) => p.source !== 'agent');
+      // The list's poll can know a proposal before this snapshot does.
+      if (agent.some((p) => p.id === this.wanted)) { this.selected = this.wanted; this.wanted = null; }
+      if (drafts.some((p) => p.id === this.wanted)) { this.draftSelected = this.wanted; this.wanted = null; this.draftsOpen = true; }
+      parts.title.textContent = t('policy.pending.title', { count: agent.length });
+      parts.none.textContent = drafts.length ? t('policy.pending.noneAgent') : t('policy.pending.none');
+      parts.none.hidden = agent.length > 0;
+      parts.drafts.hidden = !drafts.length;
+      parts.toggle.textContent = (this.draftsOpen ? '▾ ' : '▸ ') + t('policy.drafts.title', { count: drafts.length });
+      parts.toggle.setAttribute('aria-expanded', String(this.draftsOpen));
+      parts.note.textContent = t('policy.drafts.note');
+      parts.note.hidden = !this.draftsOpen;
+      this.renderGroup(parts.agent, agent, true);
+      this.renderGroup(parts.draftGroup, drafts, this.draftsOpen);
+    }
+
+    // A list of proposals waiting, with its checkboxes and its own すべて選ぶ,
+    // まとめて却下 and まとめて承認.
+    pendingGroup(kind) {
+      const g = { kind, items: [], slot: kind === 'auto' ? 'draftReviewing' : 'reviewing', sel: kind === 'auto' ? 'draftSelected' : 'selected' };
+      g.list = element('div', 'review-list');
+      g.list.setAttribute('role', 'list');
+      g.all = button('button-disconnect review-reject-all', '', () => this.rejectAll(g.items, kind));
+      g.many = button('button-start review-approve-many', '', () => this.approveMany(g.items));
+      const foot = element('div', 'review-list-foot');
+      foot.append(g.all, g.many);
+      g.everything = document.createElement('input');
+      g.everything.type = 'checkbox';
+      g.everything.className = 'review-select-all';
+      g.everything.addEventListener('change', () => this.pickAll(g.everything.checked, g.items));
+      const head = element('label', 'review-list-head');
+      g.headText = element('span');
+      head.append(g.everything, g.headText);
+      const side = element('div', 'review-side');
+      side.append(head, g.list, foot);
+      g.layout = element('div', 'review-layout');
+      g.layout.dataset.group = kind;
+      g.layout.append(side);
+      return g;
+    }
+
+    renderGroup(g, items, shown) {
+      g.items = items;
+      g.layout.hidden = !items.length || !shown;
       if (!items.length) {
-        if (this.reviewing) this.reviewing.node.remove();
-        this.reviewing = null;
+        this[g.slot]?.node.remove();
+        this[g.slot] = null;
         return;
       }
-      // The list's poll can know a proposal before this snapshot does.
-      if (items.some((p) => p.id === this.wanted)) { this.selected = this.wanted; this.wanted = null; }
-      if (!items.some((p) => p.id === this.selected)) this.selected = items[0].id;
       for (const p of items) this.checkHosts(p);
+      if (!shown) return;
+      if (!items.some((p) => p.id === this[g.sel])) this[g.sel] = items[0].id;
       let focusLater = null;
-      const focused = parts.list.contains(document.activeElement) ? document.activeElement : null;
+      const focused = g.list.contains(document.activeElement) ? document.activeElement : null;
       const refocus = focused?.dataset ? [focused.dataset.review, focused.dataset.pick] : [];
-      parts.list.replaceChildren(...items.map((p) => {
-        const item = button('review-item', '', () => { this.selected = p.id; this.wanted = null; this.render(); this.reviewing?.node.scrollIntoView?.({ block: 'nearest' }); });
+      g.list.replaceChildren(...items.map((p) => {
+        const item = button('review-item', '', () => { this[g.sel] = p.id; this.wanted = null; this.render(); this[g.slot]?.node.scrollIntoView?.({ block: 'nearest' }); });
         item.className = 'review-item';
         item.dataset.review = p.id;
-        item.setAttribute('aria-current', String(p.id === this.selected));
+        item.setAttribute('aria-current', String(p.id === this[g.sel]));
         const chips = element('span', 'review-chips');
         chips.append(...this.reviewChips(p).map(([level, label]) => { const c = element('span', 'review-chip', label); c.dataset.level = level; return c; }));
         item.append(element('span', 'review-item-host', this.proposalWhere(p)), element('span', 'review-item-src', (p.source === 'auto' ? t('policy.source.auto') : t('policy.source.agent')) + ' · ' + t('policy.hits', { count: p.hits })), chips);
@@ -2456,22 +2494,23 @@
         return row;
       }));
       focusLater?.focus();
-      for (const id of this.picks.keys()) if (!items.some((p) => p.id === id)) this.picks.delete(id);
+      const ids = new Set(this.snapshot?.pending.map((p) => p.id));
+      for (const id of this.picks.keys()) if (!ids.has(id)) this.picks.delete(id);
       const chosen = items.filter((p) => this.picked(p)).length;
       const open = items.filter((p) => this.approvable(p) && !this.dangerous(p));
-      parts.everything.checked = open.length > 0 && open.every((p) => this.picked(p));
-      parts.everything.indeterminate = chosen > 0 && !parts.everything.checked;
-      parts.everything.disabled = !open.length;
-      parts.headText.textContent = t('review.selectAll');
-      parts.all.textContent = t('review.rejectAll');
-      parts.all.disabled = this.mutating || !state.authorized;
-      parts.many.textContent = this.batchChecking ? t('review.many.checking') : t('review.approveMany', { count: chosen });
-      parts.many.disabled = !chosen || this.batchChecking || this.mutating || !state.authorized;
-      const old = this.reviewing?.node;
-      const node = this.reviewNode('reviewing', items.find((p) => p.id === this.selected));
-      if (node !== old || node.parentNode !== parts.layout) {
+      g.everything.checked = open.length > 0 && open.every((p) => this.picked(p));
+      g.everything.indeterminate = chosen > 0 && !g.everything.checked;
+      g.everything.disabled = !open.length;
+      g.headText.textContent = t('review.selectAll');
+      g.all.textContent = t('review.rejectAll');
+      g.all.disabled = this.mutating || !state.authorized;
+      g.many.textContent = this.batchChecking ? t('review.many.checking') : t('review.approveMany', { count: chosen });
+      g.many.disabled = !chosen || this.batchChecking || this.mutating || !state.authorized;
+      const old = this[g.slot]?.node;
+      const node = this.reviewNode(g.slot, items.find((p) => p.id === this[g.sel]));
+      if (node !== old || node.parentNode !== g.layout) {
         old?.remove();
-        parts.layout.append(node);
+        g.layout.append(node);
       }
     }
 
@@ -2767,8 +2806,8 @@
     }
 
     // すべて選ぶ leaves red ones as they are: each is the owner's own check.
-    pickAll(on) {
-      for (const p of this.pendingItems || []) {
+    pickAll(on, items) {
+      for (const p of items) {
         if (!this.approvable(p) || (on && this.dangerous(p))) continue;
         this.picks.set(p.id, { digest: p.digest, on });
       }
@@ -2817,8 +2856,8 @@
 
     // The checked proposals, each with its review's starting choices, after
     // a confirmation that lists what they allow.
-    async approveMany() {
-      const items = (this.pendingItems || []).filter((p) => this.picked(p));
+    async approveMany(list) {
+      const items = list.filter((p) => this.picked(p));
       if (!items.length || this.batchChecking || this.mutating || !state.authorized) return;
       this.batchChecking = true;
       this.render();
@@ -2859,10 +2898,10 @@
       await this.post('/proposals/reject', body, t('policy.reject.done'));
     }
 
-    // Every proposal waiting, rejected one by one after a confirmation.
-    async rejectAll(items) {
-      if (this.mutating || !state.authorized) return;
-      if (!(await askConfirm(t('review.rejectAll.confirm', { count: items.length, sandbox: JSON.stringify(this.sandbox.name) }), { ok: t('review.rejectAll'), danger: true }))) return;
+    // Every proposal of a list, rejected one by one after a confirmation.
+    async rejectAll(items, kind) {
+      if (this.mutating || !state.authorized || !items.length) return;
+      if (!(await askConfirm(t(kind === 'auto' ? 'review.rejectAll.confirmDrafts' : 'review.rejectAll.confirm', { count: items.length, sandbox: JSON.stringify(this.sandbox.name) }), { ok: t('review.rejectAll'), danger: true }))) return;
       const path = '/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/reject';
       await this.post('', null, t('review.rejectAll.done', { count: items.length }), null, async () => {
         for (const p of items) await api(path, { method: 'POST', body: JSON.stringify({ requestId: p.id, digest: p.digest }), timeoutMs: 40000 });
