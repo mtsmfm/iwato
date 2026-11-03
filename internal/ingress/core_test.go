@@ -640,6 +640,13 @@ func TestClosedWebSocketGivesItsPlaceBack(t *testing.T) {
 		t.Fatalf("%d places in use, want 14", n)
 	}
 	ws.Close()
+	// The relay gives the place back once it sees the close, which a slow
+	// runner can take longer than the Backend's Wait to do.
+	for deadline := time.Now().Add(5 * time.Second); b.InUse("dev") >= 14; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the closed websocket still holds its place (%d in use)", b.InUse("dev"))
+		}
+	}
 	c, err := net.Dial("tcp", ingressFor(t, core, 18082, owner, nil))
 	if err != nil {
 		t.Fatal(err)
