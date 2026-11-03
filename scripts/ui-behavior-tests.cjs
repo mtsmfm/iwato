@@ -106,7 +106,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
   const document = {getElementById: id => els[id], createElement: tag => new Element(tag), hidden: false, focused: true, hasFocus() { return this.focused; }, fullscreenEnabled: fullscreen, listeners: {}, addEventListener(n, fn) { this.listeners[n] = this.listeners[n] || fn; this.allListeners = this.allListeners || {}; (this.allListeners[n] = this.allListeners[n] || []).push(fn); }, removeEventListener(n, fn) { if (this.allListeners?.[n]) this.allListeners[n] = this.allListeners[n].filter((f) => f !== fn); }};
   // Only the shown terminal may be stored; secrets never are.
   const stored = new Map(savedTerm ? [['iwato-term:api', savedTerm]] : []);
-  const storage = {setItem(key, value) { if (!(/^iwato-term:[a-z0-9-]+$/.test(key) && /^[a-z0-9-]+$/.test(value) || key === 'iwato-lang' && /^(ja|en)$/.test(value))) throw Error('Browser storage must hold no secrets: ' + key); stored.set(key, String(value)); }, getItem: key => stored.has(key) ? stored.get(key) : null, removeItem: key => { stored.delete(key); }};
+  const storage = {setItem(key, value) { if (!(/^iwato-term:[a-z0-9-]+$/.test(key) && /^[a-z0-9-]+$/.test(value) || key === 'iwato-lang' && /^(ja|en)$/.test(value) || key === 'iwato-policy-drafts' && /^(open|closed)$/.test(value))) throw Error('Browser storage must hold no secrets: ' + key); stored.set(key, String(value)); }, getItem: key => stored.has(key) ? stored.get(key) : null, removeItem: key => { stored.delete(key); }};
   const context = vm.createContext({
     // push: a browser with Web Push, already subscribed.
     // androidApp: installed (standalone) on an Android phone; share() fails with shareFailure (an error name) when set.
@@ -271,6 +271,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const pendingSec = (env) => env.policy().children[1].children[0];
   const pendingItems = (env) => nodes(pendingSec(env)).filter((n) => n.className === 'review-item');
   const review = (env) => nodes(pendingSec(env)).find((n) => n.className === 'review-detail');
+  const draftsToggle = (env) => nodes(pendingSec(env)).find((n) => n.className === 'button policy-drafts-toggle');
   const boxes = (env) => nodes(review(env)).filter((n) => n.type === 'checkbox');
   const ruleRows = (env) => nodes(review(env)).filter((n) => n.className === 'review-rule').map((r) => [r.children[0].checked, texts(r).replace(/\n/g, ' '), r.dataset.off]);
   const toggle = (box) => { box.checked = !box.checked; box.listeners.change(); };
@@ -308,6 +309,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.equal(find(review(none), '承認').disabled, true); assert.match(texts(review(none)), /1 つ以上チェック/);
     // OpenShell's L4 draft: GET and HEAD on every path, writes and L4 unchecked.
     const l4 = await approveEnv({...proposal, source: 'auto', intent: '', binaries: ['/usr/bin/node'], endpoints: [{host: 'cdn.example', ports: [443]}]});
+    assert.equal(review(l4), undefined, 'OpenShell\'s drafts are folded'); assert.match(texts(pendingSec(l4)), /^承認待ち \(0\)\nエージェントの提案はありません。/);
+    draftsToggle(l4).click(); await flush();
     assert.deepEqual(ruleRows(l4).map((r) => r[0] + ' ' + r[1]), ['true GET /** (すべて)', 'true HEAD /** (すべて)', 'false POST /** (すべて)', 'false PUT /** (すべて)', 'false PATCH /** (すべて)', 'false DELETE /** (すべて)', 'false 検査せずにすべての通信を通す (L4) — cdn.example']);
     assert.match(texts(review(l4)), /OpenShell が止めた接続から作った下書き/);
     await runTimers(l4);
@@ -705,12 +708,18 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   ok('the tab row has the terminal, the policy, the editor and the ports; the other views open from the ⋯ menu; a line tells about waiting proposals');
   assert.equal(tabbed.card().dataset.tab, 'terminal'); assert.equal(termTab.getAttribute('aria-selected'), 'true');
   assert.equal(policyTab.children[0].hidden, false); assert.equal(policyTab.children[0].textContent, '1', 'OpenShell\'s automatic proposals are not counted'); assert.equal(tabbed.document.title, '(1) Iwato');
-  assert.deepEqual(pendingItems(tabbed).map((n) => n.children[1].textContent), ['エージェントの提案 · 2 回', 'OpenShell の自動提案 · 2 回'], 'the agent\'s proposals first, then OpenShell\'s'); assert.match(texts(pendingItems(tabbed)[1]), /auto\.example/);
+  assert.deepEqual(pendingItems(tabbed).map((n) => n.children[1].textContent), ['エージェントの提案 · 2 回'], 'OpenShell\'s drafts are folded under the agent\'s proposals'); assert.equal(draftsToggle(tabbed).textContent, '▸ OpenShell が自動で作った下書き (1)'); assert.equal(draftsToggle(tabbed).attributes['aria-expanded'], 'false');
+  assert.match(tabbed.policy().children[0].children[1].textContent, /^ポリシーの提案が承認を待っています \(1\) · ほかに OpenShell の下書き 1 件/);
+  draftsToggle(tabbed).click(); await flush();
+  { const groups = nodes(pendingSec(tabbed)).filter((n) => n.className === 'review-layout'); const of = (g) => nodes(g).filter((n) => n.className === 'review-item').map((n) => n.children[1].textContent);
+    assert.deepEqual(groups.map(of), [['エージェントの提案 · 2 回'], ['OpenShell の自動提案 · 2 回']], 'opened, the drafts are a list of their own'); assert.match(texts(groups[1]), /auto\.example/);
+    assert.equal(groups.filter((g) => nodes(g).some((n) => n.className === 'review-detail')).length, 2, 'each list opens one'); }
+  draftsToggle(tabbed).click(); await flush();
   const readsBeforeTab = proposalReads(tabbed).length; policyTab.click(); await flush(); assert.equal(tabbed.card().dataset.tab, 'policy'); assert.equal(policyTab.getAttribute('aria-selected'), 'true'); assert.equal(termTab.getAttribute('aria-selected'), 'false'); assert(proposalReads(tabbed).length > readsBeforeTab);
   assert.equal(tabbed.intervals.filter((i) => !i.cleared && i.ms !== 4000).length, 1, 'the policy tab follows proposals with the sandbox list (every 10 seconds) while nothing waits');
   const readsFollowing = proposalReads(tabbed).length; await tabbed.tickPoll(); assert(proposalReads(tabbed).length > readsFollowing);
   termTab.click(); assert.equal(tabbed.card().dataset.tab, 'terminal');
-  tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, source: 'auto'}]})); await readPolicy(tabbed); assert.equal(policyTab.children[0].hidden, true); assert.notEqual(tabbed.policy().dataset.state, 'pending-approval', 'only automatic proposals are not the waiting state'); assert.match(tabbed.policy().children[0].children[1].textContent, /自動提案 1 件/);
+  tabbed.setProposalHandler(() => response({...proposalItem, pending: [{...proposal, source: 'auto'}]})); await readPolicy(tabbed); assert.equal(policyTab.children[0].hidden, true); assert.notEqual(tabbed.policy().dataset.state, 'pending-approval', 'only automatic proposals are not the waiting state'); assert.match(tabbed.policy().children[0].children[1].textContent, /^エージェントの提案はありません · OpenShell の下書き 1 件/);
   { // Hidden, the tab follows the list's pending proposals, without reading the whole policy.
     const listWith = (pending) => () => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: '', pending}]});
     const bar = tabbed.card().children.find((n) => n.className === 'proposal-bar'); let reads = proposalReads(tabbed).length;
@@ -1577,9 +1586,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   lists.setProposalHandler((path) => /\/proposals\/[a-z]+$/.test(path) ? response({ok: true}) : response(data));
   await readPolicy(lists);
   const [pend, cur, rej] = [0, 1, 3].map((i) => lists.policy().children[1].children[i]);
+  nodes(pend).find((n) => n.className === 'button policy-drafts-toggle').click(); await flush();
   const items = nodes(pend).filter((n) => n.className === 'review-item');
   const opened = nodes(pend).find((n) => n.className === 'review-detail');
-  assert.match(texts(pend), /^承認待ち \(2\)/);
+  assert.match(texts(pend), /^承認待ち \(1\)/); assert.match(texts(pend), /\n▾ OpenShell が自動で作った下書き \(1\)\n/);
   assert.match(texts(items[0]), /^github\.com\nエージェントの提案 · 3 回/);
   assert.match(texts(opened), /\/usr\/lib\/git-core\/git-remote-http \(参考/); assert.match(texts(opened), /3 回 · 初回 \d\d:\d\d · 最後 \d\d:\d\d/); assert.match(texts(opened), /clone <b>iwato<\/b>/);
   assert.match(texts(items[1]), /OpenShell の自動提案 · 37 回/);
