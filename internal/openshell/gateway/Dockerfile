@@ -63,8 +63,8 @@ FROM fetch AS supervisor-release
 # rustup-init is pinned by SHA-256 per architecture; rustup checks the
 # toolchain itself.
 # openshell.patch is the diff of the iwato/v0.1.6 branch of
-# github.com/mtsmfm/openshell (ae198bdea236) from v0.1.6, regenerated with
-#   git diff v0.1.6 ae198bdea236dab96475d56151a29cf13c8b5543
+# github.com/mtsmfm/openshell (8a75a2694242) from v0.1.6, regenerated with
+#   git diff v0.1.6 8a75a269424225083e9cab88029e316eba7626f3
 # (HTTP/2 for opted-in endpoints, a 64 MiB gRPC receive limit in the
 # supervisor's client, relays kept open across policy reloads).
 FROM base AS supervisor-patched
