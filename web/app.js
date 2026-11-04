@@ -2044,6 +2044,10 @@
       this.mutating = false;
       // The proposals being approved: out of the list, the panel still in use.
       this.approving = new Set();
+      // The proposals this page approved or rejected, by when they count
+      // again: out of the list, the badges and the line until OpenShell no
+      // longer lists them as waiting.
+      this.decided = new Map();
       // The batch's checkboxes the owner touched, by proposal.
       this.picks = new Map();
       this.batchable = new WeakMap();
@@ -2752,6 +2756,7 @@
     async sendApproval(ids, path, body, done) {
       if (this.disposed || !state.authorized) return;
       for (const id of ids) this.approving.add(id);
+      this.decide(ids);
       this.generation += 1;
       this.showActionError('');
       this.dropApproving();
@@ -2767,6 +2772,7 @@
       } catch (error) {
         this.showActionError(error.status === 400 || error.status === 409 ? error.message : t('policy.unknownResult', { message: error.message }), error.raw);
         if (error.status === 401 || error.status === 403) invalidateSession();
+        if (error.status === 400 || error.status === 409) for (const id of ids) this.decided.delete(id);
       } finally {
         for (const id of ids) this.approving.delete(id);
         this.actedAt = Date.now();
@@ -2781,7 +2787,34 @@
     }
 
     dropApproving() {
-      if (this.snapshot) this.snapshot.pending = this.snapshot.pending.filter((p) => !this.approving.has(p.id));
+      if (this.snapshot) this.snapshot.pending = this.undecided(this.snapshot.pending);
+    }
+
+    undecided(list) {
+      return list.filter((p) => !this.approving.has(p.id) && !this.decided.has(p.id));
+    }
+
+    // Proposals sent for a decision leave the badges and the line at once
+    // (they stay listed as waiting until OpenShell has decided them).
+    decide(ids) {
+      const until = Date.now() + 120000;
+      for (const id of ids) this.decided.set(id, until);
+      if (this.waitingAgent) this.waitingAgent = this.undecided(this.waitingAgent);
+      this.onChange?.();
+    }
+
+    // A refused decision: the proposal waits again.
+    forgetDecided(ids) {
+      for (const id of ids) this.decided.delete(id);
+      if (!this.disposed) this.refresh();
+    }
+
+    // A decided proposal counts again once OpenShell stops listing it as
+    // waiting (decided here or elsewhere) or after 2 minutes.
+    settle(pending) {
+      const listed = new Set(pending.map((p) => p.id));
+      const now = Date.now();
+      for (const [id, until] of this.decided) if (until < now || !listed.has(id)) this.decided.delete(id);
     }
 
     // A red warning is off unless the owner checked it.
@@ -2880,6 +2913,7 @@
       await this.sendApproval(going.map((e) => e.p.id), '/proposals/approve-many', body, (result) => {
         const skipped = Array.isArray(result?.skipped) ? result.skipped.filter((x) => x && typeof x.id === 'string').slice(0, 50) : [];
         for (const x of skipped) {
+          this.decided.delete(x.id);
           const item = items.find((p) => p.id === x.id);
           const parts = { conflicts: validConflicts(x.conflicts), ambiguities: validAmbiguities(x.ambiguities) };
           refused.set(x.id, (item ? this.proposalWhere(item) : x.id) + ': ' + window.IwatoRefusals.message(x.code, x.params, parts, text(x.error, 1000)));
@@ -2895,7 +2929,9 @@
       const body = { requestId: r.p.id, digest: r.p.digest };
       const reason = String(r.reason.value || '').trim();
       if (reason) body.reason = reason;
-      await this.post('/proposals/reject', body, t('policy.reject.done'));
+      this.decide([r.p.id]);
+      const failed = await this.post('/proposals/reject', body, t('policy.reject.done'));
+      if (failed && (failed.status === 400 || failed.status === 409)) this.forgetDecided([r.p.id]);
     }
 
     // Every proposal of a list, rejected one by one after a confirmation.
@@ -2903,9 +2939,12 @@
       if (this.mutating || !state.authorized || !items.length) return;
       if (!(await askConfirm(t(kind === 'auto' ? 'review.rejectAll.confirmDrafts' : 'review.rejectAll.confirm', { count: items.length, sandbox: JSON.stringify(this.sandbox.name) }), { ok: t('review.rejectAll'), danger: true }))) return;
       const path = '/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/reject';
-      await this.post('', null, t('review.rejectAll.done', { count: items.length }), null, async () => {
+      const ids = items.map((p) => p.id);
+      this.decide(ids);
+      const failed = await this.post('', null, t('review.rejectAll.done', { count: items.length }), null, async () => {
         for (const p of items) await api(path, { method: 'POST', body: JSON.stringify({ requestId: p.id, digest: p.digest }), timeoutMs: 40000 });
       });
+      if (failed && (failed.status === 400 || failed.status === 409)) this.forgetDecided(ids);
     }
 
     // The rejected list; the proposal opened in it stays through the
@@ -3787,6 +3826,7 @@
           const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals');
           if (this.disposed || epoch !== this.generation) return;
           this.snapshot = this.validate(data);
+          if (this.snapshot.available) this.settle(this.snapshot.pending);
           this.dropApproving();
           this.waitingAgent = this.snapshot.pending.filter((p) => p.source === 'agent');
           this.showError(this.snapshot.error);
@@ -3811,7 +3851,9 @@
     // The sandbox list's pending proposals, while the tab is not shown.
     setWaiting(list) {
       if (this.disposed || this.mutating || this.refreshing || this.approving.size) return;
-      this.waitingAgent = list.filter((p) => p && /^[a-f0-9]{32}$/.test(p.id) && p.state === 'pending-approval').map((p) => this.validateProposal(p)).filter((p) => p.source === 'agent');
+      const pending = list.filter((p) => p && /^[a-f0-9]{32}$/.test(p.id) && p.state === 'pending-approval').map((p) => this.validateProposal(p));
+      this.settle(pending);
+      this.waitingAgent = this.undecided(pending).filter((p) => p.source === 'agent');
       this.onChange?.();
     }
 
