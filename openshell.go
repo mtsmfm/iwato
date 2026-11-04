@@ -1099,7 +1099,7 @@ func (o *OpenShell) daemon(ctx context.Context, w Sandbox) (daemonState, error) 
 		// Its main process is the daemon (no terminal of its own): the
 		// main process and execs are no way to its terminals. Not
 		// remembered: the page attaches again.
-		return d, errCodeEn("daemon_unreachable", nil, "サンドボックスのターミナルのデーモンに接続できません。少し待ってから接続し直してください", "cannot reach the sandbox's terminal daemon; connect again in a moment", nil)
+		return d, errCodeEn("daemon_unreachable", nil, "サンドボックス側のターミナル機能が応答しません。少し待ってからもう一度接続してください", "cannot reach the sandbox's terminal daemon; connect again in a moment", nil)
 	case errors.Is(err, client.ErrNoDaemon):
 		log.Printf("sandbox %s: no daemon, its terminals end with Iwato: %v", w.Name, english(err))
 	case err != nil:

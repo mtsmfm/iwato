@@ -266,7 +266,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .res-mini i,.res-bar i{display:block;height:100%;background:var(--green)}
 .res-metric.warn b{color:var(--amber)}.res-metric.warn .res-mini i,.res-bar i.warn{background:var(--amber)}
 .res-metric.crit b{color:var(--red)}.res-metric.crit .res-mini i,.res-bar i.crit{background:var(--red)}
-.res-long{display:inline-block;text-align:right}.res-short{display:none;text-align:right}
+.res-long{display:inline-block}.res-short{display:none}
 @container (max-width:640px){.res-mini{display:none}}
 @container (max-width:480px){.res-row{overflow-x:auto;scrollbar-width:none;gap:8px;padding:1px 4px}.res-row::-webkit-scrollbar{display:none}.res-long{display:none}.res-short{display:inline-block}}
 .res-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:6px}

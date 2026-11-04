@@ -1220,7 +1220,7 @@
     'error.delete_unfinished': 'サンドボックスの削除が終わりません',
     'error.terminal_ended': 'このターミナルは終了しています',
     'error.terminal_limit': 'ターミナルは {max} 個までです',
-    'error.daemon_unreachable': 'サンドボックスのターミナルのデーモンに接続できません。少し待ってから接続し直してください',
+    'error.daemon_unreachable': 'サンドボックス側のターミナル機能が応答しません。少し待ってからもう一度接続してください',
     'error.not_stoppable': 'OpenShell は準備中のサンドボックスを止められません。準備が終わるのを待つか、削除してください',
     'error.carry_unreadable': '引き継いだ規則を読めません: {detail}',
     'error.secret_url_local': '秘密の URL はこの PC の http://127.0.0.1 からだけ使えます',
