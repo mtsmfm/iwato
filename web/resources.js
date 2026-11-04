@@ -149,9 +149,8 @@
           const long = element('span', 'res-long', m.value), short = element('span', 'res-short', m.short);
           if (m.width) { long.style.minWidth = m.width[0] + 'ch'; short.style.minWidth = m.width[1] + 'ch'; }
           value.append(long, short);
-          node.append(element('span', 'res-label', m.label));
+          node.append(element('span', 'res-label', m.label), value);
           if (m.ratio != null) node.append(bar(m.ratio, '', 'res-mini'));
-          node.append(value);
           return node;
         }));
       }

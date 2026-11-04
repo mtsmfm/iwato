@@ -96,7 +96,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 @media(prefers-reduced-motion:reduce){.iw-cursor.iw-blink{animation:none}}
 #create-openshell{display:flex;flex-direction:column;gap:8px}#create-persist{resize:vertical}
 .log-body{width:min(960px,100%)!important;height:min(80vh,100%)}.log-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.log-text{flex:1;min-height:0;margin:0;overflow:auto;background:#0c0f12;border:1px solid #2e3a35;border-radius:6px;padding:8px;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:#c9d2df;white-space:pre-wrap;overflow-wrap:anywhere}
-.card-toolbar{align-items:center;min-height:42px}.card-detail:empty{display:none}
+.card-toolbar{align-items:center;min-height:42px}.card-detail:empty{display:block;min-height:0;height:10px;margin:0}@media(max-width:720px){.card-detail:empty{height:8px}}
 .terminal-surface>.connection-label,.terminal-surface>.dimensions{position:absolute;right:10px;z-index:3;pointer-events:none;background:#181e25e6;border:1px solid #2e3640;border-radius:10px;padding:2px 9px;font-size:10px;max-width:calc(100% - 20px)}.terminal-surface>.connection-label{top:8px}.terminal-surface>.dimensions{bottom:8px}
 @media(pointer:fine){.card-footer:not(:has(>.paste-box:not([hidden]))){display:none}}
 .iw-url{text-decoration:underline;text-decoration-color:#7fa7cf99;text-underline-offset:2px;text-decoration-skip-ink:none}.iw-url{cursor:pointer}.iw-url-hot,.iw-url-hot .iw-url{text-decoration-color:currentColor}
@@ -266,7 +266,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .res-mini i,.res-bar i{display:block;height:100%;background:var(--green)}
 .res-metric.warn b{color:var(--amber)}.res-metric.warn .res-mini i,.res-bar i.warn{background:var(--amber)}
 .res-metric.crit b{color:var(--red)}.res-metric.crit .res-mini i,.res-bar i.crit{background:var(--red)}
-.res-long{display:inline-block}.res-short{display:none}
+.res-long{display:inline-block;text-align:right}.res-short{display:none;text-align:right}
 @container (max-width:640px){.res-mini{display:none}}
 @container (max-width:480px){.res-row{overflow-x:auto;scrollbar-width:none;gap:8px;padding:1px 4px}.res-row::-webkit-scrollbar{display:none}.res-long{display:none}.res-short{display:inline-block}}
 .res-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:6px}
