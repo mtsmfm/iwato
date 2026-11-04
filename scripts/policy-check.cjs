@@ -430,7 +430,22 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     reviewBox = agentGroup.locator('.review-detail');
     await item(/api\.github\.com/).click();
     await reviewBox.locator('.review-host').filter({ hasText: /^api\.github\.com/ }).waitFor();
-    check(await approve() === 200 && await loadBadge.count() === 1, 'an approval goes through while the last one waits to load');
+    // While it is sent, the badge and the title leave it out (the card's
+    // line would name another one, or none).
+    const tabBadge = card.locator('.card-tab', { hasText: 'ポリシー' }).locator('.tab-badge');
+    const badgeBefore = Number(await tabBadge.textContent()) || 0;
+    const titleCount = async () => Number((await page.title()).match(/^\((\d+)\) /)?.[1] || 0);
+    const titleBeforeApprove = await titleCount();
+    await page.route(/\/proposals\/approve$/, async (route) => {
+      await new Promise((r) => { setTimeout(r, 1500); });
+      await route.continue();
+    });
+    const heldAnswer = page.waitForResponse((r) => /\/proposals\/approve$/.test(r.url()));
+    await reviewBox.getByRole('button', { name: '承認', exact: true }).click();
+    await page.waitForFunction((n) => (Number(document.querySelector('.terminal-card.selected .card-tab .tab-badge:not([hidden])')?.textContent) || 0) === n, badgeBefore - 1);
+    check(await titleCount() === titleBeforeApprove - 1, 'while an approval is sent, the badge and the title leave it out: ' + await page.title());
+    check((await heldAnswer).status() === 200 && await loadBadge.count() === 1, 'an approval goes through while the last one waits to load');
+    await page.unroute(/\/proposals\/approve$/);
     await rule('allow_api_github_com_443_2').waitFor();
     await page.screenshot({ path: path.join(dir, 'many-after.png') });
     // Rejecting with a reason; then まとめて却下 asks in the page.

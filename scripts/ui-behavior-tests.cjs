@@ -276,7 +276,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const ruleRows = (env) => nodes(review(env)).filter((n) => n.className === 'review-rule').map((r) => [r.children[0].checked, texts(r).replace(/\n/g, ' '), r.dataset.off]);
   const toggle = (box) => { box.checked = !box.checked; box.listeners.change(); };
   // The host checks and the preview wait on short timers.
-  const approveFirst = async (env) => { await runTimers(env); find(review(env), '承認').click(); await flush(); };
+  const approveFirst = async (env) => { await runTimers(env); find(review(env), '承認').click(); await flush(); if (env.rereads) await readPolicy(env); };
   const runTimers = async (env) => { for (let i = 0; i < 2; i++) { for (const [id, x] of [...env.timeouts]) if (x.ms === 30 || x.ms === 250) { env.timeouts.delete(id); x.fn(); } await flush(); } };
   const scopeOf = (env) => JSON.parse(mutations(env).at(-1).body);
   const eg = await environment({fake: false}); eg.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : response(proposalItem)); await readPolicy(eg);
@@ -291,7 +291,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   eg.card().children[2].children[0].children[1].click(); await flush(); assert(eg.intervals.some((i) => i.ms === 2000 && !i.cleared), 'the policy tab follows closely just after the owner acted');
   ok('the policy tab opens a proposal beside the list and approves it as proposed for every program, with its request ID and digest');
 
-  const approveEnv = async (pending, more = {}) => { const env = await environment({fake: false}); env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? response({ok: true}) : /\/preview$/.test(path) ? response({attach: pending.attach, offer: pending.offer, yaml: 'allow_x:\n  endpoints: []\n'}) : response({...proposalItem, pending: [pending], ...more})); await readPolicy(env); return env; };
+  // The read after a decision no longer lists the proposal (the page shows a
+  // proposal it sent only once OpenShell has stopped listing it); the next
+  // brings it back, so one page tries several approvals.
+  const approveEnv = async (pending, more = {}) => { const env = await environment({fake: false}); let decided = false; env.setProposalHandler((path) => /\/(approve|reject)$/.test(path) ? (decided = true, response({ok: true})) : /\/preview$/.test(path) ? response({attach: pending.attach, offer: pending.offer, yaml: 'allow_x:\n  endpoints: []\n'}) : decided ? (decided = false, response({...proposalItem, pending: [], ...more})) : response({...proposalItem, pending: [pending], ...more})); await readPolicy(env); env.rereads = true; return env; };
   {
     // Narrowed: an unchecked rule leaves the approval; the rest go as rules.
     const narrow = await approveEnv(proposal);
@@ -392,10 +395,11 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(scopeOf(env), {requestId: 'a'.repeat(32), digest: 'd'.repeat(64), reason: '不要です'});
     const before = mutations(env).length;
     find(pendingSec(env), 'まとめて却下').click(); await flush();
-    assert.match(env.confirmations.at(-1), /承認待ちの提案 2 件をすべて却下/); assert.equal(mutations(env).length, before, 'cancelled: nothing sent');
+    // The one rejected stays out while OpenShell still lists it as waiting.
+    assert.match(env.confirmations.at(-1), /承認待ちの提案 1 件をすべて却下/); assert.equal(mutations(env).length, before, 'cancelled: nothing sent');
     env.setConfirm(true); find(pendingSec(env), 'まとめて却下').click(); await flush();
-    assert.deepEqual(mutations(env).slice(before).map((r) => JSON.parse(r.body).digest), ['d'.repeat(64), 'e'.repeat(64)]);
-    assert.match(env.policy().children[0].children[3].textContent, /2 件を却下しました/);
+    assert.deepEqual(mutations(env).slice(before).map((r) => JSON.parse(r.body).digest), ['e'.repeat(64)]);
+    assert.match(env.policy().children[0].children[3].textContent, /1 件を却下しました/);
   }
   ok('rejecting sends the reason typed; reject-all asks in the page, then rejects each');
   // A rejected proposal opens the same review, its rows read-only: the
@@ -658,6 +662,28 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.equal(mutations(going).length, 2); assert.equal(JSON.parse(mutations(going)[1].body).requestId, 'b'.repeat(32));
     wait.resolve(response({ok: true})); await flush();
     ok('an approval leaves the list at once and the next one can go while it is sent');
+  }
+  {
+    // The line and the badges leave out what this page sent for approval,
+    // while it is sent and until OpenShell stops listing it as waiting.
+    const waits = [deferred(), deferred()]; let sent = 0; const second = {...proposal, id: 'b'.repeat(32), digest: 'e'.repeat(64), endpoints: [{...proposal.endpoints[0], host: 'pypi.org'}]};
+    const env = await environment({fake: false, status: 'running'}); env.setConfirm(true);
+    env.setProposalHandler((path) => path.endsWith('/approve') ? waits[sent++].promise : /\/preview$/.test(path) ? response({yaml: 'x: 1\n'}) : response({...proposalItem, pending: [proposal, second]})); await readPolicy(env);
+    env.setSandboxHandler(() => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: '', pending: [proposal, second]}]}));
+    const bar = env.card().children.find((n) => n.className === 'proposal-bar'); const badge = () => env.card().children[2].children[0].children[1].children[0];
+    assert.equal(bar.hidden, false); assert.match(bar.children[0].textContent, /^提案 2 件: github\.com:443 /);
+    await approveFirst(env);
+    assert.match(bar.children[0].textContent, /^提案 1 件: pypi\.org:443 /, 'the line names the one not sent'); assert.equal(bar.children[1].disabled, false); assert.equal(badge().textContent, '1'); assert.equal(env.document.title, '(1) Iwato');
+    waits[0].resolve(response({ok: true})); await flush(); await env.tickPoll(); await runTimers(env);
+    assert.match(bar.children[0].textContent, /^提案 1 件: pypi\.org:443 /, 'still listed as waiting after the answer, it stays out');
+    find(review(env), '承認').click(); await flush();
+    assert.equal(bar.hidden, true, 'every waiting one sent: no line'); assert.equal(badge().hidden, true); assert.equal(env.document.title, 'Iwato');
+    waits[1].resolve(response({ok: true})); await flush(); await env.tickPoll();
+    assert.equal(bar.hidden, true); assert.equal(badge().hidden, true); assert.match(texts(pendingSec(env)), /^承認待ち \(0\)\n/);
+    env.setSandboxHandler(() => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: '', pending: []}]})); await env.tickPoll();
+    env.setSandboxHandler(() => response({fake: false, sandboxes: [{name: 'api', status: 'running', detail: '', pending: [second]}]})); await env.tickPoll();
+    assert.equal(bar.hidden, false, 'once OpenShell stopped listing it, it counts again'); assert.equal(badge().textContent, '1');
+    ok('the line, the badge and the title leave out the proposals sent for approval until OpenShell has decided them');
   }
   {
     // A batch's starting choices are the opened proposal's.
