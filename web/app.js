@@ -1077,6 +1077,12 @@
     box.append(form);
   }
   // A flow's message from the server, in the page's language when coded.
+  // A terminal's close reason: "code=CODE TEXT" (closeReason in server.go)
+  // shows the page's own text for CODE, as TEXT may be cut.
+  const closeReasonText = (reason) => {
+    const m = /^code=([a-z0-9_]{1,64}) ([\s\S]*)$/.exec(reason || '');
+    return m ? window.IwatoI18n.serverError(m[1], null, m[2]) : reason || '';
+  };
   const flowMessage = (flow) => window.IwatoI18n.serverError(flow.messageCode, flow.messageParams, text(flow.message, 300));
   // Only Atlassian's https page (or the fake's own) is offered to open.
   function authorizeLink(url) {
@@ -6077,7 +6083,7 @@
         if (event.code === 4500) {
           this.desired = false;
           this.setConnection('error', t('conn.failed'));
-          this.showError(t('conn.failed.error', { reason: event.reason || t('conn.failed.unknown') }));
+          this.showError(t('conn.failed.error', { reason: closeReasonText(event.reason) || t('conn.failed.unknown') }));
           return;
         }
         if (!probed && [1000, 1008, 4401, 4403].includes(event.code)) {

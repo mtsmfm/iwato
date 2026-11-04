@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func request(t *testing.T, s *Server, path, method, body string, cookie *http.Cookie, csrf string) (*http.Response, []byte) {
@@ -73,5 +75,13 @@ func TestDefaultPortShiftsPastPortsInUse(t *testing.T) {
 	a, b := first.Addr().(*net.TCPAddr), second.Addr().(*net.TCPAddr)
 	if a.Port < defaultPort || b.Port <= a.Port || !a.IP.IsLoopback() || !b.IP.IsLoopback() {
 		t.Fatal(a, b)
+	}
+}
+
+func TestCloseReasonSendsCode(t *testing.T) {
+	e := errCodeEn("daemon_unreachable", nil, strings.Repeat("あ", 60), "en", nil)
+	got := closeReason(fmt.Errorf("attach: %w", e))
+	if !strings.HasPrefix(got, "code=daemon_unreachable ") || len(got) > 120 || !utf8.ValidString(got) {
+		t.Fatalf("closeReason = %q", got)
 	}
 }

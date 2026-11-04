@@ -849,8 +849,16 @@ func (s *Server) serveTerm(conn *websocket.Conn, name string, expires time.Time,
 var errBadMessage = errors.New("unknown message")
 
 // closeReason is an error for a WebSocket close frame (at most 123 bytes).
+//
+// A close frame's reason holds at most 123 bytes, about 40 Japanese
+// characters, so a coded error without params goes as "code=CODE TEXT": the
+// page shows its own text for CODE in full, and the cut TEXT otherwise.
 func closeReason(e error) string {
 	reason := e.Error()
+	var c *codedError
+	if errors.As(e, &c) && c.code != "" && len(c.params) == 0 {
+		reason = "code=" + c.code + " " + reason
+	}
 	for len(reason) > 120 {
 		_, size := utf8.DecodeLastRuneInString(reason)
 		reason = reason[:len(reason)-size]
