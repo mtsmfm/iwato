@@ -2176,10 +2176,14 @@
       for (const k of Object.keys(policyGuard.limits)) if (Number.isInteger(lim[k]) && lim[k] > 0 && lim[k] <= 256) policyGuard.limits[k] = lim[k];
       policyGuard.gateways = list(data.hostGateways, 50).filter((g) => typeof g === 'string' && g).map((g) => text(g, 253).toLowerCase());
       policyGuard.listenPort = Number.isInteger(data.listenPort) && data.listenPort > 0 && data.listenPort < 65536 ? data.listenPort : 0;
+      const raw = (value) => Array.isArray(value) ? value : [];
       const proposals = (value, state, max) => list(value, max).filter((p) => p && /^[a-f0-9]{32}$/.test(p.id) && p.state === state).map((p) => this.validateProposal(p));
       return {
         available: data.available === true, error: text(data.error, 1000),
-        pending: proposals(data.pending, 'pending-approval', 50),
+        // The agent's proposals first: OpenShell's drafts can number in the
+        // hundreds and must not push them out of the list.
+        pending: [...proposals(raw(data.pending).filter((p) => p?.source !== 'auto'), 'pending-approval', 50),
+          ...proposals(raw(data.pending).filter((p) => p?.source === 'auto').slice(-50), 'pending-approval', 50)],
         rejected: proposals(data.rejected, 'rejected', 200),
         unlinked: proposals(data.unlinked, 'approved', 50),
         policy: this.validatePolicy(data.policy),
