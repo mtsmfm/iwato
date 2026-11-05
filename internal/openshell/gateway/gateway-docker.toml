@@ -10,6 +10,10 @@ name           = "iwato"
 bind_address   = "0.0.0.0:17670"
 log_level      = "info"
 compute_driver = "docker"
+# Policy and provider changes reach the supervisors at once: with polling
+# (every 10 s) a sandbox keeps sending a refreshed OAuth token's revoked
+# predecessor until its next poll.
+config_delivery_mode = "push"
 # The CA the supervisors trust for https://127.0.0.1:17670 (the gateway
 # gives it to the driver).
 guest_tls_ca   = "/var/lib/openshell/tls/ca.crt"

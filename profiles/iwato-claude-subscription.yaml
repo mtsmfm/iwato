@@ -55,8 +55,8 @@
 #                    configuration, authorize URL builder, code exchange,
 #                    refresh, CLAUDE_CODE_OAUTH_TOKEN handling). Not run
 #                    against Anthropic. max_lifetime is Claude Code's 8 hours:
-#                    each refresh may revoke the previous access token, which
-#                    sandboxes keep sending until their next poll (about 10 s).
+#                    each refresh may revoke the previous access token, so
+#                    the gateway pushes the new one (config_delivery_mode).
 # Endpoints:         none (ADR 0022): the credential goes only to the sandbox
 #                    policy's endpoints bound to the provider
 #                    (credential_binding). Attaching adds presets/providers/
