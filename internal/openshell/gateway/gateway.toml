@@ -6,6 +6,10 @@ name           = "iwato"
 bind_address   = "0.0.0.0:17670"
 log_level      = "info"
 compute_driver = "wslc"
+# Policy and provider changes reach the supervisors at once: with polling
+# (every 10 s) a sandbox keeps sending a refreshed OAuth token's revoked
+# predecessor until its next poll.
+config_delivery_mode = "push"
 
 [openshell.gateway.gateway_jwt]
 signing_key_path = "/var/lib/openshell/tls/jwt/signing.pem"
