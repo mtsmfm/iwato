@@ -147,6 +147,8 @@ type Term struct {
 	bells   int
 	events  []Event
 	version uint64
+	// undo is the screens before the last resize, until output comes.
+	undo *resizeUndo
 
 	// Reply receives answers to the program's queries (device attributes,
 	// cursor position, modes, colors). It is called during Write.
@@ -979,26 +981,65 @@ func (t *Term) fullReset() {
 // has no width). Fewer rows first drop blank rows below the cursor, then
 // move the top rows to the history; more rows are added blank at the
 // bottom. Rows are cut or padded to the new width.
+//
+// A resize back to the previous size with no output in between restores
+// the screens as they were: a program that reads only the final size sees
+// no change and does not redraw (a reconnecting phone sends a row less,
+// then the row back), so the screen must still be what it last drew.
 func (t *Term) Resize(cols, rows int) {
 	cols, rows = max(cols, 1), max(rows, 1)
 	if cols == t.cols && rows == t.rows {
 		return
 	}
-	t.version++
-	t.resizeRows(&t.main, rows, true)
-	t.resizeRows(&t.alt, rows, false)
-	for _, g := range []*grid{&t.main, &t.alt} {
-		for _, r := range g.rows {
-			r.C = resizeCells(r.C, cols)
-		}
-		g.x, g.wrapNext = min(g.x, cols-1), false
-		g.top, g.bot = 0, rows-1
-		if c := g.saved; c != nil {
-			c.x, c.y, c.wrapNext = min(c.x, cols-1), min(c.y, rows-1), false
-		}
+	if u := t.undo; u != nil && u.version == t.version && cols == u.cols && rows == u.rows {
+		t.undo = nil
+		t.version++
+		// Rows the shrink moved to the history stay there too: the page
+		// may hold their ids already.
+		t.main, t.alt = u.main, u.alt
+		t.cols, t.rows = cols, rows
+		t.resetTabs()
+		return
 	}
+	u := &resizeUndo{cols: t.cols, rows: t.rows, main: cloneGrid(t.main), alt: cloneGrid(t.alt)}
+	t.version++
+	t.resizeGrid(&t.main, cols, rows, true)
+	t.resizeGrid(&t.alt, cols, rows, false)
 	t.cols, t.rows = cols, rows
 	t.resetTabs()
+	u.version = t.version
+	t.undo = u
+}
+
+type resizeUndo struct {
+	cols, rows int
+	version    uint64
+	main, alt  grid
+}
+
+func cloneGrid(g grid) grid {
+	c := g
+	c.rows = make([]*Row, len(g.rows))
+	for i, r := range g.rows {
+		c.rows[i] = &Row{C: slices.Clone(r.C), Cont: r.Cont}
+	}
+	if g.saved != nil {
+		saved := *g.saved
+		c.saved = &saved
+	}
+	return c
+}
+
+func (t *Term) resizeGrid(g *grid, cols, rows int, main bool) {
+	t.resizeRows(g, rows, main)
+	for _, r := range g.rows {
+		r.C = resizeCells(r.C, cols)
+	}
+	g.x, g.wrapNext = min(g.x, cols-1), false
+	g.top, g.bot = 0, rows-1
+	if c := g.saved; c != nil {
+		c.x, c.y, c.wrapNext = min(c.x, cols-1), min(c.y, rows-1), false
+	}
 }
 
 func (t *Term) resizeRows(g *grid, rows int, main bool) {

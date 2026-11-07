@@ -213,3 +213,25 @@ func TestBellsAndNotifications(t *testing.T) {
 		}
 	}
 }
+
+// A shrink undone before any output leaves the screen as the program drew
+// it: the program sees the same size and does not redraw.
+func TestResizeBackRestores(t *testing.T) {
+	tm := New(10, 4)
+	tm.Write([]byte("1\r\n2\r\n3\r\n4\x1b[3;1H"))
+	tm.Resize(10, 3)
+	tm.Resize(10, 4)
+	if rowText(tm, 0) != "1" || rowText(tm, 3) != "4" {
+		t.Fatalf("screen %q %q", rowText(tm, 0), rowText(tm, 3))
+	}
+	if _, y := tm.Cursor(); y != 2 {
+		t.Fatalf("cursor row %d", y)
+	}
+	// Output in between: the usual resize.
+	tm.Resize(10, 3)
+	tm.Write([]byte("x"))
+	tm.Resize(10, 4)
+	if rowText(tm, 3) != "" {
+		t.Fatalf("bottom row %q", rowText(tm, 3))
+	}
+}
