@@ -104,9 +104,6 @@ func run(args []string) (err error) {
 			return e
 		}
 	}
-	if *publicOrigin == "" {
-		*publicOrigin = c.PublicOrigin
-	}
 	var taken net.Listener
 	remembered := false
 	if fake == nil && *listen == "" && restartAddr == "" {

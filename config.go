@@ -53,9 +53,6 @@ type Config struct {
 	// Port is where the page is served, taken at the first start and kept:
 	// the installed app (PWA) and the browsers' sign-ins belong to it.
 	Port int `json:"port,omitempty"`
-	// PublicOrigin is -public-origin's default: the https origin of
-	// `tailscale serve` in front of the page.
-	PublicOrigin string `json:"publicOrigin,omitempty"`
 	// Resources is how the page shows the sandboxes' resources (resources.go).
 	Resources *ResourceSettings `json:"resources,omitempty"`
 	// ProviderScopes is an old field: read and dropped.
@@ -206,11 +203,6 @@ func (c Config) Validate() error {
 	}
 	if c.Port != 0 && (c.Port < 1024 || c.Port > 65535) {
 		return errors.New("port must be 1024-65535")
-	}
-	if c.PublicOrigin != "" {
-		if _, _, e := parsePublicOrigin(c.PublicOrigin); e != nil {
-			return fmt.Errorf("publicOrigin: %w", e)
-		}
 	}
 	if len(c.Sandboxes) > 16 {
 		return errors.New("at most 16 sandboxes")
