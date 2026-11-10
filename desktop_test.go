@@ -525,10 +525,10 @@ func TestDesktopScriptUsesFirefoxNotIwatoBrowser(t *testing.T) {
 func TestShellEnvsPicksTheBrowserBySession(t *testing.T) {
 	needSh(t)
 	d := t.TempDir()
-	if err := writeImageContext(d); err != nil {
+	envs, err := filepath.Abs(filepath.Join("sandboximage", "etc", "shell", "envs"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	envs := filepath.Join(d, "sandboximage", "etc", "shell", "envs")
 	run := func(extra ...string) string {
 		c := exec.Command("bash", "-c", `. "$1"; printf %s "$BROWSER"`, "x", envs)
 		c.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + d}, extra...)

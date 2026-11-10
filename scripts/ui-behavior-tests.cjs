@@ -147,7 +147,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       if (path.startsWith('/api/update')) return updateHandler ? updateHandler(path, opt) : response({enabled: false, current: {version: '0.3.0'}});
       if (path === '/api/reset') return resetHandler ? resetHandler(path, opt) : response({running: false});
       if (path === '/api/images' || path === '/api/images/update') return imagesHandler ? imagesHandler(path, opt) : response({available: false});
-      if (path === '/api/checks') return response({checks: [{level: 'ok', name: 'docker', detail: 'docker_version_context', params: {version: '28.3.0', api: '1.51', context: 'colima'}}, {level: 'warn', name: 'buildx', detail: 'buildx_missing', hint: 'buildx_install'}, {level: 'ok', name: 'config', detail: 'config', params: {path: '/x/iwato.json', count: 1}}]});
+      if (path === '/api/checks') return response({checks: [{level: 'ok', name: 'docker', detail: 'docker_version_context', params: {version: '28.3.0', api: '1.51', context: 'colima'}}, {level: 'warn', name: 'engine_config', detail: 'docker_desktop', hint: 'host_networking'}, {level: 'ok', name: 'config', detail: 'config', params: {path: '/x/iwato.json', count: 1}}]});
       if (path.endsWith('/delete')) { sandbox.status = 'not-created'; return response({ok: true}); }
       if (path.endsWith('/recreate')) { sandbox.status = 'running'; return response({ok: true, failed: [{rule: 'allow_x_443', error: 'refused <b>'}]}); }
       if (path.endsWith('/stop')) { if (stopHandler) return stopHandler(path); sandbox.status = 'stopped'; return response({ok: true}); }
@@ -994,7 +994,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   {
   // 最新のイメージを取得してから作り直す: the pull goes first; a failed one recreates nothing.
   const rp = await environment({fake: false, status: 'running'}); let phase = 'updated'; const order = [];
-  rp.setImagesHandler((path, opt) => { if (opt?.method === 'POST') { order.push('pull'); return response({ok: true}); } return response({available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:edge', source: 'pull', moves: true, present: true, update: order.length ? {phase, message: phase === 'failed' ? 'pull <b>failed</b>' : '新しいイメージを取得しました'} : {}}); });
+  rp.setImagesHandler((path, opt) => { if (opt?.method === 'POST') { order.push('pull'); return response({ok: true}); } return response({available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:edge', moves: true, present: true, update: order.length ? {phase, message: phase === 'failed' ? 'pull <b>failed</b>' : '新しいイメージを取得しました'} : {}}); });
   rp.buttons()[7].click(); await flush();
   const rpPanel = rp.side('recreate-panel'); const [, , , , pullLabel, , rpForm, rpStatus] = rpPanel.children;
   assert.equal(pullLabel.hidden, false); assert.equal(pullLabel.children[1].textContent, '最新のイメージを取得してから作り直す');
@@ -2385,7 +2385,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   {
   // 設定: the standard image, since when, and 「標準イメージを更新」 for a moving tag only.
   const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
-  const im = await environment({fake: false, status: 'running'}); let info = {available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:edge', source: 'pull', moves: true, present: true, created: '2026-10-15T03:04:05.123Z', at: '2026-10-16T01:00:00Z', update: {}};
+  const im = await environment({fake: false, status: 'running'}); let info = {available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:edge', moves: true, present: true, created: '2026-10-15T03:04:05.123Z', at: '2026-10-16T01:00:00Z', update: {}};
   const posts = [];
   im.setImagesHandler((path, opt) => { if (opt?.method === 'POST') { posts.push(opt.headers['X-CSRF-Token']); info = {...info, update: {phase: 'updated', message: '新しいイメージを取得しました'}}; return response({ok: true}); } return response(info); });
   im.els['settings-button'].click(); await flush();
@@ -2395,7 +2395,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   walk(section, (n) => n.textContent === '標準イメージを更新')[0].click(); await flush();
   assert.deepEqual(posts, ['csrf123']); assert(walk(section, (n) => n.textContent === '新しいイメージを取得しました。これから作る・作り直すサンドボックスで使います').length, 'the result shows in the page\'s words');
   const rel = await environment({fake: false, status: 'running'});
-  rel.setImagesHandler(() => response({available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:0.3.0', source: 'pull', moves: false, present: true, update: {}}));
+  rel.setImagesHandler(() => response({available: true, image: 'ghcr.io/mtsmfm/iwato-sandbox:0.3.0', moves: false, present: true, update: {}}));
   rel.els['settings-button'].click(); await flush();
   const relSection = rel.els['settings-body'].children.find((n) => n.className === 'image-settings');
   assert.equal(walk(relSection, (n) => n.textContent === '標準イメージを更新').length, 0); assert(walk(relSection, (n) => n.textContent === '最新です').length);

@@ -29,8 +29,7 @@ The setup needs network rules (all GET only):
 
 - CI (`.github/workflows/build.yml`) builds these on every push; on `main` it also replaces the assets of the pre-release `edge` (the tag `edge` follows `main`). Those exes are built with `--images ghcr.io/mtsmfm --image-tag edge --image-digests ...`: they pull both images of their own commit by digest, which `.github/workflows/image.yml` publishes on pushes to main (tagged `edge`, `sha-<commit>` and `src-<hash>` of `scripts/image-sources.sh NAME`, which the edge job waits for; an image whose `src-` tag exists is not rebuilt, only retagged); PRs from forks that touch the images only build the ones whose sources changed
 - PRs from branches of this repository: `.github/workflows/pr-build.yml` publishes the pre-release `pr-<N>` on every push (`--channel pr-<N>`, pinned to the `src-` images of the PR's head, which `image.yml` publishes for them with the tag `pr-<N>`) and deletes it with its tag when the PR is closed; a comment on the PR links its exes (`scripts/pr-build-comment.sh`, edited on each push); the settings install it ([ADR 0019](../adr/0019-try-pull-request-builds.md))
-- Default (a development exe): the exe pulls the standard image `ghcr.io/mtsmfm/iwato-sandbox:edge` when it has none, pulls a newer one only on request, and builds the gateway image itself, which needs `docker buildx` (as does `--local-images`)
-- `--local-images`: builds both images from the sources embedded in the exe (to try a change to `sandboximage/` before it reaches main)
+- Iwato never builds its images, it only pulls them ([ADR 0024](../adr/0024-iwato-only-pulls-its-images.md)). Default (a development exe, `go run`, tests): `ghcr.io/mtsmfm/iwato-{gateway,sandbox}:edge` when missing, a newer sandbox image only on request. To try a change to `sandboximage/` or the gateway, push it in a pull request and use its images (`--images ghcr.io/mtsmfm --image-tag pr-N`, or the PR's own build)
 - `--images REGISTRY`: pulls both images tagged with the exe's version (the release) or `--image-tag TAG`; with `--image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...` as `tag@digest`, so a moved tag is not used and there is no update. Without digests, the `edge` tag is pulled by the tag alone: it is meant to move
 - `--channel edge|release|pr-N --repo OWNER/REPO` (with `--image-digests`): a published exe, which offers updates from that repository's releases (`update.go`). CI also writes `dist/iwato-build.json` (`scripts/build-meta.sh`), the hashes and digests the update checks
 - `--debug`: keeps the debug option (the page's `?font=fallback`). Use it only while debugging. No build of this script has the fake backend (`-tags uitest`)
@@ -39,7 +38,7 @@ Release: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which publ
 
 ### Building on Linux
 
-Optional (the edge pre-release has Linux binaries): after the [setup](#setup), `go build -ldflags '-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge' -o iwato .` builds one like a default build (a plain `go build .` carries no `iwato-entrypoint`, so it cannot build the sandbox image).
+Optional (the edge pre-release has Linux binaries): after the [setup](#setup), `go build -o iwato .` builds one like a default build (without `iwato-entrypoint`, which only sandboxes made before the image carried it need: `scripts/build-exe.sh` adds it).
 
 ## Bumping pinned versions
 

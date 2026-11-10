@@ -34,7 +34,7 @@
 macOS (試験的。実機ではまだ試していません) では、[edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64` をダウンロードし、専用のフォルダーに `iwato` として置いて、そこで実行します:
 
 ```sh
-brew install colima docker docker-buildx
+brew install colima docker
 colima start --cpu 4 --memory 8
 chmod +x iwato
 xattr -d com.apple.quarantine iwato

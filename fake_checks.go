@@ -26,7 +26,7 @@ func newFakeChecks(down bool) *checkState {
 		return []check{
 			{Level: "ok", Name: "docker", Detail: "docker_version_context", Params: map[string]any{"version": "28.3.0", "api": "1.51", "context": "colima"}},
 			{Level: "ok", Name: "engine", Detail: "engine_vm", Hint: "engine_resources", Params: map[string]any{"os": "Ubuntu 24.04 LTS", "arch": "aarch64", "cpus": 4, "memory": "7.7"}},
-			{Level: "warn", Name: "buildx", Detail: "buildx_missing", Hint: "buildx_install"},
+			{Level: "warn", Name: "engine_config", Detail: "docker_desktop", Hint: "host_networking"},
 			{Level: "ok", Name: "config", Detail: "config", Params: map[string]any{"path": "/fake/iwato.json", "count": 2}},
 			{Level: "ok", Name: "openshell", Detail: "version", Params: map[string]any{"version": wslc.OpenShellVersion}},
 		}

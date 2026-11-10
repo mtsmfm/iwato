@@ -2,9 +2,8 @@
 // built for Linux on this exe's architecture. scripts/build-exe.sh puts it
 // in bin/ for the exe's build (go build -overlay). The sandbox image
 // carries its own; this one is what the WSLc driver places, as iwato-term,
-// in sandboxes that run it from the legacy path, and what a local build of
-// the image (--local-images) puts in. Without it (go test, a plain go
-// build) Binary is nil.
+// in sandboxes that run it from the legacy path. Without it (go test, a
+// plain go build) Binary is nil.
 package termbin
 
 import (

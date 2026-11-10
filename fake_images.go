@@ -25,7 +25,7 @@ func newFakeImages() *fakeImages {
 func (d *fakeImages) ImageInfo(context.Context) ImageInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return ImageInfo{Available: true, Image: "ghcr.io/mtsmfm/iwato-sandbox:edge", Source: "pull", Moves: true, Present: true,
+	return ImageInfo{Available: true, Image: "ghcr.io/mtsmfm/iwato-sandbox:edge", Moves: true, Present: true,
 		Created: d.created.Format(time.RFC3339Nano), At: d.at.Format(time.RFC3339)}
 }
 

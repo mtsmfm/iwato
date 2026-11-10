@@ -1,9 +1,9 @@
 # Builds the Windows exes and the macOS and Linux binaries on every push
 # (and by hand) and keeps them as a workflow artifact; on main they also
 # replace the pre-release `edge` (the edge jobs). The artifact's exes pull
-# the sandbox image's `edge` tag (image.yml) and build the gateway image,
-# as during development (scripts/build-exe.sh without --images); the edge
-# exes pull both images, pinned by digest. Pull requests' published exes:
+# both images' `edge` tags (image.yml), as during development
+# (scripts/build-exe.sh without --images); the edge exes pull them pinned by
+# digest. Pull requests' published exes:
 # pr-build.yml.
 name: build
 on:

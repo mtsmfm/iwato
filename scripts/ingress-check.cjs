@@ -113,7 +113,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await checks.locator('.check-row').first().waitFor();
     check(await checks.locator('h4').innerText() === '起動時の確認' && await checks.locator('.check-row').count() === 5, 'the startup checks are listed');
     const warn = await checks.locator('.check-row[data-level=warn]').innerText();
-    check(warn.includes('docker buildx がありません') && warn.includes('brew install docker-buildx'), 'a warning shows its detail and its fix');
+    check(warn.includes('ホストネットワークが有効か確かめてください') && warn.includes('Enable host networking'), 'a warning shows its detail and its fix');
     await checks.getByRole('button', { name: '再確認' }).click();
     await checks.locator('button:enabled', { hasText: '再確認' }).waitFor({ timeout: 10000 });
     check(await checks.locator('.check-row').count() === 5, 'the checks can run again');
@@ -234,7 +234,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(await settings.getByLabel('Display language').inputValue() === 'en', 'the choice shows');
     check(await noSideScroll(settings.locator('.login-body')), 'the settings do not scroll sideways (English)');
     check(await settings.locator('.timezone-settings h4').innerText() === 'Time zone' && (await settings.locator('.timezone-settings option[value=""]').textContent()).startsWith('Match this PC (') && await settings.getByLabel('Time zone').inputValue() === 'Asia/Tokyo', 'the time zone section is English and keeps the choice');
-    check(await settings.locator('.check-settings h4').innerText() === 'Startup checks' && (await settings.locator('.check-settings').innerText()).includes('docker buildx is missing'), 'the startup checks are English');
+    check(await settings.locator('.check-settings h4').innerText() === 'Startup checks' && (await settings.locator('.check-settings').innerText()).includes('check that host networking is on'), 'the startup checks are English');
     await language.scrollIntoViewIfNeeded();
     await shot('settings-language-en.png');
     const again = await context.newPage();

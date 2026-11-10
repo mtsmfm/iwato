@@ -53,7 +53,7 @@ Run locally only what you touched and what is related; leave the rest to CI (whi
 1. Tests: run locally what you touched and what is related (above), plus `go vet ./...` and `go vet -tags uitest ./...`. CI runs `go test ./...`, `go test -tags uitest ./...` and the exe build after the push
 2. Review the diff once more for bugs and security problems before committing
 3. Open a pull request to `main`. Its description lists the changes, the tests run and the checks not run (real hardware, browser checks, e2e, …)
-4. When asked, build the exe with `scripts/build-exe.sh` (into `dist/`). `web/` is embedded, so UI-only changes need it too. `--local-images` to try `sandboximage/` changes before main, `--debug` only while debugging ([development.md](docs/dev/development.md#building-the-exe))
+4. When asked, build the exe with `scripts/build-exe.sh` (into `dist/`). `web/` is embedded, so UI-only changes need it too. `--images ghcr.io/mtsmfm --image-tag pr-N` to try a pull request's images, `--debug` only while debugging ([development.md](docs/dev/development.md#building-the-exe))
 
 Inside an Iwato sandbox: pushing and creating the PR each need a network proposal, and GitHub's GraphQL is read-only there, so create the PR with `gh api -X POST /repos/OWNER/REPO/pulls -f base=main -f head=BRANCH -f title=... -F body=@FILE` instead of `gh pr create`.
 

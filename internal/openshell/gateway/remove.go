@@ -18,10 +18,8 @@ import (
 func Remove(ctx context.Context, run wslc.Runner, o Options) (removed []string, err error) {
 	var errs []error
 	images := []string{}
-	if tag, terr := imageTag(o); o.Image != "" {
+	if o.Image != "" {
 		images = append(images, o.Image)
-	} else if terr == nil {
-		images = append(images, tag)
 	}
 	var c struct {
 		Labels map[string]string

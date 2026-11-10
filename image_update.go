@@ -16,13 +16,11 @@ import (
 type ImageInfo struct {
 	Available bool   `json:"available"`
 	Image     string `json:"image,omitempty"`
-	// Source: pull (from ghcr.io) or build (from the exe's sandboximage/).
-	Source string `json:"source,omitempty"`
 	// Moves: the tag can move (edge), so that an update can bring a newer one.
 	Moves   bool        `json:"moves"`
 	Present bool        `json:"present"`
 	Created string      `json:"created,omitempty"` // the image's own creation time
-	At      string      `json:"at,omitempty"`      // when Iwato last pulled or built it
+	At      string      `json:"at,omitempty"`      // when Iwato last pulled it
 	Update  ImageUpdate `json:"update"`
 }
 
@@ -58,10 +56,7 @@ func (s engineImages) UpdateImage(ctx context.Context) (bool, error) {
 
 // ImageInfo inspects the standard image and reads when Iwato got it.
 func (e *Engine) ImageInfo(ctx context.Context, dir string) ImageInfo {
-	info := ImageInfo{Available: true, Image: sandboxImage, Source: "build", Moves: imageMoves()}
-	if imageRegistry != "" {
-		info.Source = "pull"
-	}
+	info := ImageInfo{Available: true, Image: sandboxImage, Moves: imageMoves()}
 	d, err := e.inspect(ctx, "image", sandboxImage)
 	if err != nil || d == nil {
 		return info

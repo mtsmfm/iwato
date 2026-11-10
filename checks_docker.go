@@ -85,14 +85,6 @@ func diagnoseDocker(ctx context.Context, e *Engine) []check {
 			add("warn", "engine_config", "docker_desktop", "host_networking", nil)
 		}
 	}
-
-	// A local build (the gateway's image when it is not pulled, the
-	// sandbox image with --local-images) uses BuildKit features.
-	if !pullsGatewayImage() {
-		if _, err := e.run(ctx, "buildx", "version"); err != nil {
-			add("warn", "buildx", "buildx_missing", "buildx_install", nil)
-		}
-	}
 	return out
 }
 

@@ -11,11 +11,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"embed"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -32,12 +29,6 @@ import (
 
 	"iwato/internal/openshell/wslc"
 )
-
-//go:embed Dockerfile entrypoint.sh gateway.toml gateway-docker.toml openshell.patch
-var buildContext embed.FS
-
-// contextFiles are the image's build context.
-var contextFiles = []string{"Dockerfile", "entrypoint.sh", "gateway.toml", "gateway-docker.toml", "openshell.patch"}
 
 // PatchedSupervisor: the image's supervisor is built from source with
 // openshell.patch (the Dockerfile's OPENSHELL_PATCH), and the gateway image,
@@ -68,11 +59,11 @@ type Options struct {
 	Port, DriverPort int
 	// Report, when set, is told each step (for the page: a code, its
 	// params and the Japanese text); Log, when set, receives the image
-	// build's output.
+	// pull's output.
 	Report func(code string, params map[string]any, message string)
 	Log    string
-	// Image, when set, is the published gateway image to pull instead of
-	// building one from this directory (release exes).
+	// Image is the published gateway image (image.yml builds this
+	// directory's Dockerfile); Iwato only pulls it (docs/adr/0024).
 	Image string
 	// DockerSocket, when set, runs upstream's Docker driver on this socket
 	// (its path on the engine's side; DriverPort is then unused).
@@ -118,8 +109,8 @@ func DriverTLS(dir string) (cert, key, clientCA string, err error) {
 	return filepath.Join(d, "server.pem"), filepath.Join(d, "server.key"), filepath.Join(d, "ca.pem"), nil
 }
 
-// Ensure builds the image when the embedded files changed, (re)creates the
-// container when its image changed, starts it and waits until it serves
+// Ensure pulls the image when it is missing, (re)creates the container
+// when its image changed, starts it and waits until it serves
 // mutual TLS. The driver must already listen on DriverPort.
 func Ensure(ctx context.Context, run wslc.Runner, o Options) (Gateway, error) {
 	g := Gateway{
@@ -168,28 +159,12 @@ func Ensure(ctx context.Context, run wslc.Runner, o Options) (Gateway, error) {
 	return g, waitReady(ctx, run, o, g)
 }
 
-// imageTag names the image after the OpenShell release and the embedded
-// build context, so a change to either builds a new one.
-func imageTag(o Options) (string, error) {
-	h := sha256.New()
-	for _, name := range contextFiles {
-		b, err := buildContext.ReadFile(name)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(h, "%s %d\n", name, len(b))
-		h.Write(b)
-	}
-	return fmt.Sprintf("%s-gateway:%s-%s", o.Prefix, wslc.OpenShellVersion, hex.EncodeToString(h.Sum(nil))[:12]), nil
-}
-
-// ImageRef is the gateway image Ensure runs: the published one, or the
-// one built from this directory.
+// ImageRef is the gateway image Ensure runs.
 func ImageRef(o Options) (string, error) {
-	if o.Image != "" {
-		return o.Image, nil
+	if o.Image == "" {
+		return "", errors.New("no gateway image to pull")
 	}
-	return imageTag(o)
+	return o.Image, nil
 }
 
 func ensureImage(ctx context.Context, run wslc.Runner, o Options) (string, error) {
@@ -201,29 +176,9 @@ func ensureImage(ctx context.Context, run wslc.Runner, o Options) (string, error
 	if err := wslc.Inspect(ctx, run, "image", tag, &v); !errors.Is(err, wslc.ErrNotFound) {
 		return tag, err
 	}
-	if o.Image != "" {
-		log.Printf("pulling %s", tag)
-		o.report("gateway_pulling", nil, "ゲートウェイのイメージを取得しています。初回は数分かかります…")
-		return tag, o.stream(ctx, run, "pull "+tag, "image", "pull", tag)
-	}
-	dir, err := os.MkdirTemp("", "iwato-gateway-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(dir)
-	for _, name := range contextFiles {
-		b, _ := buildContext.ReadFile(name)
-		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
-			return "", err
-		}
-	}
-	log.Printf("building %s (downloads OpenShell %s the first time)", tag, wslc.OpenShellVersion)
-	o.report("gateway_building", map[string]any{"version": wslc.OpenShellVersion}, fmt.Sprintf("ゲートウェイのイメージをビルドしています。初回は OpenShell %s をダウンロードするので数分かかります…", wslc.OpenShellVersion))
-	if err := o.stream(ctx, run, "build "+tag, "image", "build", "--tag", tag, "--target", "gateway",
-		"--build-arg", "OPENSHELL_TAG=v"+wslc.OpenShellVersion, "--file", filepath.Join(dir, "Dockerfile"), dir); err != nil {
-		return "", fmt.Errorf("build the OpenShell gateway image: %w", err)
-	}
-	return tag, nil
+	log.Printf("pulling %s", tag)
+	o.report("gateway_pulling", nil, "ゲートウェイのイメージを取得しています。初回は数分かかります…")
+	return tag, o.stream(ctx, run, "pull "+tag, "image", "pull", tag)
 }
 
 // stream runs a command of the engine's CLI whose output goes to Iwato's log and o.Log.

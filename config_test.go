@@ -66,18 +66,6 @@ func TestEnsureConfigNeverOverwrites(t *testing.T) {
 	}
 }
 
-func TestImageContextMatchesEmbeddedSources(t *testing.T) {
-	d := t.TempDir()
-	if e := writeImageContext(d); e != nil {
-		t.Fatal(e)
-	}
-	for _, p := range []string{"Dockerfile", "install-tools.sh", "AGENTS.md", "etc/shell/rc", "etc/gitconfig", "etc/iwato-browser"} {
-		if _, e := os.Stat(filepath.Join(d, "sandboximage", filepath.FromSlash(p))); e != nil {
-			t.Errorf("missing %s", p)
-		}
-	}
-}
-
 func TestPersistPathsAreMountable(t *testing.T) {
 	for _, ok := range [][]string{nil, {"/work"}, {"/work", "/sandbox/data"}} {
 		if err := validPersist(ok); err != nil {

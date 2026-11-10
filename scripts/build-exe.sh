@@ -4,31 +4,29 @@
 # Release build by default; --debug keeps the debug option
 # (/?font=fallback) for investigating a problem. Neither has the fake
 # backend of the browser checks (serve -fake, build tag uitest).
-# Images: by default the exes pull the sandbox image main last published,
-# ghcr.io/mtsmfm/iwato-sandbox:edge (.github/workflows/image.yml), when they
-# have none (a newer one only on request), and build the gateway image themselves.
-# --local-images makes them build both from the embedded sources instead (to
-# try a change to sandboximage/ before it reaches main). --images REGISTRY
-# makes them pull both from REGISTRY, tagged with the version or
-# --image-tag TAG; with --image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...
-# they pull them as tag@digest (release.yml, and build.yml's edge exes).
+# Images: the exes only pull them (docs/adr/0024). By default they pull the
+# images main last published, ghcr.io/mtsmfm/iwato-{gateway,sandbox}:edge
+# (.github/workflows/image.yml), when they have none (a newer sandbox image
+# only on request). --images REGISTRY makes them pull from REGISTRY, tagged
+# with the version or --image-tag TAG (pr-N: a pull request's images); with
+# --image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:... they pull
+# them as tag@digest (release.yml, and build.yml's edge exes).
 # --channel edge|release|pr-N --repo OWNER/REPO: the published exes, which
 # offer updates from that repository's releases (update.go; pr-N: pull
 # request N's pre-release).
 set -eu
 release="-X main.buildRelease=1"
-images="-X main.imageRegistry=ghcr.io/mtsmfm -X main.imageTag=edge"
+images=""
 registry="" tag="" digests="" channel="" repo=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --debug) release="" ;;
-    --images) [ $# -ge 2 ] || { echo "--images needs a registry" >&2; exit 2; }; registry=$2; images="-X main.imageRegistry=$2"; shift ;;
+    --images) [ $# -ge 2 ] || { echo "--images needs a registry" >&2; exit 2; }; registry=$2; images="-X main.imageRegistry=$2 -X main.imageTag="; shift ;;
     --image-tag) [ $# -ge 2 ] || { echo "--image-tag needs a tag" >&2; exit 2; }; tag=$2; shift ;;
     --image-digests) [ $# -ge 2 ] || { echo "--image-digests needs a list" >&2; exit 2; }; digests=$2; shift ;;
-    --local-images) images="" ;;
     --channel) [ $# -ge 2 ] || { echo "--channel needs edge, release or pr-N" >&2; exit 2; }; channel=$2; shift ;;
     --repo) [ $# -ge 2 ] || { echo "--repo needs OWNER/REPO" >&2; exit 2; }; repo=$2; shift ;;
-    *) echo "usage: $0 [--debug] [--images REGISTRY [--image-tag TAG] [--image-digests NAME=sha256:HEX,...] [--channel edge|release|pr-N --repo OWNER/REPO] | --local-images]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--debug] [--images REGISTRY [--image-tag TAG] [--image-digests NAME=sha256:HEX,...] [--channel edge|release|pr-N --repo OWNER/REPO]]" >&2; exit 2 ;;
   esac
   shift
 done

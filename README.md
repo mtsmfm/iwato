@@ -34,7 +34,7 @@ Open the printed `http://127.0.0.1:17600/#token=...` (once, within 10 minutes). 
 On macOS (experimental, not yet tried on a real Mac), download `iwato-darwin-arm64` from [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), save it as `iwato` in a folder of its own, and run it there:
 
 ```sh
-brew install colima docker docker-buildx
+brew install colima docker
 colima start --cpu 4 --memory 8
 chmod +x iwato
 xattr -d com.apple.quarantine iwato

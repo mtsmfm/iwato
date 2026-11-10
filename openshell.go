@@ -320,9 +320,7 @@ func (o *OpenShell) connect(ctx context.Context, cause func() error) error {
 
 func (o *OpenShell) gatewayOptions(ctx context.Context) gateway.Options {
 	opts := gateway.Options{Prefix: o.e.config.prefix(), Dir: o.dir, Port: gatewayPort, DriverPort: driverPort, Report: o.report, Log: o.logPath()}
-	if pullsGatewayImage() {
-		opts.Image = imageRef("iwato-gateway")
-	}
+	opts.Image = imageRef("iwato-gateway")
 	if o.e.docker {
 		opts.DockerSocket, opts.SandboxLabel = o.e.config.DockerSocket, o.e.config.Namespace
 		if opts.DockerSocket == "" {
