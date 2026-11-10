@@ -39,10 +39,6 @@ func TestSandboxPolicyAllowsNoNetworkAndWritesTheHome(t *testing.T) {
 // The sandbox image gives no sudo and assumes no egress proxy: OpenShell's
 // policy is the network boundary.
 func TestSandboxImageHasNoSudoOrEgressProxy(t *testing.T) {
-	d := t.TempDir()
-	if err := writeImageContext(d); err != nil {
-		t.Fatal(err)
-	}
 	for _, name := range []string{"Dockerfile", "AGENTS.md", "etc/shell/envs", "etc/gitconfig", "desktop/iwato-desktop", "desktop/gpu-env.sh"} {
 		b, err := imageFiles.ReadFile("sandboximage/" + name)
 		if err != nil {

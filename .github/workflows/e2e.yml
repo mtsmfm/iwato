@@ -8,7 +8,7 @@ name: e2e
 on:
   push:
     # The root package (its test binary runs the Go e2e tests, and embeds
-    # the profiles, presets and sandbox image), every internal package (all
+    # the profiles and presets; its tests read sandboximage/), every internal package (all
     # are its dependencies; internal/openshell also holds e2e.sh, its probes
     # and the gateway's pins), the binaries e2e.sh builds, and what the
     # steps run. Not web/ (no e2e test reads it), docs/ or the other scripts.
@@ -140,7 +140,7 @@ jobs:
   # Iwato on a Docker engine, as on macOS (ADR 0002).
   docker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -150,4 +150,25 @@ jobs:
       - name: Allow user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - run: docker version && docker info --format '{{.OperatingSystem}} {{.Architecture}} {{.SecurityOptions}}'
-      - run: IWATO_E2E_DOCKER=1 go test -run '^TestDockerE2E$' -v -timeout 28m .
+      # Iwato pulls its images (docs/adr/0024): the ones image.yml publishes
+      # for this commit's sources, pinned by digest. A branch whose image
+      # sources differ from main's gets them from its pull request.
+      - name: Pin the images of this commit
+        id: images
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          digests=""
+          for name in iwato-gateway iwato-sandbox; do
+            ref=$REGISTRY/$name:src-$(scripts/image-sources.sh "${name#iwato-}")
+            for i in $(seq 40); do
+              d=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | jq -r .digest) || true
+              echo "$d" | grep -Eqx 'sha256:[0-9a-f]{64}' && break
+              [ "$i" = 40 ] && { echo "::error::$ref is not published (image.yml publishes a pull request's images)"; exit 1; }
+              echo "waiting for $ref (image.yml)"
+              sleep 60
+            done
+            digests="$digests${digests:+,}$name=$d"
+          done
+          echo "ldflags=-X main.imageRegistry=$REGISTRY -X main.imageDigests=$digests" >> "$GITHUB_OUTPUT"
+      - run: IWATO_E2E_DOCKER=1 go test -ldflags "${{ steps.images.outputs.ldflags }}" -run '^TestDockerE2E$' -v -timeout 28m .

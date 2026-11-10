@@ -38,16 +38,9 @@ func fakeImageEngine(t *testing.T, id *string, next string) (e *Engine, pulls fu
 	return e, pulls
 }
 
-func pullEdge(t *testing.T) {
-	r, tag := imageRegistry, imageTag
-	imageRegistry, imageTag = "ghcr.io/mtsmfm", "edge"
-	t.Cleanup(func() { imageRegistry, imageTag = r, tag })
-}
-
 // A pulled image (edge) here is used as it is at startup: only a missing
 // one is pulled.
 func TestEnsureImagePullsOnlyAMissingImage(t *testing.T) {
-	pullEdge(t)
 	idA, idB := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
 	id := idA
 	e, pulls := fakeImageEngine(t, &id, idB)

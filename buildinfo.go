@@ -16,25 +16,21 @@ var buildRelease string
 
 func debugBuild() bool { return buildRelease == "" }
 
-// imageRegistry, imageTag and imageDigests are set by scripts/build-exe.sh.
-// With --images REGISTRY (releases, and the edge exes with --image-tag
-// edge) the exe pulls both of its images from REGISTRY, tagged with
-// imageTag or else its version, and with imageDigests
-// ("name=sha256:...,name=sha256:...") as tag@digest, so that it uses only
-// the images it was built with even if the tag moves. By default (other
-// exes) imageTag is "edge" without digests: the exe pulls the sandbox
-// image main last published (.github/workflows/image.yml) when it has
-// none, pulls it again only on request (UpdateImage), and builds the
-// gateway image itself. With --local-images, and in go run and tests,
-// imageRegistry is empty and both images are built from the embedded
-// sources.
-var imageRegistry, imageTag, imageDigests string
+// imageRegistry, imageTag and imageDigests name the images Iwato pulls
+// (it never builds them: docs/adr/0024). scripts/build-exe.sh sets them:
+// releases pull REGISTRY/NAME:VERSION@DIGEST (imageTag empty), the edge
+// and pull request exes :edge or :pr-N @DIGEST, so that each uses only
+// the images it was built with even if the tag moves. Other exes, go run
+// and tests pull :edge, the images main last published (image.yml), when
+// they have none, and again only on request (UpdateImage).
+var (
+	imageRegistry = "ghcr.io/mtsmfm"
+	imageTag      = "edge"
+	imageDigests  string
+)
 
 // imageRef names one of Iwato's images.
 func imageRef(name string) string {
-	if imageRegistry == "" {
-		return name + ":" + version
-	}
 	tag := imageTag
 	if tag == "" {
 		tag = version
@@ -48,15 +44,9 @@ func imageRef(name string) string {
 	return ref
 }
 
-// pullsGatewayImage reports whether the exe pulls the gateway image too
-// (a release or pinned edge exe) instead of building it.
-func pullsGatewayImage() bool {
-	return imageRegistry != "" && (imageTag == "" || imageDigests != "")
-}
-
 // imageMoves reports whether the pulled sandbox image's tag moves (edge
 // without a digest), so that a pulled one may be outdated.
-func imageMoves() bool { return imageRegistry != "" && imageTag != "" && imageDigests == "" }
+func imageMoves() bool { return imageTag != "" && imageDigests == "" }
 
 // BuildInfo identifies the running server on the page.
 type BuildInfo struct {

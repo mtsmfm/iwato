@@ -941,7 +941,7 @@ func (s *Server) gatewayNow(ctx context.Context) string {
 	if g, ok := s.rt.(gatewayImager); ok {
 		now = imageDigest(g.GatewayImage(ctx))
 	}
-	if now == "" && pullsGatewayImage() {
+	if now == "" {
 		now = imageDigest(imageRef("iwato-gateway"))
 	}
 	return now

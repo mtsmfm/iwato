@@ -2,48 +2,29 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	stdlog "log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
-	"sort"
 	"sync"
 	"time"
 
-	"iwato/internal/termbin"
 	"iwato/internal/termd"
 )
 
-// The sandbox image's build context (sandboximage/).
-//
-//go:embed sandboximage
-var imageFiles embed.FS
-
-// sandboxImage is Iwato's image for sandboxes, built from sandboximage/
-// or pulled (imageRegistry, imageTag).
+// sandboxImage is Iwato's image for sandboxes (sandboximage/, published by
+// image.yml), pulled.
 var sandboxImage = imageRef("iwato-sandbox")
 
 // daemonLabel is the image convention's label (docs/adr/0005): an image
 // that carries Iwato's daemon names its path (termd.Path) in it. Sandboxes
 // of such an image run the daemon as their main process.
 const daemonLabel = "iwato.entrypoint"
-
-// entrypointDir is where the image's build context holds the daemon's
-// binaries, iwato-entrypoint-ARCH (the Dockerfile installs the one for its
-// architecture). It is not in the repository (nor embedded: the name starts
-// with "_"): scripts/build-entrypoint.sh builds it for the image's workflow,
-// and a local build here writes this exe's own (termbin).
-const entrypointDir = "_entrypoint"
 
 // imageHasDaemon tells whether the local image ref carries the daemon (its
 // daemonLabel). An image that is not here yet (the driver pulls it) or that
@@ -99,38 +80,9 @@ func prepFailed(current, code, what string, err error) ImageState {
 }
 
 type imageRecord struct {
-	Source string `json:"source"`
-	ID     string `json:"id"`
-	// At is when Iwato last built or pulled the image.
+	ID string `json:"id"`
+	// At is when Iwato last pulled the image.
 	At time.Time `json:"at,omitzero"`
-}
-
-// sourceHash identifies the embedded build context and the tag.
-func sourceHash() (string, error) {
-	h := sha256.New()
-	h.Write([]byte(sandboxImage + "\x00"))
-	var names []string
-	if err := fs.WalkDir(imageFiles, "sandboximage", func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			names = append(names, p)
-		}
-		return err
-	}); err != nil {
-		return "", err
-	}
-	sort.Strings(names)
-	// The daemon a local build puts in (writeEntrypoint).
-	fmt.Fprintf(h, "%s\x00", entrypointDir)
-	h.Write(termbin.Binary())
-	for _, n := range names {
-		data, err := imageFiles.ReadFile(n)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(h, "%s\x00%d\x00", n, len(data))
-		h.Write(data)
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 type imageManager struct {
@@ -153,76 +105,31 @@ func (m *imageManager) set(s ImageState) {
 	m.mu.Unlock()
 }
 
-// EnsureImage builds the sandbox image when its tag is missing, its
-// embedded sources changed since the recorded build, or the tag now points
-// to an image Iwato did not build. A pulled image is pulled only when
-// missing (blocking): one here is used as it is, and a moving tag (edge) is
-// pulled again only on request (UpdateImage). dir holds images.json and the
-// build log.
+// EnsureImage pulls the sandbox image when it is missing (blocking). One
+// here is used as it is: a moving tag (edge) is pulled again only on
+// request (UpdateImage). dir holds images.json and the pull log.
 func (e *Engine) EnsureImage(ctx context.Context, dir string, report func(ImageState)) error {
 	logPath := filepath.Join(dir, "image-build.log")
-	records := readImageRecords(dir)
 	st := prepState("checking", "sandbox", "images_checking", nil, "イメージを確認しています…")
 	st.Log = logPath
 	report(st)
-	if imageRegistry != "" {
-		e.forgetImage(sandboxImage)
-		if e.imageID(ctx, sandboxImage) != "" {
-			return nil
-		}
-		st := prepState("building", "sandbox", "images_pulling", nil, "イメージを取得しています… 初回は数分かかります")
-		st.Log = logPath
-		report(st)
-		pctx, cancel := context.WithTimeout(ctx, firstPullTimeout)
-		defer cancel()
-		if err := e.stream(pctx, logPath, "pull "+sandboxImage, "image", "pull", sandboxImage); err != nil {
-			return fmt.Errorf("pulling %s failed (see %s): %w", sandboxImage, logPath, err)
-		}
-		e.forgetImage(sandboxImage)
-		return recordImage(dir, records, imageRecord{ID: e.imageID(ctx, sandboxImage)})
-	}
-	hash, err := sourceHash()
-	if err != nil {
-		return err
-	}
 	e.forgetImage(sandboxImage)
-	id := e.imageID(ctx, sandboxImage)
-	if rec, ok := records[sandboxImage]; id != "" && ok && rec.Source == hash && rec.ID == id {
+	if e.imageID(ctx, sandboxImage) != "" {
 		return nil
 	}
-	tmp, err := os.MkdirTemp("", "iwato-build-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	if err = writeImageContext(tmp); err != nil {
-		return err
-	}
-	if err = writeEntrypoint(filepath.Join(tmp, "sandboximage")); err != nil {
-		return err
-	}
-	st = prepState("building", "sandbox", "images_building", nil, "イメージをビルドしています… 初回は数分かかります")
+	st = prepState("building", "sandbox", "images_pulling", nil, "イメージを取得しています… 初回は数分かかります")
 	st.Log = logPath
 	report(st)
-	contextDir := filepath.Join(tmp, "sandboximage")
-	if err = e.build(ctx, contextDir, sandboxImage, logPath); err != nil {
-		return fmt.Errorf("building %s failed (see %s): %w", sandboxImage, logPath, err)
+	pctx, cancel := context.WithTimeout(ctx, firstPullTimeout)
+	defer cancel()
+	if err := e.stream(pctx, logPath, "pull "+sandboxImage, "image", "pull", sandboxImage); err != nil {
+		return fmt.Errorf("pulling %s failed (see %s): %w", sandboxImage, logPath, err)
 	}
 	e.forgetImage(sandboxImage)
-	old := id
-	if id = e.imageID(ctx, sandboxImage); id == "" {
-		return fmt.Errorf("built %s but cannot inspect it", sandboxImage)
-	}
-	if old != "" && old != id {
-		if err = e.addStaleImage(dir, old); err != nil {
-			return err
-		}
-	}
-	return recordImage(dir, records, imageRecord{Source: hash, ID: id})
+	return recordImage(dir, readImageRecords(dir), imageRecord{ID: e.imageID(ctx, sandboxImage)})
 }
 
-// recordImage notes in images.json that the sandbox image was just built
-// or pulled.
+// recordImage notes in images.json that the sandbox image was just pulled.
 func recordImage(dir string, records map[string]imageRecord, rec imageRecord) error {
 	rec.At = time.Now().UTC()
 	records[sandboxImage] = rec
@@ -281,42 +188,6 @@ func (e *Engine) UpdateImage(ctx context.Context, dir string) (bool, error) {
 		stdlog.Printf("registering %s for cleanup: %v", old, english(err))
 	}
 	return true, nil
-}
-
-// writeImageContext extracts the embedded build context into dir.
-func writeImageContext(dir string) error {
-	return fs.WalkDir(imageFiles, "sandboximage", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		data, err := imageFiles.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dir, filepath.FromSlash(p))
-		if err = os.MkdirAll(filepath.Dir(target), 0700); err != nil {
-			return err
-		}
-		return writeExclusive(target, data)
-	})
-}
-
-// writeEntrypoint puts this exe's daemon into the build context in dir (a
-// local build: the image's architecture is this exe's).
-func writeEntrypoint(dir string) error {
-	b := termbin.Binary()
-	if b == nil {
-		return errors.New("this build has no iwato-entrypoint for the image (build the exe with scripts/build-exe.sh)")
-	}
-	target := filepath.Join(dir, entrypointDir, "iwato-entrypoint-"+runtime.GOARCH)
-	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
-		return err
-	}
-	return writeExclusive(target, b)
-}
-
-func (e *Engine) build(ctx context.Context, contextDir, tag, logPath string) error {
-	return e.stream(ctx, logPath, "build "+tag, "image", "build", "--tag", tag, "--file", filepath.Join(contextDir, "Dockerfile"), contextDir)
 }
 
 // stream runs an engine command whose output goes to logPath and Iwato's

@@ -41,10 +41,7 @@ func TestEnsureContainerCreatesWithTheRelayCertificates(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := Options{Prefix: "iwato-default", Dir: dir, Port: 17670, DriverPort: 17671}
-	tag, err := imageTag(o)
-	if err != nil || !strings.HasPrefix(tag, "iwato-default-gateway:0.1.6-") {
-		t.Fatal(tag, err)
-	}
+	tag := "ghcr.io/mtsmfm/iwato-gateway:edge"
 	f := &fakeRunner{}
 	if err := ensureContainer(context.Background(), f, o, tag); err != nil {
 		t.Fatal(err)
@@ -121,15 +118,15 @@ func TestEnsureImagePullsAPublishedImage(t *testing.T) {
 // outlives the container a new gateway image replaces; the entrypoint
 // makes its directory (the gateway runs as root).
 func TestCredentialKeyIsOnTheStateVolume(t *testing.T) {
-	conf, _ := buildContext.ReadFile("gateway.toml")
+	conf, _ := os.ReadFile("gateway.toml")
 	if !strings.Contains(string(conf), "[openshell.gateway.credential_storage]\nkey_encryption_key_path = \"/var/lib/openshell/credentials/key-encryption-key.bin\"") {
 		t.Fatal("gateway.toml does not put the key-encryption key on the state volume")
 	}
-	entry, _ := buildContext.ReadFile("entrypoint.sh")
+	entry, _ := os.ReadFile("entrypoint.sh")
 	if !strings.Contains(string(entry), "install -d -m 700 /var/lib/openshell/credentials") {
 		t.Fatal("the entrypoint does not make the key's directory")
 	}
-	dockerfile, _ := buildContext.ReadFile("Dockerfile")
+	dockerfile, _ := os.ReadFile("Dockerfile")
 	if _, gatewayStage, _ := strings.Cut(string(dockerfile), "AS gateway"); strings.Contains(gatewayStage, "\nUSER ") {
 		t.Fatal("the gateway stage changed its user: check the key directory's owner")
 	}
@@ -238,7 +235,7 @@ func TestWaitReadyIsNotHeldBackByTheLog(t *testing.T) {
 // (a SHA-256 per tarball and architecture), its base image is pinned by
 // digest, and the Docker driver uses the driver's pinned runtime images.
 func TestDockerfilePinsOpenShell(t *testing.T) {
-	b, _ := buildContext.ReadFile("Dockerfile")
+	b, _ := os.ReadFile("Dockerfile")
 	text := string(b)
 	tag := "v" + wslc.OpenShellVersion
 	if !strings.Contains(text, "ARG OPENSHELL_TAG="+tag+"\n") || !strings.Contains(text, "      "+tag+") printf") {
@@ -254,7 +251,7 @@ func TestDockerfilePinsOpenShell(t *testing.T) {
 			t.Errorf("FROM %s is not pinned by digest", from[1])
 		}
 	}
-	d, _ := buildContext.ReadFile("gateway-docker.toml")
+	d, _ := os.ReadFile("gateway-docker.toml")
 	for _, want := range []string{`supervisor_image      = "` + wslc.DefaultSupervisorImage + `"`, `sandbox_runtime_image = "` + wslc.DefaultSandboxImage + `"`} {
 		if !strings.Contains(string(d), want) {
 			t.Errorf("gateway-docker.toml lacks %s", want)

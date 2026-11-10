@@ -3955,7 +3955,7 @@
   function imageView(d) {
     const u = d && typeof d.update === 'object' && d.update ? d.update : {};
     return {
-      available: d?.available === true, image: text(d?.image, 300), source: d?.source === 'pull' ? 'pull' : 'build', moves: d?.moves === true, present: d?.present === true,
+      available: d?.available === true, image: text(d?.image, 300), moves: d?.moves === true, present: d?.present === true,
       created: shortTime(d?.created), at: shortTime(d?.at),
       update: { phase: imagePhases.has(u.phase) ? u.phase : '', message: text(u.message, 1000), detail: text(u.detail, 1000) }
     };
@@ -3999,15 +3999,15 @@
       const d = this.data;
       this.root.hidden = !d.available;
       if (!d.available) return;
-      const source = d.source === 'build' ? t('settings.image.built') : d.moves ? t('settings.image.edge') : t('settings.image.release');
-      const times = d.present ? [d.created && t('settings.image.created', { time: d.created }), d.at && t(d.source === 'build' ? 'settings.image.builtAt' : 'settings.image.pulledAt', { time: d.at })].filter(Boolean).join(' · ') || t('settings.image.noTimes') : t('settings.image.missing');
+      const source = d.moves ? t('settings.image.edge') : t('settings.image.release');
+      const times = d.present ? [d.created && t('settings.image.created', { time: d.created }), d.at && t('settings.image.pulledAt', { time: d.at })].filter(Boolean).join(' · ') || t('settings.image.noTimes') : t('settings.image.missing');
       const nodes = [element('h4', 'files-head', t('settings.image.title')), element('p', 'panel-meta image-name', d.image), element('p', 'panel-meta', source), element('p', 'panel-meta image-times', times)];
       if (d.moves) {
         this.button = button('button-subtle', t('settings.image.update'), () => this.update());
         this.button.disabled = !!this.busy;
         nodes.push(element('div', 'login-form'));
         nodes.at(-1).append(this.button);
-      } else if (d.source === 'pull') nodes.push(element('p', 'panel-meta', t('settings.image.latest')));
+      } else nodes.push(element('p', 'panel-meta', t('settings.image.latest')));
       if (!this.busy) this.status.textContent = d.update.phase && d.update.phase !== 'pulling' ? imageUpdateText(d.update) : '';
       nodes.push(this.status);
       this.root.replaceChildren(...nodes);

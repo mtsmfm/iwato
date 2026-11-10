@@ -13,7 +13,6 @@ import (
 // the replaced image is listed as stale and cleaned up once unused, and GET
 // reports the result.
 func TestImageUpdateOnDemand(t *testing.T) {
-	pullEdge(t)
 	idA, idB := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
 	id := idA
 	e, pulls := fakeImageEngine(t, &id, idB)
