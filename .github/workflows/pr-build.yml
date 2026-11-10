@@ -3,7 +3,8 @@
 # images of their own sources (src-<hash>, which image.yml publishes for
 # these pull requests too), and iwato-build.json with the pull request's
 # number and title. Every push replaces it; closing or merging the pull
-# request deletes it and its tag. The settings install it (update.go,
+# request deletes it and its tag; a comment on the pull request links its
+# exes (scripts/pr-build-comment.sh). The settings install it (update.go,
 # docs/adr/0019). Forks and Dependabot get nothing: their token is read-only.
 name: pr-build
 on:
@@ -85,7 +86,14 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: scripts/pr-build-comment.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: iwato-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
@@ -117,6 +125,7 @@ jobs:
           gh release upload "$tag" iwato-windows-amd64.exe iwato-windows-arm64.exe iwato-darwin-arm64 iwato-linux-amd64 iwato-linux-arm64 --clobber
           # Last: until it is replaced, the old metadata's hashes refuse the new binaries.
           gh release upload "$tag" dist/iwato-build.json --clobber
+          scripts/pr-build-comment.sh published "$HEAD_SHA"
   # The images' pr-<N> tags stay: in ghcr.io a tag goes only with its
   # version, which src-<hash> (and maybe edge) share.
   cleanup:
@@ -124,7 +133,15 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's merge ref may be gone once closed.
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: scripts/pr-build-comment.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Delete the pull request's pre-release and tag
         env:
           GH_TOKEN: ${{ github.token }}
@@ -137,3 +154,4 @@ jobs:
           if gh api "repos/$GH_REPO/git/refs/tags/pr-$PR" >/dev/null 2>&1; then
             gh api -X DELETE "repos/$GH_REPO/git/refs/tags/pr-$PR"
           fi
+          scripts/pr-build-comment.sh deleted
