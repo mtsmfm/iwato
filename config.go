@@ -50,6 +50,9 @@ type Config struct {
 	TermTrace bool `json:"termTrace,omitempty"`
 	// Timezone is the sandboxes' time zone (timezone.go): "" the host's.
 	Timezone string `json:"timezone,omitempty"`
+	// Port is where the page is served, taken at the first start and kept:
+	// the installed app (PWA) and the browsers' sign-ins belong to it.
+	Port int `json:"port,omitempty"`
 	// Resources is how the page shows the sandboxes' resources (resources.go).
 	Resources *ResourceSettings `json:"resources,omitempty"`
 	// ProviderScopes is an old field: read and dropped.
@@ -197,6 +200,9 @@ func (c Config) Validate() error {
 	}
 	if e := c.Resources.Validate(); e != nil {
 		return e
+	}
+	if c.Port != 0 && (c.Port < 1024 || c.Port > 65535) {
+		return errors.New("port must be 1024-65535")
 	}
 	if len(c.Sandboxes) > 16 {
 		return errors.New("at most 16 sandboxes")

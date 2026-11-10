@@ -481,9 +481,12 @@
       : window.IwatoLaunch ? window.IwatoLaunch.consume() : { token: null, invalid: false };
     try {
       if (launch.invalid) throw new Error(t('login.badLaunch'));
-      const session = launch.token
+      // A browser signed in already keeps its session and leaves the
+      // token Iwato opened it with unused.
+      const signedIn = launch.token && !manualToken ? await api('/api/session').catch(() => null) : null;
+      const session = signedIn || (launch.token
         ? await api('/api/session', { method: 'POST', body: JSON.stringify({ token: launch.token }) })
-        : await api('/api/session');
+        : await api('/api/session'));
       if (typeof session.csrf !== 'string' || !session.csrf || session.csrf.length > 1024) {
         throw new Error(t('app.sessionInvalid'));
       }
@@ -6424,5 +6427,18 @@
     if (!$('provider-panel').hidden) refreshProviders();
     if (!$('volume-panel').hidden) renderVolumes();
   });
+  // The installed app focused again by its protocol handler (manifest's
+  // launch_handler): a page not signed in loads the URL with its token.
+  // The queue also brings the launch that loaded this page: skipped.
+  if (window.launchQueue) {
+    let loaded = performance.getEntriesByType('navigation')[0]?.name;
+    window.launchQueue.setConsumer((params) => {
+      if (params.targetURL === loaded) {
+        loaded = null;
+        return;
+      }
+      if (!state.authorized && !state.authenticating && params.targetURL) location.replace(params.targetURL);
+    });
+  }
   authenticate();
 })();

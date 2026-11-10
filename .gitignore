@@ -2,6 +2,7 @@
 /iwato
 iwato.json
 sessions.json
+iwato.launch
 *.exe
 *.test
 

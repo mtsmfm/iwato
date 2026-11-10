@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 
 	"iwato/internal/ingress/local"
 )
@@ -56,9 +59,10 @@ func run(args []string) (err error) {
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	configFile := f.String("config", "iwato.json", "configuration JSON")
-	listen := f.String("listen", "", "loopback bind address (default 127.0.0.1:17600, or the next free port)")
+	listen := f.String("listen", "", "loopback bind address (default: the port in the configuration, taken at the first start)")
 	publicOrigin := f.String("public-origin", "", "https origin of `tailscale serve` in front of the listener (phones on the tailnet)")
 	sessionHours := f.Int("session-hours", 8, "browser session lifetime in hours (1-720)")
+	browser := f.Bool("browser", browserByDefault(), "open the page in the browser (or the installed app) at start")
 	verbose := f.Bool("verbose", false, "also show the debug log (gateway, driver, image builds, requests) on the console")
 	// -fake exists only in builds with the tag uitest (fake_hooks.go).
 	var fakeFlags func() (*fakeRun, error)
@@ -100,6 +104,21 @@ func run(args []string) (err error) {
 			return e
 		}
 	}
+	var taken net.Listener
+	remembered := false
+	if fake == nil && *listen == "" && restartAddr == "" {
+		prompt := waitPrompt(time.Minute, 2*time.Second)
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			prompt = consolePrompt(os.Stdin, os.Stdout)
+		}
+		var running *launchTarget
+		if taken, running, remembered, e = takePort(*configFile, &c, prompt); e != nil {
+			return e
+		}
+		if running != nil {
+			return openRunning(*running, *browser)
+		}
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	var rt Runtime
@@ -115,7 +134,8 @@ func run(args []string) (err error) {
 	if *sessionHours < 1 || *sessionHours > 720 {
 		return errors.New("session-hours must be 1-720")
 	}
-	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose}
+	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose,
+		listener: taken, pwa: remembered, openBrowser: *browser && fake == nil && restartAddr == ""}
 	if restartAddr != "" {
 		*listen, opts.listenWait = restartAddr, 30*time.Second
 	}
@@ -149,6 +169,22 @@ type serveOptions struct {
 	listenWait time.Duration
 	// serving is called once the listener is up, just before serving.
 	serving func()
+	// listener was taken by run (takePort); without it serve listens on addr.
+	listener net.Listener
+	// openBrowser opens the page once serving: in the installed app when
+	// pwa (the port is the remembered one, which the app belongs to).
+	openBrowser, pwa bool
+}
+
+func openRunning(t launchTarget, browser bool) error {
+	if browser {
+		if err := openPage(t, true); err == nil {
+			fmt.Printf("Iwato is already running at %s/: opened it.\n", t.origin)
+			return nil
+		}
+	}
+	fmt.Printf("Iwato is already running. Open this URL in a browser:\n%s\nSingle use, valid until %s (10 minutes). Do not share it.\n", t.url(), time.Now().Add(10*time.Minute).Format("15:04"))
+	return nil
 }
 
 func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun, addr string, opts serveOptions) error {
@@ -167,12 +203,24 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	var early logRing
 	restore, logErr := setupLogging(os.Stderr, &early, opts.logFile, opts.verbose)
 	defer func() { restore() }()
-	ln, e := listenLocalWait(addr, opts.listenWait)
+	ln, e := opts.listener, error(nil)
+	if ln == nil {
+		ln, e = listenLocalWait(addr, opts.listenWait)
+	}
 	if e != nil {
 		return e
 	}
 	defer ln.Close()
 	s := newServer(c, rt, fake != nil, ln.Addr().String())
+	if opts.configPath != "" {
+		key, remove, err := writeLaunchKey(filepath.Dir(opts.configPath))
+		if err != nil {
+			noticef("cannot write %s (starting Iwato again will not open this one): %v", launchKeyFile, english(err))
+		} else {
+			s.launchKey = key
+			defer remove()
+		}
+	}
 	restore()
 	restore, logErr = setupLogging(os.Stderr, &s.logs, opts.logFile, opts.verbose)
 	lines, _ := early.since(-1)
@@ -329,6 +377,16 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	if opts.serving != nil {
 		opts.serving()
 	}
+	if opts.openBrowser {
+		s.mu.Lock()
+		token := s.bootstrap
+		s.mu.Unlock()
+		go func() {
+			if err := openPage(launchTarget{s.origin, token}, opts.pwa); err != nil {
+				noticef("cannot open the browser: %v", err)
+			}
+		}()
+	}
 	// The local ingress's hosts (<port>.<sandbox>.localhost) leave the
 	// listener before the admin UI's Host check (internal/ingress/local).
 	e = h.Serve(local.Split(ln, s.ingress.take, h.ReadHeaderTimeout, h.MaxHeaderBytes))
@@ -435,7 +493,10 @@ func usage() {
 	}
 	fmt.Println(`Iwato ` + version + `
   iwato                (create iwato.json if missing, then serve)
-  iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT (default 17600 or the next free port)] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]` + fakeUsage + `
+  iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]` + fakeUsage + `
+The page's port is taken at the first start (17600 or the next free one)
+and kept in iwato.json ("port"). The page opens in the browser, or in the
+installed app; starting Iwato again opens the running one.
 The console shows the login URL, warnings and errors; the startup checks
 and their fixes are in the UI (Settings). The rest of the log
 (gateway, driver, image builds, requests) goes to iwato.log next to the

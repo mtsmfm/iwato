@@ -47,7 +47,7 @@ class Element {
 const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(setImmediate); };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return {promise, resolve}; };
 const response = (data, status = 200) => ({ok: status >= 200 && status < 300, status, json: async () => data});
-async function environment({touch = false, fullscreen = true, noSandboxes = false, token = true, fake = true, status = 'not-created', unauthorized = false, savedTerm = null, search = '', terms = null, push = false, androidApp = false, languages = ['ja-JP']} = {}) {
+async function environment({touch = false, fullscreen = true, noSandboxes = false, token = true, fake = true, status = 'not-created', unauthorized = false, savedTerm = null, search = '', terms = null, push = false, androidApp = false, languages = ['ja-JP'], signedIn = !token} = {}) {
   const ids = ['terminal-grid', 'notice-title', 'notice-text', 'notice', 'server-label', 'server-state', 'connection-count', 'empty-title', 'empty-text', 'empty-state', 'refresh-button', 'fake-banner', 'sandbox-nav', 'menu-button', 'sidebar', 'sidebar-actions', 'app-shell',
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
     'confirm-details', 'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
@@ -119,7 +119,12 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
     fetch: async (path, opt) => {
       requests.push({path, ...opt});
       if (unauthorized) return response({error: 'no session'}, 401);
-      if (path === '/api/session') return response({csrf: 'csrf123'});
+      if (path === '/api/session') {
+        // Opened with a launch token: not signed in until it is used.
+        if (opt?.method === 'POST') signedIn = true;
+        else if (!signedIn) return response({error: 'no session', code: 'session_missing'}, 401);
+        return response({csrf: 'csrf123'});
+      }
       if (path === '/api/sandboxes' && opt?.method === 'POST') { created.push(JSON.parse(opt.body)); return response({ok: true}); }
       if (path === '/api/sandboxes') return sandboxHandler ? sandboxHandler() : response({fake, sandboxes: noSandboxes ? created.map(w => ({name: w.name, status: w.status || 'not-created', detail: ''})) : [{...sandbox}], server: {version: '0.3.0', commit: '98cb328-dirty', built: '2026-10-04T03:04:00Z'}});
       if (path.endsWith('/paste-image')) return pasteHandler ? pasteHandler(path, opt) : response({path: '/home/dev/.cache/iwato/paste/20261010T000000Z-0123abcd.png'});
@@ -183,7 +188,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
 (async () => {
   let tests = 0; const ok = name => { tests++; console.log('PASS ' + name); };
   const env = await environment();
-  assert.equal(env.requests[0].path, '/api/session'); assert.equal(env.requests[0].method, 'POST'); assert.equal(JSON.parse(env.requests[0].body).token, 'a'.repeat(64));
+  assert.equal(env.requests[0].path, '/api/session'); assert.equal(env.requests[0].method, undefined, 'a signed-in browser keeps its session');
+  assert.equal(env.requests[1].path, '/api/session'); assert.equal(env.requests[1].method, 'POST'); assert.equal(JSON.parse(env.requests[1].body).token, 'a'.repeat(64));
   assert.equal(env.context.window.IwatoLaunch, undefined); assert.equal(env.els['fake-banner'].hidden, false); assert.equal(env.sockets.length, 0); assert.equal(env.requests.filter(r => r.path.endsWith('/start')).length, 0);
   assert.equal(mutations(env).length, 0); assert.equal(env.policy().children[1].children[0].children.length, 0, 'no proposals to decide');
   assert.match(env.els['server-build'].textContent, /^v0\.3\.0 · 98cb328-dirty\n2026-10-0[34] \d\d:\d4 ビルド$/); assert.equal(env.els['menu-build'].textContent, env.els['server-build'].textContent.replaceAll('\n', ' · '));
@@ -251,6 +257,11 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   ok('a session that expires while connecting invalidates late callbacks and cancels reconnect');
   connect.click(); const policy = env.sockets.at(-1); policy.open(); policy.close(1008); await flush(); assert.equal([...env.timeouts.values()].filter(t => t.ms < 31000).length, 0); assert.equal(env.card().children[7].hidden, false);
   ok('policy close stops reconnect and displays useful error');
+  const app = await environment({token: false, signedIn: false, search: '?launch=' + encodeURIComponent('web+iwato:' + 'b'.repeat(64))});
+  assert.equal(app.location.search, ''); assert.equal(JSON.parse(app.requests.find(r => r.method === 'POST' && r.path === '/api/session').body).token, 'b'.repeat(64));
+  const appSignedIn = await environment({token: false, signedIn: true, search: '?launch=' + encodeURIComponent('web+iwato:' + 'b'.repeat(64))});
+  assert.equal(appSignedIn.location.search, ''); assert.equal(appSignedIn.requests.filter(r => r.path === '/api/session' && r.method === 'POST').length, 0);
+  ok('the installed app opened by its protocol handler signs in with its token, or keeps its session');
   const reload = await environment({token: false, status: 'running', fake: false}); assert.equal(reload.requests[0].path, '/api/session'); assert.equal(reload.requests[0].method, undefined); assert.equal(reload.els['fake-banner'].hidden, true); assert(reload.requests.every(r => r.credentials === 'same-origin' && r.redirect === 'error' && r.cache === 'no-store'));
   ok('tokenless reload uses cookie session; all fetches same-origin without redirects or caching');
   const reject = await environment({unauthorized: true}); assert.equal(reject.sockets.length, 0); assert.equal(reject.els.notice.hidden, false); assert.equal(reject.els['server-state'].dataset.state, 'error');
