@@ -200,6 +200,30 @@ func (o *OpenShell) RetryPreparation(ctx context.Context) bool {
 	return true
 }
 
+// Reconnect prepares again once the gateway stopped answering after a
+// preparation (gateway_watch.go): not while one runs or a reset does
+// (Phase "building"). It returns the new preparation's channel, or nil.
+func (o *OpenShell) Reconnect(ctx context.Context) chan struct{} {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.prep.Phase != "ready" && o.prep.Phase != "failed" {
+		return nil
+	}
+	o.ready, o.err = make(chan struct{}), nil
+	o.prep = prepState("building", "openshell", "openshell_reconnecting", nil, "OpenShell との接続が切れたので、つなぎ直しています…")
+	o.prep.Log = o.logPath()
+	ready := o.ready
+	go o.Prepare(ctx)
+	return ready
+}
+
+// prepErr is the last preparation's error.
+func (o *OpenShell) prepErr() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.err
+}
+
 // readyChan closes when Prepare ends.
 func (o *OpenShell) readyChan() chan struct{} {
 	o.mu.Lock()
@@ -312,9 +336,16 @@ func (o *OpenShell) connect(ctx context.Context, cause func() error) error {
 		noticef("provider profiles not imported: %v", english(profilesErr))
 	}
 	o.mu.Lock()
+	oldConn, oldSDK := o.conn, o.sdk
 	o.conn, o.sdk = conn, sdk
 	o.profilesDone = profilesErr == nil
 	o.mu.Unlock()
+	if oldConn != nil {
+		oldConn.Close()
+	}
+	if oldSDK != nil {
+		oldSDK.Close()
+	}
 	return nil
 }
 

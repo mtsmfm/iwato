@@ -275,6 +275,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		o.engineErr = s.checks.engineErr
 		go s.checks.whenReady(ctx, func() { o.Prepare(ctx) })
 		go o.ResumeTerminals(ctx, s.sandboxList)
+		go s.watchGateway(ctx, o)
 	}
 	if opts.configPath != "" {
 		s.ingress.dir = filepath.Dir(opts.configPath)
