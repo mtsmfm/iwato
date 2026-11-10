@@ -213,9 +213,6 @@ func (c Config) Validate() error {
 			return fmt.Errorf("invalid or duplicate sandbox name %q", w.Name)
 		}
 		seen[w.Name] = true
-		if c.Ingress.prefix()+w.Name == adminHostname(c.Ingress.prefix()) {
-			return fmt.Errorf("sandbox name %q is the tailnet name of Iwato's page", w.Name)
-		}
 		if w.Image != "" && !validImage(w.Image) {
 			return fmt.Errorf("invalid sandbox image for %s", w.Name)
 		}

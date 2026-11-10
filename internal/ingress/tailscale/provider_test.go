@@ -404,4 +404,11 @@ func TestAdminNode(t *testing.T) {
 	if d := <-ups; d != "" {
 		t.Fatalf("closing reported %q", d)
 	}
+	// A reset logs it out and removes its state.
+	if err := p.ForgetAdmin(context.Background()); err != nil || !f.last().loggedOut {
+		t.Fatal(err, f.last().loggedOut)
+	}
+	if _, err := os.Stat(filepath.Join(p.cfg.Dir, adminKey)); !os.IsNotExist(err) {
+		t.Fatal("state left:", err)
+	}
 }

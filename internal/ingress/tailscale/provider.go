@@ -143,8 +143,11 @@ func (p *Provider) Start(_ context.Context, core ingress.Core) error {
 
 // Hostname is the node name of a sandbox.
 func (p *Provider) Hostname(sandbox string) string {
-	if sandbox == adminKey && p.cfg.Admin != nil {
-		return p.cfg.Admin.Hostname
+	if sandbox == adminKey {
+		if p.cfg.Admin != nil {
+			return p.cfg.Admin.Hostname
+		}
+		return "iwato" // only to log a left-over admin node out
 	}
 	return p.cfg.Prefix + sandbox
 }
@@ -423,6 +426,9 @@ func (p *Provider) acceptAdmin(ns *nodeState, src netip.AddrPort, c net.Conn) {
 	p.cfg.Admin.Serve(tc)
 }
 
+// ForgetAdmin logs the admin node out and removes its state (a reset).
+func (p *Provider) ForgetAdmin(ctx context.Context) error { return p.Forget(ctx, adminKey) }
+
 // AdminStatus is the admin node's state (false without one).
 func (p *Provider) AdminStatus() (ingress.Status, bool) {
 	if p.cfg.Admin == nil {
@@ -435,7 +441,7 @@ func (p *Provider) AdminStatus() (ingress.Status, bool) {
 // and removes its state, so that a sandbox made again under the name joins
 // as a new node with the same name.
 func (p *Provider) Forget(ctx context.Context, sandbox string) error {
-	if !sandboxDir.MatchString(sandbox) {
+	if sandbox != adminKey && !sandboxDir.MatchString(sandbox) {
 		return fmt.Errorf("invalid sandbox name %q", sandbox)
 	}
 	p.mu.Lock()

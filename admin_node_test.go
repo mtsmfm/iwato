@@ -55,10 +55,17 @@ func TestAdminHostname(t *testing.T) {
 			t.Errorf("%q: %q", prefix, got)
 		}
 	}
+	// With an empty prefix, a sandbox named iwato already has the name: no
+	// admin node rather than a clash.
 	c := testConfig()
-	c.Ingress = &IngressConfig{Provider: providerTailscale, Tailscale: &TailscaleIngressConfig{HostnamePrefix: new(string)}}
+	cfg := &IngressConfig{Provider: providerTailscale, Tailscale: &TailscaleIngressConfig{HostnamePrefix: new(string)}}
+	c.Ingress = cfg
 	c.Sandboxes = []Sandbox{{Name: "iwato"}}
-	if c.Validate() == nil {
-		t.Fatal("a sandbox named like the admin node")
+	if c.Validate() != nil {
+		t.Fatal("an existing configuration must still load")
+	}
+	s := newServer(c, &idleRuntime{}, false, "127.0.0.1:17600")
+	if s.ingress.adminNode(cfg) != nil {
+		t.Fatal("an admin node named like a sandbox's")
 	}
 }
