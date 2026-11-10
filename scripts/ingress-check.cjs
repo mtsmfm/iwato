@@ -161,6 +161,12 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await settings.locator('.ingress-form').getByRole('button', { name: '保存' }).click();
     await settings.locator('.ingress-state[data-state=on]').waitFor();
     await settings.locator('.ingress-nodes').getByText('接続中').first().waitFor({ timeout: 20000 }).catch(() => {});
+    const admin = settings.locator('.ingress-nodes').filter({ hasText: 'Iwato の画面' });
+    // serve -fake runs with -public-origin, which the admin node leaves alone.
+    check(await admin.locator('a.port-link').getAttribute('href') === 'https://box.tail0000.ts.net/' && (await admin.innerText()).includes('-public-origin'), "the settings show the page's tailnet address");
+    await admin.scrollIntoViewIfNeeded();
+    check(await noSideScroll(settings.locator('.login-body')), 'the page\'s address does not scroll the settings sideways');
+    await shot('settings-admin.png');
     await settings.locator('.login-body').evaluate((el) => { el.scrollTop = 0; });
     await shot('settings-on.png');
     await page.keyboard.press('Escape');

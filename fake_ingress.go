@@ -26,6 +26,11 @@ func newFakeIngressProvider(cfg *IngressConfig, _ func() string) ingress.Provide
 	return &fakeIngressProvider{prefix: cfg.prefix(), joined: map[string]bool{}}
 }
 
+// AdminStatus reports the admin node as joined (admin_node.go).
+func (p *fakeIngressProvider) AdminStatus() (ingress.Status, bool) {
+	return ingress.Status{State: "connected", DNSName: adminHostname(p.prefix) + ".tail0000.ts.net"}, true
+}
+
 func (p *fakeIngressProvider) Name() string                              { return "tailscale" }
 func (p *fakeIngressProvider) HasIdentity() bool                         { return true }
 func (p *fakeIngressProvider) Start(context.Context, ingress.Core) error { return nil }

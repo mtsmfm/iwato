@@ -57,6 +57,8 @@ type ingressManager struct {
 
 	core    *ingress.Server
 	backend *ingress.Backend
+	// adminLn takes the admin node's connections (admin_node.go).
+	adminLn *connListener
 
 	// later runs settings changes after the response (tests: at once).
 	later func(func())
@@ -96,7 +98,7 @@ type listenRead struct {
 const listenTTL = 3 * time.Second
 
 func newIngressManager(s *Server, dir string) *ingressManager {
-	m := &ingressManager{s: s, dir: dir, running: map[string]bool{}, listeners: map[string]*listenRead{}, kickCh: make(chan struct{}, 1), later: func(f func()) { go f() }}
+	m := &ingressManager{s: s, dir: dir, running: map[string]bool{}, listeners: map[string]*listenRead{}, kickCh: make(chan struct{}, 1), later: func(f func()) { go f() }, adminLn: newConnListener()}
 	m.rt, _ = s.rt.(ingressRuntime)
 	m.urls, m.urlsBusy = map[string]string{}, map[string]bool{}
 	if w, ok := s.rt.(urlsWriter); ok {
@@ -119,8 +121,8 @@ func newIngressManager(s *Server, dir string) *ingressManager {
 		Logf:      log.Printf,
 		Forwarded: m.forwarded,
 		AdminURL: func() string {
-			if s.publicOrigin != "" {
-				return s.publicOrigin + "/"
+			if s.publicOrigin() != "" {
+				return s.publicOrigin() + "/"
 			}
 			return ""
 		},
@@ -130,7 +132,7 @@ func newIngressManager(s *Server, dir string) *ingressManager {
 	m.newProvider = func(cfg *IngressConfig, secret func() string) ingress.Provider {
 		return tailscale.New(tailscale.Config{
 			Dir: filepath.Join(m.dir, "ingress", "tailscale"), Prefix: cfg.prefix(), Tag: cfg.tag(),
-			Secret: secret, Logf: log.Printf,
+			Secret: secret, Logf: log.Printf, Admin: m.adminNode(cfg),
 		})
 	}
 	m.newLocal = func() ingress.Provider {
@@ -733,7 +735,7 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 			"defaults":        map[string]string{"tag": defaultTailscaleTag, "hostnamePrefix": defaultHostnamePrefix},
 			"suggestedOwners": nonNil(m.suggestedOwners(r)),
 			"secret":          m.secretInfo(), "secretEnv": ingressSecretEnv,
-			"status": m.overall(), "nodes": m.nodes(),
+			"status": m.overall(), "nodes": m.nodes(), "admin": m.adminView(),
 		})
 	case r.Method == http.MethodPost && tail == "":
 		if !s.require(w, r, true) {
@@ -761,6 +763,13 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prefix := strings.TrimSpace(body.HostnamePrefix)
+		if body.Provider == providerTailscale && !hostnamePrefix.MatchString(prefix) {
+			failCode(w, 400, "ingress_prefix_invalid", nil, "ノード名の接頭辞は英小文字か数字で始まる、英小文字・数字・ハイフンの 31 文字以内にしてください")
+			return
+		}
+		if prefix == "" {
+			prefix = defaultHostnamePrefix
+		}
 		next := &IngressConfig{Tailscale: &TailscaleIngressConfig{Tag: strings.TrimSpace(body.Tag), HostnamePrefix: &prefix, Owners: owners}}
 		if next.Tailscale.Tag == defaultTailscaleTag {
 			next.Tailscale.Tag = ""

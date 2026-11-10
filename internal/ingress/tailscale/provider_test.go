@@ -327,3 +327,88 @@ func TestConnectionsReachTheCore(t *testing.T) {
 	c.Close()
 	conn.Close()
 }
+
+// The admin node joins without sandboxes and hands Iwato's page only TLS on
+// 443 from the callers Allow admits; Sync leaves its state alone.
+func TestAdminNode(t *testing.T) {
+	f := &fakes{}
+	served := make(chan net.Conn, 4)
+	ups := make(chan string, 4)
+	p := New(Config{Dir: t.TempDir(), Prefix: "iwato-", Tag: "tag:iwato", Secret: func() string { return "tskey" + "-auth-xyz" }, NewNode: f.make, RetryAfter: time.Hour, SniffWait: 50 * time.Millisecond,
+		Admin: &Admin{Hostname: "iwato", Allow: func(id *ingress.Identity) error {
+			return ingress.ProviderAuth{Owners: func() []string { return []string{"alice@github"} }}.AllowConn(context.Background(), id, ingress.Target{})
+		}, Serve: func(c net.Conn) { served <- c }, Up: func(d string) { ups <- d }}})
+	p.Start(context.Background(), coreFunc(func(ingress.Conn) { t.Error("the admin node must not reach the core") }))
+	p.Sync(context.Background(), nil)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if st, ok := p.AdminStatus(); ok && st.State == "connected" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(p.AdminStatus())
+		}
+	}
+	if d := <-ups; d != "iwato.tail0000.ts.net" {
+		t.Fatal(d)
+	}
+	n := f.last()
+	if n.cfg.Hostname != "iwato" || n.cfg.Tags[0] != "tag:iwato" {
+		t.Fatalf("%+v", n.cfg)
+	}
+	n.mu.Lock()
+	h := n.handler
+	n.mu.Unlock()
+	if fn, ok := h(netip.MustParseAddrPort("100.64.0.2:51000"), netip.MustParseAddrPort("100.100.1.1:80")); fn != nil || !ok {
+		t.Fatal("ports other than 443 must be reset")
+	}
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+	n.cert = &srv.TLS.Certificates[0]
+	handshake := func(src string) error {
+		c := n.connect(t, src, 443)
+		defer c.Close()
+		tc := tls.Client(c, &tls.Config{InsecureSkipVerify: true, ServerName: "iwato.tail0000.ts.net", NextProtos: []string{"h2", "http/1.1"}})
+		_ = tc.SetDeadline(time.Now().Add(2 * time.Second))
+		if err := tc.Handshake(); err != nil {
+			return err
+		}
+		if p := tc.ConnectionState().NegotiatedProtocol; p != "http/1.1" {
+			t.Errorf("negotiated %q", p)
+		}
+		(<-served).Close()
+		return nil
+	}
+	if err := handshake("100.64.0.2:51000"); err != nil {
+		t.Fatal(err)
+	}
+	// A tagged caller is closed before TLS.
+	if err := handshake("100.64.0.9:51001"); err == nil {
+		t.Fatal("a tagged node reached the page")
+	}
+	// Plain HTTP on 443 is closed.
+	c := n.connect(t, "100.64.0.2:51002", 443)
+	c.Write([]byte("GET / HTTP/1.1\r\n\r\n"))
+	if _, err := c.Read(make([]byte, 1)); err == nil {
+		t.Fatal("plain HTTP was answered")
+	}
+	select {
+	case c := <-served:
+		t.Fatal("served", c)
+	default:
+	}
+	p.Sync(context.Background(), []ingress.SandboxState{{Name: "dev", Exposed: true}})
+	if _, err := os.Stat(filepath.Join(p.cfg.Dir, adminKey, "tailscaled.state")); err != nil {
+		t.Fatal("Sync removed the admin node's state:", err)
+	}
+	p.Close()
+	if d := <-ups; d != "" {
+		t.Fatalf("closing reported %q", d)
+	}
+	// A reset logs it out and removes its state.
+	if err := p.ForgetAdmin(context.Background()); err != nil || !f.last().loggedOut {
+		t.Fatal(err, f.last().loggedOut)
+	}
+	if _, err := os.Stat(filepath.Join(p.cfg.Dir, adminKey)); !os.IsNotExist(err) {
+		t.Fatal("state left:", err)
+	}
+}

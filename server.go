@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -68,41 +69,43 @@ type Server struct {
 	policyChanges                       map[string][]PolicyChange // revisions made in Iwato, until a while after loaded
 	connections                         map[string]int
 	ctx                                 context.Context
-	// publicOrigin is the optional https origin of `tailscale serve` in front
-	// of the loopback listener (for phones on the tailnet).
-	publicHost, publicOrigin string
-	sessionTTL               time.Duration
-	push                     *PushStore
-	configPath               string      // iwato.json (empty: in-memory only)
-	sessionPath              string      // sessions.json (empty: in-memory only)
-	configMu                 sync.Mutex  // serializes sandbox list updates
-	providerMu               sync.Mutex  // serializes provider changes and their checks
-	policyLocks              policyLocks // one per sandbox: Iwato's policy writes (policy_lock.go)
-	oauth                    oauthFlows  // the Atlassian OAuth flow (atlassian_flow.go)
-	xai, codex               deviceFlows // the device code sign-ins (device_flow.go)
-	claude                   claudeFlows // the Claude sign-in (claude_oauth.go)
-	checks                   *checkState // the startup checks (checks.go); nil in tests
-	images                   *imageManager
-	retryImages              func()
-	imageCleanup             func()
-	imageUpdates             *imageUpdates // 「標準イメージを更新」 (image_update.go)
-	update                   *selfUpdate   // updating Iwato itself (update.go); nil without a channel
-	logs                     logRing
-	presence                 presence  // pages open and in use (presence.go)
-	notifier                 *notifier // nil without Web Push (main.go)
-	files                    *dav.Pool // the sandboxes' files over WebDAV (files.go)
-	davKeys                  *davKeys
-	editorLists              editorLists      // the editor's quick open lists (editor.go)
-	ingress                  *ingressManager  // sandbox ports exposed (ingress.go)
-	resets                   resetJob         // 「すべて消す」 (reset.go)
-	autoStop                 autoStops        // stopping once the terminals end (autostop.go)
-	resources                *resourceMonitor // CPU, memory, GPU and home sizes (resources.go)
-	hostChecks               *hostChecker     // the approval's host checks (host_check.go)
-	hostChecksOnce           sync.Once
+	sessionTTL                          time.Duration
+	push                                *PushStore
+	configPath                          string      // iwato.json (empty: in-memory only)
+	sessionPath                         string      // sessions.json (empty: in-memory only)
+	configMu                            sync.Mutex  // serializes sandbox list updates
+	providerMu                          sync.Mutex  // serializes provider changes and their checks
+	policyLocks                         policyLocks // one per sandbox: Iwato's policy writes (policy_lock.go)
+	oauth                               oauthFlows  // the Atlassian OAuth flow (atlassian_flow.go)
+	xai, codex                          deviceFlows // the device code sign-ins (device_flow.go)
+	claude                              claudeFlows // the Claude sign-in (claude_oauth.go)
+	checks                              *checkState // the startup checks (checks.go); nil in tests
+	images                              *imageManager
+	retryImages                         func()
+	imageCleanup                        func()
+	imageUpdates                        *imageUpdates // 「標準イメージを更新」 (image_update.go)
+	update                              *selfUpdate   // updating Iwato itself (update.go); nil without a channel
+	logs                                logRing
+	presence                            presence  // pages open and in use (presence.go)
+	notifier                            *notifier // nil without Web Push (main.go)
+	files                               *dav.Pool // the sandboxes' files over WebDAV (files.go)
+	davKeys                             *davKeys
+	editorLists                         editorLists      // the editor's quick open lists (editor.go)
+	ingress                             *ingressManager  // sandbox ports exposed (ingress.go)
+	resets                              resetJob         // 「すべて消す」 (reset.go)
+	autoStop                            autoStops        // stopping once the terminals end (autostop.go)
+	resources                           *resourceMonitor // CPU, memory, GPU and home sizes (resources.go)
+	hostChecks                          *hostChecker     // the approval's host checks (host_check.go)
+	hostChecksOnce                      sync.Once
 
 	// flowCtx is the OAuth flows' life until a reset (oauthLife).
 	flowCtx context.Context
 	flowEnd context.CancelFunc
+
+	// public is the page's tailnet address (publicAddr), when it has one.
+	public atomic.Pointer[publicAddr]
+	// fixedPublic: -public-origin set it; the admin node does not change it.
+	fixedPublic bool
 }
 
 func newServer(c Config, rt Runtime, fake bool, host string) *Server {
@@ -249,7 +252,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		// Reject DNS rebinding and cross-origin requests before any routing/authentication.
-		if r.Host != s.host && (s.publicHost == "" || r.Host != s.publicHost) {
+		if r.Host != s.host && (s.publicHost() == "" || r.Host != s.publicHost()) {
 			reject(w, r, 403, "invalid host", "Host="+r.Host+" expected="+s.host)
 			return
 		}
@@ -917,4 +920,30 @@ func documentNavigation(r *http.Request) bool {
 	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 		r.Header.Get("Sec-Fetch-Mode") == "navigate" && r.Header.Get("Sec-Fetch-Dest") == "document" &&
 		!strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/ws/")
+}
+
+// publicAddr is the https origin in front of the page for the tailnet:
+// `tailscale serve` (-public-origin) or the admin node (docs/adr/0023).
+type publicAddr struct{ host, origin string }
+
+func (s *Server) publicHost() string {
+	if p := s.public.Load(); p != nil {
+		return p.host
+	}
+	return ""
+}
+
+func (s *Server) publicOrigin() string {
+	if p := s.public.Load(); p != nil {
+		return p.origin
+	}
+	return ""
+}
+
+func (s *Server) setPublic(host, origin string) {
+	if host == "" {
+		s.public.Store(nil)
+		return
+	}
+	s.public.Store(&publicAddr{host, origin})
 }

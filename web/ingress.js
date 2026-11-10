@@ -58,7 +58,8 @@
       suggested: list(d?.suggestedOwners, 5), secretEnv: text(d?.secretEnv, 64) || 'IWATO_TS_AUTHKEY',
       secret: { set: secret.set === true, source: text(secret.source, 16), kind: text(secret.kind, 16), hint: text(secret.hint, 64), storage: text(secret.storage, 16), error: text(secret.error, 300) },
       status: statusView(d?.status),
-      nodes: (Array.isArray(d?.nodes) ? d.nodes : []).slice(0, 32).map((n) => ({ sandbox: text(n?.sandbox, 64), hostname: text(n?.hostname, 64), ...statusView(n) }))
+      nodes: (Array.isArray(d?.nodes) ? d.nodes : []).slice(0, 32).map((n) => ({ sandbox: text(n?.sandbox, 64), hostname: text(n?.hostname, 64), ...statusView(n) })),
+      admin: d?.admin && typeof d.admin === 'object' ? { hostname: text(d.admin.hostname, 64), url: linkURL(d.admin.url), fixed: linkURL(text(d.admin.fixed, 300) + '/'), ...statusView(d.admin) } : null
     };
   }
 
@@ -214,6 +215,7 @@
         // Tailscale's secret, nodes and steps: only while it is chosen.
         this.tsExtra = element('div', 'stack-form ingress-tailscale');
         this.tsExtra.append(this.secretBlock());
+        if (d.admin) this.tsExtra.append(this.adminBlock());
         if (d.nodes.length) this.tsExtra.append(this.nodeList());
         this.tsExtra.append(this.setupSteps());
         this.tsExtra.append(element('p', 'panel-meta', t('ingress.ctNote')));
@@ -228,6 +230,8 @@
 
       showTailscale() {
         const on = this.chosen() === 'tailscale';
+        // Required only while shown: a hidden required field blocks the form.
+        this.prefix.required = on;
         this.tsFields.hidden = !on;
         this.tsExtra.hidden = !on;
       }
@@ -255,6 +259,32 @@
           if (d.secret.set) actions.append(button('button-disconnect', t('common.delete'), () => this.deleteSecret()));
           box.append(this.secretInput, actions);
         }
+        return box;
+      }
+
+      // Iwato's own page on the tailnet (its node, or -public-origin).
+      adminBlock() {
+        const a = this.data.admin;
+        const box = element('div', 'volume-list ingress-nodes');
+        box.append(element('strong', '', t('ingress.admin.title')));
+        const url = a.fixed || a.url;
+        const row = element('div', 'volume-row');
+        const info = element('div', 'volume-info');
+        row.append(info);
+        if (url) {
+          const link = element('a', 'port-link', url);
+          link.href = url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          info.append(link);
+          row.append(...copyButton(url, t('ingress.admin.title')));
+        } else {
+          const name = element('span', 'volume-path');
+          name.append(dot(a.state), element('span', '', a.dnsName || a.hostname));
+          const message = statusMessage(a);
+          info.append(name, element('span', 'panel-meta', stateLabel(a.state) + (message ? ' · ' + message : '')));
+        }
+        box.append(row, element('p', 'panel-meta', a.fixed ? t('ingress.admin.fixed') : t('ingress.admin.hint')));
         return box;
       }
 

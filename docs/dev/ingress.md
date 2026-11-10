@@ -60,6 +60,8 @@ Why plain HTTP is not redirected to https: inside the tailnet traffic is already
 
 Chosen to open from a phone too, or to pass TCP as is. The rest of this section is about this provider.
 
+Besides the sandboxes' nodes it brings up one for the admin UI ([ADR 0023](../adr/0023-admin-ui-on-its-own-tailnet-node.md); `admin_node.go`, `tailscale.Admin`): named `adminHostname(prefix)` (the prefix without its final hyphens; the prefix is required, an older empty one reads as the default, so no sandbox's node has the name), its state in `ingress/tailscale/_admin` (not a sandbox name, so Sync never forgets it), only port 443 (others reset), WhoIs and `ProviderAuth` before TLS (refused callers are closed), TLS with HTTP/1.1 only (the terminals' WebSockets), then the admin UI's own `http.Server` through `connListener`. Its DNS name becomes the page's public origin (`Server.setPublic`) while it is up. `-public-origin` turns it off.
+
 ### Configuration (iwato.json)
 
 `provider` is `local` (when absent; an iwato.json without ingress settings, and an older iwato.json saved with Tailscale turned off, also become local), `tailscale` or `off`. The UI does not write local.

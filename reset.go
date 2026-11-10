@@ -422,6 +422,13 @@ func (m *ingressManager) logoutAll(ctx context.Context, sandboxes []string) []re
 				}
 			}
 		}
+		if a, ok := p.(interface{ ForgetAdmin(context.Context) error }); ok && m.dir != "" {
+			if _, err := os.Stat(filepath.Join(m.dir, "ingress", "tailscale", "_admin")); err == nil {
+				if err := a.ForgetAdmin(ctx); err != nil {
+					warnings = append(warnings, resetWarning("tailscale", map[string]any{"detail": err.Error()}, "Tailscale: "+err.Error()))
+				}
+			}
+		}
 		_ = p.Close()
 	}
 	return warnings

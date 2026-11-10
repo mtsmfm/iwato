@@ -228,7 +228,8 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		fmt.Fprintln(&s.logs, l)
 	}
 	s.ctx = ctx
-	s.publicHost, s.publicOrigin = publicHost, publicOrigin
+	s.setPublic(publicHost, publicOrigin)
+	s.fixedPublic = publicOrigin != ""
 	s.configPath = opts.configPath
 	if opts.sessionTTL > 0 {
 		s.sessionTTL = opts.sessionTTL
@@ -382,11 +383,17 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		token := s.bootstrap
 		s.mu.Unlock()
 		go func() {
-			if err := openPage(launchTarget{s.origin, token, s.publicOrigin}, opts.pwa); err != nil {
+			// The admin node comes up in a few seconds; only a PC on the
+			// tailnet itself can open it.
+			if s.ingress.adminExpected() && tailscaleSelfLogin() != "" {
+				s.waitPublic(20 * time.Second)
+			}
+			if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, opts.pwa); err != nil {
 				noticef("cannot open the browser: %v", err)
 			}
 		}()
 	}
+	go func() { _ = h.Serve(s.ingress.adminLn) }()
 	// The local ingress's hosts (<port>.<sandbox>.localhost) leave the
 	// listener before the admin UI's Host check (internal/ingress/local).
 	e = h.Serve(local.Split(ln, s.ingress.take, h.ReadHeaderTimeout, h.MaxHeaderBytes))
@@ -421,8 +428,8 @@ func (s *Server) loginBlock(header, reason string, startup bool) string {
 	}
 	if token == "" {
 		fmt.Fprintf(&b, "%s/\n", s.origin)
-		if s.publicOrigin != "" {
-			fmt.Fprintf(&b, "Tailnet: %s/\n", s.publicOrigin)
+		if s.publicOrigin() != "" {
+			fmt.Fprintf(&b, "Tailnet: %s/\n", s.publicOrigin())
 		}
 		b.WriteString("The startup URL has been used; browsers that logged in with it stay logged in.\n")
 	} else {
@@ -430,8 +437,8 @@ func (s *Server) loginBlock(header, reason string, startup bool) string {
 			b.WriteString("Open this URL in a browser:\n")
 		}
 		fmt.Fprintf(&b, "%s/#token=%s\n", s.origin, token)
-		if s.publicOrigin != "" {
-			fmt.Fprintf(&b, "Tailnet (tailscale serve): %s/#token=%s\n", s.publicOrigin, token)
+		if s.publicOrigin() != "" {
+			fmt.Fprintf(&b, "Tailnet (tailscale serve): %s/#token=%s\n", s.publicOrigin(), token)
 		}
 		fmt.Fprintf(&b, "Single use, valid until %s (10 minutes). Do not share it.\n", until.Format("15:04"))
 	}

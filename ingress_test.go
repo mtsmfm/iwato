@@ -61,10 +61,6 @@ func TestIngressConfigParsing(t *testing.T) {
 	if (*IngressConfig)(nil).prefix() != "iwato-" || (*IngressConfig)(nil).tag() != "tag:iwato" {
 		t.Fatal("defaults")
 	}
-	empty := ""
-	if (&IngressConfig{Tailscale: &TailscaleIngressConfig{HostnamePrefix: &empty}}).prefix() != "" {
-		t.Fatal("an empty prefix is allowed")
-	}
 }
 
 // recordingProvider records Syncs and Forgets.

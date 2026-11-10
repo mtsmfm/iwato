@@ -61,7 +61,7 @@ const (
 
 var (
 	tailscaleTag   = regexp.MustCompile(`^tag:[A-Za-z][A-Za-z0-9-]{0,62}$`)
-	hostnamePrefix = regexp.MustCompile(`^([a-z0-9][a-z0-9-]{0,30})?$`)
+	hostnamePrefix = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
 	ownerLogin     = regexp.MustCompile(`^[^\s,;"'<>]{1,200}$`)
 )
 
@@ -73,9 +73,10 @@ func (c *IngressConfig) tag() string {
 	return defaultTailscaleTag
 }
 
-// prefix starts the nodes' names.
+// prefix starts the nodes' names. It is never empty (an older empty one
+// reads as the default), so no sandbox's node takes the admin node's name.
 func (c *IngressConfig) prefix() string {
-	if c != nil && c.Tailscale != nil && c.Tailscale.HostnamePrefix != nil {
+	if c != nil && c.Tailscale != nil && c.Tailscale.HostnamePrefix != nil && *c.Tailscale.HostnamePrefix != "" {
 		return *c.Tailscale.HostnamePrefix
 	}
 	return defaultHostnamePrefix
@@ -141,7 +142,7 @@ func (c *IngressConfig) Validate() error {
 		if t.Tag != "" && !tailscaleTag.MatchString(t.Tag) {
 			return errors.New("tailscale tag must look like tag:iwato")
 		}
-		if t.HostnamePrefix != nil && !hostnamePrefix.MatchString(*t.HostnamePrefix) {
+		if t.HostnamePrefix != nil && *t.HostnamePrefix != "" && !hostnamePrefix.MatchString(*t.HostnamePrefix) {
 			return errors.New("tailscale hostnamePrefix: lowercase letters, digits and hyphens, at most 31")
 		}
 		if len(t.Owners) > maxIngressOwners {
