@@ -42,7 +42,7 @@ Optional (the edge pre-release has Linux binaries): after the [setup](#setup), `
 
 ## Bumping pinned versions
 
-Everything the images and the gateway download is pinned; `scripts/check-pins.sh` (also the `pins` job of `build.yml`) checks the pins against their sources. Needs `curl` and `jq`, and `gh` for Selkies; inside an Iwato sandbox, GET rules for `ghcr.io` (`/token`, `/v2/nvidia/openshell/*/manifests/*`), `auth.docker.io` (`/token`), `registry-1.docker.io` (`/v2/library/ubuntu/manifests/*`), `github.com` (`/NVIDIA/OpenShell/releases/download/**`) and `release-assets.githubusercontent.com` (OpenShell's release assets).
+Everything the images and the gateway download is pinned; `scripts/check-pins.sh` (also the `pins` job of `build.yml`) checks the pins against their sources (a download still failing after retries is `UNAVAILABLE`, not a mismatch). Needs `curl` and `jq`, and `gh` for Selkies; inside an Iwato sandbox, GET rules for `ghcr.io` (`/token`, `/v2/nvidia/openshell/*/manifests/*`), `auth.docker.io` (`/token`), `registry-1.docker.io` (`/v2/library/ubuntu/manifests/*`), `github.com` (`/NVIDIA/OpenShell/releases/download/**`) and `release-assets.githubusercontent.com` (OpenShell's release assets).
 
 - OpenShell (`OpenShellVersion` in `internal/openshell/wslc/driver.go`):
   1. the release tarballs: `ARG OPENSHELL_TAG` in `internal/openshell/gateway/Dockerfile` and its `case` entry, the SHA-256 of the 4 tarballs for x86_64 and aarch64, copied from the release's `*-checksums-sha256.txt` (or `gh api repos/NVIDIA/OpenShell/releases/tags/vX.Y.Z --jq '.assets[] | [.name, .digest] | @tsv'`). A tag with no entry fails the build; `dev` is checked only against the checksums published with it
