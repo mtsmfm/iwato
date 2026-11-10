@@ -76,6 +76,10 @@ func TestIngressLifecycle(t *testing.T) {
 	if res, b := request(t, s, "/api/ingress", "POST", `{"provider":"tailscale","tag":"tag:iwato","hostnamePrefix":"iwato-","owners":[]}`, cookie, csrf); res.StatusCode != 400 {
 		t.Fatal(res.StatusCode, string(b))
 	}
+	// and a prefix (the admin node's name comes from it).
+	if res, b := request(t, s, "/api/ingress", "POST", `{"provider":"tailscale","tag":"tag:iwato","hostnamePrefix":" ","owners":["alice@github"]}`, cookie, csrf); res.StatusCode != 400 || !strings.Contains(string(b), "ingress_prefix_invalid") {
+		t.Fatal(res.StatusCode, string(b))
+	}
 	if res, b := request(t, s, "/api/ingress", "POST", `{"provider":"tailscale","tag":"tag:iwato","hostnamePrefix":"iwato-","owners":[" alice@github ","alice@github"]}`, cookie, csrf); res.StatusCode != 200 {
 		t.Fatal(res.StatusCode, string(b))
 	}

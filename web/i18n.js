@@ -1205,7 +1205,7 @@
     'error.session_missing': 'セッションがありません。Iwato が表示した URL を開き直してください。',
     'error.launch_token_invalid': '起動 URL が無効か使用済みです。Iwato を起動し直してください。',
     'error.name_invalid': '名前は英小文字で始まり、英小文字・数字・ハイフンの {max} 文字以内にしてください。',
-    'error.name_admin_node': '{name} は Iwato の画面の tailnet のノード名なので使えません。',
+    'error.ingress_prefix_invalid': 'ノード名の接頭辞は英小文字か数字で始まる、英小文字・数字・ハイフンの 31 文字以内にしてください。',
     'error.session_expired': 'セッション切れ。Iwato を起動し直し、起動 URL を開いてください。',
     'error.session_unknown': 'このログインはもうありません',
     'error.busy_start': '起動処理が進行中です',
@@ -1600,7 +1600,6 @@
     'ingress.status.node_joining': 'tailnet に参加しています…',
     'ingress.status.node_join_failed': 'tailnet に参加できません: {detail}',
     'ingress.status.node_off': 'サンドボックスを起動すると tailnet に参加します',
-    'ingress.status.admin_name_taken': 'サンドボックス {name} のノードと同じ名前なので、Iwato の画面のノードは作りません (ノード名の接頭辞を設定してください)',
     'ingress.status.local_name_invalid': '名前が DNS のラベルに使えない (ハイフンで終わる、3・4 文字目が --) ため、*.localhost で開けません'
   };
   const en = {
@@ -2818,7 +2817,7 @@
     'error.session_missing': 'No session. Open the URL Iwato printed again.',
     'error.launch_token_invalid': 'The launch URL is not valid or was already used. Restart Iwato.',
     'error.name_invalid': 'The name must start with a lowercase letter and have at most {max} lowercase letters, digits and hyphens.',
-    'error.name_admin_node': "{name} is the tailnet node name of Iwato's page.",
+    'error.ingress_prefix_invalid': 'The node name prefix needs 1 to 31 lowercase letters, digits and hyphens, starting with a letter or digit.',
     'error.session_expired': 'The session has expired. Restart Iwato and open the launch URL.',
     'error.session_unknown': 'This login no longer exists.',
     'error.busy_start': 'The sandbox is starting.',
@@ -3214,7 +3213,6 @@
     'ingress.status.node_joining': 'Joining the tailnet…',
     'ingress.status.node_join_failed': 'Cannot join the tailnet: {detail}',
     'ingress.status.node_off': 'Joins the tailnet when the sandbox starts',
-    'ingress.status.admin_name_taken': "Sandbox {name}'s node has the same name, so Iwato's page gets no node (set a node name prefix)",
     'ingress.status.local_name_invalid': 'The name is not a DNS label (it ends with a hyphen, or has -- as its 3rd and 4th characters), so it cannot open on *.localhost'
   };
   const dictionaries = { ja, en };

@@ -18,9 +18,10 @@ import (
 // the connections to the page's http.Server through connListener.
 
 // adminHostname is the admin node's name: the nodes' prefix without its
-// final hyphen (iwato by default).
+// final hyphens (iwato by default). The prefix is never empty and every
+// sandbox name is, so it is no sandbox's node name.
 func adminHostname(prefix string) string {
-	if h := strings.TrimSuffix(prefix, "-"); h != "" {
+	if h := strings.TrimRight(prefix, "-"); h != "" {
 		return h
 	}
 	return "iwato"
@@ -31,31 +32,15 @@ func (m *ingressManager) adminNode(cfg *IngressConfig) *tailscale.Admin {
 	if m.s.fixedPublic {
 		return nil
 	}
-	name := adminHostname(cfg.prefix())
-	if sb := m.adminClash(cfg); sb != "" {
-		noticef("tailnet: no node for Iwato's page: sandbox %s's node is named %s", sb, name)
-		return nil
-	}
 	auth := ingress.ProviderAuth{Owners: m.owners}
 	return &tailscale.Admin{
-		Hostname: name,
+		Hostname: adminHostname(cfg.prefix()),
 		Allow: func(id *ingress.Identity) error {
 			return auth.AllowConn(context.Background(), id, ingress.Target{})
 		},
 		Serve: m.adminLn.put,
 		Up:    m.s.adminUp,
 	}
-}
-
-// adminClash is the sandbox whose node has the admin node's name (only
-// possible with an empty prefix).
-func (m *ingressManager) adminClash(cfg *IngressConfig) string {
-	for _, sb := range m.s.sandboxList() {
-		if cfg.prefix()+sb.Name == adminHostname(cfg.prefix()) {
-			return sb.Name
-		}
-	}
-	return ""
 }
 
 // adminUp makes the admin node's address the page's public origin, or
@@ -113,10 +98,6 @@ func (m *ingressManager) adminView() *adminView {
 	v := &adminView{Hostname: adminHostname(cfg.prefix()), Status: ingress.Status{State: "off"}}
 	if m.s.fixedPublic {
 		v.Fixed = m.s.publicOrigin()
-		return v
-	}
-	if sb := m.adminClash(cfg); sb != "" {
-		v.Status = ingress.Status{State: "error", Code: "admin_name_taken", Params: map[string]any{"name": sb}, Message: "サンドボックス " + sb + " のノードと同じ名前なので、Iwato の画面のノードは作りません"}
 		return v
 	}
 	m.mu.Lock()

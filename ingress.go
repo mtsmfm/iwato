@@ -763,6 +763,13 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prefix := strings.TrimSpace(body.HostnamePrefix)
+		if body.Provider == providerTailscale && !hostnamePrefix.MatchString(prefix) {
+			failCode(w, 400, "ingress_prefix_invalid", nil, "ノード名の接頭辞は英小文字か数字で始まる、英小文字・数字・ハイフンの 31 文字以内にしてください")
+			return
+		}
+		if prefix == "" {
+			prefix = defaultHostnamePrefix
+		}
 		next := &IngressConfig{Tailscale: &TailscaleIngressConfig{Tag: strings.TrimSpace(body.Tag), HostnamePrefix: &prefix, Owners: owners}}
 		if next.Tailscale.Tag == defaultTailscaleTag {
 			next.Tailscale.Tag = ""

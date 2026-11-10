@@ -151,10 +151,6 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		failCode(w, 400, "name_invalid", map[string]any{"max": 32}, "名前は英小文字で始まり、英小文字・数字・ハイフンの 32 文字以内にしてください")
 		return
 	}
-	if cfg := s.ingress.config(); cfg.prefix()+body.Name == adminHostname(cfg.prefix()) {
-		failCode(w, 400, "name_admin_node", map[string]any{"name": body.Name}, body.Name+" は Iwato の画面の tailnet のノード名なので使えません")
-		return
-	}
 	body.Image = strings.TrimSpace(body.Image)
 	if body.Image != "" && !validImage(body.Image) {
 		failCode(w, 400, "image_invalid", nil, "イメージの指定が正しくありません")

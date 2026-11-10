@@ -61,9 +61,9 @@ There is no screen for them yet; set them in `iwato.json` per sandbox:
 
 ## Use Iwato from your phone
 
-With **Tailscale (phones too)** set up as above, Iwato's own page also gets a node: `https://iwato.<tailnet>.ts.net/` (the prefix without its final hyphen), shown in the settings under **Iwato's page (tailnet)**. Only the devices of the **Owner logins** reach it, and they still sign in to Iwato. No Tailscale app or command is needed on the PC. On the phone (on the tailnet), open that address and sign in with the QR code of Sign in on another device. Push notifications and the WebDAV drive with app passwords use this address too.
+With **Tailscale (phones too)** set up as above, Iwato's own page also gets a node: `https://iwato.<tailnet>.ts.net/` (the **Node name prefix**, `iwato-` by default and required, without its final hyphen), shown in the settings under **Iwato's page (tailnet)**. Only the devices of the **Owner logins** reach it, and they still sign in to Iwato. No Tailscale app or command is needed on the PC. On the phone (on the tailnet), open that address and sign in with the QR code of Sign in on another device. Push notifications and the WebDAV drive with app passwords use this address too.
 
-When the PC itself is on the tailnet, Iwato opens its page there too, so the PC and the phone share one origin (the installed app, notifications and sign-ins); otherwise the PC keeps `127.0.0.1`. A sandbox cannot be named like the page's node (with an empty prefix: `iwato`).
+When the PC itself is on the tailnet, Iwato opens its page there too, so the PC and the phone share one origin (the installed app, notifications and sign-ins); otherwise the PC keeps `127.0.0.1`.
 
 `tailscale serve` in front of the page still works: start Iwato with `-public-origin https://HOSTNAME.TAILNET.ts.net` and the page's node is not made. Moving from it to the node changes the address: sign in, install the app and turn on notifications again on the phone, and remove the old one with `tailscale serve reset`.
 
