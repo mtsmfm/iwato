@@ -2351,8 +2351,10 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert(walk(body, (n) => /http:\/\/ポート\.サンドボックス\.localhost:17600\//.test(n.textContent || '')).length === 1, 'the local URL form with the port');
   const tsParts = walk(body, (n) => n.className === 'stack-form ingress-tailscale');
   assert.equal(tsParts.length, 2); assert(tsParts.every((n) => n.hidden), 'the Tailscale settings are hidden while local is chosen');
+  assert.equal(walk(body, (n) => n.attributes['aria-label'] === 'ノード名の接頭辞')[0].required, false, 'the hidden prefix does not block saving local');
   radios[0].checked = false; radios[1].checked = true; radios[1].listeners.change(); 
   assert(tsParts.every((n) => !n.hidden), 'choosing Tailscale shows its settings');
+  assert.equal(walk(body, (n) => n.attributes['aria-label'] === 'ノード名の接頭辞')[0].required, true, 'the prefix is required with Tailscale');
   const owners = walk(body, (n) => n.attributes['aria-label'] === '通すログイン名')[0];
   assert.equal(owners.value, 'alice@github', 'owners are prefilled with the suggestion');
   const steps = walk(body, (n) => n.className === 'files-steps ingress-steps')[0];

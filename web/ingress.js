@@ -200,7 +200,6 @@
         this.tag.value = d.tag;
         this.prefix = textInput(d.defaults.hostnamePrefix, t('ingress.prefix'));
         this.prefix.value = d.hostnamePrefix;
-        this.prefix.required = true;
         const row = element('div', 'ingress-row');
         row.append(field('tag', this.tag, t('ingress.tag.hint')), field(t('ingress.prefix'), this.prefix, t('ingress.prefix.hint')));
         this.tsFields = element('div', 'stack-form ingress-tailscale');
@@ -231,6 +230,8 @@
 
       showTailscale() {
         const on = this.chosen() === 'tailscale';
+        // Required only while shown: a hidden required field blocks the form.
+        this.prefix.required = on;
         this.tsFields.hidden = !on;
         this.tsExtra.hidden = !on;
       }

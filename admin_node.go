@@ -18,8 +18,8 @@ import (
 // the connections to the page's http.Server through connListener.
 
 // adminHostname is the admin node's name: the nodes' prefix without its
-// final hyphens (iwato by default). The prefix is never empty and every
-// sandbox name is, so it is no sandbox's node name.
+// final hyphens (iwato by default). A sandbox's node is the prefix plus a
+// name of one character or more, so it never has this name.
 func adminHostname(prefix string) string {
 	if h := strings.TrimRight(prefix, "-"); h != "" {
 		return h

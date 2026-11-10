@@ -61,7 +61,7 @@ There is no screen for them yet; set them in `iwato.json` per sandbox:
 
 ## Use Iwato from your phone
 
-With **Tailscale (phones too)** set up as above, Iwato's own page also gets a node: `https://iwato.<tailnet>.ts.net/` (the **Node name prefix**, `iwato-` by default and required, without its final hyphen), shown in the settings under **Iwato's page (tailnet)**. Only the devices of the **Owner logins** reach it, and they still sign in to Iwato. No Tailscale app or command is needed on the PC. On the phone (on the tailnet), open that address and sign in with the QR code of Sign in on another device. Push notifications and the WebDAV drive with app passwords use this address too.
+With **Tailscale (phones too)** set up as above, Iwato's own page also gets a node: `https://iwato.<tailnet>.ts.net/` (the **Node name prefix**, `iwato-` by default and required, without its final hyphens), shown in the settings under **Iwato's page (tailnet)**. Only the devices of the **Owner logins** reach it, and they still sign in to Iwato. No Tailscale app or command is needed on the PC. On the phone (on the tailnet), open that address and sign in with the QR code of Sign in on another device. Push notifications and the WebDAV drive with app passwords use this address too.
 
 When the PC itself is on the tailnet, Iwato opens its page there too, so the PC and the phone share one origin (the installed app, notifications and sign-ins); otherwise the PC keeps `127.0.0.1`.
 
