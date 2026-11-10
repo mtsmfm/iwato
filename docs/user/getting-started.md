@@ -29,7 +29,11 @@ Iwato then:
 3. Pulls the sandbox and gateway images from ghcr.io (nothing is built). This takes a few minutes the first time; the output goes to `image-build.log`
 4. Starts the OpenShell gateway in WSLc
 
-The console prints a URL such as `http://127.0.0.1:17600/#token=...`. Open it in your browser. It works once, within 10 minutes; do not share it. When port 17600 is taken Iwato uses the next free one (up to 17669); `-listen 127.0.0.1:PORT` fixes the port.
+Iwato opens the page in your default browser, or in the installed app (PWA) when there is one. The console also prints the URL, such as `http://127.0.0.1:17600/#token=...`: it works once, within 10 minutes; do not share it. A browser that is already signed in keeps its sign-in. `-browser=false` only prints it.
+
+The first start takes port 17600, or the next free one up to 17669, and keeps it in `iwato.json` (`"port"`): the installed app and the browsers' sign-ins belong to that port. When it is taken later, Iwato says which program has it and asks whether to retry, use another port this time only, or quit (without a console it waits up to a minute). `-listen 127.0.0.1:PORT` uses another port without keeping it.
+
+Starting Iwato again while it runs (a double-click on the exe) opens the running one instead.
 
 The page opens while the images and the gateway are still being prepared and shows the progress. When preparation ends (or fails, with the reason), the console prints the sign-in URL again: the same one if it was not used yet, a new one if it expired, and none if it was already used.
 
@@ -63,7 +67,7 @@ To try a change before it is merged, the edge build's **Settings** has **Try a p
 
 ```
 iwato                 create iwato.json if missing, then serve
-iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
+iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
 iwato version
 iwato help
 ```

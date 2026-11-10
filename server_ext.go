@@ -698,6 +698,34 @@ func (s *Server) handleTerminals(w http.ResponseWriter, r *http.Request, parts [
 	jsonResponse(w, 200, map[string]any{"terminals": names, "outdated": outdated, "multi": multi, "providerOutdated": s.providerOutdated(sb, names), "restartSandbox": restart})
 }
 
+// newLaunchToken replaces the single-use sign-in token.
+func (s *Server) newLaunchToken() (string, time.Time) {
+	token := randomHex(32)
+	until := time.Now().Add(10 * time.Minute)
+	s.mu.Lock()
+	s.bootstrap, s.bootstrapUntil = token, until
+	s.mu.Unlock()
+	return token, until
+}
+
+// handleLaunch gives Iwato started again (launch.go) a sign-in token for the
+// browser it opens, against the key this process wrote.
+func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fail(w, 405, "method not allowed")
+		return
+	}
+	var body struct {
+		Key string `json:"key"`
+	}
+	if decode(w, r, &body) != nil || s.launchKey == "" || !equal(body.Key, s.launchKey) {
+		fail(w, 403, "invalid launch key")
+		return
+	}
+	token, _ := s.newLaunchToken()
+	jsonResponse(w, 200, map[string]string{"token": token, "public": s.publicOrigin})
+}
+
 // handlePair issues a fresh single-use launch URL from an authenticated
 // session, so a phone can be added without restarting the server.
 func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
@@ -708,11 +736,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	if !s.require(w, r, true) {
 		return
 	}
-	token := randomHex(32)
-	until := time.Now().Add(10 * time.Minute)
-	s.mu.Lock()
-	s.bootstrap, s.bootstrapUntil = token, until
-	s.mu.Unlock()
+	token, until := s.newLaunchToken()
 	base := s.origin
 	if s.publicOrigin != "" {
 		base = s.publicOrigin

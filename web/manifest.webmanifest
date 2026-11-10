@@ -4,6 +4,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "protocol_handlers": [{"protocol": "web+iwato", "url": "/?launch=%s"}],
+  "launch_handler": {"client_mode": "focus-existing"},
   "background_color": "#101216",
   "theme_color": "#101216",
   "icons": [

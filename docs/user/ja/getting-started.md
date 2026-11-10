@@ -29,7 +29,11 @@ Iwato は次を行います。
 3. サンドボックスとゲートウェイのイメージを ghcr.io から取得します (ビルドはしません)。初回は数分かかります。出力は `image-build.log` です
 4. OpenShell のゲートウェイを WSLc で起動します
 
-コンソールに `http://127.0.0.1:17600/#token=...` のような URL が出るので、ブラウザで開きます。10 分以内・1 回限りです。共有しないでください。17600 が使用中なら次の空いているポート (17669 まで) を使います。`-listen 127.0.0.1:PORT` で固定もできます。
+Iwato は既定のブラウザで画面を開きます。アプリ (PWA) をインストール済みならアプリで開きます。コンソールにも `http://127.0.0.1:17600/#token=...` のような URL が出ます。10 分以内・1 回限りです。共有しないでください。ログイン済みのブラウザーはそのログインのまま開きます。`-browser=false` なら URL を出すだけです。
+
+最初の起動で 17600 (使用中なら次の空いているポート、17669 まで) を使い、`iwato.json` (`"port"`) に覚えます。インストールしたアプリとブラウザーのログインはこのポートに結び付いています。次からこのポートが使用中なら、どのプログラムが使っているかを出し、再試行・今回だけ別のポート・終了を尋ねます (コンソールがなければ最大 1 分待ちます)。`-listen 127.0.0.1:PORT` は覚えずに別のポートを使います。
+
+Iwato が動いている間にもう一度起動すると (exe のダブルクリック)、動いている Iwato の画面を開きます。
 
 イメージとゲートウェイの準備の間も画面は開けます (進み具合を表示)。準備が終わると (失敗したときは理由を添えて)、コンソールにログインの URL をもう一度表示します。まだ使われていなければ同じ URL、期限切れなら新しい URL、もう使われていれば何も出しません。
 
@@ -63,7 +67,7 @@ GitHub Releases の exe とバイナリは、起動時と 6 時間ごとに新�
 
 ```
 iwato                 iwato.json がなければ作り、起動する
-iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
+iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
 iwato version
 iwato help
 ```

@@ -61,6 +61,7 @@ type Server struct {
 	fake                                bool
 	host, origin, bootstrap, cookieName string
 	bootstrapUntil                      time.Time
+	launchKey                           string // lets Iwato started again ask for a sign-in token (launch.go)
 	mu                                  sync.Mutex
 	sessions                            map[string]authSession
 	ops                                 map[string]*sandboxOp     // start, stop or delete in progress, by sandbox
@@ -179,6 +180,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/sandboxes", s.handleList)
 	mux.HandleFunc("/api/sandboxes/", s.handleSandbox)
 	mux.HandleFunc("/api/pair", s.handlePair)
+	mux.HandleFunc("/api/launch", s.handleLaunch)
 	mux.HandleFunc("/api/images/retry", s.handleImagesRetry)
 	mux.HandleFunc("/api/images", s.handleImages)
 	mux.HandleFunc("/api/images/update", s.handleImages)
