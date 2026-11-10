@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"iwato/internal/proc"
 )
 
 // runner runs one wslc command, optionally feeding stdin; tests replace it.
@@ -32,6 +34,7 @@ func (r execRunner) Run(ctx context.Context, stdin []byte, args ...string) ([]by
 		}
 	}()
 	cmd := exec.CommandContext(ctx, r.exe, args...)
+	proc.Hide(cmd)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}

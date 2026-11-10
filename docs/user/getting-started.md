@@ -29,9 +29,11 @@ Iwato then:
 3. Pulls the sandbox and gateway images from ghcr.io (nothing is built). This takes a few minutes the first time; the output goes to `image-build.log`
 4. Starts the OpenShell gateway in WSLc
 
-Iwato opens the page in your default browser, or in the installed app (PWA) when there is one. The console also prints the URL, such as `http://127.0.0.1:17600/#token=...`: it works once, within 10 minutes; do not share it. A browser that is already signed in keeps its sign-in. `-browser=false` only prints it.
+On Windows Iwato has no console window: it puts its icon in the notification area (the system tray). Click it to open the page; its menu has **Open Iwato**, **Open the log** and **Quit**. Errors that keep it from starting are shown in a message box.
 
-The first start takes port 17600, or the next free one up to 17669, and keeps it in `iwato.json` (`"port"`): the installed app and the browsers' sign-ins belong to that port. When it is taken later, Iwato says which program has it and asks whether to retry, use another port this time only, or quit (without a console it waits up to a minute). `-listen 127.0.0.1:PORT` uses another port without keeping it.
+Iwato opens the page in your default browser, or in the installed app (PWA) when there is one. The console (macOS, Linux, or Windows when started from a terminal) also prints the URL, such as `http://127.0.0.1:17600/#token=...`: it works once, within 10 minutes; do not share it. A browser that is already signed in keeps its sign-in. `-browser=false` only prints it.
+
+The first start takes port 17600, or the next free one up to 17669, and keeps it in `iwato.json` (`"port"`): the installed app and the browsers' sign-ins belong to that port. When it is taken later, Iwato says which program has it and asks whether to retry, use another port this time only, or quit (on Windows in a message box; elsewhere without a console it waits up to a minute). `-listen 127.0.0.1:PORT` uses another port without keeping it.
 
 Starting Iwato again while it runs (a double-click on the exe) opens the running one instead.
 
@@ -53,7 +55,7 @@ Then:
 
 ## The console and the log
 
-The console shows only the startup lines, the sign-in URL, a one-line notice when a startup check fails (the page has the details), and warnings and errors that need you (a failed preparation, a stopped driver, port problems). Everything else (the gateway and driver output, image builds, requests) goes to `iwato.log` in the config folder (moved to `iwato.log.1` at 10 MB) and to **Show the log** in the settings. `.\iwato.exe serve -verbose` also prints it on the console.
+On Windows started by a double-click there is no console: use the log. Otherwise the console shows only the startup lines, the sign-in URL, a one-line notice when a startup check fails (the page has the details), and warnings and errors that need you (a failed preparation, a stopped driver, port problems). Everything else (the gateway and driver output, image builds, requests) goes to `iwato.log` in the config folder (moved to `iwato.log.1` at 10 MB) and to **Show the log** in the settings. `.\iwato.exe serve -verbose` also prints it on the console.
 
 ## Updating Iwato
 
@@ -72,7 +74,7 @@ iwato version
 iwato help
 ```
 
-Stop Iwato with Ctrl+C. Stopping or updating Iwato does not stop the sandboxes: with the standard image their terminals keep running too, and Iwato reattaches to them when it starts again ([terminals](terminals.md)).
+Stop Iwato with **Quit** in its tray menu on Windows, or Ctrl+C in its console. Stopping or updating Iwato does not stop the sandboxes: with the standard image their terminals keep running too, and Iwato reattaches to them when it starts again ([terminals](terminals.md)).
 
 ## macOS and Linux (experimental)
 

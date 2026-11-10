@@ -68,11 +68,12 @@ trap 'rm -rf "$tmp"; rm -f internal/termbin/bin/iwato-entrypoint' EXIT
 # Mac's architecture.
 build() {
   os=${1%-*} a=${1#*-}
-  out=dist/$1/iwato
-  [ "$os" = windows ] && out=$out.exe
+  out=dist/$1/iwato gui=""
+  # Windows: a GUI program in the notification area, without a console window.
+  [ "$os" = windows ] && out=$out.exe gui="-H windowsgui"
   CGO_ENABLED=0 GOOS=linux GOARCH=$a go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$tmp/iwato-entrypoint-$1" ./cmd/iwato-entrypoint &&
     printf '{"Replace":{"%s":"%s"}}\n' "$PWD/internal/termbin/bin/iwato-entrypoint" "$tmp/iwato-entrypoint-$1" >"$tmp/overlay-$1.json" &&
-    CGO_ENABLED=0 GOOS=$os GOARCH=$a go build -overlay "$tmp/overlay-$1.json" -buildvcs=false -trimpath -ldflags="-s -w -X main.buildCommit=$commit -X main.buildTime=$built $release $images" -o "$out" .
+    CGO_ENABLED=0 GOOS=$os GOARCH=$a go build -overlay "$tmp/overlay-$1.json" -buildvcs=false -trimpath -ldflags="-s -w $gui -X main.buildCommit=$commit -X main.buildTime=$built $release $images" -o "$out" .
 }
 targets="windows-amd64 windows-arm64 darwin-arm64 linux-amd64 linux-arm64"
 for t in $targets; do

@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -120,6 +121,15 @@ func askRunning(dir, addr string) (launchTarget, bool) {
 	}
 	return launchTarget{origin, got.Token, got.Public}, true
 }
+
+// appActions are what the tray (app_windows.go) does while Iwato serves:
+// open the page with a new sign-in token, and the log file.
+type appActions struct {
+	open    func()
+	logFile string
+}
+
+var currentApp atomic.Pointer[appActions]
 
 var launchToken = regexp.MustCompile(`^[0-9a-f]{64}$`)
 

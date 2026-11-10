@@ -32,6 +32,7 @@ The setup needs network rules (all GET only):
 - Iwato never builds its images, it only pulls them ([ADR 0024](../adr/0024-iwato-only-pulls-its-images.md)). Default (a development exe, `go run`, tests): `ghcr.io/mtsmfm/iwato-{gateway,sandbox}:edge` when missing, a newer sandbox image only on request. To try a change to `sandboximage/` or the gateway, push it in a pull request and use its images (`--images ghcr.io/mtsmfm --image-tag pr-N`, or the PR's own build)
 - `--images REGISTRY`: pulls both images tagged with the exe's version (the release) or `--image-tag TAG`; with `--image-digests iwato-gateway=sha256:...,iwato-sandbox=sha256:...` as `tag@digest`, so a moved tag is not used and there is no update. Without digests, the `edge` tag is pulled by the tag alone: it is meant to move
 - `--channel edge|release|pr-N --repo OWNER/REPO` (with `--image-digests`): a published exe, which offers updates from that repository's releases (`update.go`). CI also writes `dist/iwato-build.json` (`scripts/build-meta.sh`), the hashes and digests the update checks
+- The Windows exes are built with `-H windowsgui` (no console window: the tray, [ADR 0025](../adr/0025-windows-tray-app.md)); started from a terminal they write to it
 - `--debug`: keeps the debug option (the page's `?font=fallback`). Use it only while debugging. No build of this script has the fake backend (`-tags uitest`)
 
 Release: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which publishes the images (amd64 and arm64) and the exes.

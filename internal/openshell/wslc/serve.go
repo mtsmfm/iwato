@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 
 	computev1 "iwato/internal/openshell/computev1"
+	"iwato/internal/proc"
 )
 
 // Serve runs the driver on ln until ctx ends, driving WSLc through the
@@ -96,6 +97,7 @@ type Streamer interface {
 
 func (r execRunner) Stream(ctx context.Context, w io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, r.exe, args...)
+	proc.Hide(cmd)
 	cmd.Stdout, cmd.Stderr = w, w
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("wslc %s: %w", strings.Join(redact(args), " "), err)
