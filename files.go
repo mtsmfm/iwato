@@ -296,7 +296,7 @@ func davPath(p string) bool { return p == "/dav" || strings.HasPrefix(p, "/dav/"
 // (DNS rebinding), and requests from web pages elsewhere are refused.
 func (s *Server) handleDAV(w http.ResponseWriter, r *http.Request) {
 	local := s.localHost(r.Host)
-	if !local && (s.publicHost == "" || r.Host != s.publicHost) {
+	if !local && (s.publicHost() == "" || r.Host != s.publicHost()) {
 		reject(w, r, 403, "invalid host", "Host="+r.Host+" expected="+s.host)
 		return
 	}
@@ -388,7 +388,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		if !s.require(w, r, false) {
 			return
 		}
-		jsonResponse(w, 200, map[string]any{"keys": s.davKeys.list(), "publicOrigin": s.publicOrigin, "localOrigin": s.origin, "available": s.files != nil})
+		jsonResponse(w, 200, map[string]any{"keys": s.davKeys.list(), "publicOrigin": s.publicOrigin(), "localOrigin": s.origin, "available": s.files != nil})
 	case r.Method == http.MethodPost && len(parts) == 1 && parts[0] == "keys":
 		if !s.require(w, r, true) {
 			return

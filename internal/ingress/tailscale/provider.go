@@ -68,7 +68,25 @@ type Config struct {
 	// SniffWait is how long the first byte is awaited to tell TLS (300 ms
 	// when zero).
 	SniffWait time.Duration
+	// Admin, when set, also brings up a node for Iwato's own page.
+	Admin *Admin
 }
+
+// Admin is the node that serves Iwato's page (docs/adr/0023): HTTPS on 443
+// only, to the callers Allow admits; every other connection is reset or
+// closed before the page sees it.
+type Admin struct {
+	Hostname string
+	Allow    func(*ingress.Identity) error
+	// Serve takes an admitted caller's TLS connection.
+	Serve func(net.Conn)
+	// Up gets the node's DNS name once it is up, "" once it is closed.
+	Up func(dnsName string)
+}
+
+// adminKey is the admin node's key among the sandboxes' (not a sandbox
+// name, so Sync never forgets its state folder).
+const adminKey = "_admin"
 
 // Provider is the tailscale exposure provider.
 type Provider struct {
@@ -97,6 +115,7 @@ type nodeState struct {
 	unregister func()
 	dnsName    string
 	done       chan struct{} // closed when Up ended
+	admin      bool
 }
 
 var _ ingress.Provider = (*Provider)(nil)
@@ -123,7 +142,12 @@ func (p *Provider) Start(_ context.Context, core ingress.Core) error {
 }
 
 // Hostname is the node name of a sandbox.
-func (p *Provider) Hostname(sandbox string) string { return p.cfg.Prefix + sandbox }
+func (p *Provider) Hostname(sandbox string) string {
+	if sandbox == adminKey && p.cfg.Admin != nil {
+		return p.cfg.Admin.Hostname
+	}
+	return p.cfg.Prefix + sandbox
+}
 
 func (p *Provider) stateDir(sandbox string) string { return filepath.Join(p.cfg.Dir, sandbox) }
 
@@ -167,6 +191,11 @@ func (p *Provider) Sync(ctx context.Context, sbs []ingress.SandboxState) error {
 			continue
 		}
 		p.startLocked(name)
+	}
+	if p.cfg.Admin != nil && p.nodes[adminKey] == nil {
+		if f, ok := p.failed[adminKey]; !ok || time.Since(f.at) >= p.retryAfter() {
+			p.startLocked(adminKey)
+		}
 	}
 	p.mu.Unlock()
 	for _, ns := range closeList {
@@ -223,7 +252,7 @@ func (p *Provider) startLocked(sandbox string) {
 		fail("node_state_dir", map[string]any{"detail": err.Error()}, "状態フォルダーを作れません: "+err.Error())
 		return
 	}
-	ns := &nodeState{status: ingress.Status{State: "starting", Message: "tailnet に参加しています…", Code: "node_joining"}, done: make(chan struct{})}
+	ns := &nodeState{status: ingress.Status{State: "starting", Message: "tailnet に参加しています…", Code: "node_joining"}, done: make(chan struct{}), admin: sandbox == adminKey}
 	p.nodes[sandbox] = ns
 	logf := func(format string, args ...any) {
 		p.cfg.Logf("tailscale %s: "+format, append([]any{sandbox}, args...)...)
@@ -238,6 +267,13 @@ func (p *Provider) startLocked(sandbox string) {
 		up, cancelUp := context.WithTimeout(ctx, 3*time.Minute)
 		dns, err := ns.node.Up(up)
 		cancelUp()
+		// After the unlock and before done: closeNode's Up("") comes later.
+		notify := ""
+		defer func() {
+			if notify != "" {
+				p.cfg.Admin.Up(notify)
+			}
+		}()
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		if p.nodes[sandbox] != ns {
@@ -253,6 +289,17 @@ func (p *Provider) startLocked(sandbox string) {
 		delete(p.failed, sandbox)
 		ns.dnsName = dns
 		ns.status = ingress.Status{State: "connected", DNSName: dns}
+		if sandbox == adminKey {
+			ns.unregister = ns.node.Handle(func(src, dst netip.AddrPort) (func(net.Conn), bool) {
+				if dst.Port() != 443 {
+					return nil, true
+				}
+				return func(c net.Conn) { p.acceptAdmin(ns, src, c) }, true
+			})
+			logf("up as %s", dns)
+			notify = dns
+			return
+		}
 		ns.unregister = ns.node.Handle(func(src, dst netip.AddrPort) (func(net.Conn), bool) {
 			p.mu.Lock()
 			core := p.core
@@ -272,6 +319,9 @@ func (p *Provider) closeNode(ns *nodeState) {
 		ns.cancel()
 	}
 	<-ns.done
+	if ns.admin && ns.dnsName != "" {
+		p.cfg.Admin.Up("")
+	}
 	if ns.unregister != nil {
 		ns.unregister()
 	}
@@ -293,34 +343,16 @@ func (p *Provider) accept(sandbox string, ns *nodeState, src, dst netip.AddrPort
 		_ = c.Close()
 		return
 	}
-	wait := p.cfg.SniffWait
-	if wait <= 0 {
-		wait = 300 * time.Millisecond
-	}
-	pc, first := ingress.Peek(c, 1, wait)
+	pc, first := ingress.Peek(c, 1, p.sniffWait())
 	conn := net.Conn(pc)
 	secure := false
 	if len(first) == 1 && first[0] == 0x16 {
-		tc := tls.Server(pc, &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			NextProtos: []string{"h2", "http/1.1"},
-			GetCertificate: func(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				// A client that connects by address sends no name.
-				if hi.ServerName == "" {
-					h := *hi
-					h.ServerName = ns.dnsName
-					hi = &h
-				}
-				return ns.node.GetCertificate(hi)
-			},
-		})
-		_ = tc.SetDeadline(time.Now().Add(30 * time.Second))
-		if err := tc.Handshake(); err != nil {
+		tc, err := p.handshake(ns, pc, "h2", "http/1.1")
+		if err != nil {
 			p.cfg.Logf("tailscale %s: TLS from %s: %v", sandbox, src, err)
 			_ = c.Close()
 			return
 		}
-		_ = tc.SetDeadline(time.Time{})
 		conn, secure = tc, true
 	}
 	p.mu.Lock()
@@ -331,6 +363,72 @@ func (p *Provider) accept(sandbox string, ns *nodeState, src, dst netip.AddrPort
 		return
 	}
 	core.Serve(ingress.Conn{Conn: conn, Target: &ingress.Target{Sandbox: sandbox, Port: dst.Port()}, Identity: id, Secure: secure, PublicHost: ns.dnsName})
+}
+
+func (p *Provider) sniffWait() time.Duration {
+	if p.cfg.SniffWait > 0 {
+		return p.cfg.SniffWait
+	}
+	return 300 * time.Millisecond
+}
+
+// handshake terminates TLS with the node's certificate.
+func (p *Provider) handshake(ns *nodeState, c net.Conn, protos ...string) (*tls.Conn, error) {
+	tc := tls.Server(c, &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		NextProtos: protos,
+		GetCertificate: func(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			// A client that connects by address sends no name.
+			if hi.ServerName == "" {
+				h := *hi
+				h.ServerName = ns.dnsName
+				hi = &h
+			}
+			return ns.node.GetCertificate(hi)
+		},
+	})
+	_ = tc.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := tc.Handshake(); err != nil {
+		return nil, err
+	}
+	_ = tc.SetDeadline(time.Time{})
+	return tc, nil
+}
+
+// acceptAdmin hands an admitted caller's TLS connection to Iwato's page.
+// HTTP/1.1 only: the terminals' WebSockets need its Upgrade.
+func (p *Provider) acceptAdmin(ns *nodeState, src netip.AddrPort, c net.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	id, err := ns.node.WhoIs(ctx, src)
+	cancel()
+	if err == nil {
+		err = p.cfg.Admin.Allow(id)
+	}
+	if err != nil {
+		p.cfg.Logf("tailscale admin: refused %s: %v", src, err)
+		_ = c.Close()
+		return
+	}
+	pc, first := ingress.Peek(c, 1, p.sniffWait())
+	if len(first) != 1 || first[0] != 0x16 {
+		_ = c.Close()
+		return
+	}
+	tc, err := p.handshake(ns, pc, "http/1.1")
+	if err != nil {
+		p.cfg.Logf("tailscale admin: TLS from %s: %v", src, err)
+		_ = c.Close()
+		return
+	}
+	p.cfg.Admin.Serve(tc)
+}
+
+// AdminStatus is the admin node's state (false without one).
+func (p *Provider) AdminStatus() (ingress.Status, bool) {
+	if p.cfg.Admin == nil {
+		return ingress.Status{}, false
+	}
+	return p.Status(adminKey), true
 }
 
 // Forget logs the sandbox's node out (a tagged node leaves the tailnet)

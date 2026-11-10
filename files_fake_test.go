@@ -41,7 +41,7 @@ func newFilesServer(t *testing.T) (*Server, *http.Cookie, string) {
 	davDelay = 0
 	s, _ := newTestServer(t)
 	s.config.Sandboxes = append(s.config.Sandboxes, newSandbox("web"))
-	s.publicHost, s.publicOrigin = "box.tail0000.ts.net", "https://box.tail0000.ts.net"
+	s.setPublic("box.tail0000.ts.net", "https://box.tail0000.ts.net")
 	c, csrf := login(t, s)
 	for _, name := range []string{"dev", "web"} {
 		if res, b := request(t, s, "/api/sandboxes/"+name+"/start", "POST", "", c, csrf); res.StatusCode != 200 {
@@ -87,7 +87,7 @@ func TestFilesAppPassword(t *testing.T) {
 	s, c, csrf := newFilesServer(t)
 	all := makeKey(t, s, c, csrf, `{"name":"Mac","kind":"password"}`)
 	devRO := makeKey(t, s, c, csrf, `{"name":"iPhone","kind":"password","sandbox":"dev","readOnly":true}`)
-	pub := s.publicHost
+	pub := s.publicHost()
 
 	// No credentials: a challenge (the tailnet); this PC's /dav/ shows empty.
 	res, _ := davDo(t, s, davReq{method: "PROPFIND", path: "/dav/dev/", host: pub})
@@ -168,7 +168,7 @@ func TestFilesSecretURL(t *testing.T) {
 
 	// Only straight from this PC: not through tailscale serve (the tailnet
 	// host, or a relayed request that claims 127.0.0.1), not another Host.
-	davExpect(t, s, 403, davReq{method: "PROPFIND", path: base + "/dev/", host: s.publicHost})
+	davExpect(t, s, 403, davReq{method: "PROPFIND", path: base + "/dev/", host: s.publicHost()})
 	for _, h := range []string{"X-Forwarded-For", "Tailscale-User-Login", "Forwarded"} {
 		davExpect(t, s, 403, davReq{method: "PROPFIND", path: base + "/dev/", header: map[string]string{h: "100.64.0.2"}})
 	}
@@ -190,7 +190,7 @@ func TestFilesReadOnlySecretURL(t *testing.T) {
 func TestFilesRequestChecks(t *testing.T) {
 	s, c, csrf := newFilesServer(t)
 	k := makeKey(t, s, c, csrf, `{"name":"Mac","kind":"password"}`)
-	auth := davReq{method: "GET", path: "/dav/dev/README.md", host: s.publicHost, user: k.Key.ID, pass: k.Secret}
+	auth := davReq{method: "GET", path: "/dav/dev/README.md", host: s.publicHost(), user: k.Key.ID, pass: k.Secret}
 	// DNS rebinding: an unknown Host.
 	q := auth
 	q.host = "evil.example"
@@ -213,7 +213,7 @@ func TestFilesRequestChecks(t *testing.T) {
 	}
 	// OPTIONS without credentials, on /dav/ and the root (Windows).
 	for _, p := range []string{"/dav/dev/", "/"} {
-		res, _ := davDo(t, s, davReq{method: "OPTIONS", path: p, host: s.publicHost})
+		res, _ := davDo(t, s, davReq{method: "OPTIONS", path: p, host: s.publicHost()})
 		if res.StatusCode != 200 || res.Header.Get("DAV") == "" {
 			t.Fatalf("OPTIONS %s: %d %v", p, res.StatusCode, res.Header)
 		}
@@ -239,7 +239,7 @@ func TestFilesStoppedSandbox(t *testing.T) {
 		if method == "PUT" {
 			body = "x"
 		}
-		return davReq{method: method, path: path, body: body, host: s.publicHost, user: k.Key.ID, pass: k.Secret}
+		return davReq{method: method, path: path, body: body, host: s.publicHost(), user: k.Key.ID, pass: k.Secret}
 	}
 	davExpect(t, s, 201, q("PUT", "/dav/dev/kept.txt"))
 	if res, b := request(t, s, "/api/sandboxes/dev/stop", "POST", "", c, csrf); res.StatusCode != 200 {

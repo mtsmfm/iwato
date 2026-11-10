@@ -25,7 +25,7 @@ func TestPublicOriginForTailscaleServe(t *testing.T) {
 		t.Fatal(host, origin, e)
 	}
 	s := newServer(testConfig(), &reviewRuntime{}, false, "127.0.0.1:29999")
-	s.publicHost, s.publicOrigin = host, origin
+	s.setPublic(host, origin)
 	w := reviewRequest(s, "POST", "/api/session", `{"token":"`+s.bootstrap+`"}`, origin, "same-origin", host, nil, "")
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())

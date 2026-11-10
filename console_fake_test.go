@@ -23,7 +23,7 @@ type fakePreparer struct {
 func TestLoginBlockAfterPreparation(t *testing.T) {
 	rt := &fakePreparer{Fake: NewFake(), st: ImageState{Phase: "building", Message: "ゲートウェイを起動しています…"}}
 	s := newServer(testConfig(), rt, false, "127.0.0.1:29999")
-	s.publicOrigin = "https://pc.example.ts.net"
+	s.setPublic("pc.example.ts.net", "https://pc.example.ts.net")
 	s.images = &imageManager{}
 	s.images.set(ImageState{Phase: "building", Message: "dev"})
 	startup := s.loginBlock("Iwato started", "", true)

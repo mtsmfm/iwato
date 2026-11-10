@@ -617,7 +617,7 @@ func (s *Server) policyChangesFor(name string, p *CurrentPolicy) []PolicyChange 
 }
 
 func (s *Server) allowedOrigin(o string) bool {
-	return o != "" && (o == s.origin || (s.publicOrigin != "" && o == s.publicOrigin))
+	return o != "" && (o == s.origin || (s.publicOrigin() != "" && o == s.publicOrigin()))
 }
 
 // parsePublicOrigin accepts exactly https://host[:port] for tailscale serve.
@@ -723,7 +723,7 @@ func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, _ := s.newLaunchToken()
-	jsonResponse(w, 200, map[string]string{"token": token, "public": s.publicOrigin})
+	jsonResponse(w, 200, map[string]string{"token": token, "public": s.publicOrigin()})
 }
 
 // handlePair issues a fresh single-use launch URL from an authenticated
@@ -738,8 +738,8 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}
 	token, until := s.newLaunchToken()
 	base := s.origin
-	if s.publicOrigin != "" {
-		base = s.publicOrigin
+	if s.publicOrigin() != "" {
+		base = s.publicOrigin()
 	}
 	link := base + "/#token=" + token
 	resp := map[string]any{"url": link, "token": token, "expiresAt": until.UTC()}
