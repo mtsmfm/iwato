@@ -723,7 +723,7 @@ func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, _ := s.newLaunchToken()
-	jsonResponse(w, 200, map[string]string{"token": token})
+	jsonResponse(w, 200, map[string]string{"token": token, "public": s.publicOrigin})
 }
 
 // handlePair issues a fresh single-use launch URL from an authenticated

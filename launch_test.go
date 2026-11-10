@@ -51,9 +51,10 @@ func TestTakePort(t *testing.T) {
 	t.Run("this configuration's Iwato answers", func(t *testing.T) {
 		file, c := config(t, 0)
 		s, port := iwato(t, filepath.Dir(file))
+		s.publicOrigin = "https://pc.example.ts.net"
 		c.Port = port
 		_, running, _, err := takePort(file, c, never)
-		if err != nil || running == nil || running.token != s.bootstrap || running.origin != s.origin {
+		if err != nil || running == nil || running.token != s.bootstrap || running.origin != s.origin || running.public != s.publicOrigin {
 			t.Fatal(err, running)
 		}
 	})

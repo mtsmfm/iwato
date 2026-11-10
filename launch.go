@@ -40,9 +40,10 @@ const (
 // something other than this configuration's Iwato.
 type portPrompt func(port int, owner string) portChoice
 
-// launchTarget is the page to open: the origin and a sign-in token.
+// launchTarget is the page to open: this PC's origin, a sign-in token and
+// the tailnet origin (tailscale serve) when there is one.
 type launchTarget struct {
-	origin, token string
+	origin, token, public string
 }
 
 // takePort listens on the configuration's port, remembering the first one
@@ -106,12 +107,18 @@ func askRunning(dir, addr string) (launchTarget, bool) {
 	}
 	defer res.Body.Close()
 	var got struct {
-		Token string `json:"token"`
+		Token  string `json:"token"`
+		Public string `json:"public"`
 	}
 	if res.StatusCode != 200 || json.NewDecoder(io.LimitReader(res.Body, 4096)).Decode(&got) != nil || !launchToken.MatchString(got.Token) {
 		return launchTarget{}, false
 	}
-	return launchTarget{origin, got.Token}, true
+	if _, public, err := parsePublicOrigin(got.Public); err == nil {
+		got.Public = public
+	} else {
+		got.Public = ""
+	}
+	return launchTarget{origin, got.Token, got.Public}, true
 }
 
 var launchToken = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -144,14 +151,35 @@ func writeLaunchKey(dir string) (string, func(), error) {
 }
 
 // openPage opens the page in the installed app when asked (pwa) and the OS
-// knows its protocol, otherwise in the default browser.
+// knows its protocol (the app is on whichever origin it was installed
+// from: the token works on both), otherwise in the default browser, on the
+// tailnet origin when it answers.
 func openPage(t launchTarget, pwa bool) error {
 	if pwa && protocolHandled(pwaProtocol) {
 		if err := openURL(pwaProtocol + ":" + t.token); err == nil {
 			return nil
 		}
 	}
+	if t.public != "" && answers(t.public) {
+		t.origin = t.public
+	}
 	return openURL(t.url())
+}
+
+// answers: the page loads from origin (tailscale serve runs and reaches it).
+func answers(origin string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/manifest.webmanifest", nil)
+	if err != nil {
+		return false
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	res.Body.Close()
+	return res.StatusCode == 200
 }
 
 func (t launchTarget) url() string {

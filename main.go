@@ -104,6 +104,9 @@ func run(args []string) (err error) {
 			return e
 		}
 	}
+	if *publicOrigin == "" {
+		*publicOrigin = c.PublicOrigin
+	}
 	var taken net.Listener
 	remembered := false
 	if fake == nil && *listen == "" && restartAddr == "" {
@@ -179,7 +182,7 @@ type serveOptions struct {
 func openRunning(t launchTarget, browser bool) error {
 	if browser {
 		if err := openPage(t, true); err == nil {
-			fmt.Printf("Iwato is already running at %s/: opened it.\n", t.origin)
+			fmt.Println("Iwato is already running: opened it.")
 			return nil
 		}
 	}
@@ -382,7 +385,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		token := s.bootstrap
 		s.mu.Unlock()
 		go func() {
-			if err := openPage(launchTarget{s.origin, token}, opts.pwa); err != nil {
+			if err := openPage(launchTarget{s.origin, token, s.publicOrigin}, opts.pwa); err != nil {
 				noticef("cannot open the browser: %v", err)
 			}
 		}()

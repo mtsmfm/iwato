@@ -68,6 +68,8 @@ tailscale serve --bg http://127.0.0.1:17600
 .\iwato.exe serve -public-origin https://HOSTNAME.TAILNET.ts.net
 ```
 
+Instead of the flag, `"publicOrigin": "https://HOSTNAME.TAILNET.ts.net"` in `iwato.json` applies to every start (a double-click too). Iwato then opens its page on the PC at that address too when it answers (otherwise at `127.0.0.1`), so the PC and the phone share one origin: the installed app, notifications and sign-ins.
+
 Then use Sign in on another device and scan its QR code with the phone (on the tailnet). Push notifications and the WebDAV drive with app passwords also need this address. This is independent of how ports are published: you can publish ports to this PC only and still use Iwato from the phone.
 
 More detail on how publishing works: [docs/dev/ingress.md](../dev/ingress.md).
