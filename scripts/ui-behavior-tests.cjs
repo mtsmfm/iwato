@@ -824,6 +824,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const urls = (t) => Array.from(side.win.IwatoLinks.findURLs(t), (m) => m.url);
   assert.deepEqual(urls('https://x.example/eval?step=1500&st=1&vs=1500|0.8 x'), ['https://x.example/eval?step=1500&st=1&vs=1500|0.8']);
   assert.deepEqual(urls('https://a.example/x、次へ'), ['https://a.example/x'], 'CJK punctuation ends it even before text');
+  assert.deepEqual(urls('GET https://api.example/api/oauth/usage（anthropic-beta: oauth を付けて）'), ['https://api.example/api/oauth/usage'], 'a full-width bracket ends it');
+  assert.deepEqual(urls('【https://a.example/y】と https://a.example/z［注］：次'), ['https://a.example/y', 'https://a.example/z'], 'CJK and full-width brackets and colons end it');
   assert.deepEqual(urls('(see https://a.example/a_(b))'), ['https://a.example/a_(b)']);
   assert.deepEqual(urls('see https://a.example/x. or https://a.example/y! or https://a.example/z?a=1? ok'), ['https://a.example/x', 'https://a.example/y', 'https://a.example/z?a=1']);
   assert.deepEqual(urls('see https://a.example/x? ok https://a.example/?! https://a.example/y?a https://a.example/z?='), ['https://a.example/x', 'https://a.example/', 'https://a.example/y?a', 'https://a.example/z?='], 'a ? at the end is left out, unlike in UTS #58');
