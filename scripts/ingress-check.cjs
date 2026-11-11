@@ -121,6 +121,16 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const logins = settings.locator('.session-settings');
     await logins.locator('.files-key').first().waitFor();
     check((await logins.locator('.files-key').first().innerText()).includes('この端末') && await logins.getByRole('button', { name: 'ログアウト' }).count() === 1, 'the logins list this browser with its sign-out');
+    // How long a sign-in lasts: 7 days unused, 30 at most; a change is saved.
+    const idleDays = logins.getByLabel('使わなければ'), maxDays = logins.getByLabel('最長');
+    check(await idleDays.inputValue() === '7' && await maxDays.inputValue() === '30', 'sign-ins last 7 days unused and 30 at most by default');
+    await idleDays.fill('14');
+    await idleDays.dispatchEvent('change');
+    await logins.getByText('保存しました。').waitFor();
+    check((await page.evaluate(() => fetch('/api/sessions').then((r) => r.json()))).limits.idleDays === 14, 'the sign-in limit is saved');
+    await maxDays.scrollIntoViewIfNeeded();
+    check(await noSideScroll(settings.locator('.login-body')), 'the sign-in limits do not scroll the settings sideways');
+    await shot('settings-logins.png');
     // The time zone: this PC's by default, else a zone of the list.
     const zone = settings.locator('.timezone-settings');
     const zoneSelect = settings.getByLabel('タイムゾーン');

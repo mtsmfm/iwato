@@ -50,6 +50,8 @@ type Config struct {
 	TermTrace bool `json:"termTrace,omitempty"`
 	// Timezone is the sandboxes' time zone (timezone.go): "" the host's.
 	Timezone string `json:"timezone,omitempty"`
+	// Sessions is how long a browser's sign-in lasts (sessions.go).
+	Sessions *SessionLimits `json:"sessions,omitempty"`
 	// Port is where the page is served, taken at the first start and kept:
 	// the installed app (PWA) and the browsers' sign-ins belong to it.
 	Port int `json:"port,omitempty"`
@@ -199,6 +201,9 @@ func (c Config) Validate() error {
 		return errors.New("invalid timezone")
 	}
 	if e := c.Resources.Validate(); e != nil {
+		return e
+	}
+	if e := c.Sessions.Validate(); e != nil {
 		return e
 	}
 	if c.Port != 0 && (c.Port < 1024 || c.Port > 65535) {

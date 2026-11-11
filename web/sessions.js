@@ -34,14 +34,58 @@
         this.actions = element('div', 'login-form');
         this.actions.hidden = true;
         this.actions.append(this.others);
-        this.root.append(bind(element('h4', 'files-head'), 'sessions.title'), this.list, this.actions, this.status);
+        // How long a sign-in lasts (sessions.go's limits).
+        const days = (key) => {
+          const label = element('label', 'res-level');
+          const input = element('input', 'text-input');
+          input.type = 'number';
+          input.min = '1';
+          input.max = '365';
+          input.addEventListener('change', () => this.saveLimits());
+          label.append(bind(element('span'), key), input, bind(element('span'), 'sessions.limits.days'));
+          return [label, input];
+        };
+        const [idleLabel, idle] = days('sessions.limits.idle');
+        const [maxLabel, most] = days('sessions.limits.max');
+        this.idle = idle;
+        this.most = most;
+        this.limitsRow = element('div', 'res-levels');
+        this.limitsRow.append(idleLabel, maxLabel);
+        this.limitsNote = element('p', 'panel-meta');
+        this.limits = { idleDays: 7, maxDays: 30, fixedHours: 0 };
+        this.root.append(bind(element('h4', 'files-head'), 'sessions.title'), this.list, this.actions, this.limitsRow, this.limitsNote, this.status);
         this.sessions = [];
+      }
+
+      async saveLimits() {
+        const idleDays = Number(this.idle.value), maxDays = Number(this.most.value);
+        this.status.textContent = '';
+        try {
+          await api('/api/sessions/limits', { method: 'POST', body: JSON.stringify({ idleDays, maxDays }) });
+          this.limits = { ...this.limits, idleDays, maxDays };
+          this.status.textContent = t('sessions.limits.saved');
+        } catch (error) {
+          this.status.textContent = t('sessions.failed', { message: error.message });
+          this.renderLimits();
+          if (error.status === 401 || error.status === 403) onAuth();
+        }
+      }
+
+      renderLimits() {
+        const l = this.limits;
+        this.idle.value = String(l.idleDays);
+        this.most.value = String(l.maxDays);
+        this.idle.disabled = this.most.disabled = l.fixedHours > 0;
+        this.limitsNote.textContent = l.fixedHours > 0 ? t('sessions.limits.fixed', { hours: l.fixedHours }) : t('sessions.limits.hint');
       }
 
       async refresh() {
         try {
           const data = await api('/api/sessions');
           this.sessions = (Array.isArray(data?.sessions) ? data.sessions : []).slice(0, 200).map(sessionView).filter(Boolean);
+          const l = data?.limits || {};
+          const day = (v, d) => Number.isInteger(v) && v >= 1 && v <= 365 ? v : d;
+          this.limits = { idleDays: day(l.idleDays, 7), maxDays: day(l.maxDays, 30), fixedHours: Number.isInteger(l.fixedHours) && l.fixedHours > 0 ? l.fixedHours : 0 };
           this.render();
         } catch (error) {
           this.status.textContent = t('sessions.loadFailed', { message: error.message });
@@ -67,6 +111,7 @@
         });
         this.list.replaceChildren(...rows);
         this.actions.hidden = !this.sessions.some((s) => !s.current);
+        this.renderLimits();
       }
 
       async run(question, ok, path, after) {
