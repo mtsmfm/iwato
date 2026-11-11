@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// relaunch starts the swapped exe in this console and returns once it
-// listens on addr; when it does not, the old exe is put back and started.
+// relaunch starts the swapped exe (in this console, when there is one) and
+// returns once it listens on addr; when it does not, the old exe is put back and started.
 func relaunch(exe, addr string) error {
 	err := startListening(exe, addr)
 	if err == nil {
@@ -35,7 +35,10 @@ func relaunch(exe, addr string) error {
 func startListening(exe, addr string) error {
 	c := exec.Command(exe, os.Args[1:]...)
 	c.Env = restartEnv(addr)
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	// Without a console the standard handles are not valid to pass on.
+	if hasConsole {
+		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	}
 	if err := c.Start(); err != nil {
 		return err
 	}

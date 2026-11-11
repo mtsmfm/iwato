@@ -17,22 +17,13 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/term"
-
 	"iwato/internal/ingress/local"
 )
 
-func main() {
-	if e := run(os.Args[1:]); e != nil {
-		fmt.Fprintln(os.Stderr, "Error:", e)
-		// Started by a double-click: keep the console window open to be read.
-		if len(os.Args) == 1 && runtime.GOOS == "windows" {
-			fmt.Fprint(os.Stderr, "Press Enter to close")
-			_, _ = fmt.Scanln()
-		}
-		os.Exit(1)
-	}
-}
+func main() { os.Exit(app(os.Args[1:])) }
+
+// appCtx ends serve as Ctrl+C does (the tray's Quit: app_windows.go).
+var appCtx = context.Background()
 
 func run(args []string) (err error) {
 	// Started by an update (update_restart_*.go): the old process's port.
@@ -107,10 +98,7 @@ func run(args []string) (err error) {
 	var taken net.Listener
 	remembered := false
 	if fake == nil && *listen == "" && restartAddr == "" {
-		prompt := waitPrompt(time.Minute, 2*time.Second)
-		if term.IsTerminal(int(os.Stdin.Fd())) {
-			prompt = consolePrompt(os.Stdin, os.Stdout)
-		}
+		prompt := startPrompt()
 		var running *launchTarget
 		if taken, running, remembered, e = takePort(*configFile, &c, prompt); e != nil {
 			return e
@@ -119,7 +107,7 @@ func run(args []string) (err error) {
 			return openRunning(*running, *browser)
 		}
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(appCtx, os.Interrupt)
 	defer cancel()
 	var rt Runtime
 	var eng *Engine
@@ -379,6 +367,13 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	if opts.serving != nil {
 		opts.serving()
 	}
+	currentApp.Store(&appActions{logFile: opts.logFile, open: func() {
+		token, _ := s.newLaunchToken()
+		if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, opts.pwa); err != nil {
+			noticef("cannot open the browser: %v", err)
+		}
+	}})
+	defer currentApp.Store(nil)
 	if opts.openBrowser {
 		s.mu.Lock()
 		token := s.bootstrap
@@ -445,7 +440,11 @@ func (s *Server) loginBlock(header, reason string, startup bool) string {
 	}
 	b.WriteString("A new URL: restart Iwato, or use \"Sign in on another device\" in a logged-in browser.\n")
 	if startup {
-		b.WriteString("Ctrl+C stops Iwato; the sandboxes and their main terminals keep running.\n")
+		stop := "Ctrl+C stops Iwato"
+		if runtime.GOOS == "windows" {
+			stop = "Quit Iwato from its icon in the notification area"
+		}
+		b.WriteString(stop + "; the sandboxes and their main terminals keep running.\n")
 	}
 	b.WriteString("\n")
 	return b.String()

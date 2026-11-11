@@ -687,7 +687,9 @@ func tailscaleSelfLogin() string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, exe, "status", "--json", "--peers=false").Output()
+	c := exec.CommandContext(ctx, exe, "status", "--json", "--peers=false")
+	configureProcess(c)
+	out, err := c.Output()
 	if err != nil {
 		return ""
 	}

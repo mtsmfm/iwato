@@ -3,6 +3,7 @@ module iwato
 go 1.27.3
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/NVIDIA/OpenShell/sdk/go v0.1.6
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
