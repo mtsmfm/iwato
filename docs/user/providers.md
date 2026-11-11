@@ -78,6 +78,6 @@ Iwato signs in to auth.x.ai with a device code (the same steps on a PC and a pho
 
 ## Subscription usage
 
-With a Claude account sign-in or a Codex sign-in provider, the sidebar shows **Subscription usage** under the totals: each service's 5-hour and weekly windows (and Claude's per-model weekly ones) with how much is used and when they reset, coloured at the resource levels of the settings (80% and 95% by default). On Windows the tray icon's tooltip shows the same in a line per service.
+With a Claude account sign-in or a Codex sign-in provider, the sidebar shows **Subscription usage** under the totals: each service's 5-hour and weekly windows (and Claude's per-model weekly ones) with how much is used and when they reset, coloured at the resource levels of the settings (80% and 95% by default). On a phone it is in the ≡ menu. On Windows the tray icon's tooltip shows the same in a line per service.
 
 Iwato reads it inside a running sandbox the provider is attached to, every 5 minutes while a page is open (every 30 otherwise): one `curl` to the service's usage endpoint (Claude's `/api/oauth/usage`, Codex's `/backend-api/wham/usage`) with the provider's placeholder, which the sandbox's proxy replaces with the gateway's credential, so Iwato never holds the token. Without such a sandbox the last reading stays, said to be older. These endpoints are not documented by Anthropic or OpenAI and may change. Grok is not shown yet.

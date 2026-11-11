@@ -4215,13 +4215,14 @@
   const resStore = new window.IwatoResources.Store();
   const resTotals = new resUI.Totals($('res-totals'));
   // The subscriptions' usage (usage.go reads it; the page shows the last).
-  const usageTotals = new resUI.Usage($('usage-totals'));
+  // Phones show it in the menu, where the sidebar's block is hidden.
+  const usageTotals = [new resUI.Usage($('usage-totals')), new resUI.Usage($('menu-usage'))];
   let usageServices = [];
   async function refreshUsage() {
     if (!state.authorized || state.disposed || document.hidden) return;
     try {
       usageServices = window.IwatoResources.subscriptionView(await api('/api/usage'));
-      usageTotals.update(usageServices, resStore.settings);
+      for (const u of usageTotals) u.update(usageServices, resStore.settings);
     } catch (error) {
       if (error.status === 401 || error.status === 403) invalidateSession();
     }
