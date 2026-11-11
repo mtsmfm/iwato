@@ -7,6 +7,7 @@ import (
 	"flag"
 	"net/http"
 	"os"
+	"time"
 )
 
 func init() {
@@ -78,6 +79,15 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 			s.update = newFakeUpdate()
 			go s.update.loop(s.ctx)
 			s.autostart = &memoryAutostart{}
+			// The subscriptions' usage as read: Claude now, Codex an older
+			// reading (no running sandbox has it since).
+			now := time.Now().UTC()
+			s.usage.reports = map[string]usageReport{
+				"claude": {Service: "claude", At: now.Add(-2 * time.Minute), Sandbox: "dev", Windows: []usageWindow{
+					{Kind: "5h", Used: 62, ResetsAt: now.Add(108 * time.Minute)}, {Kind: "7d", Used: 24, ResetsAt: now.Add(75 * time.Hour)}, {Kind: "7d-opus", Used: 41, ResetsAt: now.Add(75 * time.Hour)}}},
+				"codex": {Service: "codex", At: now.Add(-40 * time.Minute), Sandbox: "dev", Code: "usage_no_sandbox", Windows: []usageWindow{
+					{Kind: "5h", Used: 3, ResetsAt: now.Add(252 * time.Minute)}, {Kind: "7d", Used: 88, ResetsAt: now.Add(100 * time.Hour)}}},
+			}
 		}}, nil
 	}
 }

@@ -107,6 +107,8 @@ type Server struct {
 	fixedPublic bool
 	// autostart starts Iwato at sign-in (autostart.go); nil where none.
 	autostart autostarter
+	// usage is the subscriptions' last readings (usage.go).
+	usage usageMonitor
 }
 
 func newServer(c Config, rt Runtime, fake bool, host string) *Server {
@@ -219,6 +221,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/reset", s.handleReset)
 	mux.HandleFunc("/api/timezone", s.handleTimezone)
 	mux.HandleFunc("/api/autostart", s.handleAutostart)
+	mux.HandleFunc("/api/usage", s.handleUsage)
 	mux.HandleFunc("/api/hostcheck", s.handleHostCheck)
 	mux.HandleFunc("/api/resources", s.handleResources)
 	mux.HandleFunc("/api/resources/", s.handleResources)

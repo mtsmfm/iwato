@@ -499,6 +499,7 @@
       ownerTools();
       reportPresence(true);
       await refreshSandboxes();
+      refreshUsage();
     } catch (error) {
       state.authorized = false;
       $('refresh-button').hidden = false;
@@ -4213,6 +4214,18 @@
   const resUI = window.IwatoResources.make({ element, button, panelHeader, api, onAuth: () => invalidateSession() });
   const resStore = new window.IwatoResources.Store();
   const resTotals = new resUI.Totals($('res-totals'));
+  // The subscriptions' usage (usage.go reads it; the page shows the last).
+  const usageTotals = new resUI.Usage($('usage-totals'));
+  let usageServices = [];
+  async function refreshUsage() {
+    if (!state.authorized || state.disposed || document.hidden) return;
+    try {
+      usageServices = window.IwatoResources.subscriptionView(await api('/api/usage'));
+      usageTotals.update(usageServices, resStore.settings);
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) invalidateSession();
+    }
+  }
   let resourceSettings = null;
   const resPoll = { busy: false, at: 0 };
   async function refreshResources(force = false) {
@@ -6425,6 +6438,7 @@
   });
   const poll = setInterval(() => { if (!document.hidden) refreshSandboxes(); }, 10000);
   setInterval(() => refreshResources(), 4000);
+  setInterval(() => refreshUsage(), 60000);
   // Ctrl+W cannot be intercepted in a normal tab; ask before leaving while a
   // terminal is connected so an accidental close can be cancelled.
   window.addEventListener('beforeunload', (event) => {
