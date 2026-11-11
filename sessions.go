@@ -40,6 +40,73 @@ type savedSession struct {
 // sessionUseStep is how often a session's last use is recorded.
 const sessionUseStep = time.Minute
 
+// SessionLimits is how long a sign-in lasts: it ends after IdleDays without
+// use, and MaxDays after it began however much it is used (a stolen cookie
+// does not last for ever). Zero is the default (7 and 30).
+type SessionLimits struct {
+	IdleDays int `json:"idleDays,omitempty"`
+	MaxDays  int `json:"maxDays,omitempty"`
+}
+
+const (
+	defaultIdleDays = 7
+	defaultMaxDays  = 30
+	maxSessionDays  = 365
+)
+
+func (l *SessionLimits) days() (idle, most int) {
+	idle, most = defaultIdleDays, defaultMaxDays
+	if l != nil && l.IdleDays > 0 {
+		idle = l.IdleDays
+	}
+	if l != nil && l.MaxDays > 0 {
+		most = l.MaxDays
+	}
+	return idle, most
+}
+
+func (l *SessionLimits) Validate() error {
+	if l == nil {
+		return nil
+	}
+	if l.IdleDays < 0 || l.IdleDays > maxSessionDays || l.MaxDays < 0 || l.MaxDays > maxSessionDays {
+		return errCode("session_limits_invalid", map[string]any{"max": maxSessionDays}, fmt.Sprintf("ログインの有効期限は 1〜%d 日にしてください", maxSessionDays))
+	}
+	if idle, most := l.days(); idle > most {
+		return errCode("session_limits_order", nil, "使わなかったときの期限は、最長の期限以下にしてください")
+	}
+	return nil
+}
+
+// sessionLimitsLocked are the current limits (s.mu held): -session-hours
+// fixes both, else the configuration's.
+func (s *Server) sessionLimitsLocked() (idle, most time.Duration) {
+	if s.sessionTTL > 0 {
+		return s.sessionTTL, s.sessionTTL
+	}
+	i, m := s.config.Sessions.days()
+	return time.Duration(i) * 24 * time.Hour, time.Duration(m) * 24 * time.Hour
+}
+
+// sessionEndLocked is when a session ends under the current limits, so that
+// a change of the settings applies to the sessions there are.
+func (s *Server) sessionEndLocked(a authSession) time.Time {
+	idle, most := s.sessionLimitsLocked()
+	end := a.used.Add(idle)
+	if hard := a.created.Add(most); hard.Before(end) {
+		end = hard
+	}
+	return end
+}
+
+// sessionAlive: the session (by hash) exists and has not ended.
+func (s *Server) sessionAlive(h string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.sessions[h]
+	return ok && time.Now().Before(s.sessionEndLocked(a))
+}
+
 // userAgent is the browser's User-Agent as kept with its session.
 func userAgent(r *http.Request) string {
 	ua := strings.Map(func(c rune) rune {
@@ -88,8 +155,20 @@ func (s *Server) loadSessions(path string) error {
 	s.cookieName = f.CookieName
 	now := time.Now()
 	for _, v := range f.Sessions {
-		if hex64.MatchString(v.Hash) && hex64.MatchString(v.CSRF) && now.Before(v.Expires) {
-			s.sessions[v.Hash] = authSession{csrf: v.CSRF, expires: v.Expires, created: v.Created, used: v.Used, agent: v.Agent, ended: make(chan struct{})}
+		// An end that passed stays: longer limits do not bring it back.
+		if !hex64.MatchString(v.Hash) || !hex64.MatchString(v.CSRF) || !now.Before(v.Expires) {
+			continue
+		}
+		// Sessions saved before created and used were: their old 8 hours.
+		if v.Created.IsZero() {
+			v.Created = v.Expires.Add(-8 * time.Hour)
+		}
+		if v.Used.IsZero() {
+			v.Used = v.Created
+		}
+		a := authSession{csrf: v.CSRF, created: v.Created, used: v.Used, agent: v.Agent, ended: make(chan struct{})}
+		if now.Before(s.sessionEndLocked(a)) {
+			s.sessions[v.Hash] = a
 		}
 	}
 	return s.saveSessionsLocked()
@@ -104,8 +183,8 @@ func (s *Server) saveSessionsLocked() error {
 	f := sessionFile{CookieName: s.cookieName, Sessions: []savedSession{}}
 	now := time.Now()
 	for h, a := range s.sessions {
-		if now.Before(a.expires) {
-			f.Sessions = append(f.Sessions, savedSession{Hash: h, CSRF: a.csrf, Expires: a.expires, Created: a.created, Used: a.used, Agent: a.agent})
+		if end := s.sessionEndLocked(a); now.Before(end) {
+			f.Sessions = append(f.Sessions, savedSession{Hash: h, CSRF: a.csrf, Expires: end, Created: a.created, Used: a.used, Agent: a.agent})
 		}
 	}
 	b, _ := json.MarshalIndent(f, "", "  ")
@@ -159,11 +238,16 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
+		idle, most := s.config.Sessions.days()
+		limits := map[string]any{"idleDays": idle, "maxDays": most, "max": maxSessionDays}
+		if s.sessionTTL > 0 {
+			limits["fixedHours"] = int(s.sessionTTL / time.Hour)
+		}
 		list := []sessionView{}
 		now := time.Now()
 		for h, a := range s.sessions {
-			if now.Before(a.expires) {
-				list = append(list, sessionView{ID: sessionID(h), Agent: a.agent, Created: a.created, Used: a.used, Expires: a.expires, Current: h == current})
+			if end := s.sessionEndLocked(a); now.Before(end) {
+				list = append(list, sessionView{ID: sessionID(h), Agent: a.agent, Created: a.created, Used: a.used, Expires: end, Current: h == current})
 			}
 		}
 		s.mu.Unlock()
@@ -173,7 +257,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			}
 			return list[i].Used.After(list[j].Used)
 		})
-		jsonResponse(w, 200, map[string]any{"sessions": list})
+		jsonResponse(w, 200, map[string]any{"sessions": list, "limits": limits})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -193,6 +277,25 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	case op == "logout":
 		s.endSessions(func(h string) bool { return h == current })
 		s.clearCookie(w, r)
+		jsonResponse(w, 200, map[string]any{"ok": true})
+	case op == "limits":
+		var body SessionLimits
+		if decode(w, r, &body) != nil || body.IdleDays < 1 || body.MaxDays < 1 {
+			failCode(w, 400, "session_limits_invalid", map[string]any{"max": maxSessionDays}, fmt.Sprintf("ログインの有効期限は 1〜%d 日にしてください", maxSessionDays))
+			return
+		}
+		if s.sessionTTL > 0 {
+			failCode(w, 409, "session_limits_fixed", nil, "-session-hours で起動しているので変えられません")
+			return
+		}
+		next := &body
+		if body.IdleDays == defaultIdleDays && body.MaxDays == defaultMaxDays {
+			next = nil
+		}
+		if err := s.updateConfig(func(c *Config) error { c.Sessions = next; return nil }); err != nil {
+			failErr(w, 400, err)
+			return
+		}
 		jsonResponse(w, 200, map[string]any{"ok": true})
 	case op == "revoke-others":
 		n := s.endSessions(func(h string) bool { return h != current })

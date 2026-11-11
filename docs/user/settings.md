@@ -13,7 +13,7 @@ Open **Settings** from the sidebar. They have:
 - **Startup checks**: WSLc or the Docker engine, its settings and the configuration, each OK, a warning or a problem, with how to fix it. Check again runs them again
 - **Standard image**: where it comes from and when it was created and pulled; with a development build, **Update the standard image**. See [sandboxes](sandboxes.md#where-the-image-comes-from)
 - **Port publishing**: this PC only, Tailscale or off, with the Tailscale secret, the owner logins and nodes. See [publishing](publishing.md)
-- **Signed-in devices**: each browser signed in to Iwato, with when it signed in and was last used. Sign out signs this browser out; Revoke signs another one out and closes its terminals; Sign out everywhere else does that for every other one. A sign-in otherwise lasts until it expires (`-session-hours`)
+- **Signed-in devices**: each browser signed in to Iwato, with when it signed in and was last used. Sign out signs this browser out; Revoke signs another one out and closes its terminals; Sign out everywhere else does that for every other one. A sign-in otherwise ends after some days without use (7 by default) or some days after it began however much it is used (30 by default); both numbers are set here, and a change applies to the sign-ins there are too (`-session-hours` fixes a lifetime in hours instead)
 - **Delete everything**, at the bottom (below)
 
 ## The config folder and `iwato.json`

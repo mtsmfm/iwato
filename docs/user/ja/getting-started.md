@@ -47,7 +47,7 @@ Iwato が動いている間にもう一度起動すると (exe のダブルク�
 
 ## ログインとほかの端末
 
-- 一度ログインしたブラウザは、セッションの期限 (既定 8 時間。`-session-hours 1`〜`720`) まで、Iwato を再起動してもログインしたままです
+- 一度ログインしたブラウザは、Iwato を再起動してもログインしたままです。7 日使わないか、ログインから 30 日たつと切れます (どちらも「設定」の「ログイン中の端末」で変えられます)
 - ほかのブラウザや端末でログインするには、「設定」の「別端末でログイン」を使います。1 回限りのリンクと QR コード (10 分以内) が出るので、その端末でリンクを開くか、「ログイン」に貼り付けます
 - スマホから使うには Tailscale が要ります。[スマホから使う](publishing.md)
 - プッシュ通知はサイドバーの「通知を有効化」で有効にします。[ターミナル](terminals.md)
@@ -69,7 +69,7 @@ GitHub Releases の exe とバイナリは、起動時と 6 時間ごとに新�
 
 ```
 iwato                 iwato.json がなければ作り、起動する
-iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
+iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours N] [-verbose]
 iwato version
 iwato help
 ```

@@ -105,7 +105,7 @@ func reviewLogin(t *testing.T, s *Server) (*http.Cookie, string) {
 func TestReviewHTTPAuthenticationBoundary(t *testing.T) {
 	s := newServer(testConfig(), &reviewRuntime{}, false, "127.0.0.1:29999")
 	cookie, csrf := reviewLogin(t, s)
-	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.MaxAge != 28800 {
+	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.MaxAge != 30*24*3600 {
 		t.Fatalf("weak session cookie: %+v", cookie)
 	}
 	for _, tc := range []struct {

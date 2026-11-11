@@ -14,7 +14,7 @@ Start with the settings' Startup checks (WSLc or the engine, and the configurati
 ## Signing in
 
 - **The URL was already used or expired**: the start URL works once, within 10 minutes. From a signed-in browser, use Sign in on another device; otherwise restart Iwato for a new URL
-- **Signed out after a while**: sessions last 8 hours by default (`-session-hours`, up to 720)
+- **Signed out after a while**: a sign-in ends after 7 days unused or 30 days after it began; change both in the settings' **Signed-in devices** (Iwato started with `-session-hours` fixes it in hours)
 
 ## Network inside the sandbox
 

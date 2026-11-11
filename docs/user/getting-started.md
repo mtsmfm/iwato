@@ -47,7 +47,7 @@ Then:
 
 ## Signing in and other devices
 
-- A browser that has signed in stays signed in for the session lifetime (8 hours by default; `-session-hours 1`–`720`), also across restarts of Iwato
+- A browser that has signed in stays signed in, also across restarts of Iwato, until it goes unused for 7 days or 30 days after it signed in (both set in the settings' **Signed-in devices**)
 - To sign in another browser or device, use Sign in on another device in the settings: it shows a one-time link and a QR code, valid for 10 minutes. On the other device, open the link or paste it into "Sign in"
 - Using Iwato from a phone needs Tailscale: see [phone access](publishing.md#use-iwato-from-your-phone)
 - Turn on push notifications with **Turn on notifications** in the sidebar; see [terminals](terminals.md#notifications)
@@ -69,7 +69,7 @@ To try a change before it is merged, the edge build's **Settings** has **Try a p
 
 ```
 iwato                 create iwato.json if missing, then serve
-iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
+iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours N] [-verbose]
 iwato version
 iwato help
 ```

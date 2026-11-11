@@ -45,10 +45,9 @@ var webFiles embed.FS
 func init() { _ = mime.AddExtensionType(".webmanifest", "application/manifest+json") }
 
 type authSession struct {
-	csrf    string
-	expires time.Time
-	// created, used and agent (the browser's User-Agent) are for the
-	// settings' list of logins; empty in sessions from older versions.
+	csrf string
+	// created and used give its end (sessionEndLocked); agent (the
+	// browser's User-Agent) is for the settings' list of logins.
 	created, used time.Time
 	agent         string
 	// ended closes when the session ends (sign-out, revoke, reset), which
@@ -111,7 +110,7 @@ type Server struct {
 }
 
 func newServer(c Config, rt Runtime, fake bool, host string) *Server {
-	s := &Server{config: c, rt: rt, fake: fake && fakeHooks != nil, host: host, origin: "http://" + host, bootstrap: randomHex(32), bootstrapUntil: time.Now().Add(10 * time.Minute), cookieName: "iwato_" + randomHex(8), sessions: map[string]authSession{}, ops: map[string]*sandboxOp{}, connections: map[string]int{}, ctx: context.Background(), sessionTTL: 8 * time.Hour, davKeys: &davKeys{}}
+	s := &Server{config: c, rt: rt, fake: fake && fakeHooks != nil, host: host, origin: "http://" + host, bootstrap: randomHex(32), bootstrapUntil: time.Now().Add(10 * time.Minute), cookieName: "iwato_" + randomHex(8), sessions: map[string]authSession{}, ops: map[string]*sandboxOp{}, connections: map[string]int{}, ctx: context.Background(), davKeys: &davKeys{}}
 	s.files = s.newFilesPool()
 	s.ingress = newIngressManager(s, "")
 	s.resources = newResourceMonitor(s, "")
@@ -165,7 +164,7 @@ func (s *Server) currentSession(r *http.Request) (string, authSession, bool) {
 		return "", authSession{}, false
 	}
 	now := time.Now()
-	if now.After(a.expires) {
+	if now.After(s.sessionEndLocked(a)) {
 		s.endSessionLocked(h)
 		_ = s.saveSessionsLocked()
 		return "", authSession{}, false
@@ -298,6 +297,16 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 			rejectCode(w, r, 401, "session_missing", "セッションがありません。Iwato が表示した URL を開き直してください。", reason)
 			return
 		}
+		// The cookie again, living until the longest limit: a browser that
+		// signed in under shorter limits keeps it as long as the session.
+		if c, err := r.Cookie(s.cookieName); err == nil {
+			s.mu.Lock()
+			_, most := s.sessionLimitsLocked()
+			left := time.Until(a.created.Add(most))
+			s.mu.Unlock()
+			secure := strings.HasPrefix(r.Header.Get("Origin"), "https://")
+			http.SetCookie(w, &http.Cookie{Name: s.cookieName, Value: c.Value, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: max(int(left/time.Second), 1)})
+		}
 		jsonResponse(w, 200, map[string]string{"csrf": a.csrf})
 	case http.MethodPost:
 		var body struct {
@@ -322,14 +331,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		s.bootstrap = ""
 		key := randomHex(32)
 		now := time.Now()
-		a := authSession{csrf: randomHex(32), expires: now.Add(s.sessionTTL), created: now, used: now, agent: userAgent(r), ended: make(chan struct{})}
+		a := authSession{csrf: randomHex(32), created: now, used: now, agent: userAgent(r), ended: make(chan struct{})}
 		s.sessions[sessionHash(key)] = a
 		if e := s.saveSessionsLocked(); e != nil {
 			noticef("session store: %v", english(e))
 		}
+		_, most := s.sessionLimitsLocked()
 		s.mu.Unlock()
 		secure := strings.HasPrefix(r.Header.Get("Origin"), "https://")
-		http.SetCookie(w, &http.Cookie{Name: s.cookieName, Value: key, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: int(s.sessionTTL / time.Second)})
+		http.SetCookie(w, &http.Cookie{Name: s.cookieName, Value: key, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: int(most / time.Second)})
 		jsonResponse(w, 200, map[string]string{"csrf": a.csrf})
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -608,7 +618,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		fail(w, 405, "method not allowed")
 		return
 	}
-	a, ok := s.session(r)
+	h, a, ok := s.currentSession(r)
 	if !ok {
 		fail(w, 401, "unauthenticated")
 		return
@@ -647,7 +657,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	s.serveTerm(conn, name, a.expires, a.ended, func(ctx context.Context, cols, rows int) (Terminal, error) {
+	s.serveTerm(conn, name, func() bool { return s.sessionAlive(h) }, a.ended, func(ctx context.Context, cols, rows int) (Terminal, error) {
 		// A terminal is wanted: a pending automatic stop (autostop.go) is
 		// off, and one already decided ends before the attach.
 		s.autoStop.cancel(name)
@@ -659,7 +669,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 // the session: each WebSocket binary message is a termsync message (its
 // kind byte, then the payload). The browser's hello comes first and sizes
 // the attach. A text message ends the connection.
-func (s *Server) serveTerm(conn *websocket.Conn, name string, expires time.Time, signedOut <-chan struct{}, attach func(context.Context, int, int) (Terminal, error)) {
+func (s *Server) serveTerm(conn *websocket.Conn, name string, alive func() bool, signedOut <-chan struct{}, attach func(context.Context, int, int) (Terminal, error)) {
 	closeWith := func(code int, text string) {
 		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, text), time.Now().Add(time.Second))
 	}
@@ -817,7 +827,7 @@ func (s *Server) serveTerm(conn *websocket.Conn, name string, expires time.Time,
 				return
 			}
 		case <-tick.C:
-			if time.Now().After(expires) {
+			if !alive() {
 				closeWith(4401, "session expired")
 				return
 			}

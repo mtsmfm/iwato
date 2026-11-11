@@ -52,7 +52,7 @@ func run(args []string) (err error) {
 	configFile := f.String("config", "iwato.json", "configuration JSON")
 	listen := f.String("listen", "", "loopback bind address (default: the port in the configuration, taken at the first start)")
 	publicOrigin := f.String("public-origin", "", "https origin of `tailscale serve` in front of the listener (phones on the tailnet)")
-	sessionHours := f.Int("session-hours", 8, "browser session lifetime in hours (1-720)")
+	sessionHours := f.Int("session-hours", 0, "fixes a browser sign-in's lifetime, in hours (1-720; without it the settings' limits: 7 days unused, 30 at most)")
 	browser := f.Bool("browser", browserByDefault(), "open the page in the browser (or the installed app) at start")
 	background := f.Bool("background", false, "started at sign-in: no page, and a taken port is waited for")
 	verbose := f.Bool("verbose", false, "also show the debug log (gateway, driver, image builds, requests) on the console")
@@ -125,7 +125,7 @@ func run(args []string) (err error) {
 		}
 		rt = NewOpenShell(eng, filepath.Dir(*configFile))
 	}
-	if *sessionHours < 1 || *sessionHours > 720 {
+	if *sessionHours != 0 && (*sessionHours < 1 || *sessionHours > 720) {
 		return errors.New("session-hours must be 1-720")
 	}
 	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose,
@@ -516,7 +516,7 @@ func usage() {
 	}
 	fmt.Println(`Iwato ` + version + `
   iwato                (create iwato.json if missing, then serve)
-  iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]` + fakeUsage + `
+  iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours N] [-verbose]` + fakeUsage + `
 The page's port is taken at the first start (17600 or the next free one)
 and kept in iwato.json ("port"). The page opens in the browser, or in the
 installed app; starting Iwato again opens the running one.
