@@ -79,7 +79,19 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check((await card.locator('.res-panel .res-head').last().innerText()).includes('GPU 全体'), 'the GPU is labelled GPU-wide, with the WSL note');
     await shot('gpu.png');
 
-    if (!phone) {
+    if (phone) {
+      // The sidebar's blocks are hidden; the usage is in the menu.
+      check(!(await page.locator('#usage-totals').isVisible()) && !(await page.locator('#menu-usage').isVisible()), 'the usage shows only once the menu opens');
+      await page.click('#menu-button');
+      const usage = page.locator('#menu-usage');
+      await usage.getByText('サブスクの使用量').waitFor({ timeout: 10000 });
+      check(/Claude[\s\S]*62%[\s\S]*Codex\s*40 分前の値/.test(await usage.innerText()), "the menu's usage (" + (await usage.innerText()).replace(/\n/g, ' ') + ')');
+      const box = await page.locator('#sidebar-actions').boundingBox();
+      check(box && box.x >= 0 && box.x + box.width <= page.viewportSize().width && box.y + box.height <= page.viewportSize().height, 'the menu fits the screen');
+      await shot('usage-menu.png');
+      await page.click('#menu-button');
+    } else {
+      check(!(await page.locator('#menu-usage').isVisible()), 'no usage in the PC sidebar actions');
       const totals = page.locator('#res-totals');
       check(await totals.isVisible() && (await totals.innerText()).includes('合計（動作中 2 台）') && /\/ 16 コア/.test(await totals.innerText()) && /\/ 32\.0 GB/.test(await totals.innerText()), 'the sidebar totals against the PC (' + (await totals.innerText()).replace(/\n/g, ' ') + ')');
       check(await page.locator('#sandbox-nav .nav-res').count() === 0, 'no resource line under the sandbox names');
