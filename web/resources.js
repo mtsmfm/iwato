@@ -116,6 +116,19 @@
     return window.IwatoI18n.date(seconds * 1000, { dateStyle: 'short', timeStyle: 'short' });
   }
 
+  // subscriptionView keeps what the sidebar shows of GET /api/usage (usage.go).
+  const usageServices = { claude: 'Claude', codex: 'Codex' };
+  const usageCodes = ['usage_no_sandbox', 'usage_no_token', 'usage_http', 'usage_failed'];
+  function subscriptionView(d) {
+    const time = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : '';
+    return (Array.isArray(d?.services) ? d.services : []).filter((r) => usageServices[r?.service]).slice(0, 4).map((r) => ({
+      service: r.service, name: usageServices[r.service], at: time(r.at),
+      code: usageCodes.includes(r.code) ? r.code : '', status: typeof r.params?.status === 'string' ? r.params.status.slice(0, 3) : '',
+      windows: (Array.isArray(r.windows) ? r.windows : []).filter((w) => /^(\d{1,3}h|7d(-opus|-sonnet)?)$/.test(w?.kind) && Number.isFinite(w.used)).slice(0, 6)
+        .map((w) => ({ kind: w.kind, used: Math.max(0, Math.min(100, w.used)), resetsAt: time(w.resetsAt) }))
+    }));
+  }
+
   function make({ element, button, panelHeader, api, onAuth }) {
     const bar = (ratio, lvl, className = 'res-bar') => {
       const b = element('span', className);
@@ -307,6 +320,49 @@
       }
     }
 
+    // The subscriptions' usage under the totals: each service's windows
+    // with when they reset, an older reading said to be one.
+    class Usage {
+      constructor(root) {
+        this.root = root;
+        this.root.hidden = true;
+      }
+
+      update(services, settings, now = Date.now()) {
+        this.root.hidden = !services.length;
+        if (!services.length) return;
+        const label = (kind) => window.IwatoI18n.has('usage.window.' + kind) ? t('usage.window.' + kind) : kind;
+        const reset = (iso) => {
+          const left = Date.parse(iso) - now;
+          if (left <= 0) return t('usage.reset.done');
+          if (left < 24 * 3600e3) return t('usage.reset.in', { time: Math.floor(left / 3600e3) + ':' + String(Math.floor(left / 60e3) % 60).padStart(2, '0') });
+          return window.IwatoI18n.date(iso, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+        };
+        const rows = [element('h3', 'res-totals-head', t('usage.title'))];
+        for (const s of services) {
+          const head = element('div', 'usage-service');
+          head.append(element('strong', '', s.name));
+          const stale = s.code || (s.at && now - Date.parse(s.at) > 15 * 60e3);
+          if (stale) {
+            const why = s.code ? t('usage.code.' + s.code, { status: s.status }) : '';
+            const note = element('span', 'panel-meta', s.at ? t('usage.stale', { ago: window.IwatoFiles.ago(s.at, now) }) : why);
+            if (why) note.title = why;
+            head.append(note);
+          }
+          rows.push(head);
+          for (const w of s.windows) {
+            const row = element('div', 'res-total');
+            const passed = w.resetsAt && Date.parse(w.resetsAt) <= now;
+            row.append(element('span', '', label(w.kind)), bar(passed ? 0 : w.used / 100, passed ? '' : level(w.used / 100, settings)),
+              element('em', '', (passed ? '—' : Math.round(w.used) + '%') + (w.resetsAt ? ' · ' + reset(w.resetsAt) : '')));
+            if (w.resetsAt) row.title = t('usage.reset.at', { time: window.IwatoI18n.date(w.resetsAt, { dateStyle: 'medium', timeStyle: 'short' }) });
+            rows.push(row);
+          }
+        }
+        this.root.replaceChildren(...rows);
+      }
+    }
+
     // The settings' section: show or hide, the levels, the notification.
     class Settings {
       constructor(onChange) {
@@ -374,8 +430,8 @@
       }
     }
 
-    return { Row, Panel, Totals, Settings };
+    return { Row, Panel, Totals, Usage, Settings };
   }
 
-  window.IwatoResources = { Store, headerMetrics, totals, level, measured, settingsView, make };
+  window.IwatoResources = { Store, headerMetrics, totals, level, measured, settingsView, subscriptionView, make };
 })();

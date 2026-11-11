@@ -84,6 +84,26 @@ func app(args []string) int {
 			done <- run(args)
 			systray.Quit()
 		}()
+		// The subscriptions' usage in the tooltip (128 characters at most).
+		go func() {
+			for {
+				tip := "Iwato"
+				if a := currentApp.Load(); a != nil && a.usage != nil {
+					if u := a.usage(); u != "" {
+						tip += "\n" + u
+					}
+				}
+				if r := []rune(tip); len(r) > 127 {
+					tip = string(r[:127])
+				}
+				systray.SetTooltip(tip)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Minute):
+				}
+			}
+		}()
 	}, nil)
 	// The tray can also end first (the session ending).
 	quit()

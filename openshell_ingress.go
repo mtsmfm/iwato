@@ -45,6 +45,27 @@ func (o *OpenShell) ForgetPorts(sandbox string) {
 	}
 }
 
+// RunScript runs a shell script in the sandbox (an exec as its user) and
+// returns its output, stderr included, up to 64 KiB (usage.go).
+func (o *OpenShell) RunScript(ctx context.Context, w Sandbox, script string) ([]byte, error) {
+	_, conn, err := o.clients(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := client.Start(ctx, conn, openshellWorkspace, w.Name, []string{"sh", "-c", script}, client.Options{})
+	if err != nil {
+		return nil, err
+	}
+	defer p.Close()
+	_ = p.CloseWrite()
+	out, err := io.ReadAll(io.LimitReader(p, 64<<10))
+	if err != nil && !strings.Contains(err.Error(), "EOF") && len(out) == 0 {
+		return nil, err
+	}
+	_, _ = p.Wait()
+	return out, nil
+}
+
 // ListeningPorts reads the sandbox's /proc/net/tcp{,6} with one exec (sh
 // and cat, python3 for the sweep; ss is not everywhere): see
 // ingress.ListenScript.

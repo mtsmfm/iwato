@@ -272,6 +272,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 		go s.checks.whenReady(ctx, func() { o.Prepare(ctx) })
 		go o.ResumeTerminals(ctx, s.sandboxList)
 		go s.watchGateway(ctx, o)
+		go s.usageLoop(ctx)
 	}
 	if opts.configPath != "" {
 		s.ingress.dir = filepath.Dir(opts.configPath)
@@ -378,7 +379,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	if fake == nil && opts.configPath != "" {
 		s.autostart = newAutostart(opts.configPath)
 	}
-	currentApp.Store(&appActions{logFile: opts.logFile, autostart: s.autostart, open: func() {
+	currentApp.Store(&appActions{logFile: opts.logFile, autostart: s.autostart, usage: s.usageSummary, open: func() {
 		token, _ := s.newLaunchToken()
 		if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, pwa); err != nil {
 			noticef("cannot open the browser: %v", err)
