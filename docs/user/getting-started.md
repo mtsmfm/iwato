@@ -29,7 +29,7 @@ Iwato then:
 3. Pulls the sandbox and gateway images from ghcr.io (nothing is built). This takes a few minutes the first time; the output goes to `image-build.log`
 4. Starts the OpenShell gateway in WSLc
 
-On Windows Iwato has no console window: it puts its icon in the notification area (the system tray). Click it to open the page; its menu has **Open Iwato**, **Open the log** and **Quit**. Errors that keep it from starting are shown in a message box.
+On Windows Iwato has no console window: it puts its icon in the notification area (the system tray). Click it to open the page; its menu has **Open Iwato**, **Open the log**, **Start with Windows** and **Quit**. Errors that keep it from starting are shown in a message box.
 
 Iwato opens the page in your default browser, or in the installed app (PWA) when there is one. The console (macOS, Linux, or Windows when started from a terminal) also prints the URL, such as `http://127.0.0.1:17600/#token=...`: it works once, within 10 minutes; do not share it. A browser that is already signed in keeps its sign-in. `-browser=false` only prints it.
 
@@ -69,7 +69,7 @@ To try a change before it is merged, the edge build's **Settings** has **Try a p
 
 ```
 iwato                 create iwato.json if missing, then serve
-iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
+iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
 iwato version
 iwato help
 ```

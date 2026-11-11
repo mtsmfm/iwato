@@ -77,6 +77,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 			s.imageUpdates = &imageUpdates{src: newFakeImages()}
 			s.update = newFakeUpdate()
 			go s.update.loop(s.ctx)
+			s.autostart = &memoryAutostart{}
 		}}, nil
 	}
 }

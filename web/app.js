@@ -4152,6 +4152,59 @@
     }
   }
 
+  // Starting Iwato at sign-in (Windows only: hidden elsewhere).
+  class AutostartSettings {
+    constructor() {
+      this.root = element('div', 'autostart-settings');
+      this.root.hidden = true;
+      this.title = element('h4', 'files-head');
+      const label = element('label', 'scope-choice');
+      this.box = element('input');
+      this.box.type = 'checkbox';
+      this.box.addEventListener('change', () => this.save());
+      this.text = element('span');
+      label.append(this.box, this.text);
+      this.status = element('p', 'panel-meta');
+      this.status.setAttribute('role', 'status');
+      this.root.append(this.title, label, this.status);
+      this.data = { supported: false, enabled: false };
+    }
+
+    async refresh() {
+      try {
+        const d = await api('/api/autostart');
+        this.data = { supported: d?.supported === true, enabled: d?.enabled === true };
+        this.render();
+      } catch (error) {
+        this.status.textContent = error.message;
+        if (error.status === 401 || error.status === 403) invalidateSession();
+      }
+    }
+
+    render() {
+      this.root.hidden = !this.data.supported;
+      bind(this.title, 'settings.autostart.title');
+      bind(this.text, 'settings.autostart.label');
+      this.box.checked = this.data.enabled;
+    }
+
+    async save() {
+      const enabled = this.box.checked;
+      this.box.disabled = true;
+      this.status.textContent = '';
+      try {
+        await api('/api/autostart', { method: 'POST', body: JSON.stringify({ enabled }) });
+        this.data.enabled = enabled;
+      } catch (error) {
+        this.status.textContent = t('settings.autostart.failed', { message: error.message });
+        this.box.checked = this.data.enabled;
+        if (error.status === 401 || error.status === 403) invalidateSession();
+      } finally {
+        this.box.disabled = false;
+      }
+    }
+  }
+
   // Port exposure: the settings and the Ports tab (web/ingress.js).
   const ingressUI = window.IwatoIngress.make({ element, button, panelHeader, api, askConfirm });
   // The sandboxes' resources (web/resources.js): read every 4 seconds while
@@ -4189,14 +4242,16 @@
   let sessionSettings = null;
   let updateSettings = null;
   let timezoneSettings = null;
+  let autostartSettings = null;
   function openSettings() {
     if (!settingsPanel) {
       imageSettings = new ImageSettings();
       checkSettings = new CheckSettings();
       updateSettings = new updateUI.UpdateSection(updateDialog);
       timezoneSettings = new TimezoneSettings();
+      autostartSettings = new AutostartSettings();
       resourceSettings = new resUI.Settings((s) => { resStore.settings = { ...resStore.settings, ...s }; renderResources(); refreshResources(true); });
-      $('settings-body').append(window.IwatoI18n.languageSection(element), timezoneSettings.root, resourceSettings.root, updateSettings.root, checkSettings.root, imageSettings.root);
+      $('settings-body').append(window.IwatoI18n.languageSection(element), autostartSettings.root, timezoneSettings.root, resourceSettings.root, updateSettings.root, checkSettings.root, imageSettings.root);
       settingsPanel = new ingressUI.SettingsPanel($('settings-body'));
       settingsPanel.onAuth = invalidateSession;
       settingsPanel.onChange = () => { for (const card of cards.values()) if (card.root.dataset.tab === 'ports') card.ports.refresh(); };
@@ -4209,6 +4264,7 @@
     $('settings-panel').hidden = false;
     updateSettings.refresh();
     timezoneSettings.refresh();
+    autostartSettings.refresh();
     resourceSettings.refresh();
     checkSettings.refresh();
     imageSettings.refresh();
@@ -6423,6 +6479,7 @@
     if (state.lastImages !== undefined) renderImages(state.lastImages, state.lastEngine);
     checkSettings?.render();
     timezoneSettings?.render();
+    autostartSettings?.render();
     if (!$('create-panel').hidden) createHint();
     if (!$('provider-panel').hidden) refreshProviders();
     if (!$('volume-panel').hidden) renderVolumes();

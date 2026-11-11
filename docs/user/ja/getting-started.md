@@ -29,7 +29,7 @@ Iwato は次を行います。
 3. サンドボックスとゲートウェイのイメージを ghcr.io から取得します (ビルドはしません)。初回は数分かかります。出力は `image-build.log` です
 4. OpenShell のゲートウェイを WSLc で起動します
 
-Windows では Iwato にコンソールの窓はなく、通知領域 (タスクトレイ) にアイコンを出します。クリックで画面を開きます。メニューには「Iwato を開く」「ログを開く」「終了」があります。起動できないときのエラーはダイアログで出します。
+Windows では Iwato にコンソールの窓はなく、通知領域 (タスクトレイ) にアイコンを出します。クリックで画面を開きます。メニューには「Iwato を開く」「ログを開く」「Windows の起動時に開始」「終了」があります。起動できないときのエラーはダイアログで出します。
 
 Iwato は既定のブラウザで画面を開きます。アプリ (PWA) をインストール済みならアプリで開きます。コンソール (macOS・Linux、または Windows でターミナルから起動したとき) にも `http://127.0.0.1:17600/#token=...` のような URL が出ます。10 分以内・1 回限りです。共有しないでください。ログイン済みのブラウザーはそのログインのまま開きます。`-browser=false` なら URL を出すだけです。
 
@@ -69,7 +69,7 @@ GitHub Releases の exe とバイナリは、起動時と 6 時間ごとに新�
 
 ```
 iwato                 iwato.json がなければ作り、起動する
-iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
+iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]
 iwato version
 iwato help
 ```
