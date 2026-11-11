@@ -34,7 +34,7 @@ func isWrite(method string) bool {
 
 func logError(r *http.Request, err error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Printf("files: %s %s: %v", r.Method, r.URL.Path, err)
+		log.Printf("files: %s %s: %v", r.Method, RedactPath(r.URL.Path), err)
 	}
 }
 

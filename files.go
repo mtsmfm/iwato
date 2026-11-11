@@ -295,6 +295,10 @@ func davPath(p string) bool { return p == "/dav" || strings.HasPrefix(p, "/dav/"
 // Origin (WebDAV clients send none, nor cookies): the Host is checked here
 // (DNS rebinding), and requests from web pages elsewhere are refused.
 func (s *Server) handleDAV(w http.ResponseWriter, r *http.Request) {
+	dav.Track(w, r, s.serveDAV)
+}
+
+func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request) {
 	local := s.localHost(r.Host)
 	if !local && (s.publicHost() == "" || r.Host != s.publicHost()) {
 		reject(w, r, 403, "invalid host", "Host="+r.Host+" expected="+s.host)
@@ -346,7 +350,7 @@ func (s *Server) handleDAV(w http.ResponseWriter, r *http.Request) {
 		}
 		if key, ok = s.davKeys.find(davKindPassword, user, pass); !ok {
 			time.Sleep(davDelay)
-			fmt.Fprintf(os.Stderr, "rejected %s %s: wrong app password for %q\n", r.Method, r.URL.Path, strings.ToValidUTF8(user, "?"))
+			fmt.Fprintf(os.Stderr, "rejected %s %s: wrong app password for %q\n", r.Method, dav.RedactPath(r.URL.Path), strings.ToValidUTF8(user, "?"))
 			davChallenge(w)
 			return
 		}

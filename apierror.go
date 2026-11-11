@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"iwato/internal/dav"
 	"log"
 	"maps"
 	"net/http"
@@ -41,7 +42,7 @@ func failCodeWith(w http.ResponseWriter, status int, code string, params map[str
 // rejectCode is reject (server.go) with a code: it also explains the
 // rejection in the log. Never pass tokens, cookies, or CSRF values to it.
 func rejectCode(w http.ResponseWriter, r *http.Request, status int, code, message, reason string) {
-	log.Printf("rejected %s %s: %s (%s)", r.Method, r.URL.Path, code, reason)
+	log.Printf("rejected %s %s: %s (%s)", r.Method, dav.RedactPath(r.URL.Path), code, reason)
 	failCode(w, status, code, nil, message)
 }
 
