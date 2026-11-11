@@ -23,31 +23,23 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 	return s.b.Write(p)
 }
 func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-func (s *syncBuffer) Reset()         { s.mu.Lock(); defer s.mu.Unlock(); s.b.Reset() }
 
 func TestTrack(t *testing.T) {
 	var logs syncBuffer
 	defer log.SetOutput(log.Writer())
 	log.SetOutput(&logs)
-	defer func(s, w time.Duration) { stallAfter, slowAfter = s, w }(stallAfter, slowAfter)
-	stallAfter, slowAfter = 20*time.Millisecond, time.Hour
+	defer func(s time.Duration) { stallAfter = s }(stallAfter)
+	stallAfter = 20 * time.Millisecond
 
 	secret := strings.Repeat("a", 52)
-	serve := func(path string, h func(http.ResponseWriter, *http.Request)) {
-		logs.Reset()
-		Track(httptest.NewRecorder(), httptest.NewRequest("PROPFIND", path, nil), h)
-	}
-	serve("/dav/"+secret+"/dev/x", func(w http.ResponseWriter, _ *http.Request) { time.Sleep(60 * time.Millisecond) })
-	if got := logs.String(); !strings.Contains(got, "PROPFIND /dav/<secret>/dev/x still running") || strings.Contains(got, secret) {
-		t.Fatalf("a stalled request: %q", got)
-	}
-	serve("/dav/dev/x", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusLocked) })
-	if got := logs.String(); !strings.Contains(got, "PROPFIND /dav/dev/x: 423") {
-		t.Fatalf("a refusal: %q", got)
-	}
-	serve("/dav/dev/desktop.ini", func(w http.ResponseWriter, _ *http.Request) { http.NotFound(w, nil) })
-	serve("/dav/dev/", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-	if logs.String() != "" {
-		t.Fatalf("a 404 or a quick answer: %q", logs.String())
+	r := httptest.NewRequest("PROPFIND", "/dav/"+secret+"/dev/x", nil)
+	r.Header.Set("Depth", "1")
+	Track(httptest.NewRecorder(), r, func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(60 * time.Millisecond)
+		w.WriteHeader(http.StatusMultiStatus)
+	})
+	got := logs.String()
+	if !strings.Contains(got, "1234 PROPFIND /dav/<secret>/dev/x depth=1 still running") || !strings.Contains(got, "depth=1 -> 207 in") || strings.Contains(got, secret) {
+		t.Fatalf("%q", got)
 	}
 }

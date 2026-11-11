@@ -2,19 +2,16 @@ package dav
 
 import (
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// Thresholds of Track: a request still running at stallAfter is logged
-// then (a client such as Windows' WebClient waits on it and queues the
-// rest behind its two connections), one that ends after slowAfter when it
-// ends.
-var (
-	stallAfter = 30 * time.Second
-	slowAfter  = 5 * time.Second
-)
+// stallAfter is when Track logs a request still running (a client such
+// as Windows' WebClient waits on it and queues the rest behind its two
+// connections).
+var stallAfter = 30 * time.Second
 
 // RedactPath hides a secret URL's token, the first segment after /dav/
 // when it is longer than a sandbox name can be.
@@ -49,27 +46,35 @@ func (w *statusWriter) WriteHeader(code int) {
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// Track serves r with next and logs what a client may get stuck on: a
-// request still running after stallAfter, one that took over slowAfter,
-// and refusals other than the 401 and 404 clients cause by asking.
+// Track serves r with next and logs it: every request when it ends, with
+// the client's port (which connection), Depth, status and time, and one
+// still running after stallAfter at that moment.
 func Track(w http.ResponseWriter, r *http.Request, next func(http.ResponseWriter, *http.Request)) {
 	start := time.Now()
-	path := RedactPath(r.URL.Path)
+	req := r.Method + " " + RedactPath(r.URL.Path)
+	if d := r.Header.Get("Depth"); d != "" {
+		req += " depth=" + strings.ToValidUTF8(d[:min(len(d), 10)], "?")
+	}
+	if _, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		req = port + " " + req
+	}
+	req = strings.Map(func(c rune) rune {
+		if c < 0x20 || c == 0x7f {
+			return '?'
+		}
+		return c
+	}, req)
 	stall := time.AfterFunc(stallAfter, func() {
-		log.Printf("files: %s %s still running after %s", r.Method, path, stallAfter)
+		log.Printf("files: %s still running after %s", req, stallAfter)
 	})
 	sw := &statusWriter{ResponseWriter: w}
 	defer func() {
 		stall.Stop()
-		took := time.Since(start).Round(time.Millisecond)
 		status := sw.status
 		if status == 0 {
 			status = http.StatusOK
 		}
-		refused := status >= 400 && status != http.StatusUnauthorized && status != http.StatusNotFound
-		if refused || took > slowAfter {
-			log.Printf("files: %s %s: %d in %s", r.Method, path, status, took)
-		}
+		log.Printf("files: %s -> %d in %s", req, status, time.Since(start).Round(time.Millisecond))
 	}()
 	next(sw, r)
 }
