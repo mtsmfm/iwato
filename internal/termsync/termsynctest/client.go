@@ -58,10 +58,6 @@ func (c *Client) Resize(cols, rows int) error {
 }
 
 // History asks for up to count history lines before line before.
-func (c *Client) History(before, count uint64) error {
-	return c.send(termsync.KindHistory, binary.AppendUvarint(binary.AppendUvarint(nil, before), count))
-}
-
 func (c *Client) run() {
 	for {
 		kind, p, err := termsync.ReadMessage(c.rw)

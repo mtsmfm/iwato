@@ -173,8 +173,9 @@ type PushMessage struct {
 	Tag   string `json:"tag,omitempty"`
 	// Path is what a click opens ("/?sandbox=NAME&term=TERM" or "&tab=…").
 	Path string `json:"path,omitempty"`
-	// Local is this server's loopback origin: its port changes per launch,
-	// so a PC's service worker (registered at an older port) opens this one.
+	// Local is this server's loopback origin: its port can differ from the
+	// one a PC's service worker was registered at (another port for one run,
+	// -listen), so the worker opens this one.
 	Local string `json:"local,omitempty"`
 	// Badge is how many proposals wait for the owner across all sandboxes,
 	// for the installed app's icon badge (set by the service worker).
