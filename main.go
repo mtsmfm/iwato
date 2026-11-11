@@ -97,14 +97,13 @@ func run(args []string) (err error) {
 		}
 	}
 	var taken net.Listener
-	remembered := false
 	if fake == nil && *listen == "" && restartAddr == "" {
 		prompt := startPrompt()
 		if *background {
 			prompt = waitPrompt(2*time.Minute, 5*time.Second)
 		}
 		var running *launchTarget
-		if taken, running, remembered, e = takePort(*configFile, &c, prompt); e != nil {
+		if taken, running, e = takePort(*configFile, &c, prompt); e != nil {
 			return e
 		}
 		if running != nil {
@@ -130,7 +129,7 @@ func run(args []string) (err error) {
 		return errors.New("session-hours must be 1-720")
 	}
 	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose,
-		listener: taken, pwa: remembered, openBrowser: *browser && !*background && fake == nil && restartAddr == ""}
+		listener: taken, openBrowser: *browser && !*background && fake == nil && restartAddr == ""}
 	if restartAddr != "" {
 		*listen, opts.listenWait = restartAddr, 30*time.Second
 	}
@@ -166,9 +165,8 @@ type serveOptions struct {
 	serving func()
 	// listener was taken by run (takePort); without it serve listens on addr.
 	listener net.Listener
-	// openBrowser opens the page once serving: in the installed app when
-	// pwa (the port is the remembered one, which the app belongs to).
-	openBrowser, pwa bool
+	// openBrowser opens the page once serving.
+	openBrowser bool
 }
 
 func openRunning(t launchTarget, browser bool) error {
@@ -207,6 +205,9 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	}
 	defer ln.Close()
 	s := newServer(c, rt, fake != nil, ln.Addr().String())
+	// The installed app belongs to the kept port: open it there however the
+	// port was taken (also after an update's restart or with -listen).
+	pwa := c.Port != 0 && ln.Addr().(*net.TCPAddr).Port == c.Port
 	if opts.configPath != "" {
 		key, remove, err := writeLaunchKey(filepath.Dir(opts.configPath))
 		if err != nil {
@@ -379,7 +380,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	}
 	currentApp.Store(&appActions{logFile: opts.logFile, autostart: s.autostart, open: func() {
 		token, _ := s.newLaunchToken()
-		if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, opts.pwa); err != nil {
+		if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, pwa); err != nil {
 			noticef("cannot open the browser: %v", err)
 		}
 	}})
@@ -399,7 +400,7 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 			if s.ingress.adminExpected() && tailscaleSelfLogin() != "" {
 				s.waitPublic(20 * time.Second)
 			}
-			if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, opts.pwa); err != nil {
+			if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, pwa); err != nil {
 				noticef("cannot open the browser: %v", err)
 			}
 		}()

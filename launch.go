@@ -49,26 +49,25 @@ type launchTarget struct {
 
 // takePort listens on the configuration's port, remembering the first one
 // taken. When this configuration's Iwato already serves there it returns
-// that one instead of a listener. remembered is false for a port taken for
-// this run only.
-func takePort(configFile string, c *Config, prompt portPrompt) (ln net.Listener, running *launchTarget, remembered bool, err error) {
+// that one instead of a listener.
+func takePort(configFile string, c *Config, prompt portPrompt) (ln net.Listener, running *launchTarget, err error) {
 	if c.Port == 0 {
 		if ln, err = listenLocal(""); err != nil {
-			return nil, nil, false, err
+			return nil, nil, err
 		}
 		c.Port = ln.Addr().(*net.TCPAddr).Port
 		if e := writeConfig(configFile, *c); e != nil {
 			noticef("cannot keep port %d in %s: %v", c.Port, configFile, e)
 		}
-		return ln, nil, true, nil
+		return ln, nil, nil
 	}
 	addr := "127.0.0.1:" + strconv.Itoa(c.Port)
 	for {
 		if ln, err = net.Listen("tcp4", addr); err == nil {
-			return ln, nil, true, nil
+			return ln, nil, nil
 		}
 		if t, ok := askRunning(filepath.Dir(configFile), addr); ok {
-			return nil, &t, false, nil
+			return nil, &t, nil
 		}
 		owner := portOwner(c.Port)
 		switch prompt(c.Port, owner) {
@@ -76,12 +75,12 @@ func takePort(configFile string, c *Config, prompt portPrompt) (ln net.Listener,
 			continue
 		case portAnother:
 			ln, err = listenLocal("")
-			return ln, nil, false, err
+			return ln, nil, err
 		}
 		if owner == "" {
 			owner = "another program"
 		}
-		return nil, nil, false, fmt.Errorf("port %d is in use by %s (\"port\" in %s or -listen chooses another)", c.Port, owner, configFile)
+		return nil, nil, fmt.Errorf("port %d is in use by %s (\"port\" in %s or -listen chooses another)", c.Port, owner, configFile)
 	}
 }
 

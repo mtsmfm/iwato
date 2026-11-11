@@ -38,9 +38,9 @@ func TestTakePort(t *testing.T) {
 
 	t.Run("first start remembers the port", func(t *testing.T) {
 		file, c := config(t, 0)
-		ln, running, remembered, err := takePort(file, c, never)
-		if err != nil || running != nil || !remembered {
-			t.Fatal(err, running, remembered)
+		ln, running, err := takePort(file, c, never)
+		if err != nil || running != nil {
+			t.Fatal(err, running)
 		}
 		defer ln.Close()
 		saved, err := readConfig(file)
@@ -53,7 +53,7 @@ func TestTakePort(t *testing.T) {
 		s, port := iwato(t, filepath.Dir(file))
 		s.setPublic("pc.example.ts.net", "https://pc.example.ts.net")
 		c.Port = port
-		_, running, _, err := takePort(file, c, never)
+		_, running, err := takePort(file, c, never)
 		if err != nil || running == nil || running.token != s.bootstrap || running.origin != s.origin || running.public != s.publicOrigin() {
 			t.Fatal(err, running)
 		}
@@ -65,7 +65,7 @@ func TestTakePort(t *testing.T) {
 			t.Fatal(err)
 		}
 		asked := 0
-		_, _, _, err := takePort(file, c, func(int, string) portChoice { asked++; return portQuit })
+		_, _, err := takePort(file, c, func(int, string) portChoice { asked++; return portQuit })
 		if asked != 1 || err == nil || !strings.Contains(err.Error(), "in use") {
 			t.Fatal(asked, err)
 		}
@@ -74,13 +74,13 @@ func TestTakePort(t *testing.T) {
 		file, c := config(t, 0)
 		_, c.Port = held(t)
 		choices := []portChoice{portRetry, portAnother}
-		ln, running, remembered, err := takePort(file, c, func(int, string) portChoice {
+		ln, running, err := takePort(file, c, func(int, string) portChoice {
 			ch := choices[0]
 			choices = choices[1:]
 			return ch
 		})
-		if err != nil || running != nil || remembered || len(choices) != 0 {
-			t.Fatal(err, running, remembered, choices)
+		if err != nil || running != nil || len(choices) != 0 || ln.Addr().(*net.TCPAddr).Port == c.Port {
+			t.Fatal(err, running, choices)
 		}
 		ln.Close()
 	})
