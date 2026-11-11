@@ -82,15 +82,16 @@ jobs:
       # Each sandbox's DNS relay binds 127.0.0.53:53, where systemd-resolved
       # listens on Ubuntu: stop it and resolve through its upstream servers
       # directly, so the downloads (Go modules, OpenShell's releases) work.
-      - name: Free port 53
+      # Port 53 on other addresses (the runner's own resolver) is left alone.
+      - name: Free 127.0.0.53:53
         run: |
           upstream=$(grep '^nameserver' /run/systemd/resolve/resolv.conf || true)
           [ -n "$upstream" ] || { echo "no upstream DNS server"; cat /run/systemd/resolve/resolv.conf; exit 1; }
           sudo systemctl stop systemd-resolved
           sudo rm -f /etc/resolv.conf
           printf '%s\n' "$upstream" | sudo tee /etc/resolv.conf
-          held=$(sudo ss -Hlntup 'sport = :53')
-          [ -z "$held" ] || { echo "port 53 is still held: $held"; exit 1; }
+          held=$(sudo ss -Hlntup 'src 127.0.0.53 and sport = :53')
+          [ -z "$held" ] || { echo "127.0.0.53:53 is still held: $held"; exit 1; }
           getent hosts github.com proxy.golang.org
       # As in the dev container (no AppArmor there): Ubuntu 24.04 keeps
       # users other than root from creating user namespaces.
