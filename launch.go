@@ -125,8 +125,9 @@ func askRunning(dir, addr string) (launchTarget, bool) {
 // appActions are what the tray (app_windows.go) does while Iwato serves:
 // open the page with a new sign-in token, and the log file.
 type appActions struct {
-	open    func()
-	logFile string
+	open      func()
+	logFile   string
+	autostart autostarter
 }
 
 var currentApp atomic.Pointer[appActions]

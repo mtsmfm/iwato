@@ -106,6 +106,8 @@ type Server struct {
 	public atomic.Pointer[publicAddr]
 	// fixedPublic: -public-origin set it; the admin node does not change it.
 	fixedPublic bool
+	// autostart starts Iwato at sign-in (autostart.go); nil where none.
+	autostart autostarter
 }
 
 func newServer(c Config, rt Runtime, fake bool, host string) *Server {
@@ -217,6 +219,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/presence", s.handlePresence)
 	mux.HandleFunc("/api/reset", s.handleReset)
 	mux.HandleFunc("/api/timezone", s.handleTimezone)
+	mux.HandleFunc("/api/autostart", s.handleAutostart)
 	mux.HandleFunc("/api/hostcheck", s.handleHostCheck)
 	mux.HandleFunc("/api/resources", s.handleResources)
 	mux.HandleFunc("/api/resources/", s.handleResources)

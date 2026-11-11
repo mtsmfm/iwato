@@ -129,6 +129,14 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await zoneSelect.selectOption('Asia/Tokyo');
     await zone.getByText('保存しました。新しく開くターミナルから使われます。').waitFor();
     check((await page.evaluate(() => fetch('/api/timezone').then((r) => r.json()))).timezone === 'Asia/Tokyo', 'the chosen zone is saved');
+    // Starting at sign-in (the fake has it, as Windows does): off, then on.
+    const autostart = settings.locator('.autostart-settings');
+    const autostartBox = autostart.getByLabel(/Windows にサインインしたら Iwato を開始する/);
+    await autostart.waitFor();
+    check(await autostart.locator('h4').innerText() === 'Windows の起動時' && !(await autostartBox.isChecked()), 'starting at sign-in is offered, off');
+    await autostartBox.check();
+    await page.waitForFunction(() => fetch('/api/autostart').then((r) => r.json()).then((d) => d.enabled === true));
+    check(await autostartBox.isChecked(), 'starting at sign-in is turned on');
     // Iwato's update: the fake's next edge build changes the gateway.
     const update = settings.locator('.update-settings');
     await update.getByText(/^新しい版: v[\d.]+ · 2222222$/).waitFor();

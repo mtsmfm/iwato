@@ -47,6 +47,17 @@ func app(args []string) int {
 		systray.SetTooltip("Iwato")
 		open := systray.AddMenuItem(w.open, "")
 		logs := systray.AddMenuItem(w.log, "")
+		start := systray.AddMenuItemCheckbox(w.autostart, "", false)
+		start.Disable()
+		check := func(on bool) {
+			start.Enable()
+			if on {
+				start.Check()
+			} else {
+				start.Uncheck()
+			}
+		}
+		autostartChanged.Store(&check)
 		systray.AddSeparator()
 		exit := systray.AddMenuItem(w.quit, "")
 		// Called on the tray's event loop: nothing that blocks.
@@ -60,6 +71,8 @@ func app(args []string) int {
 					if a := currentApp.Load(); a != nil && a.logFile != "" {
 						_ = openURL(a.logFile)
 					}
+				case <-start.ClickedCh:
+					toggleAutostart()
 				case <-exit.ClickedCh:
 					quit()
 				case <-ctx.Done():
@@ -80,6 +93,24 @@ func app(args []string) int {
 	case <-time.After(10 * time.Second):
 		return 1
 	}
+}
+
+// toggleAutostart turns starting at sign-in over from what it is now (Task
+// Manager may have changed it).
+func toggleAutostart() {
+	a := currentApp.Load()
+	if a == nil || a.autostart == nil {
+		return
+	}
+	on, err := a.autostart.Enabled()
+	if err == nil {
+		err = a.autostart.Set(!on)
+	}
+	if err != nil {
+		messageBox(err.Error(), mbIconError)
+		return
+	}
+	notifyAutostart(!on)
 }
 
 func openApp() {
@@ -163,20 +194,20 @@ func messageBox(text string, flags uintptr) int {
 // trayWords are the tray's and the message boxes' words, in Windows'
 // display language (Japanese or English, as the page).
 type trayWords struct {
-	open, log, quit, failed, anotherProgram, portInUse string
+	open, log, autostart, quit, failed, anotherProgram, portInUse string
 }
 
 func trayText() trayWords {
 	if langs, err := windows.GetUserPreferredUILanguages(windows.MUI_LANGUAGE_NAME); err == nil && len(langs) > 0 && strings.HasPrefix(langs[0], "ja") {
 		return trayWords{
-			open: "Iwato を開く", log: "ログを開く", quit: "終了",
+			open: "Iwato を開く", log: "ログを開く", autostart: "Windows の起動時に開始", quit: "終了",
 			failed:         "Iwato を起動できませんでした。",
 			anotherProgram: "別のプログラム",
 			portInUse:      "Iwato の画面用に覚えているポート %d を、%s が使っています。\n\n再試行: もう一度確かめます\n続行: 今回だけ別のポートで起動します (インストールしたアプリとログインはポート %d のものです)\nキャンセル: 終了します",
 		}
 	}
 	return trayWords{
-		open: "Open Iwato", log: "Open the log", quit: "Quit",
+		open: "Open Iwato", log: "Open the log", autostart: "Start with Windows", quit: "Quit",
 		failed:         "Iwato could not start.",
 		anotherProgram: "another program",
 		portInUse:      "Port %d, which Iwato keeps for its page, is in use by %s.\n\nTry Again: check again\nContinue: use another port this time (the installed app and the sign-ins belong to %d)\nCancel: quit",

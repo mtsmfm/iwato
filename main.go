@@ -54,6 +54,7 @@ func run(args []string) (err error) {
 	publicOrigin := f.String("public-origin", "", "https origin of `tailscale serve` in front of the listener (phones on the tailnet)")
 	sessionHours := f.Int("session-hours", 8, "browser session lifetime in hours (1-720)")
 	browser := f.Bool("browser", browserByDefault(), "open the page in the browser (or the installed app) at start")
+	background := f.Bool("background", false, "started at sign-in: no page, and a taken port is waited for")
 	verbose := f.Bool("verbose", false, "also show the debug log (gateway, driver, image builds, requests) on the console")
 	// -fake exists only in builds with the tag uitest (fake_hooks.go).
 	var fakeFlags func() (*fakeRun, error)
@@ -99,11 +100,17 @@ func run(args []string) (err error) {
 	remembered := false
 	if fake == nil && *listen == "" && restartAddr == "" {
 		prompt := startPrompt()
+		if *background {
+			prompt = waitPrompt(2*time.Minute, 5*time.Second)
+		}
 		var running *launchTarget
 		if taken, running, remembered, e = takePort(*configFile, &c, prompt); e != nil {
 			return e
 		}
 		if running != nil {
+			if *background {
+				return nil
+			}
 			return openRunning(*running, *browser)
 		}
 	}
@@ -123,7 +130,7 @@ func run(args []string) (err error) {
 		return errors.New("session-hours must be 1-720")
 	}
 	opts := serveOptions{publicOrigin: *publicOrigin, sessionTTL: time.Duration(*sessionHours) * time.Hour, verbose: *verbose,
-		listener: taken, pwa: remembered, openBrowser: *browser && fake == nil && restartAddr == ""}
+		listener: taken, pwa: remembered, openBrowser: *browser && !*background && fake == nil && restartAddr == ""}
 	if restartAddr != "" {
 		*listen, opts.listenWait = restartAddr, 30*time.Second
 	}
@@ -367,13 +374,21 @@ func serve(ctx context.Context, c Config, rt Runtime, eng *Engine, fake *fakeRun
 	if opts.serving != nil {
 		opts.serving()
 	}
-	currentApp.Store(&appActions{logFile: opts.logFile, open: func() {
+	if fake == nil && opts.configPath != "" {
+		s.autostart = newAutostart(opts.configPath)
+	}
+	currentApp.Store(&appActions{logFile: opts.logFile, autostart: s.autostart, open: func() {
 		token, _ := s.newLaunchToken()
 		if err := openPage(launchTarget{s.origin, token, s.publicOrigin()}, opts.pwa); err != nil {
 			noticef("cannot open the browser: %v", err)
 		}
 	}})
 	defer currentApp.Store(nil)
+	if s.autostart != nil {
+		if on, err := s.autostart.Enabled(); err == nil {
+			notifyAutostart(on)
+		}
+	}
 	if opts.openBrowser {
 		s.mu.Lock()
 		token := s.bootstrap
@@ -500,7 +515,7 @@ func usage() {
 	}
 	fmt.Println(`Iwato ` + version + `
   iwato                (create iwato.json if missing, then serve)
-  iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]` + fakeUsage + `
+  iwato serve [-config iwato.json] [-listen 127.0.0.1:PORT] [-browser=false] [-background] [-public-origin https://HOST.TAILNET.ts.net] [-session-hours 8] [-verbose]` + fakeUsage + `
 The page's port is taken at the first start (17600 or the next free one)
 and kept in iwato.json ("port"). The page opens in the browser, or in the
 installed app; starting Iwato again opens the running one.
