@@ -191,16 +191,17 @@ waitfor 60 eval 'os sandbox list >/dev/null' || {
 # Wait until the sandbox's phase reads Ready.
 ready() { for _ in $(seq 60); do os sandbox get "$1" | grep -q -i "phase.*ready" && return 0; sleep 1; done; os sandbox get "$1"; return 1; }
 # Sandboxes share this host's network here, and each binds the DNS relay
-# (127.0.0.53:53): wait until no earlier sandbox still listens there. A
-# closed connection in TIME_WAIT does not keep it from binding.
-dns_bound() { listening 53 || awk 'NR>1 && $2 ~ /:0035$/{f=1} END{exit !f}' /proc/net/udp /proc/net/udp6; }
+# (127.0.0.53:53, 3500007F:0035 in /proc/net): wait until no earlier sandbox
+# still listens there. Port 53 elsewhere (the runner's own resolver) does
+# not count, nor a TCP connection in TIME_WAIT.
+dns_bound() { awk 'NR>1 && $2=="3500007F:0035" && (FILENAME ~ /udp/ || $4=="0A"){f=1} END{exit !f}' /proc/net/tcp /proc/net/udp; }
 # A sandbox an earlier failed check left behind is killed, so that one
 # failure does not fail every later check.
 free_dns() {
   waitfor 30 eval '! dns_bound' && return
-  echo "port 53 is still held, killing what is left: $(sudo ss -lntup 'sport = :53' | tail -n +2)"
+  echo "127.0.0.53:53 is still held, killing what is left: $(sudo ss -lntup 'src 127.0.0.53 and sport = :53' | tail -n +2)"
   sudo pkill -KILL -x openshell-sandb; sudo pkill -KILL -x openshell-super
-  waitfor 10 eval '! dns_bound' || echo "port 53 is still held: $(sudo ss -lntup 'sport = :53' | tail -n +2)"
+  waitfor 10 eval '! dns_bound' || echo "127.0.0.53:53 is still held: $(sudo ss -lntup 'src 127.0.0.53 and sport = :53' | tail -n +2)"
 }
 
 # ONLY=hangloop N=30 repeats create / stop (5 s grace) / delete and prints
