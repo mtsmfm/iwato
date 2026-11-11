@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
 	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
@@ -245,6 +246,45 @@ func (o *OpenShell) importPolicy(ctx context.Context, w Sandbox, sync *storeSync
 	return &storeSync{repo: repo, head: c, rules: p.NetworkPolicies, latest: sync.latest}, nil
 }
 
+// The sandbox object's version moves with each of Iwato's revisions (their
+// annotations go onto it), with providers attached or detached, and with
+// the sandbox's own status while it starts (a recreate's rules go in then):
+// a conflict is retried while OpenShell's latest revision is still the one
+// the change was made on, and given up once another revision appeared.
+const policyConflictTries = 8
+
+var policyConflictWait = 250 * time.Millisecond
+
+func retryConflict(ctx context.Context, attempt func() error, unchanged func() bool) error {
+	err := attempt()
+	for try := 1; err != nil && v1.IsConflict(err) && try < policyConflictTries; try++ {
+		if !unchanged() {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(time.Duration(try) * policyConflictWait):
+		}
+		err = attempt()
+	}
+	return err
+}
+
+// policyUnchanged: OpenShell's latest revision is still sync's.
+func (o *OpenShell) policyUnchanged(ctx context.Context, w Sandbox, sync *storeSync) bool {
+	forgetPolicy(ctx, w.Name)
+	latest, err := o.latestPolicy(ctx, w)
+	if err != nil {
+		return false
+	}
+	var was uint32
+	if sync.latest != nil {
+		was = sync.latest.Revision.Version
+	}
+	return latest.Revision.Version == was
+}
+
 // errPolicyConflict: OpenShell's sandbox changed while Iwato applied.
 func errPolicyConflict(err error) error {
 	return errCode("policy_conflict", map[string]any{"detail": safeCLIError(err)}, "適用中にサンドボックスが変わりました。もう一度試してください: "+safeCLIError(err))
@@ -283,17 +323,17 @@ func (o *OpenShell) commitPolicy(ctx context.Context, w Sandbox, sync *storeSync
 		if cerr != nil {
 			return 0, cerr
 		}
-		// The sandbox object's version changes with each of Iwato's
-		// revisions (their annotations go onto it), with providers
-		// attached or detached, but not with revisions made elsewhere.
-		sb, gerr := sdk.Sandboxes().Get(ctx, openshellWorkspace, w.Name)
-		if gerr != nil {
-			return 0, gerr
-		}
-		update.ExpectedResourceVersion = sb.ResourceVersion
-		res, err = sdk.Config().Update(ctx, openshellWorkspace, update)
+		err = retryConflict(ctx, func() error {
+			sb, gerr := sdk.Sandboxes().Get(ctx, openshellWorkspace, w.Name)
+			if gerr != nil {
+				return gerr
+			}
+			update.ExpectedResourceVersion = sb.ResourceVersion
+			res, err = sdk.Config().Update(ctx, openshellWorkspace, update)
+			return err
+		}, func() bool { return o.policyUnchanged(ctx, w, sync) })
 		if err != nil {
-			if v1.IsConflict(err) && strings.Contains(strings.ToLower(err.Error()), "resource version") {
+			if v1.IsConflict(err) {
 				return 0, errPolicyConflict(err)
 			}
 			err = fmt.Errorf("ポリシーを変えられませんでした: %w", err)
