@@ -296,7 +296,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .res-totals{border-top:1px solid var(--border);padding:8px 6px 0;display:flex;flex-direction:column;gap:6px}
 .res-totals-head{margin:0;font-size:10px;letter-spacing:.06em;color:var(--muted);font-weight:600}
 .res-total{display:grid;grid-template-columns:40px 1fr;gap:1px 8px;align-items:center;font-size:11px}
-.res-total span{color:var(--muted)}
+.res-total span{color:var(--muted)}.res-total>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .res-total em{grid-column:2;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;font-style:normal;font-variant-numeric:tabular-nums;color:#c7cfda}
 .res-levels{display:flex;gap:12px;flex-wrap:wrap}
 .res-level{display:inline-flex;align-items:center;gap:6px;font-size:12px}

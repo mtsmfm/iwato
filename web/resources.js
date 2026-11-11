@@ -124,8 +124,9 @@
     return (Array.isArray(d?.services) ? d.services : []).filter((r) => usageServices[r?.service]).slice(0, 4).map((r) => ({
       service: r.service, name: usageServices[r.service], at: time(r.at),
       code: usageCodes.includes(r.code) ? r.code : '', status: typeof r.params?.status === 'string' ? r.params.status.slice(0, 3) : '',
-      windows: (Array.isArray(r.windows) ? r.windows : []).filter((w) => /^(\d{1,3}h|7d(-opus|-sonnet)?)$/.test(w?.kind) && Number.isFinite(w.used)).slice(0, 6)
-        .map((w) => ({ kind: w.kind, used: Math.max(0, Math.min(100, w.used)), resetsAt: time(w.resetsAt) }))
+      windows: (Array.isArray(r.windows) ? r.windows : []).filter((w) => /^(\d{1,3}h|7d(-opus|-sonnet)?)$/.test(w?.kind) || (w?.kind === '7d-model' && typeof w.model === 'string' && w.model))
+        .filter((w) => Number.isFinite(w.used)).slice(0, 8)
+        .map((w) => ({ kind: w.kind, model: w.kind === '7d-model' ? w.model.slice(0, 40) : '', used: Math.max(0, Math.min(100, w.used)), resetsAt: time(w.resetsAt) }))
     }));
   }
 
@@ -331,7 +332,7 @@
       update(services, settings, now = Date.now()) {
         this.root.hidden = !services.length;
         if (!services.length) return;
-        const label = (kind) => window.IwatoI18n.has('usage.window.' + kind) ? t('usage.window.' + kind) : kind;
+        const label = (w) => w.model || (window.IwatoI18n.has('usage.window.' + w.kind) ? t('usage.window.' + w.kind) : w.kind);
         const reset = (iso) => {
           const left = Date.parse(iso) - now;
           if (left <= 0) return t('usage.reset.done');
@@ -353,7 +354,7 @@
           for (const w of s.windows) {
             const row = element('div', 'res-total');
             const passed = w.resetsAt && Date.parse(w.resetsAt) <= now;
-            row.append(element('span', '', label(w.kind)), bar(passed ? 0 : w.used / 100, passed ? '' : level(w.used / 100, settings)),
+            row.append(element('span', '', label(w)), bar(passed ? 0 : w.used / 100, passed ? '' : level(w.used / 100, settings)),
               element('em', '', (passed ? '—' : Math.round(w.used) + '%') + (w.resetsAt ? ' · ' + reset(w.resetsAt) : '')));
             if (w.resetsAt) row.title = t('usage.reset.at', { time: window.IwatoI18n.date(w.resetsAt, { dateStyle: 'medium', timeStyle: 'short' }) });
             rows.push(row);

@@ -87,7 +87,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       const usage = page.locator('#usage-totals');
       await usage.getByText('サブスクの使用量').waitFor({ timeout: 10000 });
       const usageText = await usage.innerText();
-      check(/Claude[\s\S]*5時間[\s\S]*62% · あと 1:4\d[\s\S]*週[\s\S]*24%/.test(usageText) && /Opus[\s\S]*41%/.test(usageText), "Claude's windows with their resets (" + usageText.replace(/\n/g, ' ') + ')');
+      check(/Claude[\s\S]*5時間[\s\S]*62% · あと 1:4\d[\s\S]*週[\s\S]*24%/.test(usageText) && /Fable[\s\S]*41%/.test(usageText), "Claude's windows with their resets (" + usageText.replace(/\n/g, ' ') + ')');
       check(/Codex\s*40 分前の値/.test(usageText) && await usage.locator('.res-bar i.warn').count() === 1, 'an older reading says so; 88% is amber');
       await usage.scrollIntoViewIfNeeded();
       await shot('usage.png');
