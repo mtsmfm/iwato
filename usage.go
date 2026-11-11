@@ -25,8 +25,10 @@ import (
 // usageWindow is one limit window: how much of it is used and when it
 // resets.
 type usageWindow struct {
-	// Kind is 5h, 7d, 7d-opus or 7d-sonnet (others: the window's hours, 12h).
+	// Kind is 5h, 7d, 7d-opus, 7d-sonnet or 7d-model (Model names it;
+	// others: the window's hours, 12h).
 	Kind     string    `json:"kind"`
+	Model    string    `json:"model,omitempty"`
 	Used     float64   `json:"used"` // percent, 0-100
 	ResetsAt time.Time `json:"resetsAt,omitzero"`
 }
@@ -233,7 +235,9 @@ func splitUsageOutput(out []byte) ([]byte, int, error) {
 
 // parseClaudeUsage reads api.anthropic.com/api/oauth/usage: five_hour,
 // seven_day and per-model weekly windows, each {utilization, resets_at}
-// (a window may be null).
+// (a window may be null), and limits[]'s weekly_scoped rows, the other
+// models' weeks ({percent, resets_at, scope.model.display_name}; Claude
+// Code's /usage reads them the same way).
 func parseClaudeUsage(body []byte, _ time.Time) ([]usageWindow, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -251,10 +255,50 @@ func parseClaudeUsage(body []byte, _ time.Time) ([]usageWindow, error) {
 		at, _ := time.Parse(time.RFC3339, w.ResetsAt)
 		out = append(out, usageWindow{Kind: k.kind, Used: clampPercent(*w.Utilization), ResetsAt: at.UTC()})
 	}
+	var limits []struct {
+		Kind     string          `json:"kind"`
+		Percent  *float64        `json:"percent"`
+		ResetsAt json.RawMessage `json:"resets_at"`
+		Scope    *struct {
+			Model *struct {
+				Name string `json:"display_name"`
+			} `json:"model"`
+		} `json:"scope"`
+	}
+	_ = json.Unmarshal(raw["limits"], &limits)
+	seen := map[string]bool{}
+	for _, w := range out {
+		seen[strings.TrimPrefix(w.Kind, "7d-")] = true
+	}
+	for _, l := range limits {
+		if l.Kind != "weekly_scoped" || l.Percent == nil || l.Scope == nil || l.Scope.Model == nil {
+			continue
+		}
+		name := strings.TrimSpace(l.Scope.Model.Name)
+		if name == "" || len(name) > 40 || seen[strings.ToLower(name)] {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		out = append(out, usageWindow{Kind: "7d-model", Model: name, Used: clampPercent(*l.Percent), ResetsAt: resetTime(l.ResetsAt)})
+	}
 	if len(out) == 0 {
 		return nil, errors.New("no usage windows in the answer")
 	}
 	return out, nil
+}
+
+// resetTime reads a reset given as Unix seconds or RFC 3339 (zero: neither).
+func resetTime(v json.RawMessage) time.Time {
+	var unix int64
+	var text string
+	if json.Unmarshal(v, &unix) == nil && unix > 0 {
+		return time.Unix(unix, 0).UTC()
+	}
+	if json.Unmarshal(v, &text) == nil {
+		at, _ := time.Parse(time.RFC3339, text)
+		return at.UTC()
+	}
+	return time.Time{}
 }
 
 // parseCodexUsage reads chatgpt.com/backend-api/wham/usage: rate_limit's
@@ -287,14 +331,7 @@ func parseCodexUsage(body []byte, now time.Time) ([]usageWindow, error) {
 		case w.ResetAfterSeconds != nil:
 			u.ResetsAt = now.Add(time.Duration(*w.ResetAfterSeconds) * time.Second).UTC()
 		default:
-			var unix int64
-			var text string
-			if json.Unmarshal(w.ResetAt, &unix) == nil && unix > 0 {
-				u.ResetsAt = time.Unix(unix, 0).UTC()
-			} else if json.Unmarshal(w.ResetAt, &text) == nil {
-				at, _ := time.Parse(time.RFC3339, text)
-				u.ResetsAt = at.UTC()
-			}
+			u.ResetsAt = resetTime(w.ResetAt)
 		}
 		out = append(out, u)
 	}
