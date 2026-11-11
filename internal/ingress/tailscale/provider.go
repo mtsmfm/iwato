@@ -162,22 +162,22 @@ func (p *Provider) joined(sandbox string) bool {
 
 var sandboxDir = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
-// Sync brings up the nodes of exposed sandboxes that run or joined before
-// (a stopped sandbox keeps its node: its pages say it is stopped), closes
-// those no longer exposed and forgets those of sandboxes that are gone.
+// Sync brings up the nodes of exposed sandboxes that run, keeps those whose
+// state is unknown, closes the others (their state stays: a start brings
+// the same node back) and forgets those of sandboxes that are gone.
 func (p *Provider) Sync(ctx context.Context, sbs []ingress.SandboxState) error {
 	known := map[string]bool{}
 	want := map[string]bool{}
-	for _, sb := range sbs {
-		known[sb.Name] = true
-		if sb.Exposed && (sb.Running || p.joined(sb.Name)) {
-			want[sb.Name] = true
-		}
-	}
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		return errors.New("provider closed")
+	}
+	for _, sb := range sbs {
+		known[sb.Name] = true
+		if sb.Exposed && (sb.Running || (sb.Unknown && p.nodes[sb.Name] != nil)) {
+			want[sb.Name] = true
+		}
 	}
 	var closeList []*nodeState
 	for name, ns := range p.nodes {

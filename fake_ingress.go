@@ -13,8 +13,8 @@ import (
 )
 
 // The fake's ingress: a provider that joins no tailnet and only reports
-// as the tailscale one would (each sandbox a node named prefix+sandbox on
-// tail0000.ts.net, kept while the sandbox is stopped), and fake ports.
+// as the tailscale one would (each running sandbox a node named
+// prefix+sandbox on tail0000.ts.net), and fake ports.
 
 type fakeIngressProvider struct {
 	prefix string
@@ -44,8 +44,7 @@ func (p *fakeIngressProvider) Sync(_ context.Context, sbs []ingress.SandboxState
 		known[sb.Name] = true
 		if sb.Exposed && sb.Running {
 			p.joined[sb.Name] = true
-		}
-		if !sb.Exposed {
+		} else {
 			delete(p.joined, sb.Name)
 		}
 	}

@@ -153,6 +153,9 @@ type Core interface {
 type SandboxState struct {
 	Name    string
 	Running bool
+	// Unknown: the state could not be read (OpenShell not ready, a failed
+	// read, a sandbox in error): a node that is up stays.
+	Unknown bool
 	// Exposed: the sandbox is to be reachable (not disabled in its
 	// configuration).
 	Exposed bool

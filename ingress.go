@@ -466,13 +466,13 @@ func (m *ingressManager) reconfigure(ctx context.Context) {
 func (m *ingressManager) states(ctx context.Context) []ingress.SandboxState {
 	list := m.s.sandboxList()
 	out := make([]ingress.SandboxState, len(list))
+	_, prepared := m.s.imagesReady()
 	var wg sync.WaitGroup
 	for i, sb := range list {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			st := m.s.rt.Status(ctx, sb)
-			out[i] = ingress.SandboxState{Name: sb.Name, Running: st.State == "running", Exposed: sb.Ingress == nil || !sb.Ingress.Disabled}
+			out[i] = sandboxState(sb, m.s.rt.Status(ctx, sb), prepared)
 		}()
 	}
 	wg.Wait()
@@ -494,15 +494,16 @@ func (m *ingressManager) sync(ctx context.Context, force bool) {
 func (m *ingressManager) apply(ctx context.Context, states []ingress.SandboxState, force bool) {
 	var b strings.Builder
 	for _, st := range states {
-		fmt.Fprintf(&b, "%s:%t:%t;", st.Name, st.Running, st.Exposed)
+		fmt.Fprintf(&b, "%s:%t:%t:%t;", st.Name, st.Running, st.Unknown, st.Exposed)
 	}
 	m.mu.Lock()
 	p := m.provider
 	var stopped []string
 	next := map[string]bool{}
 	for _, st := range states {
-		next[st.Name] = st.Running
-		if m.running[st.Name] && !st.Running {
+		// An unknown state keeps what was last known.
+		next[st.Name] = st.Running || (st.Unknown && m.running[st.Name])
+		if m.running[st.Name] && !next[st.Name] {
 			stopped = append(stopped, st.Name)
 		}
 	}
@@ -538,11 +539,18 @@ func (m *ingressManager) observe(list []Status) {
 	if len(sbs) != len(list) {
 		return
 	}
+	_, prepared := m.s.imagesReady()
 	states := make([]ingress.SandboxState, len(list))
 	for i, st := range list {
-		states[i] = ingress.SandboxState{Name: sbs[i].Name, Running: st.State == "running", Exposed: sbs[i].Ingress == nil || !sbs[i].Ingress.Disabled}
+		states[i] = sandboxState(sbs[i], st, prepared)
 	}
 	go m.apply(context.WithoutCancel(m.s.ctx), states, false)
+}
+
+// sandboxState is a sandbox's state for the ingress: unknown while OpenShell
+// is not prepared or the state could not be read.
+func sandboxState(sb Sandbox, st Status, prepared bool) ingress.SandboxState {
+	return ingress.SandboxState{Name: sb.Name, Running: st.State == "running", Unknown: !prepared || st.State == "error", Exposed: sb.Ingress == nil || !sb.Ingress.Disabled}
 }
 
 func (m *ingressManager) kick() {

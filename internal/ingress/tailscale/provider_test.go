@@ -155,19 +155,22 @@ func TestNodesFollowTheSandboxes(t *testing.T) {
 	if u, _ := p.URL(ingress.Target{Sandbox: "dev", Port: 443}); u != "https://iwato-dev.tail0000.ts.net/" {
 		t.Fatal(u)
 	}
-	// Stopped after it joined: the node stays (it serves the 停止中 page).
+	// Unknown (OpenShell unreachable): a node that is up stays; none starts.
+	p.Sync(ctx, []ingress.SandboxState{{Name: "dev", Unknown: true, Exposed: true}, {Name: "web", Unknown: true, Exposed: true}})
+	if p.Status("dev").State != "connected" || n.closed || p.Status("web").State != "off" {
+		t.Fatal("an unknown state must keep the node up and start none")
+	}
+	// Stopped: the node is closed, its state kept.
 	p.Sync(ctx, []ingress.SandboxState{{Name: "dev", Exposed: true}, {Name: "web", Exposed: true}})
-	if p.Status("dev").State != "connected" || n.closed {
-		t.Fatal("the node of a stopped sandbox went away")
+	if p.Status("dev").State != "off" || !n.closed || n.loggedOut || !p.joined("dev") {
+		t.Fatal("a stopped sandbox's node must be closed, not logged out")
 	}
-	// Iwato again (a new provider): a joined node comes back without a key.
+	// Started again (here by a new provider: Iwato again): the joined node
+	// comes back without a key.
 	p.Close()
-	if !n.closed || n.loggedOut {
-		t.Fatal("closing must not log out")
-	}
 	p2 := New(Config{Dir: p.cfg.Dir, Prefix: "iwato-", Tag: "tag:iwato", Secret: func() string { return "tskey" + "-client-abc-def" }, NewNode: f.make})
 	defer p2.Close()
-	p2.Sync(ctx, []ingress.SandboxState{{Name: "dev", Exposed: true}})
+	p2.Sync(ctx, []ingress.SandboxState{{Name: "dev", Running: true, Exposed: true}})
 	waitStatus(t, p2, "dev", "connected")
 	if k := f.last().cfg.AuthKey; k != "" {
 		t.Fatalf("a joined node got the key %q", k)
