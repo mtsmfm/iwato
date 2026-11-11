@@ -55,4 +55,4 @@ Kept: `iwato.exe`, the logs, the WSLc session (its VHDX) itself, other images yo
 
 The VHDX is the virtual disk WSLc keeps the sandboxes in. It may not shrink after the reset, so data from the deleted volumes may still be recoverable from it. To be sure, remove the WSLc session (or compact its VHDX) after the reset.
 
-When it ends, every device is signed out. Open the new sign-in URL that the console prints; Iwato prepares the gateway and the images again, which takes a few minutes. It cannot run while the images or the gateway are being prepared.
+When it ends, every device is signed out. Sign in again with **Open Iwato** in the tray menu (Windows) or the new sign-in URL the console prints; Iwato prepares the gateway and the images again, which takes a few minutes. It cannot run while the images or the gateway are being prepared.

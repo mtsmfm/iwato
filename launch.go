@@ -42,7 +42,7 @@ const (
 type portPrompt func(port int, owner string) portChoice
 
 // launchTarget is the page to open: this PC's origin, a sign-in token and
-// the tailnet origin (tailscale serve) when there is one.
+// the tailnet origin (the page's node, or tailscale serve) when there is one.
 type launchTarget struct {
 	origin, token, public string
 }
@@ -122,7 +122,8 @@ func askRunning(dir, addr string) (launchTarget, bool) {
 }
 
 // appActions are what the tray (app_windows.go) does while Iwato serves:
-// open the page with a new sign-in token, and the log file.
+// open the page with a new sign-in token, open the log file, and switch
+// starting at sign-in.
 type appActions struct {
 	open      func()
 	logFile   string
@@ -176,7 +177,7 @@ func openPage(t launchTarget, pwa bool) error {
 	return openURL(t.url())
 }
 
-// answers: the page loads from origin (tailscale serve runs and reaches it).
+// answers: the page loads from origin (this PC reaches the tailnet address).
 func answers(origin string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -238,8 +239,8 @@ func consolePrompt(in io.Reader, out io.Writer) portPrompt {
 	}
 }
 
-// waitPrompt retries for wait (no console to ask: the port may come free,
-// as when the PC is starting).
+// waitPrompt retries for wait without asking (started at sign-in, or no
+// console): the port may come free, as when the PC is starting.
 func waitPrompt(wait, every time.Duration) portPrompt {
 	var deadline time.Time
 	return func(port int, owner string) portChoice {

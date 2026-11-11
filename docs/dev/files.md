@@ -43,8 +43,8 @@ Pasting or dropping an image into a terminal (on a phone, the **Image** key in t
 
 - URLs: `/dav/` lists the visible sandboxes (read-only); `/dav/<name>/…` is `…` under that sandbox's files root (the home; the working directory for images without Iwato's daemon); `/dav/<token>/<name>/…` is the secret URL for this PC
 - `/dav/` branches off before the admin UI's Origin, cookie and CSRF checks (WebDAV clients send neither Origin nor cookies). It keeps the Host check against DNS rebinding (only `127.0.0.1:PORT`, `localhost:PORT` and the `-public-origin` host) and refuses requests from other pages (a different Origin, `Sec-Fetch-Site: cross-site`). Responses carry `Content-Security-Policy: … sandbox` so that a sandbox's HTML cannot act as an Iwato page
-- App passwords: Basic authentication. The user name is the ID (`iwato-xxxxxx`), the password 32 random bytes (lowercase base32, 52 characters). They work over the tailnet's HTTPS (tailscale serve) and on this PC's http://127.0.0.1
-- Secret URL: `http://127.0.0.1:PORT/dav/<token>/<name>/`. Windows' WebClient by default (`BasicAuthLevel=1`) sends no Basic credentials over plain http, so for Windows without tailscale serve the URL itself is the key (the registry is left alone). It is accepted only from 127.0.0.1 (loopback), with Host `127.0.0.1:PORT` or `localhost:PORT`, and without any proxy header (`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `Tailscale-User-Login`, `Tailscale-Headers-Info`). tailscale serve also connects from 127.0.0.1 but adds `X-Forwarded-For` and the like, which tells them apart
+- App passwords: Basic authentication. The user name is the ID (`iwato-xxxxxx`), the password 32 random bytes (lowercase base32, 52 characters). They work over the tailnet's HTTPS (the page's node, or tailscale serve) and on this PC's http://127.0.0.1
+- Secret URL: `http://127.0.0.1:PORT/dav/<token>/<name>/`. Windows' WebClient by default (`BasicAuthLevel=1`) sends no Basic credentials over plain http, so for Windows without a tailnet address the URL itself is the key (the registry is left alone). It is accepted only from 127.0.0.1 (loopback), with Host `127.0.0.1:PORT` or `localhost:PORT`, and without any proxy header (`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`, `Tailscale-User-Login`, `Tailscale-Headers-Info`). tailscale serve also connects from 127.0.0.1 but adds `X-Forwarded-For` and the like, which tells them apart
 - Both have a scope (one sandbox or all) and a permission (read-write or read-only). Read-only answers 403 to PUT, DELETE, MKCOL, MOVE, COPY, PROPPATCH, LOCK and UNLOCK
 - Only SHA-256 hashes are stored (`dav-keys.json` in the config folder, 0600). The value is shown once, right after creation. Revoking takes effect at once and closes open connections. The last use time and user agent are recorded (the file is written at most once a minute)
 - Answered without authentication: OPTIONS (`/dav/…` and `/`; Windows asks before authenticating) and PROPFIND of `/dav` from this PC (an empty folder; Windows first checks the first segment, `dav`, as a "share")
@@ -64,7 +64,7 @@ Iwato does not imitate read_only (it does not make the drive read-only from the 
 
 ## Checking on real hardware
 
-Setup: start the new exe with `-public-origin https://<host>.ts.net` and expose the 127.0.0.1 port over HTTPS with `tailscale serve` (as for the phone UI). Start a sandbox and open the **Files** tab.
+Setup: give the page a tailnet address: Tailscale publishing in the settings (the page's node, [ADR 0023](../adr/0023-admin-ui-on-its-own-tailnet-node.md)), or `tailscale serve` in front with `-public-origin https://<host>.ts.net`. Start a sandbox and open the **Files** tab.
 
 ### Windows (tailnet HTTPS)
 
@@ -76,7 +76,7 @@ Setup: start the new exe with `-public-origin https://<host>.ts.net` and expose 
 6. Stopping the sandbox leaves only `停止中です.txt` visible and writes fail; after a start the contents are back
 7. After **Revoke**, the next operation fails
 
-### Windows (this PC, no tailscale serve)
+### Windows (this PC, no tailnet address)
 
 1. **Create** with "URL for this PC"
 2. Paste the shown `\\127.0.0.1@17600\dav\<token>\<name>` into Explorer's address bar or the "Map network drive" folder. No credentials are asked

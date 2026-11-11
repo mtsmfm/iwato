@@ -311,8 +311,6 @@ func (s *Server) oauthDiscover(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, map[string]any{"resource": md.Resource, "issuer": md.Issuer, "scopes": scopes, "guide": atlassianMCPCommand})
 }
 
-func discoveryMessage(err error) string { return discoveryError(err).Error() }
-
 // discoveryError says why Atlassian's OAuth details are not usable.
 func discoveryError(err error) error {
 	if errors.Is(err, errTokenURL) {

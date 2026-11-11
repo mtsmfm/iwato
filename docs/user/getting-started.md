@@ -37,7 +37,7 @@ The first start takes port 17600, or the next free one up to 17669, and keeps it
 
 Starting Iwato again while it runs (a double-click on the exe) opens the running one instead.
 
-The page opens while the images and the gateway are still being prepared and shows the progress. When preparation ends (or fails, with the reason), the console prints the sign-in URL again: the same one if it was not used yet, a new one if it expired, and none if it was already used.
+The page opens while the images and the gateway are still being prepared and shows the progress. When preparation ends (or fails, with the reason), a console prints the sign-in URL again: the same one if it was not used yet, a new one if it expired, and none if it was already used.
 
 Then:
 

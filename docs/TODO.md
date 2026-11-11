@@ -35,6 +35,10 @@ Open work. Decisions live in `docs/adr/`; this file lists only the work. Remove 
 
 - [ ] Verify the arm64 image (for macOS)
 
+## Windows app (ADR 0025) and phone access (ADR 0023)
+
+- [ ] Verify on real hardware: the tray (click, menu, message boxes, no console windows for `wslc`), starting with Windows (Task Manager's Startup apps and its switch), the page's tailnet node (a phone signing in, terminals over it), the reconnect after `wsl --shutdown`, a stopped sandbox's node going offline and coming back without `-1`
+
 ## Distribution
 
 - [ ] Distribute the Windows exe unsigned through winget and/or scoop (no code-signing certificate)

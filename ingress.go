@@ -611,7 +611,7 @@ func (m *ingressManager) forget(name string) {
 
 // reset drops the connections, tokens and port reads of a sandbox that
 // OpenShell deleted and makes again under the same name (a recreate). Its
-// node stays: the name, and so the URLs, do not change.
+// node keeps its state: the name, and so the URLs, do not change.
 func (m *ingressManager) reset(name string) {
 	m.core.Reset(name)
 	if m.rt != nil {

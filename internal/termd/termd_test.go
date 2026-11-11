@@ -29,8 +29,8 @@ func TestRingKeepsTheLastBytes(t *testing.T) {
 		t.Fatalf("wrapped: %q %d", b, off)
 	}
 	r.Write([]byte("0123456789xy"))
-	if b, off := r.Bytes(); string(b) != "456789xy" || off != 14 || r.Total() != 22 {
-		t.Fatalf("larger than the ring: %q %d %d", b, off, r.Total())
+	if b, off := r.Bytes(); string(b) != "456789xy" || off != 14 || r.total != 22 {
+		t.Fatalf("larger than the ring: %q %d %d", b, off, r.total)
 	}
 }
 

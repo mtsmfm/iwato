@@ -300,6 +300,3 @@ func (r *Ring) Bytes() ([]byte, uint64) {
 	out = append(out, r.buf[:at]...)
 	return out, r.total - n
 }
-
-// Total is how many bytes were ever written.
-func (r *Ring) Total() uint64 { return r.total }

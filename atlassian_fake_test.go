@@ -95,8 +95,8 @@ func TestAtlassianDiscoveryRefusesAnotherTokenURL(t *testing.T) {
 	if !errors.Is(err, errTokenURL) {
 		t.Fatal(err)
 	}
-	if !strings.Contains(discoveryMessage(err), "プロファイル (iwato-atlassian) と違うので中止") {
-		t.Fatal(discoveryMessage(err))
+	if !strings.Contains(discoveryError(err).Error(), "プロファイル (iwato-atlassian) と違うので中止") {
+		t.Fatal(discoveryError(err).Error())
 	}
 	// The real profile's URL against the test server's metadata.
 	o := f.oauth()

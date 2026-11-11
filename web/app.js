@@ -5566,7 +5566,8 @@
       this.root.dataset.created = String(sandbox.status !== 'not-created');
       if (this.editor && String(this.splitShown()) !== this.root.dataset.split) this.layoutTabs(this.root.dataset.tab);
       // The files tab stays too: a stopped sandbox's drive and credentials;
-      // and the ports tab: its node stays; and the editor: its unsaved text.
+      // and the ports tab: what publishing does while stopped; and the
+      // editor: its unsaved text.
       if (sandbox.status !== 'running' && (sandbox.status === 'not-created' || !['policy', 'files', 'editor', 'ports', 'resources'].includes(this.root.dataset.tab)) && this.root.dataset.tab !== 'terminal') this.selectTab('terminal');
       if (this.root.dataset.tab === 'files' && this.filesShown !== sandbox.status) this.files.refresh();
       if (this.root.dataset.tab === 'ports' && this.filesShown !== sandbox.status) this.ports.refresh();
