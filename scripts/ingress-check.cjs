@@ -191,14 +191,15 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check((await page.evaluate(() => navigator.clipboard.readText())).startsWith('https://iwato-dev.tail0000.ts.net:'), 'コピー copies the URL');
     await shot('ports.png');
 
-    // Stopped: the tab stays; the node too.
+    // Stopped: the tab stays; the node is closed until the next start.
     await card.getByRole('button', { name: 'その他の操作' }).click();
     await card.getByRole('menuitem', { name: '停止', exact: true }).click();
     await page.locator('#confirm-panel').waitFor({ timeout: 2000 }).then(() => page.click('#confirm-ok'), () => {});
     await card.locator('.badge[data-state=stopped]').waitFor();
     await panel.getByText(/停止中です/).waitFor();
     check(await panel.isVisible(), 'the ポート tab stays for a stopped sandbox');
-    check(await panel.locator('.ingress-state').innerText().then((t) => t.includes('接続中')), 'the node stays connected while stopped');
+    await panel.locator('.ingress-state', { hasText: '未参加' }).waitFor({ timeout: 20000 });
+    check(await panel.getByText('サンドボックスを起動すると tailnet に参加します').count() > 0, 'the node is closed while stopped');
     await shot('ports-stopped.png');
 
     // The fake's dev runs an older supervisor: its badge opens the recreate panel.
