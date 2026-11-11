@@ -64,7 +64,6 @@ func newTSNode(c NodeConfig) Node {
 		AuthKey:       c.AuthKey,
 		AdvertiseTags: c.Tags,
 		Ephemeral:     false,
-		Logf:          c.Logf,
 		UserLogf:      c.Logf,
 	}
 	return &tsNode{s: s}

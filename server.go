@@ -34,7 +34,7 @@ import (
 // "認証が必要です" without a browser debugger. Never pass tokens, cookies, or
 // CSRF values to it.
 func reject(w http.ResponseWriter, r *http.Request, code int, message, reason string) {
-	log.Printf("rejected %s %s: %s (%s)", r.Method, r.URL.Path, message, reason)
+	log.Printf("rejected %s %s: %s (%s)", r.Method, dav.RedactPath(r.URL.Path), message, reason)
 	fail(w, code, message)
 }
 
