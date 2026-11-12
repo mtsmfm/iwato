@@ -38,8 +38,19 @@ func TestTrack(t *testing.T) {
 		time.Sleep(60 * time.Millisecond)
 		w.WriteHeader(http.StatusMultiStatus)
 	})
-	got := logs.String()
-	if !strings.Contains(got, "1234 PROPFIND /dav/<secret>/dev/x depth=1 still running") || !strings.Contains(got, "depth=1 -> 207 in") || strings.Contains(got, secret) {
-		t.Fatalf("%q", got)
+	if got := logs.String(); !strings.Contains(got, "1234 PROPFIND /dav/<secret>/dev/x depth=1 still running") || strings.Contains(got, secret) {
+		t.Fatalf("a stalled request: %q", got)
+	}
+	serve := func(path string, status int) string {
+		var b syncBuffer
+		log.SetOutput(&b)
+		Track(httptest.NewRecorder(), httptest.NewRequest("PROPFIND", path, nil), func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) })
+		return b.String()
+	}
+	if got := serve("/dav/.jj", 401); !strings.Contains(got, "PROPFIND /dav/.jj -> 401") {
+		t.Fatalf("a 401: %q", got)
+	}
+	if got := serve("/dav/dev/desktop.ini", 404) + serve("/dav/dev/", 207); got != "" {
+		t.Fatalf("a 404 or a quick answer: %q", got)
 	}
 }
