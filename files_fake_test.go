@@ -165,6 +165,11 @@ func TestFilesSecretURL(t *testing.T) {
 	davExpect(t, s, 207, davReq{method: "PROPFIND", path: base + "/dev/", host: "localhost:" + port})
 	// Scope.
 	davExpect(t, s, 404, davReq{method: "PROPFIND", path: base + "/web/"})
+	// Above the secret's folder, Windows gets no challenge it cannot answer.
+	res, _ := davDo(t, s, davReq{method: "PROPFIND", path: "/dav/.jj", header: map[string]string{"User-Agent": "Microsoft-WebDAV-MiniRedir/10.0.26100"}})
+	if res.StatusCode != 404 || res.Header.Get("WWW-Authenticate") != "" {
+		t.Fatalf("WebClient above the secret: %d %q", res.StatusCode, res.Header.Get("WWW-Authenticate"))
+	}
 
 	// Only straight from this PC: not through tailscale serve (the tailnet
 	// host, or a relayed request that claims 127.0.0.1), not another Host.
