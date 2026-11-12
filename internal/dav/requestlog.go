@@ -8,10 +8,13 @@ import (
 	"time"
 )
 
-// stallAfter is when Track logs a request still running (a client such
-// as Windows' WebClient waits on it and queues the rest behind its two
-// connections).
-var stallAfter = 30 * time.Second
+// Track logs a request still running at stallAfter then (a client such
+// as Windows' WebClient waits on it), and one that took over slowAfter
+// when it ends.
+var (
+	stallAfter = 30 * time.Second
+	slowAfter  = 5 * time.Second
+)
 
 // RedactPath hides a secret URL's token, the first segment after /dav/
 // when it is longer than a sandbox name can be.
@@ -46,9 +49,11 @@ func (w *statusWriter) WriteHeader(code int) {
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// Track serves r with next and logs it: every request when it ends, with
-// the client's port (which connection), Depth, status and time, and one
-// still running after stallAfter at that moment.
+// Track serves r with next and logs what a client may get stuck on, with
+// the client's port (which connection), Depth, status and time: a request
+// still running after stallAfter, one over slowAfter, and every error but
+// 404 (clients probe for desktop.ini and the like). A 401 is one: Windows'
+// WebClient refuses the whole server after one on http.
 func Track(w http.ResponseWriter, r *http.Request, next func(http.ResponseWriter, *http.Request)) {
 	start := time.Now()
 	req := r.Method + " " + RedactPath(r.URL.Path)
@@ -74,7 +79,10 @@ func Track(w http.ResponseWriter, r *http.Request, next func(http.ResponseWriter
 		if status == 0 {
 			status = http.StatusOK
 		}
-		log.Printf("files: %s -> %d in %s", req, status, time.Since(start).Round(time.Millisecond))
+		took := time.Since(start).Round(time.Millisecond)
+		if (status >= 400 && status != http.StatusNotFound) || took > slowAfter {
+			log.Printf("files: %s -> %d in %s", req, status, took)
+		}
 	}()
 	next(sw, r)
 }
