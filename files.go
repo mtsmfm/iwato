@@ -345,6 +345,14 @@ func (s *Server) serveDAV(w http.ResponseWriter, r *http.Request) {
 				dav.ServeList(w, r, prefix, nil)
 				return
 			}
+			// Nor does it send Basic on http, and a 401 there leaves
+			// WebClient refusing the whole server until it restarts
+			// (a tool looking for .jj in parents of a secret URL's
+			// folder reaches /dav/.jj). Say there is nothing.
+			if local && strings.HasPrefix(r.UserAgent(), "Microsoft-WebDAV-MiniRedir/") {
+				http.NotFound(w, r)
+				return
+			}
 			davChallenge(w)
 			return
 		}
