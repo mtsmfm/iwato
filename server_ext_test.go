@@ -168,7 +168,7 @@ func TestNotifierPushesATerminalThatStopped(t *testing.T) {
 		t.Fatalf("too early: %+v", got)
 	}
 	got := poll(time.Second)
-	if len(got) != 1 || got[0].Title != w.Name+" (2): 止まりました" || got[0].Body != "Done: fixed the bug." || got[0].Path != "/?sandbox="+w.Name+"&term=2" {
+	if len(got) != 1 || got[0].Title != w.Name+": 止まりました" || got[0].Body != "Done: fixed the bug." || got[0].Path != "/?sandbox="+w.Name+"&term=2" {
 		t.Fatalf("%+v", got)
 	}
 	if got := poll(2 * time.Minute); len(got) != 0 || n.stopped(w.Name)["2"] == 0 {
@@ -191,7 +191,7 @@ func TestNotifierPushesATerminalThatStopped(t *testing.T) {
 	activity.Recent = append(activity.Recent, termsync.Alert{At: clock, Text: "Claude is waiting for your input"})
 	show("Done again.")
 	got = poll(termPoll)
-	if len(got) != 1 || got[0].Title != w.Name+" (2): 通知" || got[0].Body != "Claude is waiting for your input" {
+	if len(got) != 1 || got[0].Title != w.Name+": 通知" || got[0].Body != "Claude is waiting for your input" {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -244,5 +244,25 @@ func TestNotifierHoldsBackWhilePresent(t *testing.T) {
 	add("e")
 	if got := poll(time.Minute); len(got) != 1 {
 		t.Fatalf("hidden page held the push back: %+v", got)
+	}
+}
+
+func TestOrderTerms(t *testing.T) {
+	at := time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)
+	started := map[string]time.Time{"2": at, "main": at.Add(time.Minute), "10": at.Add(2 * time.Minute)}
+	names := []string{"main", "10", "3", "2", "x"}
+	orderTerms(names, func(n string) (time.Time, bool) { v, ok := started[n]; return v, ok })
+	// Closing main and opening one: the new main comes after 2; unknown starts last, by name.
+	if strings.Join(names, ",") != "2,main,10,3,x" {
+		t.Fatalf("%v", names)
+	}
+	// A sandbox's main process, start unknown, is first.
+	names = []string{"3", "main"}
+	orderTerms(names, func(n string) (time.Time, bool) { return at, n == "3" })
+	if strings.Join(names, ",") != "main,3" {
+		t.Fatalf("%v", names)
+	}
+	if m := termMessage("dev", "main", "2", nil, termDone, ""); m.Title != "dev (2): 止まりました" || m.Path != "/?sandbox=dev&term=main" {
+		t.Fatalf("%+v", m)
 	}
 }
