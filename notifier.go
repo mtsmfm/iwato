@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -536,8 +537,20 @@ func (n *notifier) watchTerms(w Sandbox) []PushMessage {
 	old := n.terms[w.Name]
 	current := map[string]*termWatch{}
 	var out []PushMessage
-	for _, name := range slices.Sorted(maps.Keys(screens)) {
+	names := slices.Collect(maps.Keys(screens))
+	starts, _ := n.s.rt.(terminalStarts)
+	orderTerms(names, func(name string) (time.Time, bool) {
+		if starts == nil {
+			return time.Time{}, false
+		}
+		return starts.TerminalStarted(w, name)
+	})
+	for i, name := range names {
 		scr := screens[name]
+		place := ""
+		if len(names) > 1 {
+			place = strconv.Itoa(i + 1)
+		}
 		t := old[name]
 		if t == nil || !t.attached.Equal(scr.attached) {
 			// First seen, or attached again (after an update of Iwato, a
@@ -550,7 +563,7 @@ func (n *notifier) watchTerms(w Sandbox) []PushMessage {
 			}
 			t = fresh
 		} else if ev, text := t.observe(now, scr, present, uses); ev != termNone && !present {
-			out = append(out, termMessage(w.Name, name, scr.lines, ev, text))
+			out = append(out, termMessage(w.Name, name, place, scr.lines, ev, text))
 		}
 		current[name] = t
 	}
@@ -586,8 +599,9 @@ func (n *notifier) stopped(sandbox string) map[string]int64 {
 // termMessage tells that a terminal is done (or rang: alert, with the
 // notification's text), with the last lines of its screen that say
 // something (not the borders and blank lines an agent's input box draws). A
-// newer one about the terminal replaces it on the device.
-func termMessage(sandbox, term string, lines []string, ev termEvent, text string) PushMessage {
+// newer one about the terminal replaces it on the device. place is its
+// number in the page's tabs ("" when it is the only one).
+func termMessage(sandbox, term, place string, lines []string, ev termEvent, text string) PushMessage {
 	var tail []string
 	for i := len(lines) - 1; i >= 0 && len(tail) < idleLines; i-- {
 		if l := strings.TrimSpace(lines[i]); strings.IndexFunc(l, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0 {
@@ -596,16 +610,16 @@ func termMessage(sandbox, term string, lines []string, ev termEvent, text string
 	}
 	slices.Reverse(tail)
 	label := sandbox
-	if term != mainTerm {
-		label += " (" + term + ")"
+	if place != "" {
+		label += " (" + place + ")"
 	}
 	what := "止まりました"
 	if ev == termAlert {
 		what = "通知"
 	}
 	summary := what
-	if term != mainTerm {
-		summary = "(" + term + ") " + summary
+	if place != "" {
+		summary = "(" + place + ") " + summary
 	}
 	body := strings.Join(tail, "\n")
 	if text = strings.TrimSpace(text); text != "" {

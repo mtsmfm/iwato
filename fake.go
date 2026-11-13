@@ -12,7 +12,6 @@ import (
 	"net"
 	"path"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -446,7 +445,7 @@ func (t *fakeTerm) Resize(cols, rows int) error {
 	return nil
 }
 
-// Terminals lists the running fake terminals, main first.
+// Terminals lists the running fake terminals in the order they started.
 func (d *Fake) Terminals(_ context.Context, w Sandbox) ([]string, []string, bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -457,15 +456,9 @@ func (d *Fake) Terminals(_ context.Context, w Sandbox) ([]string, []string, bool
 	for n := range d.terms[w.Name] {
 		names = append(names, n)
 	}
-	sort.Slice(names, func(i, j int) bool {
-		a, b := names[i], names[j]
-		if (a == mainTerm) != (b == mainTerm) {
-			return a == mainTerm
-		}
-		if len(a) != len(b) {
-			return len(a) < len(b)
-		}
-		return a < b
+	orderTerms(names, func(name string) (time.Time, bool) {
+		at, ok := d.termStarted[w.Name+"/"+name]
+		return at, ok
 	})
 	// Main alone when none runs (attaching starts it), as OpenShell's daemon.
 	if len(names) == 0 {

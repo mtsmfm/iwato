@@ -4,6 +4,10 @@ import (
 	"context"
 	"io"
 	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Status struct {
@@ -51,6 +55,45 @@ var termNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // validTermName accepts the names of terminal sessions.
 func validTermName(name string) bool { return termNamePattern.MatchString(name) }
+
+// orderTerms puts terminals in the order they started, the order the page
+// numbers its tabs (1, 2, … whatever the names). main with no known start
+// (a sandbox's main process) comes first, others with none last; among
+// those, main first and numbers by their value.
+func orderTerms(names []string, started func(string) (time.Time, bool)) {
+	group := func(name string) (int, time.Time) {
+		at, ok := started(name)
+		switch {
+		case ok:
+			return 1, at
+		case name == mainTerm:
+			return 0, at
+		}
+		return 2, at
+	}
+	slices.SortStableFunc(names, func(a, b string) int {
+		ga, ta := group(a)
+		gb, tb := group(b)
+		if ga != gb {
+			return ga - gb
+		}
+		if c := ta.Compare(tb); c != 0 {
+			return c
+		}
+		if (a == mainTerm) != (b == mainTerm) {
+			if a == mainTerm {
+				return -1
+			}
+			return 1
+		}
+		na, ea := strconv.Atoi(a)
+		nb, eb := strconv.Atoi(b)
+		if ea == nil && eb == nil {
+			return na - nb
+		}
+		return strings.Compare(a, b)
+	})
+}
 
 type Runtime interface {
 	Status(context.Context, Sandbox) Status

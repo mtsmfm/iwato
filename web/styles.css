@@ -50,6 +50,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .term-tab[aria-selected=true]{border-color:#536d60;background:#21382e;color:#d7f0e3}
 .term-tabs .button{border:0;background:none;color:inherit;min-height:26px;padding:3px 9px;font:11px ui-monospace,SFMono-Regular,Consolas,monospace}
 .term-tabs .term-close{padding:3px 8px 3px 2px;color:#788596}.term-tabs .term-close:hover:not(:disabled){color:var(--red)}
+.term-tab.closing{opacity:.6}.term-tab.closing .button:disabled{opacity:1}.term-spinner{display:inline-block;width:9px;height:9px;border:1.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:iw-spin .8s linear infinite;vertical-align:-1px}@keyframes iw-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.term-spinner{animation:none;border-right-color:currentColor;opacity:.6}}
 .term-tabs .term-add{flex:none;border:1px dashed #3a444f;border-radius:6px;color:#9aa7b7}.term-tabs .term-add:hover:not(:disabled){color:var(--green);border-color:#536d60}
 .terminal-card:not([data-tab=terminal]):not([data-split=true])>.term-tabs,.terminal-card[data-collapsed=true]>.term-tabs{display:none}
 /* A session running an older version: a restart gets the fixes */

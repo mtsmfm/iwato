@@ -43,7 +43,6 @@
   // Terminal sessions per sandbox: "main" (shown as 1) and numbered ones.
   const maxTerms = 8;
   const termNamePattern = /^[a-z0-9][a-z0-9-]{0,31}$/;
-  const termLabel = (name) => name === 'main' ? '1' : name;
   // The shown terminal is remembered per sandbox (not a secret: sign-in
   // stays in the HttpOnly cookie, never in storage scripts can read).
 
@@ -4765,6 +4764,8 @@
       this.lastSize = '';
       // Terminal sessions of the sandbox; one is shown (and attached) at a time.
       this.termNames = ['main'];
+      // Terminals being closed: their tabs show it until the list comes back.
+      this.closingTerms = new Set();
       this.termMulti = false;
       // Sessions started by an older version: restarting them gets its fixes.
       this.termOutdated = [];
@@ -5224,6 +5225,13 @@
       return this.termNames.includes(this.termName) ? this.termNames : [...this.termNames, this.termName];
     }
 
+    // termLabel is a terminal's place in the tabs (the order it started),
+    // not its name: closing one renumbers those after it, as Alt+N counts.
+    termLabel(name) {
+      const index = this.termList().indexOf(name);
+      return index < 0 ? (name === 'main' ? '1' : name) : String(index + 1);
+    }
+
     // The Nth terminal of the tabs, while they show.
     termAt(index) {
       return this.termTabs.hidden ? undefined : this.termList()[index];
@@ -5236,7 +5244,7 @@
       const nodes = names.map((name, index) => {
         const tab = element('span', 'term-tab');
         tab.setAttribute('aria-selected', String(name === this.termName));
-        const label = termLabel(name);
+        const label = String(index + 1);
         const select = button('term-select', label, () => this.switchTerm(name));
         select.setAttribute('role', 'tab');
         select.title = t('term.name', { name: label }) + (index < 9 ? ' (Alt+' + (index + 1) + ')' : '');
@@ -5252,10 +5260,17 @@
           select.append(element('span', 'stopped-mark'));
           select.title += t('term.stopped.title');
         }
+        const closing = this.closingTerms.has(name);
         const close = button('term-close', '×', () => this.killTerm(name));
-        close.title = t('term.close', { name: label });
+        close.title = t(closing ? 'term.closing' : 'term.close', { name: label });
         close.setAttribute('aria-label', close.title);
-        close.disabled = !state.authorized;
+        close.disabled = !state.authorized || closing;
+        if (closing) {
+          tab.classList.add('closing');
+          tab.setAttribute('aria-busy', 'true');
+          select.disabled = true;
+          close.replaceChildren(element('span', 'term-spinner'));
+        }
         tab.append(select, close);
         return tab;
       });
@@ -5269,7 +5284,7 @@
       const whole = this.sandboxRestart.includes(this.termName);
       this.termNotice.hidden = this.sandbox.status !== 'running' || (!this.termOutdated.includes(this.termName) && !providerStale);
       this.termNotice.dataset.kind = providerStale ? 'provider' : 'version';
-      const label = t('term.name', { name: termLabel(this.termName) });
+      const label = t('term.name', { name: this.termLabel(this.termName) });
       this.termNoticeText.textContent = !providerStale
         ? t(whole ? 'term.notice.outdatedSandbox' : 'term.notice.outdated', { name: label })
         : t(whole ? 'term.notice.providerSandbox' : 'term.notice.provider', { name: label });
@@ -5328,17 +5343,25 @@
 
     async killTerm(name) {
       if (!state.authorized) return;
-      if (!(await askConfirm(t('term.close.confirm', { name: termLabel(name) }), { ok: t('term.close.ok'), danger: true }))) return;
+      if (!(await askConfirm(t('term.close.confirm', { name: this.termLabel(name) }), { ok: t('term.close.ok'), danger: true }))) return;
+      if (this.closingTerms.has(name)) return;
       const current = name === this.termName;
       const index = this.termNames.indexOf(name);
       if (current) this.stopSocket();
+      this.closingTerms.add(name);
+      this.renderTermTabs();
       try {
         await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/terminals/' + encodeURIComponent(name) + '/kill', { method: 'POST', body: '{}' });
       } catch (error) {
         this.showError(t('term.close.failed', { message: error.message }));
         if (error.status === 401 || error.status === 403) invalidateSession();
       }
-      await this.loadTerms();
+      try {
+        await this.loadTerms();
+      } finally {
+        this.closingTerms.delete(name);
+      }
+      if (!this.disposed) this.renderTermTabs();
       if (current && !this.disposed) this.showTermAfter(index);
     }
 
@@ -5346,7 +5369,7 @@
     async restartTerm() {
       const name = this.termName;
       if (!state.authorized) return;
-      if (!(await askConfirm(t('term.restart.confirm', { name: termLabel(name) }), { ok: t('term.restart.ok'), danger: true }))) return;
+      if (!(await askConfirm(t('term.restart.confirm', { name: this.termLabel(name) }), { ok: t('term.restart.ok'), danger: true }))) return;
       if (this.disposed || name !== this.termName) return;
       this.stopSocket();
       try {
@@ -6373,7 +6396,7 @@
   function showCard(card) {
     card.open(true);
     const name = card.sandbox.name;
-    showToast(card.sandbox.status === 'running' ? t('shortcut.toast', { sandbox: name, terminal: termLabel(card.termName) }) : name);
+    showToast(card.sandbox.status === 'running' ? t('shortcut.toast', { sandbox: name, terminal: card.termLabel(card.termName) }) : name);
   }
   let toastTimer = 0;
   function showToast(text) {

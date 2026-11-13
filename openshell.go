@@ -1288,20 +1288,11 @@ func (o *OpenShell) Terminals(ctx context.Context, w Sandbox) (names, outdated [
 			names = append(names, name)
 		}
 	}
-	sortTerms(names[1:])
-	return names, nil, true, nil
-}
-
-// sortTerms sorts terminal names, numbers by their value.
-func sortTerms(names []string) {
-	slices.SortFunc(names, func(a, b string) int {
-		na, ea := strconv.Atoi(a)
-		nb, eb := strconv.Atoi(b)
-		if ea == nil && eb == nil {
-			return na - nb
-		}
-		return strings.Compare(a, b)
+	orderTerms(names[1:], func(name string) (time.Time, bool) {
+		at, ok := o.termStarted[w.Name+"/"+name]
+		return at, ok
 	})
+	return names, nil, true, nil
 }
 
 // SandboxRestartTerms are the terminals among names that only a restart of
@@ -1348,22 +1339,22 @@ func (o *OpenShell) TerminalScreens(w Sandbox) map[string]termScreen {
 	return out
 }
 
-// runningTerms lists the daemon's terminals, main first.
+// runningTerms lists the daemon's terminals in the order they started.
 func runningTerms(l *termd.List) []string {
 	var names []string
-	main := false
+	started := map[string]time.Time{}
 	for _, t := range l.Terminals {
-		switch {
-		case t.Name == mainTerm:
-			main = true
-		case validTermName(t.Name):
+		if validTermName(t.Name) {
 			names = append(names, t.Name)
+			if t.Started > 0 { // older daemons send none
+				started[t.Name] = time.UnixMilli(t.Started)
+			}
 		}
 	}
-	sortTerms(names)
-	if main {
-		names = append([]string{mainTerm}, names...)
-	}
+	orderTerms(names, func(name string) (time.Time, bool) {
+		at, ok := started[name]
+		return at, ok
+	})
 	return names
 }
 

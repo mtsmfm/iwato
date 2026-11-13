@@ -8,7 +8,7 @@ Iwato itself keeps each terminal's screen and scrollback, so you can close the b
 
 - Restarting or updating Iwato does not end the main terminal or the extra ones. When you open them again, the screen comes back from the last output (up to 1 MiB)
 - Ending the main shell with `exit` ends only that terminal; the next time you open it, a new shell starts
-- Open more terminals with ＋ (**New terminal**) above the terminal
+- Open more terminals with ＋ (**New terminal**) above the terminal. The tabs are numbered in the order the terminals started: closing one renumbers those after it, and a new one comes last
 - In a sandbox whose image has no daemon, extra terminals end when Iwato exits
 - When the image's daemon is older than Iwato, what it supports keeps working and the rest falls back (the files and the editor show the working directory); recreating the sandbox brings the new daemon
 
