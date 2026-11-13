@@ -3,7 +3,7 @@
 // numbered by place (the order the terminals started), not by name, so
 // closing one renumbers those after it and a new one comes last, also after
 // a reload; Alt+N picks the Nth. Saves screenshots in a temporary directory
-// (printed at the end). Usage (AGENTS.md):
+// (printed at the end). Closing shows on the tab until it is gone. Usage (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/term-tabs-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -65,10 +65,18 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await mark('second-terminal');
     await shot('two.png');
 
-    // Close 1: the second becomes 1.
+    // Close 1: it shows it is closing until the list comes back; then the
+    // second becomes 1. The fake ends at once: hold the request a moment.
+    await page.route('**/terminals/*/kill', async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
     await card.locator('.term-tab').first().locator('.term-close').click();
     await page.locator('#confirm-ok').click();
+    const closing = card.locator('.term-tab.closing');
+    await closing.waitFor({ timeout: 2000 });
+    check(await closing.locator('.term-spinner').count() === 1 && await closing.locator('.term-close').isDisabled() && (await closing.locator('.term-select').evaluate((b) => b.firstChild.textContent)) === '1', 'the tab being closed shows a spinner and cannot be pressed');
+    await shot('closing.png');
     await until('1', 'closing 1 leaves one tab, numbered 1');
+    check(await card.locator('.term-tab.closing').count() === 0, 'no tab is left closing');
+    await page.unroute('**/terminals/*/kill');
     check(await card.locator('.terminal-host', { hasText: 'second-terminal' }).count() > 0, 'the one left is the second terminal');
     await shot('closed.png');
 

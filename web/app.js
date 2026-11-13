@@ -4764,6 +4764,8 @@
       this.lastSize = '';
       // Terminal sessions of the sandbox; one is shown (and attached) at a time.
       this.termNames = ['main'];
+      // Terminals being closed: their tabs show it until the list comes back.
+      this.closingTerms = new Set();
       this.termMulti = false;
       // Sessions started by an older version: restarting them gets its fixes.
       this.termOutdated = [];
@@ -5258,10 +5260,17 @@
           select.append(element('span', 'stopped-mark'));
           select.title += t('term.stopped.title');
         }
+        const closing = this.closingTerms.has(name);
         const close = button('term-close', '×', () => this.killTerm(name));
-        close.title = t('term.close', { name: label });
+        close.title = t(closing ? 'term.closing' : 'term.close', { name: label });
         close.setAttribute('aria-label', close.title);
-        close.disabled = !state.authorized;
+        close.disabled = !state.authorized || closing;
+        if (closing) {
+          tab.classList.add('closing');
+          tab.setAttribute('aria-busy', 'true');
+          select.disabled = true;
+          close.replaceChildren(element('span', 'term-spinner'));
+        }
         tab.append(select, close);
         return tab;
       });
@@ -5335,16 +5344,24 @@
     async killTerm(name) {
       if (!state.authorized) return;
       if (!(await askConfirm(t('term.close.confirm', { name: this.termLabel(name) }), { ok: t('term.close.ok'), danger: true }))) return;
+      if (this.closingTerms.has(name)) return;
       const current = name === this.termName;
       const index = this.termNames.indexOf(name);
       if (current) this.stopSocket();
+      this.closingTerms.add(name);
+      this.renderTermTabs();
       try {
         await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/terminals/' + encodeURIComponent(name) + '/kill', { method: 'POST', body: '{}' });
       } catch (error) {
         this.showError(t('term.close.failed', { message: error.message }));
         if (error.status === 401 || error.status === 403) invalidateSession();
       }
-      await this.loadTerms();
+      try {
+        await this.loadTerms();
+      } finally {
+        this.closingTerms.delete(name);
+      }
+      if (!this.disposed) this.renderTermTabs();
       if (current && !this.disposed) this.showTermAfter(index);
     }
 
