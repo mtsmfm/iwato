@@ -4,14 +4,40 @@
 # browser terminal showing this session opens the URL in a new tab when it
 # reads OSC 6464;open;URL (web/app.js), only for http(s) and only right after
 # the owner's own click or key there.
+
+# The terminal to write to: /dev/tty, or else the first ancestor's terminal.
+# Programs may start their browser without one (Claude Code opens a clicked
+# link from a process in a new session), while the program itself runs in it.
+terminal() {
+  if (: > /dev/tty) 2>/dev/null; then
+    echo /dev/tty
+    return 0
+  fi
+  pid=$PPID
+  depth=0
+  while [ "$pid" -gt 1 ] 2>/dev/null && [ $depth -lt 16 ]; do
+    for fd in 0 1 2; do
+      t=$(readlink "/proc/$pid/fd/$fd" 2>/dev/null)
+      case "$t" in
+        /dev/pts/[0-9]*) [ -w "$t" ] && { echo "$t"; return 0; } ;;
+      esac
+    done
+    # The parent is the 4th field of stat, after the name in parentheses.
+    pid=$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -d' ' -f2)
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
 status=1
+tty=$(terminal)
 for url in "$@"; do
   case "$url" in
     *[[:cntrl:]]*) echo "iwato-browser: invalid URL" >&2; continue ;;
     http://*|https://*) ;;
     *) echo "iwato-browser: only http(s) URLs open: $url" >&2; continue ;;
   esac
-  if printf '\033]6464;open;%s\007' "$url" 2>/dev/null > /dev/tty; then
+  if [ -n "$tty" ] && printf '\033]6464;open;%s\007' "$url" 2>/dev/null > "$tty"; then
     status=0
   else
     echo "iwato-browser: no terminal to open $url; open it yourself" >&2
