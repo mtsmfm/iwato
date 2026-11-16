@@ -6,7 +6,7 @@
 # the owner's own click or key there.
 
 # The terminal to write to: /dev/tty, or else the first ancestor's terminal.
-# Programs may start their browser without one (Claude Code opens a clicked
+# Programs may start their browser without one (an agent CLI opens a clicked
 # link from a process in a new session), while the program itself runs in it.
 terminal() {
   if (: > /dev/tty) 2>/dev/null; then
