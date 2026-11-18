@@ -38,9 +38,9 @@ import (
 // tag alone is found by it too). scripts/check-pins.sh checks the digests
 // against the registry; docs/dev/development.md#bumping-pinned-versions.
 const (
-	OpenShellVersion       = "0.1.7"
-	supervisorImageDigest  = "sha256:a07864bd0c546716039c2000a919f50ce8f7f1f67ba37dda350cf64d3a7cfb06"
-	sandboxImageDigest     = "sha256:89819c03f291d9b909c3fc2962360e24af4516627422d18f3e681829f003f347"
+	OpenShellVersion       = "0.1.9"
+	supervisorImageDigest  = "sha256:f1ec231b5dbe5b6a40c33acb2ac847995aabb959a56134ef6d7d7aa4f43199d3"
+	sandboxImageDigest     = "sha256:e57d07cd6cc1fc314b80368d6b51ec6fbf825fb62cd8f081312941180846866f"
 	DefaultSupervisorImage = "ghcr.io/nvidia/openshell/supervisor:" + OpenShellVersion + "@" + supervisorImageDigest
 	DefaultSandboxImage    = "ghcr.io/nvidia/openshell/sandbox:" + OpenShellVersion + "@" + sandboxImageDigest
 )

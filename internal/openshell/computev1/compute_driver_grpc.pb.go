@@ -652,6 +652,121 @@ var ComputeDriver_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	ComputeDriverAppEndpoints_ResolveSupervisorAppEndpoint_FullMethodName = "/openshell.compute.v1.ComputeDriverAppEndpoints/ResolveSupervisorAppEndpoint"
+)
+
+// ComputeDriverAppEndpointsClient is the client API for ComputeDriverAppEndpoints service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Optional application-endpoint resolution on the same driver endpoint.
+// Drivers without this service return UNIMPLEMENTED; the baseline trait is unchanged.
+type ComputeDriverAppEndpointsClient interface {
+	// Resolve the current supervisor application listener independently of sandbox
+	// observation. Unsupported drivers return UNIMPLEMENTED. An absent endpoint
+	// means no safe endpoint is currently available, not a sandbox lookup failure.
+	ResolveSupervisorAppEndpoint(ctx context.Context, in *ResolveSupervisorAppEndpointRequest, opts ...grpc.CallOption) (*ResolveSupervisorAppEndpointResponse, error)
+}
+
+type computeDriverAppEndpointsClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewComputeDriverAppEndpointsClient(cc grpc.ClientConnInterface) ComputeDriverAppEndpointsClient {
+	return &computeDriverAppEndpointsClient{cc}
+}
+
+func (c *computeDriverAppEndpointsClient) ResolveSupervisorAppEndpoint(ctx context.Context, in *ResolveSupervisorAppEndpointRequest, opts ...grpc.CallOption) (*ResolveSupervisorAppEndpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveSupervisorAppEndpointResponse)
+	err := c.cc.Invoke(ctx, ComputeDriverAppEndpoints_ResolveSupervisorAppEndpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ComputeDriverAppEndpointsServer is the server API for ComputeDriverAppEndpoints service.
+// All implementations must embed UnimplementedComputeDriverAppEndpointsServer
+// for forward compatibility.
+//
+// Optional application-endpoint resolution on the same driver endpoint.
+// Drivers without this service return UNIMPLEMENTED; the baseline trait is unchanged.
+type ComputeDriverAppEndpointsServer interface {
+	// Resolve the current supervisor application listener independently of sandbox
+	// observation. Unsupported drivers return UNIMPLEMENTED. An absent endpoint
+	// means no safe endpoint is currently available, not a sandbox lookup failure.
+	ResolveSupervisorAppEndpoint(context.Context, *ResolveSupervisorAppEndpointRequest) (*ResolveSupervisorAppEndpointResponse, error)
+	mustEmbedUnimplementedComputeDriverAppEndpointsServer()
+}
+
+// UnimplementedComputeDriverAppEndpointsServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedComputeDriverAppEndpointsServer struct{}
+
+func (UnimplementedComputeDriverAppEndpointsServer) ResolveSupervisorAppEndpoint(context.Context, *ResolveSupervisorAppEndpointRequest) (*ResolveSupervisorAppEndpointResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveSupervisorAppEndpoint not implemented")
+}
+func (UnimplementedComputeDriverAppEndpointsServer) mustEmbedUnimplementedComputeDriverAppEndpointsServer() {
+}
+func (UnimplementedComputeDriverAppEndpointsServer) testEmbeddedByValue() {}
+
+// UnsafeComputeDriverAppEndpointsServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ComputeDriverAppEndpointsServer will
+// result in compilation errors.
+type UnsafeComputeDriverAppEndpointsServer interface {
+	mustEmbedUnimplementedComputeDriverAppEndpointsServer()
+}
+
+func RegisterComputeDriverAppEndpointsServer(s grpc.ServiceRegistrar, srv ComputeDriverAppEndpointsServer) {
+	// If the following call panics, it indicates UnimplementedComputeDriverAppEndpointsServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ComputeDriverAppEndpoints_ServiceDesc, srv)
+}
+
+func _ComputeDriverAppEndpoints_ResolveSupervisorAppEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveSupervisorAppEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ComputeDriverAppEndpointsServer).ResolveSupervisorAppEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ComputeDriverAppEndpoints_ResolveSupervisorAppEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ComputeDriverAppEndpointsServer).ResolveSupervisorAppEndpoint(ctx, req.(*ResolveSupervisorAppEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ComputeDriverAppEndpoints_ServiceDesc is the grpc.ServiceDesc for ComputeDriverAppEndpoints service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ComputeDriverAppEndpoints_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "openshell.compute.v1.ComputeDriverAppEndpoints",
+	HandlerType: (*ComputeDriverAppEndpointsServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ResolveSupervisorAppEndpoint",
+			Handler:    _ComputeDriverAppEndpoints_ResolveSupervisorAppEndpoint_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "compute_driver.proto",
+}
+
+const (
 	ComputeDriverConfigurationUpdates_UpdateSandboxConfiguration_FullMethodName = "/openshell.compute.v1.ComputeDriverConfigurationUpdates/UpdateSandboxConfiguration"
 )
 
