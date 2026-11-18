@@ -50,7 +50,7 @@ Providers made before this (each with a profile of its own) keep working as they
 
 ## Custom providers
 
-Add a custom one as YAML adds a provider type of your own as an OpenShell provider profile. Iwato lints it and runs its own checks before saving, and stores it as `profiles/ID.yaml` in the config folder (read when Iwato starts, so you can edit it with another editor). Ids starting with `iwato-` are reserved for Iwato's own. OpenShell puts a credential only where its `auth_style` says (`bearer` or `basic`: the `Authorization` header; `header` with `header_name`; `query` with `query_param`; `path` with `path_template`), and without one only in `Authorization`: declare it when the service takes the key in another header, the query or the path.
+Add a custom one as YAML adds a provider type of your own as an OpenShell provider profile. Iwato lints it and runs its own checks before saving, and stores it as `profiles/ID.yaml` in the config folder (read when Iwato starts, so you can edit it with another editor). Ids starting with `iwato-` are reserved for Iwato's own. OpenShell puts a credential only where its `auth_style` says (`bearer` or `basic`: the `Authorization` header; `header` with `header_name`; `query` with `query_param`; `path` with `path_template`), and without one only in `Authorization`: declare it when the service takes the key in another header, the query or the path. A placeholder sent anywhere else gets 403 `credential_placement_mismatch`.
 
 ## OAuth providers
 

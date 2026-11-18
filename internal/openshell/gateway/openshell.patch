@@ -787,8 +787,8 @@ index 00000000..17925981
 +            .unwrap();
 +        let config = crate::l7::parse_l7_config(&endpoint_config.unwrap()).unwrap();
 +
-+        // As iwato-modal: the token as a bearer header, the secret in its own
-+        // header (a credential resolves only where its profile places it).
++        // A bearer token and a secret in its own header (iwato-modal places
++        // both in headers); a credential resolves only where it is placed.
 +        let placed = |key: &str, auth_style: &str, header_name: &str| {
 +            (
 +                format!("{STATIC_CREDENTIAL_METADATA_PREFIX}{key}"),
