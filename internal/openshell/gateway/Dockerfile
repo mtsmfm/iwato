@@ -4,20 +4,20 @@
 # relays it). On a Docker-compatible engine (COMPUTE_DRIVER=docker) the
 # gateway runs upstream's Docker driver itself (gateway-docker.toml).
 #
-# OPENSHELL_TAG picks the release: v0.1.6, or dev for OpenShell's rolling
+# OPENSHELL_TAG picks the release: v0.1.7, or dev for OpenShell's rolling
 # build of main. For dev the sandbox and supervisor images are built here
 # too (--target sandbox / supervisor), as the official images of main are
 # not tagged.
 #
 # OPENSHELL_PATCH picks the supervisor: release (the release's binary), or
-# patched (v0.1.6's source with openshell.patch, built here with Rust; only
-# for v0.1.6). The gateway image carries the same supervisor at
+# patched (v0.1.7's source with openshell.patch, built here with Rust; only
+# for v0.1.7). The gateway image carries the same supervisor at
 # /openshell-supervisor, so it serves as the sandboxes' supervisor image too
 # (gateway.PatchedSupervisor).
-ARG OPENSHELL_TAG=v0.1.6
+ARG OPENSHELL_TAG=v0.1.7
 ARG OPENSHELL_PATCH=patched
 
-FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS base
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS base
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl socat openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,15 +33,15 @@ ARG OPENSHELL_TAG
 RUN set -e; base=https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_TAG}; mkdir /out /dl; cd /dl; a=$(uname -m); \
     files="openshell-gateway-$a-unknown-linux-gnu openshell-$a-unknown-linux-musl openshell-sandbox-$a-unknown-linux-musl openshell-supervisor-$a-unknown-linux-gnu"; \
     case "$OPENSHELL_TAG" in \
-      v0.1.6) printf '%s\n' \
-        '811265a55993beb333905a5b560764a40aa9177250171f711dce8ba820f7eff8  openshell-gateway-x86_64-unknown-linux-gnu.tar.gz' \
-        'de7342457746829138cecbc21cc90a2d5d4c0ea22a362b976831ac3bbb0109d6  openshell-gateway-aarch64-unknown-linux-gnu.tar.gz' \
-        '2951c67366f3e3584ed9cec8d49b9f0b0eefc8cacea8b0582ac164590492f136  openshell-x86_64-unknown-linux-musl.tar.gz' \
-        '259452a6065c4f76e71884b84e8696cc0fec2f8a832891d333f268ca7bb55a21  openshell-aarch64-unknown-linux-musl.tar.gz' \
-        '789c42ea8783f66574bc49d09f32136224a182f5ef1a46b84b71ef2f31de818f  openshell-sandbox-x86_64-unknown-linux-musl.tar.gz' \
-        '93092ff5669cd312f915d704243365c688933232c931cae43d492669f4a1673e  openshell-sandbox-aarch64-unknown-linux-musl.tar.gz' \
-        'c33be6fc1e3bebba60bd1dc29a56b274052578d724e5eca46fedd4311a0cd323  openshell-supervisor-x86_64-unknown-linux-gnu.tar.gz' \
-        '01a9734368ac32c399b664ad943feca1d777d36ae4fb4e073422d09c5e9a4961  openshell-supervisor-aarch64-unknown-linux-gnu.tar.gz' \
+      v0.1.7) printf '%s\n' \
+        'e1714dcfd85c949e2f53260bcfbf04b203f6f5cbd3a61e61c11c38cbc91cb102  openshell-gateway-x86_64-unknown-linux-gnu.tar.gz' \
+        'eb0ba91efebbcc61e4cfae5fb18934c5fe308ece1a09ba16c999d00c452109dc  openshell-gateway-aarch64-unknown-linux-gnu.tar.gz' \
+        '5c1adfcae797eac9b2e8b9280c66c1f75e4e84d9e31ce6938c5b994314ef6098  openshell-x86_64-unknown-linux-musl.tar.gz' \
+        '696b523c263895b69eaa7c7e6afbb19b8af6c65cd79c7ffac7b685b6e3aa23da  openshell-aarch64-unknown-linux-musl.tar.gz' \
+        'c1b3166d1c232948293ff84b0fac2d0419a24e4b694d354ba6aeb100efa2f039  openshell-sandbox-x86_64-unknown-linux-musl.tar.gz' \
+        'ed60eab7612f372a0f669186ac2637fe3223fe90a1c20ad51d747e1a87ca5c6d  openshell-sandbox-aarch64-unknown-linux-musl.tar.gz' \
+        'a33903b42a8333de73f4a0f051b0477559c632cf31188caeed0064b4c2048601  openshell-supervisor-x86_64-unknown-linux-gnu.tar.gz' \
+        '095d561df9ea40e0af55d8d3645cd13ee6ef9f92d2ccd2b78d76faaec4dec9f3  openshell-supervisor-aarch64-unknown-linux-gnu.tar.gz' \
         > pinned.sha256 ;; \
       dev) echo "WARNING: OpenShell dev is not pinned; checking it against the checksums published with it"; \
         for p in openshell openshell-gateway openshell-sandbox openshell-supervisor; do curl -fsSL "$base/$p-checksums-sha256.txt"; done > pinned.sha256 ;; \
@@ -57,21 +57,21 @@ RUN set -e; base=https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHE
 
 FROM fetch AS supervisor-release
 
-# v0.1.6's source (the tag's commit) with openshell.patch applied, built as
+# v0.1.7's source (the tag's commit) with openshell.patch applied, built as
 # the release builds openshell-supervisor (crates' version set to the
 # release's, default features, glibc) with the repository's toolchain, 1.95.0.
 # rustup-init is pinned by SHA-256 per architecture; rustup checks the
 # toolchain itself.
-# openshell.patch is the diff of the iwato/v0.1.6 branch of
-# github.com/mtsmfm/openshell (8a75a2694242) from v0.1.6, regenerated with
-#   git diff v0.1.6 8a75a269424225083e9cab88029e316eba7626f3
+# openshell.patch is the iwato/v0.1.6 branch of github.com/mtsmfm/openshell
+# (8a75a2694242) rebased onto v0.1.7 (l7/tls.rs: try_server_builder), as
+#   git diff v0.1.7 <the rebased commit>
 # (HTTP/2 for opted-in endpoints, a 64 MiB gRPC receive limit in the
 # supervisor's client, relays kept open across policy reloads).
 FROM base AS supervisor-patched
 ARG OPENSHELL_TAG
 RUN apt-get update && apt-get install -y --no-install-recommends git build-essential clang cmake pkg-config \
     && rm -rf /var/lib/apt/lists/*
-RUN set -e; [ "$OPENSHELL_TAG" = v0.1.6 ] || { echo "openshell.patch is for OpenShell v0.1.6, not $OPENSHELL_TAG" >&2; exit 1; }; \
+RUN set -e; [ "$OPENSHELL_TAG" = v0.1.7 ] || { echo "openshell.patch is for OpenShell v0.1.7, not $OPENSHELL_TAG" >&2; exit 1; }; \
     a=$(uname -m); case "$a" in \
       x86_64) want=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4 ;; \
       aarch64) want=a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697 ;; \
@@ -84,9 +84,9 @@ ENV PATH=/root/.cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.95.0
 WORKDIR /src
 # The version is set in Cargo.lock too (only the workspace's crates are at
 # 0.0.0), so --locked holds.
-RUN git init -q . && git fetch -q --depth 1 https://github.com/NVIDIA/OpenShell.git ac7f615cd12d5cc49cb16eb1f5f10ffeb1e90f47 \
+RUN git init -q . && git fetch -q --depth 1 https://github.com/NVIDIA/OpenShell.git 5d25211b25a8fc887e8d5c606d57d6ab22f1d76c \
     && git checkout -q FETCH_HEAD \
-    && sed -i 's/^version = "0\.0\.0"$/version = "0.1.6"/' Cargo.toml Cargo.lock \
+    && sed -i 's/^version = "0\.0\.0"$/version = "0.1.7"/' Cargo.toml Cargo.lock \
     && cargo fetch --locked
 # The unpatched build, in a layer the patch does not invalidate: a change to
 # the patch rebuilds only the crates it touches and those depending on them.
@@ -108,7 +108,7 @@ COPY --from=fetch --chmod=0555 /out/openshell-sandbox /openshell-sandbox
 USER 65532:65532
 ENTRYPOINT ["/openshell-sandbox"]
 
-FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS supervisor
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS supervisor
 COPY --from=supervisor-bin --chmod=0555 /out/openshell-supervisor /openshell-supervisor
 ENTRYPOINT ["/openshell-supervisor"]
 
