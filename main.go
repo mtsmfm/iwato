@@ -49,7 +49,7 @@ func run(args []string) (err error) {
 		return nil
 	}
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
-	configFile := f.String("config", "iwato.json", "configuration JSON")
+	configFile := f.String("config", "", "configuration JSON (default: iwato.json in the folder started in when there is one, else in the user's config folder: %LOCALAPPDATA%\\iwato, $XDG_CONFIG_HOME/iwato or ~/.config/iwato)")
 	listen := f.String("listen", "", "loopback bind address (default: the port in the configuration, taken at the first start)")
 	publicOrigin := f.String("public-origin", "", "https origin of `tailscale serve` in front of the listener (phones on the tailnet)")
 	sessionHours := f.Int("session-hours", 0, "fixes a browser sign-in's lifetime, in hours (1-720; without it the settings' limits: 7 days unused, 30 at most)")
@@ -82,6 +82,11 @@ func run(args []string) (err error) {
 	}
 	var c Config
 	var e error
+	if fake == nil && *configFile == "" {
+		if *configFile, e = defaultConfigPath(); e != nil {
+			return e
+		}
+	}
 	if fake != nil {
 		c = fake.config
 	} else {

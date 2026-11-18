@@ -10,11 +10,11 @@
 
 ## Install
 
-Download `iwato-windows-amd64.exe` (or `iwato-windows-arm64.exe`) from [Releases](https://github.com/mtsmfm/iwato/releases) (until the first release, from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), rebuilt from `main` on every change) and save it as `iwato.exe` in a folder of its own. To build it yourself instead, see [development](../dev/development.md).
+Download `iwato-windows-amd64.exe` (or `iwato-windows-arm64.exe`) from [Releases](https://github.com/mtsmfm/iwato/releases) (until the first release, from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), rebuilt from `main` on every change) and save it as `iwato.exe` anywhere you like. To build it yourself instead, see [development](../dev/development.md).
 
 The exe is not signed, so Windows SmartScreen may warn when you run a downloaded copy for the first time ("More info" → "Run anyway").
 
-The folder you start Iwato in becomes its **config folder**: Iwato keeps `iwato.json`, its log, its secrets and your own presets and provider profiles there. Start it from the same folder every time (or pass `-config PATH\iwato.json`).
+Iwato keeps `iwato.json`, its log, its secrets and your own presets and provider profiles in its **config folder**: `%LOCALAPPDATA%\iwato` on Windows, `~/.config/iwato` on macOS and Linux (`$XDG_CONFIG_HOME/iwato` when that is set). The settings' Startup checks show where. A folder you start Iwato in that already has an `iwato.json` stays its config folder (setups from before), and `-config PATH\iwato.json` picks another.
 
 ## First run
 
@@ -109,7 +109,7 @@ Install it, start it (`sudo systemctl enable --now docker`) and let your user ru
 
 ### Run Iwato
 
-Download `iwato-darwin-arm64`, `iwato-linux-amd64` or `iwato-linux-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` in a folder of its own (the config folder, as on Windows). Run it from there (Iwato keeps its settings in the folder it is started in: started from another folder, say through `PATH`, it is a separate Iwato with settings of its own, unless given `-config /path/to/iwato.json`):
+Download `iwato-darwin-arm64`, `iwato-linux-amd64` or `iwato-linux-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` anywhere (a folder on `PATH` works). Run it:
 
 ```sh
 chmod +x iwato

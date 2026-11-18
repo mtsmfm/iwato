@@ -10,11 +10,11 @@
 
 ## インストール
 
-[Releases](https://github.com/mtsmfm/iwato/releases) から `iwato-windows-amd64.exe` (または `iwato-windows-arm64.exe`) をダウンロードし (最初のリリースまでは、`main` の変更のたびに作り直されるプレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から)、専用のフォルダーに `iwato.exe` として置きます。自分でビルドするときは [開発](../../dev/development.md) (英語) を参照してください。
+[Releases](https://github.com/mtsmfm/iwato/releases) から `iwato-windows-amd64.exe` (または `iwato-windows-arm64.exe`) をダウンロードし (最初のリリースまでは、`main` の変更のたびに作り直されるプレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から)、好きな場所に `iwato.exe` として置きます。自分でビルドするときは [開発](../../dev/development.md) (英語) を参照してください。
 
 exe は署名されていないので、ダウンロードしたものを初めて実行するときに Windows の SmartScreen が警告することがあります (「詳細情報」→「実行」)。
 
-Iwato を起動したフォルダーが **設定フォルダー** になります。`iwato.json`、ログ、秘密、自分のプリセットとプロバイダーのプロファイルをそこに置きます。毎回同じフォルダーで起動してください (または `-config PATH\iwato.json` を付けます)。
+Iwato は `iwato.json`、ログ、秘密、自分のプリセットとプロバイダーのプロファイルを **設定フォルダー** に置きます。Windows は `%LOCALAPPDATA%\iwato`、macOS と Linux は `~/.config/iwato` (`$XDG_CONFIG_HOME` があれば `$XDG_CONFIG_HOME/iwato`) です。場所は「設定」の「起動時の確認」に出ます。起動したフォルダーにすでに `iwato.json` があれば、そのフォルダーを設定フォルダーとして使い続けます (以前からの使い方)。`-config PATH\iwato.json` で別の場所を指定できます。
 
 ## 最初の起動
 
@@ -109,7 +109,7 @@ Docker Desktop では、ホストネットワークを有効にし (Settings →
 
 ### Iwato を動かす
 
-プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64`・`iwato-linux-amd64`・`iwato-linux-arm64` のどれかをダウンロードし、専用のフォルダーに `iwato` として置きます (Windows と同じく設定フォルダーになります)。そのフォルダーで実行します (Iwato は起動したフォルダーに設定を置きます。別のフォルダーから `PATH` 経由などで起動すると、`-config /path/to/iwato.json` を付けない限り、設定が別の Iwato になります):
+プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64`・`iwato-linux-amd64`・`iwato-linux-arm64` のどれかをダウンロードし、好きな場所 (`PATH` の通ったフォルダーでもかまいません) に `iwato` として置き、実行します:
 
 ```sh
 chmod +x iwato

@@ -23,7 +23,7 @@
 
 ## Install and first run
 
-Download `iwato-windows-amd64.exe` (or `-arm64`) from [Releases](https://github.com/mtsmfm/iwato/releases) (until the first release, from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), rebuilt from `main` on every change), save it as `iwato.exe` in a folder of its own, and run it there:
+Download `iwato-windows-amd64.exe` (or `-arm64`) from [Releases](https://github.com/mtsmfm/iwato/releases) (until the first release, from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), rebuilt from `main` on every change), save it as `iwato.exe` anywhere, and run it:
 
 ```powershell
 .\iwato.exe
@@ -31,7 +31,7 @@ Download `iwato-windows-amd64.exe` (or `-arm64`) from [Releases](https://github.
 
 Open the printed `http://127.0.0.1:17600/#token=...` (once, within 10 minutes). The first start pulls the images and starts the gateway, which takes a few minutes; if WSLc or the engine cannot be used, the page says why and how to fix it. Then create a sandbox, start it and open its terminal.
 
-On macOS (experimental, not yet tried on a real Mac), download `iwato-darwin-arm64` from [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), save it as `iwato` in a folder of its own, and run it there:
+On macOS (experimental, not yet tried on a real Mac), download `iwato-darwin-arm64` from [edge](https://github.com/mtsmfm/iwato/releases/tag/edge), save it as `iwato` anywhere, and run it:
 
 ```sh
 brew install colima docker
