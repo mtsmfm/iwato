@@ -650,3 +650,114 @@ var ComputeDriver_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "compute_driver.proto",
 }
+
+const (
+	ComputeDriverConfigurationUpdates_UpdateSandboxConfiguration_FullMethodName = "/openshell.compute.v1.ComputeDriverConfigurationUpdates/UpdateSandboxConfiguration"
+)
+
+// ComputeDriverConfigurationUpdatesClient is the client API for ComputeDriverConfigurationUpdates service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Optional stopped-sandbox configuration update extension on the same endpoint.
+// Baseline generated driver traits remain unchanged. Negotiate
+// openshell.compute.update-sandbox-configuration before calling this service.
+type ComputeDriverConfigurationUpdatesClient interface {
+	UpdateSandboxConfiguration(ctx context.Context, in *UpdateSandboxConfigurationRequest, opts ...grpc.CallOption) (*UpdateSandboxConfigurationResponse, error)
+}
+
+type computeDriverConfigurationUpdatesClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewComputeDriverConfigurationUpdatesClient(cc grpc.ClientConnInterface) ComputeDriverConfigurationUpdatesClient {
+	return &computeDriverConfigurationUpdatesClient{cc}
+}
+
+func (c *computeDriverConfigurationUpdatesClient) UpdateSandboxConfiguration(ctx context.Context, in *UpdateSandboxConfigurationRequest, opts ...grpc.CallOption) (*UpdateSandboxConfigurationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSandboxConfigurationResponse)
+	err := c.cc.Invoke(ctx, ComputeDriverConfigurationUpdates_UpdateSandboxConfiguration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ComputeDriverConfigurationUpdatesServer is the server API for ComputeDriverConfigurationUpdates service.
+// All implementations must embed UnimplementedComputeDriverConfigurationUpdatesServer
+// for forward compatibility.
+//
+// Optional stopped-sandbox configuration update extension on the same endpoint.
+// Baseline generated driver traits remain unchanged. Negotiate
+// openshell.compute.update-sandbox-configuration before calling this service.
+type ComputeDriverConfigurationUpdatesServer interface {
+	UpdateSandboxConfiguration(context.Context, *UpdateSandboxConfigurationRequest) (*UpdateSandboxConfigurationResponse, error)
+	mustEmbedUnimplementedComputeDriverConfigurationUpdatesServer()
+}
+
+// UnimplementedComputeDriverConfigurationUpdatesServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedComputeDriverConfigurationUpdatesServer struct{}
+
+func (UnimplementedComputeDriverConfigurationUpdatesServer) UpdateSandboxConfiguration(context.Context, *UpdateSandboxConfigurationRequest) (*UpdateSandboxConfigurationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSandboxConfiguration not implemented")
+}
+func (UnimplementedComputeDriverConfigurationUpdatesServer) mustEmbedUnimplementedComputeDriverConfigurationUpdatesServer() {
+}
+func (UnimplementedComputeDriverConfigurationUpdatesServer) testEmbeddedByValue() {}
+
+// UnsafeComputeDriverConfigurationUpdatesServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ComputeDriverConfigurationUpdatesServer will
+// result in compilation errors.
+type UnsafeComputeDriverConfigurationUpdatesServer interface {
+	mustEmbedUnimplementedComputeDriverConfigurationUpdatesServer()
+}
+
+func RegisterComputeDriverConfigurationUpdatesServer(s grpc.ServiceRegistrar, srv ComputeDriverConfigurationUpdatesServer) {
+	// If the following call panics, it indicates UnimplementedComputeDriverConfigurationUpdatesServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ComputeDriverConfigurationUpdates_ServiceDesc, srv)
+}
+
+func _ComputeDriverConfigurationUpdates_UpdateSandboxConfiguration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSandboxConfigurationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ComputeDriverConfigurationUpdatesServer).UpdateSandboxConfiguration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ComputeDriverConfigurationUpdates_UpdateSandboxConfiguration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ComputeDriverConfigurationUpdatesServer).UpdateSandboxConfiguration(ctx, req.(*UpdateSandboxConfigurationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ComputeDriverConfigurationUpdates_ServiceDesc is the grpc.ServiceDesc for ComputeDriverConfigurationUpdates service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ComputeDriverConfigurationUpdates_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "openshell.compute.v1.ComputeDriverConfigurationUpdates",
+	HandlerType: (*ComputeDriverConfigurationUpdatesServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "UpdateSandboxConfiguration",
+			Handler:    _ComputeDriverConfigurationUpdates_UpdateSandboxConfiguration_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "compute_driver.proto",
+}

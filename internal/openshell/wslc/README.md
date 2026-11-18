@@ -84,5 +84,5 @@ cap on the tmpfs, not an allocation.
 Not supported: PID limits and resource admission. WSLc has no `--cap-drop` or no-new-privileges, so the workload
 relies on `launch-capability-free` dropping them.
 
-Regenerate `../computev1` and `../extensionv1` from `../proto` (OpenShell v0.1.6; the other protos come from its Go SDK, so mapped with `M` options) with protoc
+Regenerate `../computev1` and `../extensionv1` from `../proto` (OpenShell v0.1.7; the other protos come from its Go SDK, so mapped with `M` options) with protoc
 29.6, protoc-gen-go 1.36.11 and protoc-gen-go-grpc 1.6.2.

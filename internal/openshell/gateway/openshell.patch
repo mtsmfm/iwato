@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 9c8d0974d..b162d5db6 100644
+index 7f0c1753..c6bb6826 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -5196,6 +5196,7 @@ dependencies = [
+@@ -5301,6 +5301,7 @@ dependencies = [
   "flate2",
   "futures",
   "glob",
@@ -11,7 +11,7 @@ index 9c8d0974d..b162d5db6 100644
   "hickory-proto",
   "http 1.4.0",
 diff --git a/crates/openshell-core/src/grpc_client.rs b/crates/openshell-core/src/grpc_client.rs
-index 3a13ed88e..e7b6d9651 100644
+index 64268a78..1bc31272 100644
 --- a/crates/openshell-core/src/grpc_client.rs
 +++ b/crates/openshell-core/src/grpc_client.rs
 @@ -63,6 +63,11 @@ pub type AuthedChannel = InterceptedService<Channel, AuthInterceptor>;
@@ -26,7 +26,7 @@ index 3a13ed88e..e7b6d9651 100644
  /// Shared, refreshable Bearer header. All [`AuthInterceptor`] clones read
  /// the same slot, so the renewal task can replace the token in place without
  /// rebuilding the channel. `None` means the owning sandbox instance revoked it.
-@@ -1078,7 +1083,7 @@ mod workspace_tests {
+@@ -1202,7 +1207,7 @@ mod workspace_tests {
  /// Connect to the `OpenShell` server with one sandbox instance's credentials.
  async fn connect(gateway: &GatewayEndpoint) -> Result<OpenShellClient<AuthedChannel>> {
      let channel = connect_channel(gateway).await?;
@@ -36,7 +36,7 @@ index 3a13ed88e..e7b6d9651 100644
  
  /// Fetch sandbox policy from `OpenShell` server via gRPC.
 diff --git a/crates/openshell-supervisor-network/Cargo.toml b/crates/openshell-supervisor-network/Cargo.toml
-index 6ac123957..87290511f 100644
+index aa3ca350..2faf7209 100644
 --- a/crates/openshell-supervisor-network/Cargo.toml
 +++ b/crates/openshell-supervisor-network/Cargo.toml
 @@ -29,6 +29,7 @@ aws-sigv4 = { version = "1", features = ["sign-http", "http1"] }
@@ -49,7 +49,7 @@ index 6ac123957..87290511f 100644
  flate2 = "1"
 diff --git a/crates/openshell-supervisor-network/src/l7/http2.rs b/crates/openshell-supervisor-network/src/l7/http2.rs
 new file mode 100644
-index 000000000..a8fc847a1
+index 00000000..a8fc847a
 --- /dev/null
 +++ b/crates/openshell-supervisor-network/src/l7/http2.rs
 @@ -0,0 +1,1240 @@
@@ -1294,7 +1294,7 @@ index 000000000..a8fc847a1
 +    }
 +}
 diff --git a/crates/openshell-supervisor-network/src/l7/mod.rs b/crates/openshell-supervisor-network/src/l7/mod.rs
-index 3f2611499..cec583644 100644
+index 3f261149..cec58364 100644
 --- a/crates/openshell-supervisor-network/src/l7/mod.rs
 +++ b/crates/openshell-supervisor-network/src/l7/mod.rs
 @@ -10,6 +10,7 @@
@@ -1306,7 +1306,7 @@ index 3f2611499..cec583644 100644
  pub(crate) mod mcp;
  pub(crate) mod middleware;
 diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
-index 17001e293..28ed51ad5 100644
+index 4685a841..7a4f0d65 100644
 --- a/crates/openshell-supervisor-network/src/l7/relay.rs
 +++ b/crates/openshell-supervisor-network/src/l7/relay.rs
 @@ -144,7 +144,7 @@ fn scoped_context_for_request(
@@ -1359,7 +1359,7 @@ index 17001e293..28ed51ad5 100644
              }
              let runner = engine.middleware_runner()?;
 diff --git a/crates/openshell-supervisor-network/src/l7/rest.rs b/crates/openshell-supervisor-network/src/l7/rest.rs
-index 7b8594266..6f2a986f8 100644
+index 7b859426..6f2a986f 100644
 --- a/crates/openshell-supervisor-network/src/l7/rest.rs
 +++ b/crates/openshell-supervisor-network/src/l7/rest.rs
 @@ -310,6 +310,16 @@ async fn parse_http_request<C: AsyncRead + Unpin>(
@@ -1380,10 +1380,10 @@ index 7b8594266..6f2a986f8 100644
  ///
  /// The forward proxy needs this after it has consumed the incoming HTTP/1
 diff --git a/crates/openshell-supervisor-network/src/l7/tls.rs b/crates/openshell-supervisor-network/src/l7/tls.rs
-index fe24afc90..a81bcfe46 100644
+index 5eeba7a5..594dfc19 100644
 --- a/crates/openshell-supervisor-network/src/l7/tls.rs
 +++ b/crates/openshell-supervisor-network/src/l7/tls.rs
-@@ -205,25 +205,43 @@ impl CertCache {
+@@ -209,19 +209,33 @@ impl CertCache {
  pub struct ProxyTlsState {
      cert_cache: CertCache,
      upstream_config: Arc<ClientConfig>,
@@ -1415,7 +1415,9 @@ index fe24afc90..a81bcfe46 100644
 +    /// Like [`Self::acceptor_for`], optionally also offering `h2`.
 +    fn acceptor_with_alpn(&self, hostname: &str, offer_h2: bool) -> Result<TlsAcceptor> {
          let leaf = self.cert_cache.get_or_generate(hostname)?;
-         let mut server_config = openshell_crypto::tls::server_builder()
+         let mut server_config = openshell_crypto::tls::try_server_builder()
+             .into_diagnostic()
+@@ -229,7 +243,11 @@ impl ProxyTlsState {
              .with_no_client_auth()
              .with_single_cert(leaf.cert_chain.clone(), leaf.private_key.clone_key())
              .into_diagnostic()?;
@@ -1428,7 +1430,7 @@ index fe24afc90..a81bcfe46 100644
          Ok(TlsAcceptor::from(Arc::new(server_config)))
      }
  
-@@ -231,6 +249,49 @@ impl ProxyTlsState {
+@@ -237,6 +255,49 @@ impl ProxyTlsState {
      pub fn upstream_config(&self) -> &Arc<ClientConfig> {
          &self.upstream_config
      }
@@ -1479,7 +1481,7 @@ index fe24afc90..a81bcfe46 100644
  
  /// Accept TLS from a sandbox client, presenting a dynamic cert for the hostname.
 diff --git a/crates/openshell-supervisor-network/src/opa.rs b/crates/openshell-supervisor-network/src/opa.rs
-index 2d1a73a94..1b086e5c8 100644
+index 2d1a73a9..1b086e5c 100644
 --- a/crates/openshell-supervisor-network/src/opa.rs
 +++ b/crates/openshell-supervisor-network/src/opa.rs
 @@ -30,7 +30,7 @@ use std::sync::{
@@ -1914,10 +1916,10 @@ index 2d1a73a94..1b086e5c8 100644
              websocket_assembly_budget: self.websocket_assembly_budget(),
          })
 diff --git a/crates/openshell-supervisor-network/src/proxy.rs b/crates/openshell-supervisor-network/src/proxy.rs
-index bd93c78c5..a62a4cfba 100644
+index 7560a3ae..5c566634 100644
 --- a/crates/openshell-supervisor-network/src/proxy.rs
 +++ b/crates/openshell-supervisor-network/src/proxy.rs
-@@ -3086,18 +3086,26 @@ async fn handle_mediated_connection(
+@@ -3202,18 +3202,26 @@ async fn handle_mediated_connection(
              // Complete the client handshake before observing the upstream
              // connection. A malformed client handshake provides no evidence
              // of an endpoint network failure.
@@ -1948,7 +1950,7 @@ index bd93c78c5..a62a4cfba 100644
              )
              .await
              {
-@@ -3124,6 +3132,14 @@ async fn handle_mediated_connection(
+@@ -3240,6 +3248,14 @@ async fn handle_mediated_connection(
                      return Ok(());
                  };
  
@@ -1964,7 +1966,7 @@ index bd93c78c5..a62a4cfba 100644
              };
              if let Err(e) = Box::pin(tls_result).await {
 diff --git a/crates/openshell-supervisor-network/src/proxy/relay.rs b/crates/openshell-supervisor-network/src/proxy/relay.rs
-index 3e722e3b5..e5277e327 100644
+index 495c2224..d7993183 100644
 --- a/crates/openshell-supervisor-network/src/proxy/relay.rs
 +++ b/crates/openshell-supervisor-network/src/proxy/relay.rs
 @@ -5,7 +5,9 @@
@@ -2138,7 +2140,7 @@ index 3e722e3b5..e5277e327 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
          let context = prepare_http_relay(None, &engine, &decision, &request).unwrap();
-@@ -500,7 +584,7 @@ mod tests {
+@@ -501,7 +585,7 @@ mod tests {
  
      #[test]
      fn relay_without_route_pins_l4_decision_generation() {
@@ -2147,7 +2149,7 @@ index 3e722e3b5..e5277e327 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
  
-@@ -518,7 +602,7 @@ mod tests {
+@@ -519,7 +603,7 @@ mod tests {
  
      #[test]
      fn empty_hydrated_route_cannot_replace_stale_l4_generation() {
@@ -2156,7 +2158,7 @@ index 3e722e3b5..e5277e327 100644
          let decision = decision(u64::MAX);
          let route = L7RouteSnapshot {
              configs: vec![],
-@@ -534,7 +618,7 @@ mod tests {
+@@ -535,7 +619,7 @@ mod tests {
  
      #[test]
      fn inspected_route_cannot_replace_stale_l4_generation() {
@@ -2165,7 +2167,7 @@ index 3e722e3b5..e5277e327 100644
          let decision = decision(u64::MAX);
          let route = L7RouteSnapshot {
              configs: vec![super::super::L7ConfigSnapshot {
-@@ -572,7 +656,7 @@ mod tests {
+@@ -573,7 +657,7 @@ mod tests {
  
      #[test]
      fn raw_route_cannot_replace_stale_l4_generation() {
@@ -2174,7 +2176,7 @@ index 3e722e3b5..e5277e327 100644
          let decision = decision(u64::MAX);
          let route = L7RouteSnapshot {
              configs: vec![],
-@@ -587,7 +671,7 @@ mod tests {
+@@ -588,7 +672,7 @@ mod tests {
  
      #[test]
      fn stale_generation_fails_before_relay_context_is_created() {
@@ -2183,7 +2185,7 @@ index 3e722e3b5..e5277e327 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
          engine.reload(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-@@ -598,6 +682,285 @@ mod tests {
+@@ -599,6 +683,285 @@ mod tests {
          );
      }
  
@@ -2470,7 +2472,7 @@ index 3e722e3b5..e5277e327 100644
      async fn raw_relay_closes_immediately_when_fail_closed_generation_is_published() {
          let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
 diff --git a/docs/how-it-works/policies/advisor.mdx b/docs/how-it-works/policies/advisor.mdx
-index c77e2a77d..5b6625866 100644
+index c77e2a77..5b662586 100644
 --- a/docs/how-it-works/policies/advisor.mdx
 +++ b/docs/how-it-works/policies/advisor.mdx
 @@ -292,8 +292,8 @@ The agent uses these endpoints at `http://policy.local`:
@@ -2485,7 +2487,7 @@ index c77e2a77d..5b6625866 100644
  When the policy advisor is disabled, every route returns `404 feature_disabled`,
  new sandboxes do not receive the guide, and denial responses do not mention
 diff --git a/docs/how-it-works/policies/manage-policies.mdx b/docs/how-it-works/policies/manage-policies.mdx
-index c20af7b67..6fdf5225f 100644
+index c20af7b6..6fdf5225 100644
 --- a/docs/how-it-works/policies/manage-policies.mdx
 +++ b/docs/how-it-works/policies/manage-policies.mdx
 @@ -188,16 +188,20 @@ running sandbox. The startup sections do not:
@@ -2524,7 +2526,7 @@ index c20af7b67..6fdf5225f 100644
  ```
  
 diff --git a/docs/how-it-works/policies/network-rules.mdx b/docs/how-it-works/policies/network-rules.mdx
-index 811d92092..ee2d87fab 100644
+index 811d9209..ee2d87fa 100644
 --- a/docs/how-it-works/policies/network-rules.mdx
 +++ b/docs/how-it-works/policies/network-rules.mdx
 @@ -443,8 +443,8 @@ Set `allow_uninspected_credentials: true` to relay binary frames anyway. Set
@@ -2540,7 +2542,7 @@ index 811d92092..ee2d87fab 100644
  ### Allow GraphQL Operations
 diff --git a/verification/h2/Bug_forward_before_admit.cfg b/verification/h2/Bug_forward_before_admit.cfg
 new file mode 100644
-index 000000000..5ab98e1e4
+index 00000000..5ab98e1e
 --- /dev/null
 +++ b/verification/h2/Bug_forward_before_admit.cfg
 @@ -0,0 +1,12 @@
@@ -2558,7 +2560,7 @@ index 000000000..5ab98e1e4
 +  NoCrossStream
 diff --git a/verification/h2/Bug_no_body_scan.cfg b/verification/h2/Bug_no_body_scan.cfg
 new file mode 100644
-index 000000000..a56ab1bdd
+index 00000000..a56ab1bd
 --- /dev/null
 +++ b/verification/h2/Bug_no_body_scan.cfg
 @@ -0,0 +1,12 @@
@@ -2576,7 +2578,7 @@ index 000000000..a56ab1bdd
 +  NoCrossStream
 diff --git a/verification/h2/Bug_skip_fail_closed.cfg b/verification/h2/Bug_skip_fail_closed.cfg
 new file mode 100644
-index 000000000..bb8586d16
+index 00000000..bb8586d1
 --- /dev/null
 +++ b/verification/h2/Bug_skip_fail_closed.cfg
 @@ -0,0 +1,12 @@
@@ -2594,7 +2596,7 @@ index 000000000..bb8586d16
 +  NoCrossStream
 diff --git a/verification/h2/Bug_swap_map.cfg b/verification/h2/Bug_swap_map.cfg
 new file mode 100644
-index 000000000..fb0146848
+index 00000000..fb014684
 --- /dev/null
 +++ b/verification/h2/Bug_swap_map.cfg
 @@ -0,0 +1,12 @@
@@ -2612,7 +2614,7 @@ index 000000000..fb0146848
 +  NoCrossStream
 diff --git a/verification/h2/H2Relay.tla b/verification/h2/H2Relay.tla
 new file mode 100644
-index 000000000..5d5f2f166
+index 00000000..5d5f2f16
 --- /dev/null
 +++ b/verification/h2/H2Relay.tla
 @@ -0,0 +1,338 @@
@@ -2956,7 +2958,7 @@ index 000000000..5d5f2f166
 +=============================================================================
 diff --git a/verification/h2/Liveness1.cfg b/verification/h2/Liveness1.cfg
 new file mode 100644
-index 000000000..e0c66ab89
+index 00000000..e0c66ab8
 --- /dev/null
 +++ b/verification/h2/Liveness1.cfg
 @@ -0,0 +1,17 @@
@@ -2979,7 +2981,7 @@ index 000000000..e0c66ab89
 +  HandlersFinish
 diff --git a/verification/h2/Liveness2.cfg b/verification/h2/Liveness2.cfg
 new file mode 100644
-index 000000000..3591684a4
+index 00000000..3591684a
 --- /dev/null
 +++ b/verification/h2/Liveness2.cfg
 @@ -0,0 +1,11 @@
@@ -2996,7 +2998,7 @@ index 000000000..3591684a4
 +  HandlersFinish
 diff --git a/verification/h2/Safety.cfg b/verification/h2/Safety.cfg
 new file mode 100644
-index 000000000..ddab0e77c
+index 00000000..ddab0e77
 --- /dev/null
 +++ b/verification/h2/Safety.cfg
 @@ -0,0 +1,15 @@
@@ -3017,7 +3019,7 @@ index 000000000..ddab0e77c
 +  RefusalIsLocal
 diff --git a/verification/h2/run.sh b/verification/h2/run.sh
 new file mode 100755
-index 000000000..abce2ae0b
+index 00000000..abce2ae0
 --- /dev/null
 +++ b/verification/h2/run.sh
 @@ -0,0 +1,12 @@
