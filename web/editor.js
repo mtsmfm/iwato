@@ -384,7 +384,7 @@
     return CM.EditorView.theme({
       '&': { color: 'var(--text)', backgroundColor: 'var(--terminal)', fontSize: '13px' },
       '&.cm-focused': { outline: 'none' },
-      '.cm-scroller': { fontFamily: '"Moralerspace Neon HW",ui-monospace,SFMono-Regular,Consolas,monospace', lineHeight: '1.55' },
+      '.cm-scroller': { fontFamily: '"Iwato Emoji","Moralerspace Neon HW",ui-monospace,SFMono-Regular,Consolas,monospace', lineHeight: '1.55' },
       '.cm-content': { caretColor: 'var(--green)', padding: '10px 0' },
       '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--green)' },
       '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: 'var(--code-selection)' },

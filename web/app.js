@@ -20,10 +20,10 @@
   // measures its cells with the font it opens with, so a terminal opened
   // before the font loads starts on the fallback and switches afterwards.
   const terminalFont = {
-    fallback: '"Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fallback: '"Iwato Emoji", "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
     // Moralerspace lacks Claude Code's spinner symbols (⏺ ✻ ✶ ✳ ✢); naming a
     // font that has them spares Chrome a search through every system font.
-    family: '"Moralerspace Neon HW", "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", "Segoe UI Symbol", monospace',
+    family: '"Iwato Emoji", "Moralerspace Neon HW", "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", "Segoe UI Symbol", monospace',
     ready: false, loading: Promise.resolve()
   };
   // Debug options (/debug.js turns them on in debug builds only).
