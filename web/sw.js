@@ -6,7 +6,7 @@ self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
   const text = (value, max) => (typeof value === 'string' ? value : '').slice(0, max);
-  const options = { body: text(data.body, 300), icon: '/icon-192.png', badge: '/icon-192.png' };
+  const options = { body: text(data.body, 300), icon: '/icon-192.png', badge: '/badge-96.png' };
   if (typeof data.tag === 'string' && data.tag) options.tag = text(data.tag, 64);
   options.data = { path: text(data.path, 200), local: text(data.local, 64) };
   const shown = self.registration.showNotification(text(data.title, 100) || 'Iwato', options);
