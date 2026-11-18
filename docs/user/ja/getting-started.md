@@ -109,7 +109,7 @@ Docker Desktop では、ホストネットワークを有効にし (Settings →
 
 ### Iwato を動かす
 
-プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64`・`iwato-linux-amd64`・`iwato-linux-arm64` のどれかをダウンロードし、専用のフォルダーに `iwato` として置きます (Windows と同じく設定フォルダーになります)。そのフォルダーで実行します:
+プレリリース [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) から `iwato-darwin-arm64`・`iwato-linux-amd64`・`iwato-linux-arm64` のどれかをダウンロードし、専用のフォルダーに `iwato` として置きます (Windows と同じく設定フォルダーになります)。そのフォルダーで実行します (Iwato は起動したフォルダーに設定を置きます。別のフォルダーから `PATH` 経由などで起動すると、`-config /path/to/iwato.json` を付けない限り、設定が別の Iwato になります):
 
 ```sh
 chmod +x iwato
@@ -119,7 +119,7 @@ xattr -d com.apple.quarantine iwato   # macOS のみ
 
 `chmod +x` でダウンロードしたファイルを実行できるようにします。署名していないので、macOS では `xattr` で Gatekeeper が止める印 (quarantine) を外します。
 
-`./iwato` は最初にエンジンを確かめます: `docker` があってエンジンが動いているか、版、エンジンのアーキテクチャ・CPU・メモリ、上の Docker Desktop の設定。結果は「設定」の「起動時の確認」にあります。エンジンが動いていないときは画面に起動のしかたを出し、動き出すと続けます。あとは Windows と同じです (上記)。ブラウザは自動では開きません。
+`./iwato` は最初にエンジンを確かめます: `docker` があってエンジンが動いているか、版、エンジンのアーキテクチャ・CPU・メモリ、上の Docker Desktop の設定。結果は「設定」の「起動時の確認」にあります。エンジンが動いていないときは画面に起動のしかたを出し、動き出すと続けます。あとは Windows と同じです (上記): Iwato が既定のブラウザで画面を開き (Linux は `xdg-open`、macOS は `open`。`-browser=false` なら URL を出すだけ)、サンドボックスを作って起動します。
 
 ### Windows との違い
 

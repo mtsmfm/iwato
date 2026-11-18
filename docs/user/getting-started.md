@@ -109,7 +109,7 @@ Install it, start it (`sudo systemctl enable --now docker`) and let your user ru
 
 ### Run Iwato
 
-Download `iwato-darwin-arm64`, `iwato-linux-amd64` or `iwato-linux-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` in a folder of its own (the config folder, as on Windows). Run it from there:
+Download `iwato-darwin-arm64`, `iwato-linux-amd64` or `iwato-linux-arm64` from the pre-release [edge](https://github.com/mtsmfm/iwato/releases/tag/edge) and save it as `iwato` in a folder of its own (the config folder, as on Windows). Run it from there (Iwato keeps its settings in the folder it is started in: started from another folder, say through `PATH`, it is a separate Iwato with settings of its own, unless given `-config /path/to/iwato.json`):
 
 ```sh
 chmod +x iwato
@@ -119,7 +119,7 @@ xattr -d com.apple.quarantine iwato   # macOS only
 
 `chmod +x` makes the download executable. The binary is not signed, so on macOS `xattr` removes the quarantine that makes Gatekeeper block it.
 
-`./iwato` checks the engine first: whether `docker` is there and the engine runs, its version, the engine's architecture, CPUs and memory, and the Docker Desktop settings above. The results are in the settings' **Startup checks**; when the engine is not running, the page says how to start it and Iwato goes on once it runs. Then it is as on Windows (above): open the printed URL, create a sandbox, start it. Iwato does not open the browser itself.
+`./iwato` checks the engine first: whether `docker` is there and the engine runs, its version, the engine's architecture, CPUs and memory, and the Docker Desktop settings above. The results are in the settings' **Startup checks**; when the engine is not running, the page says how to start it and Iwato goes on once it runs. Then it is as on Windows (above): Iwato opens the page in the default browser (`xdg-open` on Linux, `open` on macOS; `-browser=false` only prints the URL), and you create a sandbox and start it.
 
 ### Differences from Windows
 
