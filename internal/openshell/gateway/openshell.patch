@@ -49,10 +49,10 @@ index 8f000adb..8df34f8a 100644
  flate2 = "1"
 diff --git a/crates/openshell-supervisor-network/src/l7/http2.rs b/crates/openshell-supervisor-network/src/l7/http2.rs
 new file mode 100644
-index 00000000..a8fc847a
+index 00000000..17925981
 --- /dev/null
 +++ b/crates/openshell-supervisor-network/src/l7/http2.rs
-@@ -0,0 +1,1240 @@
+@@ -0,0 +1,1289 @@
 +// SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 +// SPDX-License-Identifier: Apache-2.0
 +
@@ -429,13 +429,16 @@ index 00000000..a8fc847a
 +    }
 +
 +    let request_id = uuid::Uuid::new_v4().to_string();
-+    let (req, scoped) = prepare_inspected_request(
++    // The injected headers are for re-applying a grant after middleware
++    // rewrites the request; HTTP/2 is offered only without middleware.
++    let (req, scoped, _injected) = prepare_inspected_request(
 +        req,
 +        ctx,
 +        shared.engine,
 +        config,
 +        &request_info,
 +        &request_id,
++        None,
 +        None,
 +    )
 +    .await
@@ -485,7 +488,7 @@ index 00000000..a8fc847a
 +    method: &str,
 +    error: &secrets::UnresolvedPlaceholderError,
 +) -> Refusal {
-+    let _ = reject_credential_resolution(&mut tokio::io::sink(), ctx, method, error).await;
++    let _ = reject_credential_resolution(&mut tokio::io::sink(), ctx, method, error, None).await;
 +    if error.is_endpoint_mismatch() {
 +        Refusal::json(
 +            StatusCode::FORBIDDEN,
@@ -686,7 +689,12 @@ index 00000000..a8fc847a
 +        tls_connect_upstream_alpn, tls_terminate_client_alpn,
 +    };
 +    use crate::opa::{NetworkInput, OpaEngine};
-+    use openshell_core::secrets::SecretResolver;
++    use openshell_core::proto::{
++        ProviderProfileCredential, StaticCredentialBinding, StaticCredentialEndpointBinding,
++    };
++    use openshell_core::provider_credentials::{
++        ProviderCredentialState, STATIC_CREDENTIAL_METADATA_PREFIX,
++    };
 +    use std::path::PathBuf;
 +    use std::sync::Arc;
 +    use std::time::Duration;
@@ -779,21 +787,62 @@ index 00000000..a8fc847a
 +            .unwrap();
 +        let config = crate::l7::parse_l7_config(&endpoint_config.unwrap()).unwrap();
 +
-+        let (child_env, resolver) = SecretResolver::from_provider_env(
++        // As iwato-modal: the token as a bearer header, the secret in its own
++        // header (a credential resolves only where its profile places it).
++        let placed = |key: &str, auth_style: &str, header_name: &str| {
++            (
++                format!("{STATIC_CREDENTIAL_METADATA_PREFIX}{key}"),
++                ProviderProfileCredential {
++                    env_vars: vec![key.to_string()],
++                    auth_style: auth_style.to_string(),
++                    header_name: header_name.to_string(),
++                    ..Default::default()
++                },
++            )
++        };
++        let bound = |key: &str| {
++            (
++                key.to_string(),
++                StaticCredentialBinding {
++                    endpoints: vec![StaticCredentialEndpointBinding {
++                        host: HOST.to_string(),
++                        port: 443,
++                        path: "/**".to_string(),
++                    }],
++                    credential_identity: format!("provider:{key}"),
++                    workload_credential_handle: String::new(),
++                },
++            )
++        };
++        let state = ProviderCredentialState::from_bound_environment(
++            1,
 +            [
 +                ("TOKEN".to_string(), "real-token".to_string()),
 +                ("MODAL_SECRET".to_string(), "real-secret".to_string()),
 +            ]
 +            .into_iter()
 +            .collect(),
-+        );
++            std::collections::HashMap::new(),
++            [
++                placed("TOKEN", "bearer", "Authorization"),
++                placed("MODAL_SECRET", "header", "x-modal-token-secret"),
++            ]
++            .into_iter()
++            .collect(),
++            [bound("TOKEN"), bound("MODAL_SECRET")]
++                .into_iter()
++                .collect(),
++            Vec::new(),
++        )
++        .unwrap();
++        let child_env = state.snapshot().child_env.clone();
 +        let ctx = L7EvalContext {
 +            host: HOST.into(),
 +            port: 443,
 +            request_default_port: Some(443),
 +            policy_name: "rest_api".into(),
 +            binary_path: "/usr/bin/curl".into(),
-+            secret_resolver: resolver.map(Arc::new),
++            secret_resolver: state.resolver_for_endpoint(HOST, 443, "/"),
 +            ..Default::default()
 +        };
 +
@@ -1165,7 +1214,7 @@ index 00000000..a8fc847a
 +            .uri(format!("https://{HOST}/grpc.Service/Call"))
 +            .header("content-type", "application/grpc")
 +            .header("te", "trailers")
-+            .header("x-modal-token-id", f.token.as_str())
++            .header("x-modal-token-secret", f.secret.as_str())
 +            .body(())
 +            .unwrap();
 +        let message = b"\x00\x00\x00\x00\x05hello";
@@ -1175,7 +1224,7 @@ index 00000000..a8fc847a
 +        let trailers = trailers.expect("grpc trailers");
 +        assert_eq!(trailers["grpc-status"], "0");
 +        let seen = next_seen(&mut f).await;
-+        assert_eq!(seen.header("x-modal-token-id"), Some("real-token"));
++        assert_eq!(seen.header("x-modal-token-secret"), Some("real-secret"));
 +        assert_eq!(seen.header("te"), Some("trailers"));
 +        assert_eq!(seen.body, message);
 +    }
@@ -1966,7 +2015,7 @@ index be255a42..a16d09fb 100644
              };
              if let Err(e) = Box::pin(tls_result).await {
 diff --git a/crates/openshell-supervisor-network/src/proxy/relay.rs b/crates/openshell-supervisor-network/src/proxy/relay.rs
-index e53e546d..03575125 100644
+index e53e546d..08162283 100644
 --- a/crates/openshell-supervisor-network/src/proxy/relay.rs
 +++ b/crates/openshell-supervisor-network/src/proxy/relay.rs
 @@ -5,7 +5,9 @@
@@ -2182,7 +2231,7 @@ index e53e546d..03575125 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
          engine.reload(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-@@ -612,6 +693,285 @@ mod tests {
+@@ -612,6 +693,304 @@ mod tests {
          );
      }
  
@@ -2265,6 +2314,19 @@ index e53e546d..03575125 100644
 +        Some(request)
 +    }
 +
++    async fn read_response_head(caller: &mut tokio::io::DuplexStream) -> Option<Vec<u8>> {
++        use tokio::io::AsyncReadExt;
++        let mut head = Vec::new();
++        while !head.ends_with(b"\r\n\r\n") {
++            let mut byte = [0; 1];
++            if caller.read_exact(&mut byte).await.is_err() {
++                return None;
++            }
++            head.push(byte[0]);
++        }
++        Some(head)
++    }
++
 +    /// Stream a chunked response through an established relay while the
 +    /// policy reloads to `reloaded`. Returns the bytes the client received
 +    /// after the reload, and whether a second request on the same
@@ -2322,8 +2384,11 @@ index e53e546d..03575125 100644
 +        let receive = async {
 +            let request = b"GET /stream HTTP/1.1\r\nHost: example.com\r\n\r\n";
 +            caller.write_all(request).await.unwrap();
-+            let mut received = vec![0; head.len() + first.len()];
++            // An inspected relay adds headers (X-OpenShell-Request-ID).
++            read_response_head(&mut caller).await.unwrap();
++            let mut received = vec![0; first.len()];
 +            caller.read_exact(&mut received).await.unwrap();
++            assert_eq!(received, first);
 +            engine.reload(POLICY_REGO, reloaded).unwrap();
 +            // Let the relay observe the new generation before more bytes arrive.
 +            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -2337,11 +2402,14 @@ index e53e546d..03575125 100644
 +                }
 +            }
 +            after.truncate(read);
-+            let mut response = vec![0; second.len()];
++            let mut body = [0; 2];
 +            let answered = read == rest.len()
 +                && caller.write_all(request).await.is_ok()
-+                && caller.read_exact(&mut response).await.is_ok()
-+                && response == second;
++                && read_response_head(&mut caller)
++                    .await
++                    .is_some_and(|head| head.starts_with(b"HTTP/1.1 200 OK\r\n"))
++                && caller.read_exact(&mut body).await.is_ok()
++                && &body == b"ok";
 +            drop(caller);
 +            (after, answered)
 +        };
