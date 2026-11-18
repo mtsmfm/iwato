@@ -18,7 +18,7 @@
 
 ## 設定フォルダーと `iwato.json`
 
-Iwato は自分のものをすべて `iwato.json` のフォルダー (起動したフォルダー、または `-config`) に置きます:
+Iwato は自分のものをすべて `iwato.json` のフォルダーに置きます。Windows は `%LOCALAPPDATA%\iwato`、macOS と Linux は `~/.config/iwato` (`$XDG_CONFIG_HOME` があれば `$XDG_CONFIG_HOME/iwato`)、起動したフォルダーにすでに `iwato.json` があればそのフォルダー、`-config` ならそのフォルダーです ([ADR 0027](../../adr/0027-config-folder-in-the-users-config-dir.md))。場所は「起動時の確認」に出ます:
 
 | ファイル | 中身 |
 |---|---|

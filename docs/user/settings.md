@@ -18,7 +18,7 @@ Open **Settings** from the sidebar. They have:
 
 ## The config folder and `iwato.json`
 
-Iwato keeps everything of its own in the folder of `iwato.json` (the folder you start it in, or `-config`):
+Iwato keeps everything of its own in the folder of `iwato.json`: `%LOCALAPPDATA%\iwato` on Windows, `~/.config/iwato` on macOS and Linux (`$XDG_CONFIG_HOME/iwato` when set), a folder you start it in that already has `iwato.json`, or the folder of `-config` ([ADR 0027](../adr/0027-config-folder-in-the-users-config-dir.md)). The Startup checks show the path:
 
 | File | What |
 |---|---|

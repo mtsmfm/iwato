@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -266,4 +267,38 @@ func (s *Server) forgetSandbox(name string) error {
 		}
 		return out, nil
 	})
+}
+
+// defaultConfigPath is where iwato.json is without -config (ADR 0027): in
+// the folder Iwato starts in when one is there (where it always was before),
+// else in the user's config folder, as OpenShell keeps its own: Windows'
+// %LOCALAPPDATA% (not the roaming %APPDATA%: the sandboxes are this PC's),
+// $XDG_CONFIG_HOME or ~/.config elsewhere, macOS included.
+func defaultConfigPath() (string, error) {
+	if _, err := os.Stat("iwato.json"); err == nil {
+		return "iwato.json", nil
+	}
+	dir, err := userConfigDir(runtime.GOOS, os.Getenv, os.UserHomeDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "iwato", "iwato.json"), nil
+}
+
+func userConfigDir(goos string, getenv func(string) string, home func() (string, error)) (string, error) {
+	if goos == "windows" {
+		if d := getenv("LOCALAPPDATA"); d != "" {
+			return d, nil
+		}
+		return "", errors.New("LOCALAPPDATA is not set: start Iwato with -config")
+	}
+	// The XDG spec ignores a relative value.
+	if d := getenv("XDG_CONFIG_HOME"); filepath.IsAbs(d) {
+		return d, nil
+	}
+	h, err := home()
+	if err != nil {
+		return "", fmt.Errorf("no home folder (%v): start Iwato with -config", err)
+	}
+	return filepath.Join(h, ".config"), nil
 }
