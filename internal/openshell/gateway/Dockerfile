@@ -62,10 +62,9 @@ FROM fetch AS supervisor-release
 # release's, default features, glibc) with the repository's toolchain, 1.95.0.
 # rustup-init is pinned by SHA-256 per architecture; rustup checks the
 # toolchain itself.
-# openshell.patch is the iwato/v0.1.6 branch of github.com/mtsmfm/openshell
-# (8a75a2694242) rebased onto v0.1.9 (l7/relay.rs: the precomputed
-# middleware selection; proxy/relay.rs: next to close_stale_http_relay), as
-#   git diff v0.1.9 <the rebased commit>
+# openshell.patch is the diff of the iwato/v0.1.9 branch of
+# github.com/mtsmfm/openshell (f95a239cb51f) from v0.1.9, regenerated with
+#   git diff v0.1.9 f95a239cb51fe76858195291a7f4b5dbdf460170
 # (HTTP/2 for opted-in endpoints, a 64 MiB gRPC receive limit in the
 # supervisor's client, relays kept open across policy reloads).
 FROM base AS supervisor-patched

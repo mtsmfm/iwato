@@ -50,5 +50,5 @@ The patch also raises the supervisor's gRPC receive limit from tonic's 4 MiB to 
 
 It also keeps established CONNECT relays open across a policy reload (an approved proposal, a policy update, a provider attached) when the relay's connection-level admission is unchanged; upstream closes every relay on each reload, cutting streaming responses.
 
-The patch is the diff of the `iwato/vX.Y.Z` branch of Iwato's fork (github.com/mtsmfm/openshell) from the release (`git diff vX.Y.Z BRANCH_COMMIT`), and the branch is rebased, and re-checked, on each OpenShell bump. For v0.1.9 it is the `iwato/v0.1.6` branch rebased onto v0.1.9 (`l7/tls.rs`, `l7/relay.rs`, `proxy/relay.rs`; `http2.rs` follows upstream's request preparation, and its tests give the credentials placements as since v0.1.8); that rebased branch is not pushed to the fork yet.
+The patch is the diff of the `iwato/vX.Y.Z` branch of Iwato's fork (github.com/mtsmfm/openshell) from the release (`git diff vX.Y.Z BRANCH_COMMIT`), and the branch is rebased, and re-checked, on each OpenShell bump. For v0.1.9 it is `iwato/v0.1.9` (`f95a239c`): `iwato/v0.1.6`'s commits rebased onto v0.1.9 (conflicts in `l7/relay.rs` and `proxy/relay.rs`) and one more that follows v0.1.9 in `http2.rs` (request preparation, credential placements, `close_stale_http_relay`).
 
