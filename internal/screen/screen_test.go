@@ -2,6 +2,8 @@ package screen
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -233,5 +235,26 @@ func TestResizeBackRestores(t *testing.T) {
 	tm.Resize(10, 4)
 	if rowText(tm, 3) != "" {
 		t.Fatalf("bottom row %q", rowText(tm, 3))
+	}
+}
+
+func TestEmojiWidths(t *testing.T) {
+	for r, want := range map[rune]int{'⚡': 2, '⭐': 2, '✅': 2, '🔒': 2, '🀄': 2, '✳': 1, '⏺': 1, '✻': 1, '♥': 1, 0x1F1EF: 1, 'a': 1} {
+		if got := Width(r); got != want {
+			t.Errorf("%U: %d, want %d", r, got, want)
+		}
+	}
+	// The page's copy (web/term.js, for the text an IME composes) is the same table.
+	b, err := os.ReadFile("../../web/term.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`const emojiPresentation = \[([^\]]*)\]`).FindSubmatch(b)
+	var want []string
+	for _, r := range emojiPresentation {
+		want = append(want, fmt.Sprintf("0x%x,0x%x", r.lo, r.hi))
+	}
+	if m == nil || string(m[1]) != strings.Join(want, ",") {
+		t.Error("web/term.js's emojiPresentation differs from width.go's")
 	}
 }

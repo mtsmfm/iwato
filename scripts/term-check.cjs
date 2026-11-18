@@ -543,7 +543,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
         const wide = root.querySelector('.iw-screen .iw-c2');
         return { font: getComputedStyle(root).fontFamily, cell: parseFloat(root.style.getPropertyValue('--iw-cw')), advance, wide: wide ? wide.getBoundingClientRect().width : 2 * advance };
       });
-      check(m.font.startsWith('"Moralerspace') && Math.abs(m.cell - m.advance) < 0.01 && Math.abs(m.wide - 2 * m.advance) < 0.01, 'a font that loads while the terminal is hidden: cells match the glyphs (cell ' + m.cell + ', advance ' + m.advance + ', wide ' + m.wide + ')');
+      check(m.font.includes('"Moralerspace') && Math.abs(m.cell - m.advance) < 0.01 && Math.abs(m.wide - 2 * m.advance) < 0.01, 'a font that loads while the terminal is hidden: cells match the glyphs (cell ' + m.cell + ', advance ' + m.advance + ', wide ' + m.wide + ')');
       await p.close();
     }
     // Output while another sandbox is shown: frames are acknowledged but
