@@ -76,8 +76,8 @@ case ${1:-} in
     placeholder CIVITAI_API_TOKEN; placeholder CIVITAI_TOKEN
     echo "---- GET /api/v1/me (bearer header)"
     curl -sS -H "Authorization: Bearer $CIVITAI_API_TOKEN" https://civitai.com/api/v1/me | head -c 300; echo
-    echo "---- GET /api/v1/models?limit=1&favorites=true (?token= query)"
-    curl -sS "https://civitai.com/api/v1/models?limit=1&favorites=true&token=$CIVITAI_TOKEN" | head -c 300; echo
+    echo "---- GET /api/v1/models?limit=1&favorites=true (CIVITAI_TOKEN, bearer header)"
+    curl -sS -H "Authorization: Bearer $CIVITAI_TOKEN" "https://civitai.com/api/v1/models?limit=1&favorites=true" | head -c 300; echo
     ;;
   vastai)
     placeholder VAST_API_KEY

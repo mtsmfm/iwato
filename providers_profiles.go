@@ -263,7 +263,7 @@ var providerProfiles = []providerProfile{
 		ID: "iwato-civitai", Label: "Civitai", Group: groupModels,
 		Note:        "CIVITAI_API_TOKEN と CIVITAI_TOKEN。civitai.com/api と orchestration.civitai.com に送ります。読み取りとダウンロードだけで、生成 (Buzz を使う) はポリシーの提案で許可します。",
 		Credentials: []profileCredential{{Name: "api_key", Label: "API キー"}},
-		Hint:        "ダウンロードは curl -fLOJ \"https://civitai.com/api/download/models/ID?token=$CIVITAI_TOKEN\" のように送ります。",
+		Hint:        "ダウンロードは curl -fLOJ -H \"Authorization: Bearer $CIVITAI_TOKEN\" https://civitai.com/api/download/models/ID のように送ります (?token= のクエリーには値が入りません)。",
 	},
 	{
 		ID: "iwato-comfy-cloud", Label: "Comfy Cloud", Group: groupCloud,
