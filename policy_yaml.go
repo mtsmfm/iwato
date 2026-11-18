@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
-	sb "github.com/NVIDIA/OpenShell/sdk/go/proto/sandboxv1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	"github.com/ai-openshell/sdk-go/openshell/v1/types"
+	sb "github.com/ai-openshell/sdk-go/proto/sandboxv1"
 	"go.yaml.in/yaml/v3"
 )
 

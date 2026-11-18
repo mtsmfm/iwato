@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 func (f *fakePolicy) List(_, _ string, _ ...v1.ListPolicyOption) (*v1.Pager[v1.SandboxPolicyRevision], error) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
 	"google.golang.org/protobuf/proto"
 )
 

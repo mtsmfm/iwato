@@ -18,9 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	"github.com/ai-openshell/sdk-go/openshell/v1/types"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
 	"google.golang.org/grpc"
 
 	"iwato/internal/dockercli"

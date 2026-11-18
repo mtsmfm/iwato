@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // What the approve dialog can show of a proposal, and what an approval

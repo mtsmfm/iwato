@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // syntheticPolicy is a large hand-grown policy: rules of one to three

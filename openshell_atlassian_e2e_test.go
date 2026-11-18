@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
 
 	"iwato/internal/hostterm"
 	"iwato/internal/openshell/client"
@@ -207,7 +207,7 @@ func TestOpenShellAtlassianE2E(t *testing.T) {
 	}
 	out, _ := io.ReadAll(p)
 	p.Wait()
-	if strings.Contains(string(out), "SECRET") || !regexp.MustCompile(`(?m)^ATL=` + placeholderPrefix + `:\S*ATLASSIAN_ACCESS_TOKEN$`).Match(out) {
+	if strings.Contains(string(out), "SECRET") || !regexp.MustCompile(`(?m)^ATL=`+placeholderPrefix+`:\S*ATLASSIAN_ACCESS_TOKEN$`).Match(out) {
 		t.Fatalf("the sandbox's environment:\n%s", out)
 	}
 	t.Logf("sandbox: %s", strings.TrimSpace(string(out)))

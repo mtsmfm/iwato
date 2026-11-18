@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"

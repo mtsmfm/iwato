@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
 )
 
 // The fake's providers: values are dropped, as the gateway never returns

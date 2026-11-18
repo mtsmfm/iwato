@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
-	sbv1 "github.com/NVIDIA/OpenShell/sdk/go/proto/sandboxv1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	"github.com/ai-openshell/sdk-go/openshell/v1/types"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
+	sbv1 "github.com/ai-openshell/sdk-go/proto/sandboxv1"
 )
 
 // Iwato predicts OpenShell's endpoint ambiguity check
