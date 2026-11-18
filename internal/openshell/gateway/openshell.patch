@@ -1380,10 +1380,57 @@ index 7b859426..6f2a986f 100644
  ///
  /// The forward proxy needs this after it has consumed the incoming HTTP/1
 diff --git a/crates/openshell-supervisor-network/src/l7/tls.rs b/crates/openshell-supervisor-network/src/l7/tls.rs
-index 5eeba7a5..f5f4b592 100644
+index 5eeba7a5..594dfc19 100644
 --- a/crates/openshell-supervisor-network/src/l7/tls.rs
 +++ b/crates/openshell-supervisor-network/src/l7/tls.rs
-@@ -237,6 +237,49 @@ impl ProxyTlsState {
+@@ -209,19 +209,33 @@ impl CertCache {
+ pub struct ProxyTlsState {
+     cert_cache: CertCache,
+     upstream_config: Arc<ClientConfig>,
++    upstream_config_h2: Arc<ClientConfig>,
+ }
+ 
++/// ALPN identifier for HTTP/2 over TLS.
++pub const ALPN_H2: &[u8] = b"h2";
++
+ impl ProxyTlsState {
+     /// Create a new TLS state with the given cert cache and upstream config.
+     pub fn new(cert_cache: CertCache, upstream_config: Arc<ClientConfig>) -> Self {
++        let mut h2_config = (*upstream_config).clone();
++        // Keep http/1.1 so an upstream without h2 completes the handshake and
++        // the relay can refuse each stream instead of dropping the connection.
++        h2_config.alpn_protocols = vec![ALPN_H2.to_vec(), b"http/1.1".to_vec()];
+         Self {
+             cert_cache,
+             upstream_config,
++            upstream_config_h2: Arc::new(h2_config),
+         }
+     }
+ 
+     /// Get or generate a leaf cert for the hostname and return a TLS acceptor.
+     fn acceptor_for(&self, hostname: &str) -> Result<TlsAcceptor> {
++        self.acceptor_with_alpn(hostname, false)
++    }
++
++    /// Like [`Self::acceptor_for`], optionally also offering `h2`.
++    fn acceptor_with_alpn(&self, hostname: &str, offer_h2: bool) -> Result<TlsAcceptor> {
+         let leaf = self.cert_cache.get_or_generate(hostname)?;
+         let mut server_config = openshell_crypto::tls::try_server_builder()
+             .into_diagnostic()
+@@ -229,7 +243,11 @@ impl ProxyTlsState {
+             .with_no_client_auth()
+             .with_single_cert(leaf.cert_chain.clone(), leaf.private_key.clone_key())
+             .into_diagnostic()?;
+-        server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
++        server_config.alpn_protocols = if offer_h2 {
++            vec![ALPN_H2.to_vec(), b"http/1.1".to_vec()]
++        } else {
++            vec![b"http/1.1".to_vec()]
++        };
+         Ok(TlsAcceptor::from(Arc::new(server_config)))
+     }
+ 
+@@ -237,6 +255,49 @@ impl ProxyTlsState {
      pub fn upstream_config(&self) -> &Arc<ClientConfig> {
          &self.upstream_config
      }
