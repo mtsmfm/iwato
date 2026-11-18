@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 
 	"iwato/internal/dav"
 	"iwato/internal/hostterm"

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	"github.com/ai-openshell/sdk-go/openshell/v1/types"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"

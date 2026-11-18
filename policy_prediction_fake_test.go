@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // The fake's mise proposal for api.github.com with the GitHub provider

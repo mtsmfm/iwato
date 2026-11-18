@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"context"
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
-	sb "github.com/NVIDIA/OpenShell/sdk/go/proto/sandboxv1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
+	sb "github.com/ai-openshell/sdk-go/proto/sandboxv1"
 )
 
 // githubProfileID is Iwato's GitHub profile.

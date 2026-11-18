@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
 )
 
 // Custom provider profiles: whole profiles the owner writes as YAML (in

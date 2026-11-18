@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // A decision carries the digest of the proposal the owner was shown; one

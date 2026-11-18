@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // fakeOpenShell is the fake's gateway behind OpenShell's code, with the

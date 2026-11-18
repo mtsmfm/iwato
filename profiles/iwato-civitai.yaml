@@ -9,10 +9,11 @@
 #                    not in the standard image. Rules allow every program (ADR 0022).
 # Credential scope:  CIVITAI_API_TOKEN (civitai-py) and CIVITAI_TOKEN (used by
 #                    ComfyUI tools and download scripts): the same key. It is
-#                    sent as a bearer authorization header, or as the
-#                    `?token=` query parameter (Civitai accepts both; OpenShell
-#                    resolves the placeholder in either place), to civitai.com
-#                    /api and orchestration.civitai.com only.
+#                    sent as a bearer authorization header to civitai.com/api
+#                    and orchestration.civitai.com only. Civitai also accepts
+#                    a `?token=` query parameter, but OpenShell (0.1.8+)
+#                    resolves a credential only where its profile places it
+#                    (auth_style: bearer here), so downloads send the header.
 # Endpoint access:   civitai.com/api/** read-only: /api/v1 (search, model
 #                    versions, the signed-in user's favorites) and
 #                    /api/download/models/ID. orchestration.civitai.com

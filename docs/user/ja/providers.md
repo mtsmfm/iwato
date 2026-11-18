@@ -50,7 +50,7 @@ Iwato にないプロファイルのプロバイダー (OpenShell の CLI で作
 
 ## カスタムのプロバイダー
 
-「カスタムを YAML で追加」で、OpenShell のプロバイダーのプロファイルとして自分の種類を追加できます。Iwato は保存の前に lint と自分の検査をし、設定フォルダーの `profiles/ID.yaml` に保存します (Iwato の起動時に読むので、ほかのエディタでも直せます)。`iwato-` で始まる ID は Iwato のもののために予約されています。
+「カスタムを YAML で追加」で、OpenShell のプロバイダーのプロファイルとして自分の種類を追加できます。Iwato は保存の前に lint と自分の検査をし、設定フォルダーの `profiles/ID.yaml` に保存します (Iwato の起動時に読むので、ほかのエディタでも直せます)。`iwato-` で始まる ID は Iwato のもののために予約されています。OpenShell は資格情報を `auth_style` が示す場所にだけ入れます (`bearer` と `basic` は `Authorization` ヘッダー、`header` は `header_name`、`query` は `query_param`、`path` は `path_template`)。指定がなければ `Authorization` だけです。サービスがキーをほかのヘッダー、クエリー、パスで受け取るときは指定してください。ほかの場所に入れたプレースホルダーは 403 (`credential_placement_mismatch`) になります。
 
 ## OAuth のプロバイダー
 

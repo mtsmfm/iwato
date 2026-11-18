@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/NVIDIA/OpenShell/sdk/go/proto/openshellv1"
-	sb "github.com/NVIDIA/OpenShell/sdk/go/proto/sandboxv1"
+	pb "github.com/ai-openshell/sdk-go/proto/openshellv1"
+	sb "github.com/ai-openshell/sdk-go/proto/sandboxv1"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"

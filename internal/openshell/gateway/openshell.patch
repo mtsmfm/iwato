@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 7f0c1753..c6bb6826 100644
+index 3208bb3e..f85dcb58 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -5301,6 +5301,7 @@ dependencies = [
+@@ -5318,6 +5318,7 @@ dependencies = [
   "flate2",
   "futures",
   "glob",
@@ -36,7 +36,7 @@ index 64268a78..1bc31272 100644
  
  /// Fetch sandbox policy from `OpenShell` server via gRPC.
 diff --git a/crates/openshell-supervisor-network/Cargo.toml b/crates/openshell-supervisor-network/Cargo.toml
-index aa3ca350..2faf7209 100644
+index 8f000adb..8df34f8a 100644
 --- a/crates/openshell-supervisor-network/Cargo.toml
 +++ b/crates/openshell-supervisor-network/Cargo.toml
 @@ -29,6 +29,7 @@ aws-sigv4 = { version = "1", features = ["sign-http", "http1"] }
@@ -49,10 +49,10 @@ index aa3ca350..2faf7209 100644
  flate2 = "1"
 diff --git a/crates/openshell-supervisor-network/src/l7/http2.rs b/crates/openshell-supervisor-network/src/l7/http2.rs
 new file mode 100644
-index 00000000..a8fc847a
+index 00000000..f7b7c476
 --- /dev/null
 +++ b/crates/openshell-supervisor-network/src/l7/http2.rs
-@@ -0,0 +1,1240 @@
+@@ -0,0 +1,1289 @@
 +// SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 +// SPDX-License-Identifier: Apache-2.0
 +
@@ -429,13 +429,16 @@ index 00000000..a8fc847a
 +    }
 +
 +    let request_id = uuid::Uuid::new_v4().to_string();
-+    let (req, scoped) = prepare_inspected_request(
++    // The injected headers are for re-applying a grant after middleware
++    // rewrites the request; HTTP/2 is offered only without middleware.
++    let (req, scoped, _injected) = prepare_inspected_request(
 +        req,
 +        ctx,
 +        shared.engine,
 +        config,
 +        &request_info,
 +        &request_id,
++        None,
 +        None,
 +    )
 +    .await
@@ -485,7 +488,7 @@ index 00000000..a8fc847a
 +    method: &str,
 +    error: &secrets::UnresolvedPlaceholderError,
 +) -> Refusal {
-+    let _ = reject_credential_resolution(&mut tokio::io::sink(), ctx, method, error).await;
++    let _ = reject_credential_resolution(&mut tokio::io::sink(), ctx, method, error, None).await;
 +    if error.is_endpoint_mismatch() {
 +        Refusal::json(
 +            StatusCode::FORBIDDEN,
@@ -686,7 +689,12 @@ index 00000000..a8fc847a
 +        tls_connect_upstream_alpn, tls_terminate_client_alpn,
 +    };
 +    use crate::opa::{NetworkInput, OpaEngine};
-+    use openshell_core::secrets::SecretResolver;
++    use openshell_core::proto::{
++        ProviderProfileCredential, StaticCredentialBinding, StaticCredentialEndpointBinding,
++    };
++    use openshell_core::provider_credentials::{
++        ProviderCredentialState, STATIC_CREDENTIAL_METADATA_PREFIX,
++    };
 +    use std::path::PathBuf;
 +    use std::sync::Arc;
 +    use std::time::Duration;
@@ -779,21 +787,62 @@ index 00000000..a8fc847a
 +            .unwrap();
 +        let config = crate::l7::parse_l7_config(&endpoint_config.unwrap()).unwrap();
 +
-+        let (child_env, resolver) = SecretResolver::from_provider_env(
++        // A bearer token and a secret in its own header (iwato-modal places
++        // both in headers); a credential resolves only where it is placed.
++        let placed = |key: &str, auth_style: &str, header_name: &str| {
++            (
++                format!("{STATIC_CREDENTIAL_METADATA_PREFIX}{key}"),
++                ProviderProfileCredential {
++                    env_vars: vec![key.to_string()],
++                    auth_style: auth_style.to_string(),
++                    header_name: header_name.to_string(),
++                    ..Default::default()
++                },
++            )
++        };
++        let bound = |key: &str| {
++            (
++                key.to_string(),
++                StaticCredentialBinding {
++                    endpoints: vec![StaticCredentialEndpointBinding {
++                        host: HOST.to_string(),
++                        port: 443,
++                        path: "/**".to_string(),
++                    }],
++                    credential_identity: format!("provider:{key}"),
++                    workload_credential_handle: String::new(),
++                },
++            )
++        };
++        let state = ProviderCredentialState::from_bound_environment(
++            1,
 +            [
 +                ("TOKEN".to_string(), "real-token".to_string()),
 +                ("MODAL_SECRET".to_string(), "real-secret".to_string()),
 +            ]
 +            .into_iter()
 +            .collect(),
-+        );
++            std::collections::HashMap::new(),
++            [
++                placed("TOKEN", "bearer", "Authorization"),
++                placed("MODAL_SECRET", "header", "x-modal-token-secret"),
++            ]
++            .into_iter()
++            .collect(),
++            [bound("TOKEN"), bound("MODAL_SECRET")]
++                .into_iter()
++                .collect(),
++            Vec::new(),
++        )
++        .unwrap();
++        let child_env = state.snapshot().child_env.clone();
 +        let ctx = L7EvalContext {
 +            host: HOST.into(),
 +            port: 443,
 +            request_default_port: Some(443),
 +            policy_name: "rest_api".into(),
 +            binary_path: "/usr/bin/curl".into(),
-+            secret_resolver: resolver.map(Arc::new),
++            secret_resolver: state.resolver_for_endpoint(HOST, 443, "/"),
 +            ..Default::default()
 +        };
 +
@@ -1165,7 +1214,7 @@ index 00000000..a8fc847a
 +            .uri(format!("https://{HOST}/grpc.Service/Call"))
 +            .header("content-type", "application/grpc")
 +            .header("te", "trailers")
-+            .header("x-modal-token-id", f.token.as_str())
++            .header("x-modal-token-secret", f.secret.as_str())
 +            .body(())
 +            .unwrap();
 +        let message = b"\x00\x00\x00\x00\x05hello";
@@ -1175,7 +1224,7 @@ index 00000000..a8fc847a
 +        let trailers = trailers.expect("grpc trailers");
 +        assert_eq!(trailers["grpc-status"], "0");
 +        let seen = next_seen(&mut f).await;
-+        assert_eq!(seen.header("x-modal-token-id"), Some("real-token"));
++        assert_eq!(seen.header("x-modal-token-secret"), Some("real-secret"));
 +        assert_eq!(seen.header("te"), Some("trailers"));
 +        assert_eq!(seen.body, message);
 +    }
@@ -1294,11 +1343,11 @@ index 00000000..a8fc847a
 +    }
 +}
 diff --git a/crates/openshell-supervisor-network/src/l7/mod.rs b/crates/openshell-supervisor-network/src/l7/mod.rs
-index 3f261149..cec58364 100644
+index 0647b8b2..1b6bb894 100644
 --- a/crates/openshell-supervisor-network/src/l7/mod.rs
 +++ b/crates/openshell-supervisor-network/src/l7/mod.rs
-@@ -10,6 +10,7 @@
- 
+@@ -11,6 +11,7 @@
+ pub(crate) mod correlation;
  pub mod graphql;
  pub(crate) mod http;
 +pub(crate) mod http2;
@@ -1306,10 +1355,10 @@ index 3f261149..cec58364 100644
  pub(crate) mod mcp;
  pub(crate) mod middleware;
 diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
-index 4685a841..7a4f0d65 100644
+index 9725ef0e..b85f75a0 100644
 --- a/crates/openshell-supervisor-network/src/l7/relay.rs
 +++ b/crates/openshell-supervisor-network/src/l7/relay.rs
-@@ -144,7 +144,7 @@ fn scoped_context_for_request(
+@@ -150,7 +150,7 @@ fn scoped_context_for_request(
      Some(scoped)
  }
  
@@ -1318,8 +1367,8 @@ index 4685a841..7a4f0d65 100644
      ctx: &L7EvalContext,
  ) -> Option<crate::l7::rest::CredentialGenerationGuard<'_>> {
      Some(
-@@ -236,7 +236,7 @@ pub(crate) async fn prepare_inspected_request(
-     Ok((req, scoped))
+@@ -252,7 +252,7 @@ pub(crate) async fn prepare_inspected_request(
+     Ok((req, scoped, injected))
  }
  
 -fn request_authority_matches_endpoint(
@@ -1327,7 +1376,7 @@ index 4685a841..7a4f0d65 100644
      request: &crate::l7::provider::L7Request,
      ctx: &L7EvalContext,
  ) -> bool {
-@@ -1636,7 +1636,7 @@ where
+@@ -2128,7 +2128,7 @@ where
      }
  }
  
@@ -1336,7 +1385,7 @@ index 4685a841..7a4f0d65 100644
      configs: &'a [L7EndpointConfig],
      path: &str,
  ) -> Option<&'a L7EndpointConfig> {
-@@ -1646,7 +1646,7 @@ fn select_l7_config_for_path<'a>(
+@@ -2138,7 +2138,7 @@ fn select_l7_config_for_path<'a>(
          .max_by_key(|config| config.path_specificity())
  }
  
@@ -1345,10 +1394,10 @@ index 4685a841..7a4f0d65 100644
      ctx: &L7EvalContext,
      action: &str,
      redacted_target: &str,
-@@ -3591,7 +3591,11 @@ where
-         let req = if let Some(engine) = middleware_engine {
-             let input = middleware_network_input(ctx);
-             let (chain, generation) = engine.query_middleware_chain_with_generation(&input)?;
+@@ -4490,7 +4490,11 @@ where
+         let mut live_body = None;
+         let req = if let Some((engine, selection)) = middleware_engine.zip(middleware_selection) {
+             let (chain, generation) = selection.map_err(&capture_error)?;
 -            if generation != generation_guard.captured_generation() {
 +            // A reload since the last check may readmit this relay to `generation`.
 +            if generation != generation_guard.captured_generation()
@@ -1357,12 +1406,12 @@ index 4685a841..7a4f0d65 100644
 +            {
                  return Ok(());
              }
-             let runner = engine.middleware_runner()?;
+             let runner = engine.middleware_runner().map_err(&capture_error)?;
 diff --git a/crates/openshell-supervisor-network/src/l7/rest.rs b/crates/openshell-supervisor-network/src/l7/rest.rs
-index 7b859426..6f2a986f 100644
+index caec858e..0d067b9c 100644
 --- a/crates/openshell-supervisor-network/src/l7/rest.rs
 +++ b/crates/openshell-supervisor-network/src/l7/rest.rs
-@@ -310,6 +310,16 @@ async fn parse_http_request<C: AsyncRead + Unpin>(
+@@ -346,6 +346,16 @@ async fn parse_http_request_with_receipt_protection<C: AsyncRead + Unpin>(
      }))
  }
  
@@ -1380,7 +1429,7 @@ index 7b859426..6f2a986f 100644
  ///
  /// The forward proxy needs this after it has consumed the incoming HTTP/1
 diff --git a/crates/openshell-supervisor-network/src/l7/tls.rs b/crates/openshell-supervisor-network/src/l7/tls.rs
-index 5eeba7a5..594dfc19 100644
+index df2b5c67..a7bdf7f0 100644
 --- a/crates/openshell-supervisor-network/src/l7/tls.rs
 +++ b/crates/openshell-supervisor-network/src/l7/tls.rs
 @@ -209,19 +209,33 @@ impl CertCache {
@@ -1481,7 +1530,7 @@ index 5eeba7a5..594dfc19 100644
  
  /// Accept TLS from a sandbox client, presenting a dynamic cert for the hostname.
 diff --git a/crates/openshell-supervisor-network/src/opa.rs b/crates/openshell-supervisor-network/src/opa.rs
-index 2d1a73a9..1b086e5c 100644
+index 5e176e13..b4b4944a 100644
 --- a/crates/openshell-supervisor-network/src/opa.rs
 +++ b/crates/openshell-supervisor-network/src/opa.rs
 @@ -30,7 +30,7 @@ use std::sync::{
@@ -1916,10 +1965,10 @@ index 2d1a73a9..1b086e5c 100644
              websocket_assembly_budget: self.websocket_assembly_budget(),
          })
 diff --git a/crates/openshell-supervisor-network/src/proxy.rs b/crates/openshell-supervisor-network/src/proxy.rs
-index 7560a3ae..5c566634 100644
+index be255a42..a16d09fb 100644
 --- a/crates/openshell-supervisor-network/src/proxy.rs
 +++ b/crates/openshell-supervisor-network/src/proxy.rs
-@@ -3202,18 +3202,26 @@ async fn handle_mediated_connection(
+@@ -3305,18 +3305,26 @@ async fn handle_mediated_connection(
              // Complete the client handshake before observing the upstream
              // connection. A malformed client handshake provides no evidence
              // of an endpoint network failure.
@@ -1950,7 +1999,7 @@ index 7560a3ae..5c566634 100644
              )
              .await
              {
-@@ -3240,6 +3248,14 @@ async fn handle_mediated_connection(
+@@ -3343,6 +3351,14 @@ async fn handle_mediated_connection(
                      return Ok(());
                  };
  
@@ -1966,7 +2015,7 @@ index 7560a3ae..5c566634 100644
              };
              if let Err(e) = Box::pin(tls_result).await {
 diff --git a/crates/openshell-supervisor-network/src/proxy/relay.rs b/crates/openshell-supervisor-network/src/proxy/relay.rs
-index 495c2224..d7993183 100644
+index e53e546d..08162283 100644
 --- a/crates/openshell-supervisor-network/src/proxy/relay.rs
 +++ b/crates/openshell-supervisor-network/src/proxy/relay.rs
 @@ -5,7 +5,9 @@
@@ -2067,8 +2116,8 @@ index 495c2224..d7993183 100644
          Ok(guard) => Some(guard),
          Err(error) => {
              emit_l7_tunnel_close_after_policy_change(
-@@ -295,6 +322,63 @@ where
-     }
+@@ -308,6 +335,60 @@ async fn close_stale_http_relay(request: &L7EvalContext, guard: &PolicyGeneratio
+     emit_stale_relay_close(request, guard);
  }
  
 +/// Whether to offer `h2` to the sandbox client (`l7::http2::should_offer_h2`).
@@ -2116,10 +2165,7 @@ index 495c2224..d7993183 100644
 +                    &evaluator,
 +                    context.request,
 +                ) => result,
-+                () = generation_guard.wait_until_stale() => {
-+                    emit_stale_relay_close(context.request, &generation_guard);
-+                    Ok(())
-+                }
++                () = close_stale_http_relay(context.request, &generation_guard) => Ok(())
 +            }
 +        }
 +        PreparedHttpPolicy::Passthrough { .. } => {
@@ -2131,7 +2177,7 @@ index 495c2224..d7993183 100644
  // Exercise the production single/multiple-route dispatch from L7 fixtures.
  #[cfg(test)]
  pub async fn relay_inspected_http_stream_for_test<C, U>(
-@@ -412,7 +496,7 @@ mod tests {
+@@ -425,7 +506,7 @@ mod tests {
          use tokio::io::{AsyncReadExt, AsyncWriteExt};
  
          let (mut upstream, mut server) = tokio::io::duplex(1024);
@@ -2140,7 +2186,7 @@ index 495c2224..d7993183 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
          let context = prepare_http_relay(None, &engine, &decision, &request).unwrap();
-@@ -501,7 +585,7 @@ mod tests {
+@@ -514,7 +595,7 @@ mod tests {
  
      #[test]
      fn relay_without_route_pins_l4_decision_generation() {
@@ -2149,7 +2195,7 @@ index 495c2224..d7993183 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
  
-@@ -519,7 +603,7 @@ mod tests {
+@@ -532,7 +613,7 @@ mod tests {
  
      #[test]
      fn empty_hydrated_route_cannot_replace_stale_l4_generation() {
@@ -2158,7 +2204,7 @@ index 495c2224..d7993183 100644
          let decision = decision(u64::MAX);
          let route = L7RouteSnapshot {
              configs: vec![],
-@@ -535,7 +619,7 @@ mod tests {
+@@ -548,7 +629,7 @@ mod tests {
  
      #[test]
      fn inspected_route_cannot_replace_stale_l4_generation() {
@@ -2167,7 +2213,7 @@ index 495c2224..d7993183 100644
          let decision = decision(u64::MAX);
          let route = L7RouteSnapshot {
              configs: vec![super::super::L7ConfigSnapshot {
-@@ -573,7 +657,7 @@ mod tests {
+@@ -586,7 +667,7 @@ mod tests {
  
      #[test]
      fn raw_route_cannot_replace_stale_l4_generation() {
@@ -2176,7 +2222,7 @@ index 495c2224..d7993183 100644
          let decision = decision(u64::MAX);
          let route = L7RouteSnapshot {
              configs: vec![],
-@@ -588,7 +672,7 @@ mod tests {
+@@ -601,7 +682,7 @@ mod tests {
  
      #[test]
      fn stale_generation_fails_before_relay_context_is_created() {
@@ -2185,7 +2231,7 @@ index 495c2224..d7993183 100644
          let decision = decision(engine.current_generation());
          let request = request_context();
          engine.reload(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-@@ -599,6 +683,285 @@ mod tests {
+@@ -612,6 +693,304 @@ mod tests {
          );
      }
  
@@ -2268,6 +2314,19 @@ index 495c2224..d7993183 100644
 +        Some(request)
 +    }
 +
++    async fn read_response_head(caller: &mut tokio::io::DuplexStream) -> Option<Vec<u8>> {
++        use tokio::io::AsyncReadExt;
++        let mut head = Vec::new();
++        while !head.ends_with(b"\r\n\r\n") {
++            let mut byte = [0; 1];
++            if caller.read_exact(&mut byte).await.is_err() {
++                return None;
++            }
++            head.push(byte[0]);
++        }
++        Some(head)
++    }
++
 +    /// Stream a chunked response through an established relay while the
 +    /// policy reloads to `reloaded`. Returns the bytes the client received
 +    /// after the reload, and whether a second request on the same
@@ -2325,8 +2384,11 @@ index 495c2224..d7993183 100644
 +        let receive = async {
 +            let request = b"GET /stream HTTP/1.1\r\nHost: example.com\r\n\r\n";
 +            caller.write_all(request).await.unwrap();
-+            let mut received = vec![0; head.len() + first.len()];
++            // An inspected relay adds headers (X-OpenShell-Request-ID).
++            read_response_head(&mut caller).await.unwrap();
++            let mut received = vec![0; first.len()];
 +            caller.read_exact(&mut received).await.unwrap();
++            assert_eq!(received, first);
 +            engine.reload(POLICY_REGO, reloaded).unwrap();
 +            // Let the relay observe the new generation before more bytes arrive.
 +            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -2340,11 +2402,14 @@ index 495c2224..d7993183 100644
 +                }
 +            }
 +            after.truncate(read);
-+            let mut response = vec![0; second.len()];
++            let mut body = [0; 2];
 +            let answered = read == rest.len()
 +                && caller.write_all(request).await.is_ok()
-+                && caller.read_exact(&mut response).await.is_ok()
-+                && response == second;
++                && read_response_head(&mut caller)
++                    .await
++                    .is_some_and(|head| head.starts_with(b"HTTP/1.1 200 OK\r\n"))
++                && caller.read_exact(&mut body).await.is_ok()
++                && &body == b"ok";
 +            drop(caller);
 +            (after, answered)
 +        };
@@ -2487,7 +2552,7 @@ index c77e2a77..5b662586 100644
  When the policy advisor is disabled, every route returns `404 feature_disabled`,
  new sandboxes do not receive the guide, and denial responses do not mention
 diff --git a/docs/how-it-works/policies/manage-policies.mdx b/docs/how-it-works/policies/manage-policies.mdx
-index c20af7b6..6fdf5225 100644
+index e24cf05f..be55d530 100644
 --- a/docs/how-it-works/policies/manage-policies.mdx
 +++ b/docs/how-it-works/policies/manage-policies.mdx
 @@ -188,16 +188,20 @@ running sandbox. The startup sections do not:
@@ -2526,12 +2591,12 @@ index c20af7b6..6fdf5225 100644
  ```
  
 diff --git a/docs/how-it-works/policies/network-rules.mdx b/docs/how-it-works/policies/network-rules.mdx
-index 811d9209..ee2d87fa 100644
+index 119818a3..69f348df 100644
 --- a/docs/how-it-works/policies/network-rules.mdx
 +++ b/docs/how-it-works/policies/network-rules.mdx
-@@ -443,8 +443,8 @@ Set `allow_uninspected_credentials: true` to relay binary frames anyway. Set
- `websocket_credential_rewrite: true` only when client text messages contain
- OpenShell credential placeholders that must be resolved.
+@@ -456,8 +456,8 @@ Set `allow_uninspected_credentials: true` to relay binary frames anyway. Set
+ placeholders that must be resolved. This explicitly authorizes WebSocket text
+ rewriting for ordinary static credentials, including credentials with HTTP placement metadata.
  
 -When new network rules take effect, OpenShell closes open WebSocket connections,
 -so the client must reconnect. The client might receive close code `1012`, or the

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // The match follows OpenShell's: host and port overlap, the provider's

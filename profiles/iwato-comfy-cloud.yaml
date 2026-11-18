@@ -11,9 +11,11 @@
 # Credential scope:  COMFY_CLOUD_API_KEY (the Cloud API docs) and
 #                    COMFY_API_KEY (the Comfy SDKs' docs): the same key from
 #                    platform.comfy.org. It is sent
-#                    - as X-API-Key to cloud.comfy.org/api (v1), or as a
-#                      bearer authorization header (v2, /api/v2);
-#                    - as `?token=` on the WebSocket (wss://cloud.comfy.org/ws);
+#                    - as X-API-Key to cloud.comfy.org/api (v1). OpenShell
+#                      (0.1.8+) resolves a credential only where its profile
+#                      places it (auth_style: header, X-API-Key), so neither
+#                      the v2 bearer header (/api/v2) nor the WebSocket's
+#                      `?token=` (wss://cloud.comfy.org/ws) gets the key;
 #                    - again in the JSON body of POST /api/prompt, as
 #                      extra_data.api_key_comfy_org, for Partner Nodes. That
 #                      endpoint alone sets request_body_credential_rewrite
@@ -35,9 +37,8 @@
 #                    read-only rule when proposed.
 # Verified:          from Comfy-Org/docs (development/cloud/overview.mdx,
 #                    api-reference.mdx, api-reference/v2/overview.mdx, via
-#                    GitHub). Not verified: OpenShell resolving a
-#                    placeholder in a WebSocket upgrade's query, and choosing
-#                    the /api/prompt endpoint (more specific) over /api/**.
+#                    GitHub). Not verified: choosing the /api/prompt endpoint
+#                    (more specific) over /api/**.
 # Endpoints:         none (ADR 0022): the credential goes only to the sandbox
 #                    policy's endpoints bound to the provider
 #                    (credential_binding). Attaching adds presets/providers/

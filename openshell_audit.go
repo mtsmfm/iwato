@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // OpenShell's audit mode lets every request through and only logs it: no

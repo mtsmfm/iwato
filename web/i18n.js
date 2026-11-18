@@ -2471,7 +2471,7 @@
     'profile.iwato-huggingface.hint': 'hf (huggingface-cli), huggingface_hub and transformers read HF_TOKEN as it is. To check: hf auth whoami.',
     'profile.iwato-civitai.note': 'CIVITAI_API_TOKEN and CIVITAI_TOKEN, sent to civitai.com/api and orchestration.civitai.com. Reads and downloads only; generation (which uses Buzz) is allowed through policy proposals.',
     'profile.iwato-civitai.credential.api_key': 'API key',
-    'profile.iwato-civitai.hint': 'Download with, for example, curl -fLOJ "https://civitai.com/api/download/models/ID?token=$CIVITAI_TOKEN".',
+    'profile.iwato-civitai.hint': 'Download with, for example, curl -fLOJ -H "Authorization: Bearer $CIVITAI_TOKEN" https://civitai.com/api/download/models/ID (a ?token= query does not get the key).',
     'profile.iwato-comfy-cloud.note': 'COMFY_CLOUD_API_KEY and COMFY_API_KEY, sent to cloud.comfy.org/api and api.comfy.org. Running workflows (which uses credits) works too.',
     'profile.iwato-comfy-cloud.credential.api_key': 'API key (platform.comfy.org)',
     'profile.iwato-comfy-cloud.hint': 'Comfy\'s SDK reads COMFY_API_KEY. The value is not sent to where outputs are stored (signed URLs), so approve that proposal as read only.',

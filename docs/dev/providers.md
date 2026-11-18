@@ -118,7 +118,7 @@ On failure:
 
 `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal` and `iwato-cloudflare` are not checked against real OpenShell (substitution). The comment at the top of each YAML gives the sources (official code and docs) and what could not be checked.
 
-- **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). It is replaced with the real value in HTTP headers (Bearer, Basic, any header), the path and the query (`?token=` etc.) of requests to the policy's endpoints bound to the provider (host, port, path). `auth_style` / `header_name` are display metadata and do not decide where substitution happens. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
+- **Substitution**: in OpenShell v0.1.4 a static value is an environment-variable placeholder (`openshell:` followed by `resolve:env:KEY`). Since OpenShell v0.1.8 it is replaced only where the profile's credential places it (`auth_style`: `bearer`/`basic` in `Authorization`, which also takes Basic and token; `header` in `header_name`; `query` in `query_param`; `path` in `path_template`'s `{credential}`), in requests to the policy's endpoints bound to the provider (host, port, path); without placement metadata only in `Authorization`. Iwato's profiles declare theirs. A custom profile that sends a key in another header, the query or the path must declare it. The body (JSON etc.) only for endpoints with `request_body_credential_rewrite: true` (UTF-8 JSON, form or text, up to 256 KiB; larger bodies fail, so Comfy Cloud enables it only for `/api/prompt`)
 - **Download hosts (no value needed)**: Hugging Face's `cdn-lfs*.huggingface.co` and `*.hf.co` (Xet: `cas-bridge.xethub.hf.co` etc.), Civitai's signed-URL storage and Comfy Cloud's output storage carry their own authorization in signed URLs, and clients send no value there. They are not in the providers' initial rules or `iwato/credential-hosts`: a bound endpoint would substitute the placeholder there too (the value could reach a CDN). They appear as ordinary proposals on the first download; check the host and approve the reads (inspected, so a stray placeholder stops at `credential_endpoint_mismatch`)
 - **Writes and billing**: Hugging Face uploads, Civitai generation (Buzz), creating or deleting Vast.ai instances and RunPod pods, and Cloudflare deploys are not allowed by the providers' initial rules. They show up as proposals; approving one with the credential attached allows it (ADR 0022). OpenRouter inference and running Comfy Cloud workflows are what those keys are for, so they are allowed
 
@@ -144,8 +144,8 @@ To check (each with `sh providers-check.sh NAME`, never printing tokens; add a p
 ## (g) Civitai (iwato-civitai)
 
 1. Type **Civitai**, value: a Civitai API key (account settings)
-2. `sh providers-check.sh civitai`. Success: `CIVITAI_API_TOKEN` and `CIVITAI_TOKEN` are placeholders, `/api/v1/me` returns your data and the `?token=` favourites list comes back (substituted both as Bearer and in the query)
-3. Download: `curl -fLOJ "https://civitai.com/api/download/models/ID?token=$CIVITAI_TOKEN"` with a model that needs a login. The storage host (unknown) shows up as a proposal; approve the reads and add the host name to this document and the profile's comment
+2. `sh providers-check.sh civitai`. Success: `CIVITAI_API_TOKEN` and `CIVITAI_TOKEN` are placeholders, `/api/v1/me` returns your data and the favourites list comes back (`CIVITAI_TOKEN` as Bearer; a `?token=` query is not substituted since OpenShell v0.1.8)
+3. Download: `curl -fLOJ -H "Authorization: Bearer $CIVITAI_TOKEN" https://civitai.com/api/download/models/ID` with a model that needs a login. The storage host (unknown) shows up as a proposal; approve the reads and add the host name to this document and the profile's comment
 4. Generation (`POST /v2/consumer/workflows` on orchestration.civitai.com) is proposed (approving it with the token attached allows it). It spends Buzz, so try a cheap one
 
 ## (h) Vast.ai (iwato-vastai)
@@ -161,7 +161,7 @@ To check (each with `sh providers-check.sh NAME`, never printing tokens; add a p
 1. Type **Comfy Cloud**, value: a platform.comfy.org API key (`comfyui-...`; the API needs a paid subscription)
 2. `sh providers-check.sh comfy`. Success: `COMFY_CLOUD_API_KEY` and `COMFY_API_KEY` are placeholders, `/api/user` is 200 and `/api/queue` answers (substituted in `X-API-Key`)
 3. Running a workflow: run Comfy's documented example (`POST /api/prompt`, `wss://cloud.comfy.org/ws?clientId=…&token=$COMFY_CLOUD_API_KEY`, fetching outputs from where `GET /api/view`'s 302 points) in python. To check:
-   - whether the WebSocket's `?token=` is substituted (the upgrade request's query; OpenShell's docs say queries are)
+   - the WebSocket's `?token=` is not substituted since OpenShell v0.1.8 (the profile places the key in `X-API-Key`); whether the WebSocket works without it
    - Partner Nodes: whether `/api/prompt` with the placeholder in `extra_data.api_key_comfy_org` passes (body substitution is enabled for `/api/prompt` only; whether the more specific `/api/prompt` wins over `/api/**`)
    - the output storage (the 302's target, unknown) shows up as a proposal; approve the reads and add the host name to this document and the profile's comment
    - image uploads (`POST /api/upload/image`, multipart) over 256 KiB pass (body substitution only on `/api/prompt`)

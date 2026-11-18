@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
 )
 
 // gatewayReads keeps what one policy change has read from the gateway

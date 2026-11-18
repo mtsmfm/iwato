@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/NVIDIA/OpenShell/sdk/go/openshell/v1"
-	"github.com/NVIDIA/OpenShell/sdk/go/openshell/v1/types"
+	v1 "github.com/ai-openshell/sdk-go/openshell/v1"
+	"github.com/ai-openshell/sdk-go/openshell/v1/types"
 )
 
 // fakeSandboxes is the gateway's sandbox API for one sandbox: each Get

@@ -10,8 +10,8 @@
 #                    otherwise reads ~/.config/vastai/vast_api_key), sent as a
 #                    bearer authorization header (vast.py apiheaders) to
 #                    console.vast.ai/api only (vast.py server_url_default).
-#                    Older clients send `?api_key=`: OpenShell resolves the
-#                    placeholder there too.
+#                    Older clients send `?api_key=`, which OpenShell (0.1.8+)
+#                    refuses (403): the profile places it in the header.
 # Endpoint access:   reads, and the two searches that are not GETs: PUT
 #                    /api/v0/search/asks/ and POST /api/v0/bundles/ (`vastai
 #                    search offers`). Renting, changing and destroying
