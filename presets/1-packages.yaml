@@ -11,12 +11,16 @@ default: true
 network_policies:
   # npm install and npm audit send the dependency list by POST to the
   # advisory endpoints; they only read (without them every install warns).
+  # A scoped package's metadata is /@scope%2fname, which needs
+  # allow_encoded_slash; reads are already any path, and the POST paths are
+  # exact.
   preset_packages_registry_npmjs_org:
     endpoints:
       - host: registry.npmjs.org
         port: 443
         protocol: rest
         enforcement: enforce
+        allow_encoded_slash: true
         rules:
           - allow: { method: GET, path: "**" }
           - allow: { method: HEAD, path: "**" }

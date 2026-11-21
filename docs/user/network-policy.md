@@ -59,13 +59,13 @@ A rejected proposal can be approved later from the rejected list: Approve opens 
 
 ## Presets
 
-A preset is a named set of rules. Choose presets in the create form (Details shows each one's hosts, methods and paths), or put them in and take them out later in the policy tab (Presets: Apply, Remove). Taking a preset out removes only the rules that are still as the preset made them. Presets are kept when a sandbox is recreated. The first commit of the policy history names the presets the sandbox started from. A preset that no longer exists (removed from Iwato, or your file deleted) is marked "preset not found": its rules stay in the policy as ordinary rules, and Remove only takes it off the list. A preset another one in the sandbox requires cannot be taken out first.
+A preset is a named set of rules. Choose presets in the create form (Details shows each one's hosts, methods and paths), or put them in and take them out later in the policy tab (Presets: Apply, Remove). Taking a preset out removes only the rules that are still as the preset made them. Presets are kept when a sandbox is recreated. A preset's rules go into the policy when it is put in, so a preset changed by an Iwato update reaches an existing sandbox only after taking it out and putting it in again (recreating keeps the old rules). The first commit of the policy history names the presets the sandbox started from. A preset that no longer exists (removed from Iwato, or your file deleted) is marked "preset not found": its rules stay in the policy as ordinary rules, and Remove only takes it off the list. A preset another one in the sandbox requires cannot be taken out first.
 
 Iwato's presets:
 
 | Preset | What it allows |
 |---|---|
-| Packages (on by default) | read-only (GET, HEAD, OPTIONS, and the POSTs npm's audit needs) from any program: npm, PyPI, RubyGems, crates.io, Go modules. No publishing or uploads |
+| Packages (on by default) | read-only (GET, HEAD, OPTIONS, and the POSTs npm's audit needs) from any program: npm (with `allow_encoded_slash`, for scoped packages' `%2F`), PyPI, RubyGems, crates.io, Go modules. No publishing or uploads |
 | Tool installs (on by default) | read-only from any program: mise, the Node.js, Go and Rust toolchains, uv's Python builds, GitHub (github.com, api.github.com, release and archive downloads, raw files) |
 | Agent CLIs (on by default; brings Tool installs) | installing and updating Claude Code, Grok Build and Codex |
 | Reading references | read-only (GET, HEAD) from any program: Wikipedia (English, Japanese, images), arXiv (and export.arxiv.org), MDN, docs.python.org, go.dev and pkg.go.dev, doc.rust-lang.org and docs.rs, nodejs.org, docs.ruby-lang.org and ruby-doc.org, GitHub Docs, man7.org, rfc-editor.org, `*.readthedocs.io`, Stack Overflow, Hacker News |
