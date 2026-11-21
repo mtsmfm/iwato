@@ -117,7 +117,7 @@ func TestDesktopScriptRemovesStaleX11State(t *testing.T) {
 			t.Errorf("%s was removed", kept)
 		}
 	}
-	if !strings.Contains(out, "selkies-session --session xfce") || !strings.Contains(out, "removed 2 stale") {
+	if !strings.Contains(out, "selkies session --session xfce") || !strings.Contains(out, "removed 2 stale") {
 		t.Errorf("%s", out)
 	}
 }
@@ -191,7 +191,7 @@ func TestDesktopScriptRefusesASecondCopy(t *testing.T) {
 	// A lock that would be cleaned if this copy went on.
 	os.WriteFile(filepath.Join(d, "tmp", ".X96-lock"), []byte("1\n"), 0o444)
 	out := runDesktopIn(t, d, "IWATO_DXG=/nonexistent/dxg")
-	if !strings.Contains(out, "already running") || strings.Contains(out, "selkies-session") {
+	if !strings.Contains(out, "already running") || strings.Contains(out, "selkies session") {
 		t.Fatalf("%s", out)
 	}
 	if !fileExists(filepath.Join(d, "tmp", ".X96-lock")) || readPid(t, pf) != c.Process.Pid {
@@ -207,7 +207,7 @@ func TestDesktopScriptPidfileLifecycle(t *testing.T) {
 	os.MkdirAll(filepath.Dir(pf), 0o700)
 	os.WriteFile(pf, []byte(strconv.Itoa(deadPid(t))+"\n"), 0o600)
 	out := runDesktopIn(t, d, "IWATO_DXG=/nonexistent/dxg")
-	if !strings.Contains(out, "selkies-session --session xfce") {
+	if !strings.Contains(out, "selkies session --session xfce") {
 		t.Fatalf("%s", out)
 	}
 	if fileExists(pf) {
@@ -216,7 +216,7 @@ func TestDesktopScriptPidfileLifecycle(t *testing.T) {
 }
 
 // TERM (what stopping the sandbox sends through the supervisor, when it
-// reaches the desktop at all) stops selkies-session and its children.
+// reaches the desktop at all) stops `selkies session` and its children.
 func TestDesktopScriptStopsItsSessionOnTERM(t *testing.T) {
 	needSh(t)
 	if _, err := exec.LookPath("pgrep"); err != nil {
@@ -224,9 +224,9 @@ func TestDesktopScriptStopsItsSessionOnTERM(t *testing.T) {
 	}
 	d := prepareDesktop(t)
 	// A session that ignores TERM in its children's way: a shell with a
-	// sleeping child, like selkies-session's Xvfb/PulseAudio/desktop.
+	// sleeping child, like `selkies session`'s Xvfb/PulseAudio/desktop.
 	stub := "#!/bin/sh\necho $$ > " + d + "/session.pid\nsleep 60 &\necho $! > " + d + "/child.pid\nwait\n"
-	if err := os.WriteFile(filepath.Join(d, "bin", "selkies-session"), []byte(stub), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "bin", "selkies"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	c := exec.Command("sh", filepath.Join(d, "sandboximage", "desktop", "iwato-desktop"), "run")
@@ -284,15 +284,15 @@ func runCLI(t *testing.T, d string, args []string, env ...string) cliResult {
 	return cliResult{string(out), code}
 }
 
-// startableDesktop is prepareDesktop with a selkies-session that stays up (it
+// startableDesktop is prepareDesktop with a selkies that stays up (it
 // prints a line to the log and sleeps, with a child like the real session),
 // and a cleanup that stops whatever the test started.
 func startableDesktop(t *testing.T) string {
 	t.Helper()
 	needSh(t)
 	d := prepareDesktop(t)
-	stub := "#!/bin/sh\necho \"selkies-session $*\"\nsleep 60 &\nwait\n"
-	if err := os.WriteFile(filepath.Join(d, "bin", "selkies-session"), []byte(stub), 0o755); err != nil {
+	stub := "#!/bin/sh\necho \"selkies $*\"\nsleep 60 &\nwait\n"
+	if err := os.WriteFile(filepath.Join(d, "bin", "selkies"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -317,7 +317,7 @@ func TestDesktopStartIsDetachedAndIdempotent(t *testing.T) {
 	}
 	waitUntil(t, "the session's output in the log", func() bool {
 		b, _ := os.ReadFile(lg)
-		return strings.Contains(string(b), "selkies-session --session xfce")
+		return strings.Contains(string(b), "selkies session --session xfce")
 	})
 	// A second start, explicit or not, starts nothing and succeeds.
 	for _, args := range [][]string{nil, {"start"}} {
@@ -326,7 +326,7 @@ func TestDesktopStartIsDetachedAndIdempotent(t *testing.T) {
 			t.Fatalf("second start %v: %+v", args, r)
 		}
 	}
-	if b, _ := os.ReadFile(lg); strings.Count(string(b), "selkies-session --session") != 1 || readPid(t, pf) != pid {
+	if b, _ := os.ReadFile(lg); strings.Count(string(b), "selkies session --session") != 1 || readPid(t, pf) != pid {
 		t.Fatalf("a second copy was started:\n%s", b)
 	}
 }
@@ -352,8 +352,8 @@ func pathWithout(t *testing.T, name string) string {
 
 func TestDesktopStartWithoutTheDesktop(t *testing.T) {
 	d := prepareDesktop(t)
-	r := runCLI(t, d, []string{"start"}, "PATH="+pathWithout(t, "selkies-session"))
-	if r.code != 1 || !strings.Contains(r.out, "selkies-session not found") {
+	r := runCLI(t, d, []string{"start"}, "PATH="+pathWithout(t, "selkies"))
+	if r.code != 1 || !strings.Contains(r.out, "selkies not found") {
 		t.Fatalf("%+v", r)
 	}
 	if fileExists(filepath.Join(d, ".cache", "iwato-desktop.pid")) {
@@ -404,7 +404,7 @@ func TestDesktopStopEndsTheSessionAndCleansUp(t *testing.T) {
 			}
 		}
 		walk(pid)
-		return len(children) >= 2 // selkies-session and its sleep
+		return len(children) >= 2 // selkies and its sleep
 	})
 	if r := runCLI(t, d, []string{"stop"}); r.code != 0 || !strings.Contains(r.out, "stopped") {
 		t.Fatalf("stop: %+v", r)
@@ -463,7 +463,7 @@ func TestDesktopScriptPreloadsTheSetuidShim(t *testing.T) {
 	needSh(t)
 	d := prepareDesktop(t)
 	stub := "#!/bin/sh\necho \"PRELOAD=[${LD_PRELOAD:-}]\"\n"
-	if err := os.WriteFile(filepath.Join(d, "bin", "selkies-session"), []byte(stub), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "bin", "selkies"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	lib := filepath.Join(d, "libiwato-noid.so")
@@ -512,7 +512,7 @@ func TestDesktopScriptUsesFirefoxNotIwatoBrowser(t *testing.T) {
 	needSh(t)
 	d := prepareDesktop(t)
 	stub := "#!/bin/sh\necho \"BROWSER=[$BROWSER] SESSION=[$IWATO_DESKTOP_SESSION] C=[$MOZ_DISABLE_CONTENT_SANDBOX] G=[$MOZ_DISABLE_GMP_SANDBOX] R=[$MOZ_DISABLE_RDD_SANDBOX] S=[$MOZ_DISABLE_SOCKET_PROCESS_SANDBOX]\"\n"
-	if err := os.WriteFile(filepath.Join(d, "bin", "selkies-session"), []byte(stub), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "bin", "selkies"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	out := runDesktopIn(t, d, "IWATO_DXG=/nonexistent/dxg", "BROWSER=/usr/local/bin/iwato-browser")

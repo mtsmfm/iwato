@@ -117,7 +117,7 @@ func TestSandboxImageHasTheDesktopAndEndsAsDev(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(b)
-	for _, want := range []string{"COPY desktop/iwato-desktop /usr/local/bin/iwato-desktop", "COPY desktop/gpu-env.sh", "Pin-Priority", "selkies-session"} {
+	for _, want := range []string{"COPY desktop/iwato-desktop /usr/local/bin/iwato-desktop", "COPY desktop/gpu-env.sh", "Pin-Priority", "command -v selkies "} {
 		if !strings.Contains(text, want) {
 			t.Errorf("Dockerfile lacks %q", want)
 		}
@@ -175,7 +175,7 @@ func runDesktopScript(t *testing.T, env ...string) string {
 }
 
 // prepareDesktop writes the image context into a temp dir (also HOME, with
-// /tmp and /proc stand-ins under it) and a stub selkies-session in bin/.
+// /tmp and /proc stand-ins under it) and a stub selkies in bin/.
 func prepareDesktop(t *testing.T) string {
 	t.Helper()
 	d := t.TempDir()
@@ -186,7 +186,7 @@ func prepareDesktop(t *testing.T) string {
 	if err := os.MkdirAll(stub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stub, "selkies-session"), []byte("#!/bin/sh\necho \"selkies-session $*\"\necho \"LD=${LD_LIBRARY_PATH:-} GALLIUM=${GALLIUM_DRIVER:-}\"\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(stub, "selkies"), []byte("#!/bin/sh\necho \"selkies $*\"\necho \"LD=${LD_LIBRARY_PATH:-} GALLIUM=${GALLIUM_DRIVER:-}\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	script := filepath.Join(d, "sandboximage", "desktop", "iwato-desktop")
@@ -218,7 +218,7 @@ func runDesktopIn(t *testing.T, d string, env ...string) string {
 // With no GPU the script skips the NVIDIA part and still starts the session.
 func TestDesktopScriptWithoutAGPU(t *testing.T) {
 	out := runDesktopScript(t, "IWATO_DXG=/nonexistent/dxg")
-	if !strings.Contains(out, "selkies-session --session xfce --port=6080 --enable-basic-auth=false --enable-https=false") {
+	if !strings.Contains(out, "selkies session --session xfce --port=6080 --enable-basic-auth=false --enable-https=false") {
 		t.Errorf("%s", out)
 	}
 	if strings.Contains(out, "GALLIUM=d3d12") {

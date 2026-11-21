@@ -58,8 +58,8 @@ linuxserver/webtop is not used. OpenShell runs the workload as the image's user 
   - Xfce (`xfce4`, `xfce4-terminal`), Xvfb, PulseAudio, D-Bus, Japanese and emoji fonts
   - Firefox from Mozilla's apt repository (Ubuntu 24.04's firefox is a snap shell; the key fingerprint is checked)
   - Mesa d3d12 (`libgl1-mesa-dri mesa-va-drivers mesa-utils vainfo`)
-  - Selkies' official .deb (`selkies-2.1.0-ubuntu24.04-<arch>.deb`: its own Python environment in `/opt/selkies`, `selkies` and `selkies-session` in `/usr/bin`; apt pulls the dependencies). An empty `SELKIES_DEB_SHA256` builds without verification and logs the hash (`WARNING: selkies .deb … SHA-256 is …`); pin it through the build argument
-- `iwato-desktop run` (`/usr/local/bin`) prepares the GPU and runs `selkies-session --session xfce --port=6080 --enable-basic-auth=false --enable-https=false`. `selkies-session` (`src/selkies/session.py` in Selkies' repository) starts Xvfb (`-displayfd` picks a free display, with a cookie), PulseAudio (`--daemonize=no` if none runs), the desktop through `dbus-run-session` (the xfce xsession) and Selkies, as children of the calling user's process. No s6, root or sudo
+  - Selkies' official .deb (`selkies-2.2.1-ubuntu24.04-<arch>.deb`: its own Python environment in `/opt/selkies`, `selkies` in `/usr/bin`, with `selkies session`, `selkies resize` and `selkies gpu-probe`, which replace 2.1's `selkies-session` and the like; apt pulls the dependencies). An empty `SELKIES_DEB_SHA256` builds without verification and logs the hash (`WARNING: selkies .deb … SHA-256 is …`); pin it through the build argument
+- `iwato-desktop run` (`/usr/local/bin`) prepares the GPU and runs `selkies session --session xfce --port=6080 --enable-basic-auth=false --enable-https=false`. `selkies session` (`src/selkies/session.py` in Selkies' repository) starts Xvfb (`-displayfd` picks a free display, with a cookie), PulseAudio (`--daemonize=no` if none runs), the desktop through `dbus-run-session` (the xfce xsession) and Selkies, as children of the calling user's process. No s6, root or sudo
 - Port 6080 (http), listening on loopback only (no `--public`). No login and no TLS: Iwato's **Ports** tab exposes it, and the publishing setting decides who reaches it (This PC only: browsers on this PC; Tailscale: the devices of the Owner logins). `IWATO_DESKTOP_PORT` and `IWATO_DESKTOP_ARGS` change it
 - Start: `iwato-desktop` (= `iwato-desktop start`) in a terminal. It runs in the background (`setsid nohup`), logging to `~/.cache/iwato-desktop.log`. It does **not** start automatically. Without a GPU it renders on the CPU
 
@@ -99,7 +99,7 @@ Only when the owning process is **gone** (live ones are never touched; the proce
 - Firefox: the profile's `lock` (when the pid in its `<ip>:+<pid>` target is dead) and `.parentlock`; a lone `.parentlock` when no firefox runs (`~/.mozilla/firefox`, `~/.config/mozilla/firefox`)
 - Then the GPU preparation (relinking `~/.local/lib/wsl-nvidia`) as always, or a CPU desktop without a GPU
 
-`run` keeps `selkies-session` as a child (no exec). On TERM/INT it sends TERM to the child and its descendants (`pgrep -P`), waits 5 seconds, KILLs the rest, removes the pidfile and exits 143. A normal exit removes the pidfile too.
+`run` keeps `selkies session` as a child (no exec). On TERM/INT it sends TERM to the child and its descendants (`pgrep -P`), waits 5 seconds, KILLs the rest, removes the pidfile and exits 143. A normal exit removes the pidfile too.
 
 ### Xvfb fails with "Failed to compile keymap"
 
