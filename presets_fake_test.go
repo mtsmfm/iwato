@@ -53,11 +53,13 @@ func TestPresetInstancesAndFolds(t *testing.T) {
 		}
 	}
 
-	// A rule of the same programs and endpoint: OpenShell would fold the
-	// preset's into it.
+	// A rule of the same programs and endpoint (and allow_encoded_slash, or
+	// the ambiguity check refuses first): OpenShell would fold the preset's
+	// into it. The fake's approved npm rule has no allow_encoded_slash, so it
+	// goes first.
 	hand := v1.NetworkPolicyRule{Name: "hand_npm", Binaries: []v1.PolicyNetworkBinary{{Path: "/**"}},
-		Endpoints: []v1.PolicyNetworkEndpoint{{Host: "registry.npmjs.org", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce, Access: v1.NetworkAccessPresetReadOnly}}}
-	if _, err := d.ApplyPolicyChange(ctx, sb, []v1.PolicyMergeOperation{{AddRule: &v1.AddNetworkRule{RuleName: "hand_npm", Rule: hand}}}); err != nil {
+		Endpoints: []v1.PolicyNetworkEndpoint{{Host: "registry.npmjs.org", Port: 443, Ports: []uint32{443}, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce, Access: v1.NetworkAccessPresetReadOnly, AllowEncodedSlash: true}}}
+	if _, err := d.ApplyPolicyChange(ctx, sb, []v1.PolicyMergeOperation{{RemoveRule: &v1.RemoveNetworkRule{RuleName: "allow_registry_npmjs_org_443"}}, {AddRule: &v1.AddNetworkRule{RuleName: "hand_npm", Rule: hand}}}); err != nil {
 		t.Fatal(err)
 	}
 	before, _, _ := d.PolicyLayers(ctx, sb)
