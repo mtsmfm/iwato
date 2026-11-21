@@ -63,8 +63,8 @@ FROM fetch AS supervisor-release
 # rustup-init is pinned by SHA-256 per architecture; rustup checks the
 # toolchain itself.
 # openshell.patch is the diff of the iwato/v0.1.9 branch of
-# github.com/mtsmfm/openshell (f95a239cb51f) from v0.1.9, regenerated with
-#   git diff v0.1.9 f95a239cb51fe76858195291a7f4b5dbdf460170
+# github.com/mtsmfm/openshell (4c0b7ae29b77) from v0.1.9, regenerated with
+#   git diff v0.1.9 4c0b7ae29b7780efd92e52607d7946e68174bca9
 # (HTTP/2 for opted-in endpoints, a 64 MiB gRPC receive limit in the
 # supervisor's client, relays kept open across policy reloads).
 FROM base AS supervisor-patched
@@ -93,9 +93,9 @@ RUN git init -q . && git fetch -q --depth 1 https://github.com/NVIDIA/OpenShell.
 RUN cargo build --release --locked --offline -p openshell-supervisor --bin openshell-supervisor
 COPY openshell.patch /tmp/
 # OPENSHELL_HTTP2_ENDPOINTS: the destinations offered HTTP/2, iwato-modal's
-# endpoints (TestHTTP2EndpointsAreModals).
+# endpoints (TestHTTP2EndpointsAreModals); hosts may be patterns.
 RUN git apply /tmp/openshell.patch \
-    && OPENSHELL_HTTP2_ENDPOINTS=api.modal.com:443,api.modal2.com:443 \
+    && OPENSHELL_HTTP2_ENDPOINTS=api.modal.com:443,api.modal2.com:443,input-plane.*.modal.com:443 \
        cargo build --release --locked --offline -p openshell-supervisor --bin openshell-supervisor \
     && mkdir /out && cp target/release/openshell-supervisor /out/ \
     && rm -rf target && /out/openshell-supervisor --version

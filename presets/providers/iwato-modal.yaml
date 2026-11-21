@@ -25,3 +25,11 @@ network_policies:
         enforcement: enforce
         rules:
           - allow: { method: POST, path: "/modal.client.ModalClient/*" }
+      # Function calls (the input plane), at the host the server names per function.
+      - host: input-plane.*.modal.com
+        port: 443
+        path: /modal.client.ModalClient/**
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: "/modal.client.ModalClient/*" }
