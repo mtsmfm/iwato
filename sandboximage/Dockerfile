@@ -52,13 +52,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends bash bash-compl
     && (command -v bat >/dev/null || ln -s /usr/bin/batcat /usr/local/bin/bat)
 # --- the desktop -------------------------------------------------------------
 # Selkies' native package (https://docs.selkies.io/native): a private Python
-# environment in /opt/selkies with selkies, selkies-session and its libraries.
-# 2.1.0 is the release linuxserver/docker-baseimage-selkies pins. The
+# environment in /opt/selkies with selkies (and its `selkies session`) and
+# its libraries. The
 # package's SHA-256 per architecture is pinned below (from the GitHub release's
 # asset digests, docs/dev/development.md#bumping-pinned-versions): a mismatch,
 # or a version or architecture with no hash, fails the build.
 # SELKIES_DEB_SHA256 overrides the pinned hash (for another SELKIES_VERSION).
-ARG SELKIES_VERSION=2.1.0
+ARG SELKIES_VERSION=2.2.1
 ARG SELKIES_DEB_SHA256=
 # Mesa's d3d12 driver and VA-API for the WSL GPU; Xvfb, PulseAudio, D-Bus and
 # Xfce for the session; CJK and emoji fonts.
@@ -113,8 +113,8 @@ RUN arch="$(dpkg --print-architecture)"; \
         || { echo "desktop: cannot download the Selkies package $url (check the release's assets, then SELKIES_VERSION and this URL)" >&2; exit 1; }; \
     want="$SELKIES_DEB_SHA256"; \
     [ -n "$want" ] || case "$SELKIES_VERSION-$arch" in \
-        2.1.0-amd64) want=cedba7a9d8bb4d07fd2b2139a518dc2c03452e0f0254c5bb088426623e2027f3 ;; \
-        2.1.0-arm64) want=7ed77ef1ddbb17e265adb01e4190a086df93f3af2bccbe326b9dcdb268279868 ;; \
+        2.2.1-amd64) want=4bc87969acf45951fbf6148b9d7e23717df58411e5a47d361b99b78842caaa8c ;; \
+        2.2.1-arm64) want=dd9564100900cbbd2fe8cd7695c0a211a8c6abc32f2932c15dcfd631ac382dec ;; \
     esac; \
     sum="$(sha256sum /tmp/selkies.deb | cut -d' ' -f1)"; \
     [ -n "$want" ] || { echo "desktop: no SHA-256 pinned for selkies $SELKIES_VERSION ($arch); its SHA-256 is $sum (pin it in sandboximage/Dockerfile after checking it against the release)" >&2; exit 1; }; \
@@ -122,8 +122,8 @@ RUN arch="$(dpkg --print-architecture)"; \
     apt-get update && apt-get install -y --no-install-recommends /tmp/selkies.deb \
         || { echo "desktop: cannot install the Selkies package" >&2; exit 1; }; \
     rm -rf /tmp/selkies.deb /var/lib/apt/lists/*; \
-    command -v selkies-session >/dev/null \
-        || { echo "desktop: the Selkies package installed no selkies-session on PATH (is it in /opt/selkies/bin?)" >&2; exit 1; }
+    command -v selkies >/dev/null \
+        || { echo "desktop: the Selkies package installed no selkies on PATH (is it in /opt/selkies/bin?)" >&2; exit 1; }
 # --- development packages ----------------------------------------------------
 # One layer, after the desktop so that changing the list does not rebuild it.
 #  - the toolchain (build-essential: gcc, g++, make, libc6-dev) and build tools;
@@ -185,7 +185,7 @@ RUN install -d -m 755 /usr/local/lib/iwato \
         || { echo "desktop: cannot build the setuid shim (iwato-noid.c)" >&2; exit 1; }; } \
     && rm -f /tmp/iwato-noid.c \
     && command -v Xvfb >/dev/null && command -v xkbcomp >/dev/null \
-    && command -v selkies-session >/dev/null && command -v xfce4-session >/dev/null
+    && command -v selkies >/dev/null && command -v xfce4-session >/dev/null
 RUN ln -s /home/dev/.iwato-agents.md /AGENTS.md \
     && ln -s /etc/iwato/gitconfig /etc/gitconfig && ln -s /etc/iwato/tmux.conf /etc/tmux.conf \
     && install -m 755 /etc/iwato/iwato-browser /usr/local/bin/iwato-browser \

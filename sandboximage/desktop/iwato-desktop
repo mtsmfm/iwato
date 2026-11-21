@@ -1,6 +1,6 @@
 #!/bin/sh
 # iwato-desktop: the sandbox's Selkies desktop (Xfce), as the sandbox user, on
-# http://127.0.0.1:$PORT. No root, no s6: selkies-session starts Xvfb,
+# http://127.0.0.1:$PORT. No root, no s6: `selkies session` starts Xvfb,
 # PulseAudio, the desktop on its own D-Bus session, and Selkies.
 #
 #   iwato-desktop [start]   start it in the background (the default); already
@@ -82,7 +82,7 @@ cmd_start() {
   if p="$(running_pid)"; then
     echo "iwato-desktop: already running (pid $p), log $LOGFILE"; reach; return 0
   fi
-  command -v selkies-session >/dev/null 2>&1 || { echo "iwato-desktop: selkies-session not found; this image has no desktop" >&2; return 1; }
+  command -v selkies >/dev/null 2>&1 || { echo "iwato-desktop: selkies not found; this image has no desktop" >&2; return 1; }
   mkdir -p "$(dirname "$PIDFILE")" "$(dirname "$LOGFILE")"
   # One old generation of the log, so it does not grow without end.
   if [ -f "$LOGFILE" ] && [ "$(wc -c <"$LOGFILE" 2>/dev/null || echo 0)" -gt 1048576 ]; then mv -f "$LOGFILE" "$LOGFILE.1" 2>/dev/null || true; fi
@@ -145,7 +145,7 @@ case "${1:-start}" in
   *)      echo "usage: iwato-desktop [start|stop|status|run]" >&2; exit 2 ;;
 esac
 
-command -v selkies-session >/dev/null 2>&1 || { echo "iwato-desktop: selkies-session not found; this is not the desktop image" >&2; exit 1; }
+command -v selkies >/dev/null 2>&1 || { echo "iwato-desktop: selkies not found; this is not the desktop image" >&2; exit 1; }
 
 # --- run: one instance, and what an abrupt stop left behind ---------------------
 
@@ -271,7 +271,7 @@ esac
 # setgid(getgid()) and setuid(getuid()) and exits 127 if either fails; the
 # sandbox's seccomp filter makes both fail with EPERM, so Xvfb dies with "XKB:
 # Failed to compile keymap". The shim answers 0 when the id does not change.
-# It is preloaded for the whole session (Xvfb is started by selkies-session);
+# It is preloaded for the whole session (Xvfb is started by `selkies session`);
 # any other id still goes to the real function.
 NOID="${IWATO_NOID_LIB:-/usr/local/lib/iwato/libiwato-noid.so}"
 if [ -r "$NOID" ]; then
@@ -330,7 +330,7 @@ trap 'rm -f "$PIDFILE"' EXIT
 # over Tailscale, Iwato terminates HTTPS). IWATO_DESKTOP_ARGS is split on purpose.
 # Not exec'd: this shell stays to catch TERM and clean up the pidfile.
 # shellcheck disable=SC2086
-selkies-session --session xfce \
+selkies session --session xfce \
   --port="$PORT" --enable-basic-auth=false --enable-https=false \
   ${IWATO_DESKTOP_ARGS:-} &
 child=$!

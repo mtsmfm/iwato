@@ -5,7 +5,7 @@
 echo "== id and directories"; id
 ls -ld /tmp /tmp/.X11-unix /var/lib/xkb 2>&1
 echo "== programs"
-command -v Xvfb xkbcomp selkies-session 2>&1
+command -v Xvfb xkbcomp selkies 2>&1
 xkbcomp -version 2>&1 | head -n 1
 echo "== seccomp / capabilities"
 grep -E '^(NoNewPrivs|Seccomp|CapEff)' /proc/self/status
