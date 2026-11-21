@@ -233,7 +233,7 @@ func TestServiceProfiles(t *testing.T) {
 			t.Error("modal", e.Host, e.Protocol, e.Rules)
 		}
 	}
-	if !slices.Equal(modalHosts, []string{"api.modal.com", "api.modal2.com"}) {
+	if !slices.Equal(modalHosts, []string{"api.modal.com", "api.modal2.com", "input-plane.*.modal.com"}) {
 		t.Error("modal hosts", modalHosts)
 	}
 	// OpenRouter: inference is POST.

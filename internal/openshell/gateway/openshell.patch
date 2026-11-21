@@ -49,10 +49,10 @@ index 8f000adb..8df34f8a 100644
  flate2 = "1"
 diff --git a/crates/openshell-supervisor-network/src/l7/http2.rs b/crates/openshell-supervisor-network/src/l7/http2.rs
 new file mode 100644
-index 00000000..f7b7c476
+index 00000000..81ab237f
 --- /dev/null
 +++ b/crates/openshell-supervisor-network/src/l7/http2.rs
-@@ -0,0 +1,1289 @@
+@@ -0,0 +1,1305 @@
 +// SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 +// SPDX-License-Identifier: Apache-2.0
 +
@@ -93,18 +93,21 @@ index 00000000..f7b7c476
 +const MAX_HEADER_LIST_SIZE: u32 = 64 * 1024;
 +
 +/// The `host:port` destinations that opt in to HTTP/2, comma-separated, fixed
-+/// when the supervisor is built (`OPENSHELL_HTTP2_ENDPOINTS`). Unset or empty:
++/// when the supervisor is built (`OPENSHELL_HTTP2_ENDPOINTS`). A host may be a
++/// pattern as in policy endpoints (`*` within one label). Unset or empty:
 +/// every tunnel negotiates HTTP/1.1 only.
 +pub const HTTP2_ENDPOINTS: &str = match option_env!("OPENSHELL_HTTP2_ENDPOINTS") {
 +    Some(list) => list,
 +    None => "",
 +};
 +
-+/// Whether `host:port` is listed in `opted_in` (see [`HTTP2_ENDPOINTS`]).
++/// Whether `host:port` is listed in `opted_in` (see [`HTTP2_ENDPOINTS`]). An
++/// invalid pattern opts nothing in.
 +pub fn endpoint_opted_in(opted_in: &str, host: &str, port: u16) -> bool {
 +    opted_in.split(',').any(|entry| {
 +        entry.trim().rsplit_once(':').is_some_and(|(h, p)| {
-+            h.eq_ignore_ascii_case(host) && p.parse::<u16>().is_ok_and(|p| p == port)
++            p.parse::<u16>().is_ok_and(|p| p == port)
++                && openshell_core::host_pattern::host_matches(h, host).unwrap_or(false)
 +        })
 +    })
 +}
@@ -684,6 +687,19 @@ index 00000000..f7b7c476
 +#[cfg(test)]
 +mod tests {
 +    use super::*;
++
++    #[test]
++    fn opt_in_list_takes_host_patterns() {
++        let list = "api.modal.com:443, input-plane.*.modal.com:443";
++        assert!(endpoint_opted_in(list, "API.modal.com", 443));
++        assert!(endpoint_opted_in(list, "input-plane.us-east.modal.com", 443));
++        assert!(endpoint_opted_in(list, "input-plane.us-west.modal.com", 443));
++        assert!(!endpoint_opted_in(list, "input-plane.us-east.modal.com", 8443));
++        assert!(!endpoint_opted_in(list, "input-plane.a.b.modal.com", 443));
++        assert!(!endpoint_opted_in(list, "evil.modal.com", 443));
++        assert!(!endpoint_opted_in("api.modal.com", "api.modal.com", 443));
++        assert!(!endpoint_opted_in("", "api.modal.com", 443));
++    }
 +    use crate::l7::tls::{
 +        CertCache, ProxyTlsState, SandboxCa, build_upstream_client_config,
 +        tls_connect_upstream_alpn, tls_terminate_client_alpn,

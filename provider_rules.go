@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -136,14 +137,35 @@ func boundProviders(rules map[string]v1.NetworkPolicyRule) []string {
 }
 
 // credentialHost: the endpoint is on one of the hosts the profile's
-// credential is meant for.
+// credential is meant for, which may be patterns ("*" within one label, as
+// OpenShell's host patterns).
 func credentialHost(prof providerProfile, e v1.PolicyNetworkEndpoint) bool {
+	host := strings.ToLower(e.Host)
 	for _, port := range effectivePorts(e) {
-		if slices.Contains(prof.CredentialHosts, strings.ToLower(e.Host)+":"+fmt.Sprint(port)) {
-			return true
+		for _, hp := range prof.CredentialHosts {
+			h, p, ok := strings.Cut(hp, ":")
+			if ok && p == fmt.Sprint(port) && (h == host || labelGlob(h, host)) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// labelGlob matches host against pattern label by label, "*" standing for
+// any part of one label.
+func labelGlob(pattern, host string) bool {
+	pl, hl := strings.Split(pattern, "."), strings.Split(host, ".")
+	if len(pl) != len(hl) || !strings.Contains(pattern, "*") {
+		return false
+	}
+	for i := range pl {
+		re := "^" + strings.ReplaceAll(regexp.QuoteMeta(pl[i]), `\*`, "[^.]*") + "$"
+		if ok, err := regexp.MatchString(re, hl[i]); err != nil || !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // bindable: OpenShell binds a credential only to an endpoint it inspects

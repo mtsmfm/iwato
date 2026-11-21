@@ -21,7 +21,11 @@
 #                    metadata x-modal-token-id and x-modal-token-secret
 #                    (client.py _get_metadata) to api.modal.com, with
 #                    api.modal2.com as the fallback (config.py
-#                    DEFAULT_SERVER_URL).
+#                    DEFAULT_SERVER_URL), and on every channel, so also to
+#                    the input plane (input-plane.REGION.modal.com, the
+#                    function metadata's input_plane_url), where function
+#                    calls go (AttemptStart, AttemptAwait, AttemptRetry, map)
+#                    with a short-lived JWT from AuthTokenGet besides.
 # Endpoint access:   every RPC of modal.client.ModalClient (POST), reads and
 #                    writes alike: apps, functions, image builds and logs are
 #                    RPCs there; running apps costs money. The Secret RPCs
@@ -32,9 +36,8 @@
 #                    Not listed (proposals, without the token): blob uploads
 #                    and downloads (presigned S3 and R2 URLs, blob_utils.py),
 #                    web endpoints (*.modal.run), tunnels, the URLs the
-#                    server hands out for input-plane functions and sandbox
-#                    commands (gRPC with a short-lived JWT), and modal.com
-#                    (`modal skills`).
+#                    server hands out for sandbox commands (gRPC with a
+#                    short-lived JWT), and modal.com (`modal skills`).
 # Verified:          from modal-labs/modal-client (main, 890fea5ff81c,
 #                    2026-10-23) and vmagamedov/grpclib 0.4.9, via GitHub.
 #                    Not verified against Modal's servers.
@@ -49,7 +52,7 @@ display_name: Modal (Iwato)
 description: Modal control plane (gRPC over HTTP/2) for Iwato's sandbox image
 category: other
 annotations:
-  iwato/credential-hosts: "api.modal.com:443,api.modal2.com:443"
+  iwato/credential-hosts: "api.modal.com:443,api.modal2.com:443,input-plane.*.modal.com:443"
 credentials:
   - name: token_id
     description: Modal token ID
