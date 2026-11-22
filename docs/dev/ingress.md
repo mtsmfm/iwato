@@ -159,7 +159,7 @@ The Tailscale parts (joining with tsnet, certificates, WhoIs, Logout) cannot run
    ```
 
    Only if you removed the default "everyone → everything" grant, also add `{"src": ["autogroup:member"], "dst": ["tag:iwato"], "ip": ["*"]}`
-3. Settings → OAuth clients → Generate OAuth client: scope Keys → Auth Keys, Write only; tag `tag:iwato`
+3. Settings → Trust credentials (formerly OAuth clients) → Credential → OAuth: scope Keys → Auth Keys, Write only; tag `tag:iwato`; Generate credential
 4. In Iwato's settings (Settings): choose **Tailscale (phones too)** → paste the secret and save → "set (tskey-client-…xxxx)". Put your login (e.g. `alice@github`; filled in automatically when opened through tailscale serve) in **Owner logins** → save → the state is "Publishing with Tailscale"
 5. `ingress-secret.bin` exists in the folder of `iwato.json` and its content is not plaintext (DPAPI). `iwato.json` has no secret
 

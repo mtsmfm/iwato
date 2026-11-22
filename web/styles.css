@@ -347,3 +347,4 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 .policy-drafts{margin-top:12px;border-top:1px solid #2a333a;padding-top:8px;min-width:0}.policy-drafts-toggle{all:unset;box-sizing:border-box;cursor:pointer;display:block;width:100%;padding:6px 4px;font-size:12px;color:#cfe3d8;overflow-wrap:anywhere}.policy-drafts-toggle:focus-visible{outline:2px solid var(--green);outline-offset:2px}.policy-drafts-note{margin:2px 4px 4px}
 @media(pointer:coarse),(max-width:720px){.policy-drafts-toggle{min-height:40px;padding:10px 4px}}
 .usage-service{display:flex;align-items:baseline;gap:6px;font-size:11px;min-width:0}.usage-service strong{font-weight:600;color:#c7cfda}.usage-service .panel-meta{margin:0;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ingress-admin-link{margin-left:.4em;overflow-wrap:anywhere}
