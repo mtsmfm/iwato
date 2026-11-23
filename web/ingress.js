@@ -76,6 +76,12 @@
   }
 
   // tools are the page's helpers (app.js).
+  // *.localhost resolves to the browser's own machine: its links work only
+  // on the PC running Iwato, whose page is on a loopback address.
+  function onThisPC() {
+    try { return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(new URL(location.href).hostname); } catch { return false; }
+  }
+
   function make({ element, button, panelHeader, api, askConfirm }) {
     // A page of Tailscale's admin console, opened in a new tab.
     const adminLink = (page) => {
@@ -523,7 +529,7 @@
           a.rel = 'noopener noreferrer';
           info.append(a);
         } else info.append(element('span', 'panel-meta', this.data.provider === 'local' ? t('ports.noURL') : t('ports.noURLYet')));
-        if (p.localUrl && !p.disabled) {
+        if (p.localUrl && !p.disabled && onThisPC()) {
           const local = element('span', 'panel-meta port-local');
           const a = element('a', 'port-link', p.localUrl);
           a.href = p.localUrl;
