@@ -2350,7 +2350,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const body = se.els['settings-body'];
   const radios = walk(body, (n) => n.type === 'radio');
   assert.deepEqual(radios.map((r) => [r.value, r.checked]), [['local', true], ['tailscale', false], ['off', false]], 'local is chosen');
-  assert(walk(body, (n) => /http:\/\/ポート\.サンドボックス\.localhost:17600\//.test(n.textContent || '')).length === 1, 'the local URL form with the port');
+  assert(walk(body, (n) => /http:\/\/ポート\.サンドボックス\.localhost:17600\//.test(n.textContent || '')).length >= 1, 'the local URL form with the port');
   const tsParts = walk(body, (n) => n.className === 'stack-form ingress-tailscale');
   assert.equal(tsParts.length, 2); assert(tsParts.every((n) => n.hidden), 'the Tailscale settings are hidden while local is chosen');
   assert.equal(walk(body, (n) => n.attributes['aria-label'] === 'ノード名の接頭辞')[0].required, false, 'the hidden prefix does not block saving local');
@@ -2376,7 +2376,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(walk(body, (n) => n.type === 'radio' && n.value === 'tailscale')[0].checked, true, 'the unsaved choice stays');
   walk(body, (n) => n.attributes['aria-label'] === '通すログイン名')[0].value = 'alice@github\nbob@github';
   walk(body, (n) => n.className === 'stack-form ingress-form')[0].listeners.submit({preventDefault() {}}); await flush();
-  assert.deepEqual(posts[1].body, {provider: 'tailscale', tag: 'tag:iwato', hostnamePrefix: 'iwato-', owners: ['alice@github', 'bob@github']});
+  assert.deepEqual(posts[1].body, {provider: 'tailscale', tag: 'tag:iwato', hostnamePrefix: 'iwato-', owners: ['alice@github', 'bob@github'], tailnetOnly: false});
   assert(walk(body, (n) => n.className === 'stack-form ingress-tailscale').every((n) => !n.hidden), 'saved Tailscale shows its settings');
   assert.equal(walk(body, (n) => n.className === 'ingress-state')[0].dataset.state, 'on');
   assert.equal(walk(body, (n) => n.className === 'files-steps ingress-steps')[0].open, false, 'steps fold once a secret is set');

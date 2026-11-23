@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,6 +135,40 @@ func TestIngressLifecycle(t *testing.T) {
 	if !strings.Contains(string(b), `"url":"https://iwato-dev.tail0000.ts.net:5173/"`) || !strings.Contains(string(b), `"ipv6Only":true`) {
 		t.Fatal(string(b))
 	}
+	// This PC's *.localhost runs next to Tailscale (ADR 0028).
+	_, port, _ := strings.Cut(s.host, ":")
+	if s.ingress.local == nil || !strings.Contains(string(b), `"localUrl":"http://5173.dev.localhost:`+port+`/"`) {
+		t.Fatal("no local publishing next to Tailscale", string(b))
+	}
+	// The tailnet's address only: refused while this PC cannot reach it.
+	tsBody := `{"provider":"tailscale","tag":"tag:iwato","hostnamePrefix":"iwato-","owners":["alice@github"],"tailnetOnly":true}`
+	if res, b := request(t, s, "/api/ingress", "POST", tsBody, cookie, csrf); res.StatusCode != 409 || !strings.Contains(string(b), "ingress_tailnet_unreachable") {
+		t.Fatal(res.StatusCode, string(b))
+	}
+	s.mu.Lock()
+	s.config.Ingress.Tailscale.TailnetOnly = true
+	s.mu.Unlock()
+	s.ingress.reconfigure(ctx)
+	if s.ingress.local != nil {
+		t.Fatal("this PC's publishing stays with the tailnet's address only")
+	}
+	// A page opened on this PC's address goes to the page's node; the API stays.
+	s.setPublic("iwato.tail0000.ts.net", "https://iwato.tail0000.ts.net")
+	nav := httptest.NewRequest("GET", "http://"+s.host+"/?sandbox=dev", nil)
+	nav.Header.Set("Sec-Fetch-Mode", "navigate")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, nav)
+	if rec.Code != 302 || rec.Header().Get("Location") != "https://iwato.tail0000.ts.net/?sandbox=dev" {
+		t.Fatal(rec.Code, rec.Header().Get("Location"))
+	}
+	if res, _ := request(t, s, "/api/ingress", "GET", "", cookie, ""); res.StatusCode != 200 {
+		t.Fatal("the API redirected", res.StatusCode)
+	}
+	s.setPublic("", "")
+	s.mu.Lock()
+	s.config.Ingress.Tailscale.TailnetOnly = false
+	s.mu.Unlock()
+	s.ingress.reconfigure(ctx)
 	// The tailnet's connections go in only to the listed ports.
 	s.ingress.sync(ctx, false)
 	if !s.ingress.forwarded(ingress.Target{Sandbox: "dev", Port: 5173}) || s.ingress.forwarded(ingress.Target{Sandbox: "dev", Port: 9999}) {

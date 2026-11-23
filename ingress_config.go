@@ -34,6 +34,10 @@ type TailscaleIngressConfig struct {
 	HostnamePrefix *string `json:"hostnamePrefix,omitempty"`
 	// Owners are the logins (WhoIs) whose devices may connect.
 	Owners []string `json:"owners,omitempty"`
+	// TailnetOnly: this PC uses the tailnet's address too. *.localhost is
+	// not published next to Tailscale, and the page on this PC's address
+	// redirects to the page's node (ADR 0028).
+	TailnetOnly bool `json:"tailnetOnly,omitempty"`
 }
 
 // SandboxIngress overrides the ingress for one sandbox.
@@ -95,6 +99,11 @@ const (
 	providerTailscale = "tailscale"
 	providerOff       = "off"
 )
+
+// tailnetOnly: Tailscale, and this PC uses the tailnet's address only.
+func (c *IngressConfig) tailnetOnly() bool {
+	return c.provider() == providerTailscale && c.Tailscale != nil && c.Tailscale.TailnetOnly
+}
 
 // provider is the effective provider: local, tailscale or off.
 func (c *IngressConfig) provider() string {

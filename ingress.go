@@ -69,6 +69,8 @@ type ingressManager struct {
 	memSecret   string // without a folder (fake, tests)
 	provider    ingress.Provider
 	providerKey string
+	// local publishes *.localhost next to Tailscale (syncLocal).
+	local ingress.Provider
 	running     map[string]bool
 	lastSync    string
 	syncErr     string
@@ -157,8 +159,11 @@ type hostTaker interface {
 // to the local provider (local.Split): false keeps it for the admin UI.
 func (m *ingressManager) take(c net.Conn, r *http.Request) bool {
 	m.mu.Lock()
-	p := m.provider
+	p, l := m.provider, m.local
 	m.mu.Unlock()
+	if t, ok := l.(hostTaker); ok && t.Take(c, r) {
+		return true
+	}
 	t, ok := p.(hostTaker)
 	return ok && t.Take(c, r)
 }
@@ -416,6 +421,7 @@ func (m *ingressManager) overall() ingress.Status {
 func (m *ingressManager) reconfigure(ctx context.Context) {
 	m.reconfMu.Lock()
 	defer m.reconfMu.Unlock()
+	defer m.syncLocal(ctx)
 	cfg := m.config()
 	secret := m.secretValue()
 	key := ""
@@ -460,6 +466,33 @@ func (m *ingressManager) reconfigure(ctx context.Context) {
 	m.provider = p
 	m.mu.Unlock()
 	m.sync(ctx, true)
+}
+
+// syncLocal runs this PC's *.localhost publishing next to Tailscale,
+// unless this PC uses the tailnet's address only (ADR 0028).
+func (m *ingressManager) syncLocal(ctx context.Context) {
+	cfg := m.config()
+	want := cfg.provider() == providerTailscale && !cfg.tailnetOnly()
+	m.mu.Lock()
+	cur := m.local
+	if want == (cur != nil) {
+		m.mu.Unlock()
+		return
+	}
+	m.local = nil
+	m.mu.Unlock()
+	if cur != nil {
+		_ = cur.Close()
+		return
+	}
+	p := m.newLocal()
+	if err := p.Start(ctx, m.core); err != nil {
+		log.Printf("ingress: this PC's publishing next to Tailscale: %v", english(err))
+		return
+	}
+	m.mu.Lock()
+	m.local = p
+	m.mu.Unlock()
 }
 
 // states reads every sandbox's state from the runtime.
@@ -570,11 +603,13 @@ func (m *ingressManager) loop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			m.mu.Lock()
-			p := m.provider
-			m.provider = nil
+			p, l := m.provider, m.local
+			m.provider, m.local = nil, nil
 			m.mu.Unlock()
-			if p != nil {
-				_ = p.Close()
+			for _, x := range []ingress.Provider{p, l} {
+				if x != nil {
+					_ = x.Close()
+				}
 			}
 			return
 		case <-m.kickCh:
@@ -727,7 +762,8 @@ func parseSelfLogin(b []byte) string {
 // handleIngress is the settings' API:
 //
 //	GET  /api/ingress                the settings, the secret's state, the nodes
-//	POST /api/ingress                {provider, tag, hostnamePrefix, owners}
+//	POST /api/ingress                {provider, tag, hostnamePrefix, owners, tailnetOnly}
+//	GET  /api/ingress/reach          whether this PC reaches the page's tailnet address
 //	POST /api/ingress/secret         {secret}
 //	POST /api/ingress/secret/delete
 func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
@@ -740,7 +776,7 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 		}
 		cfg := m.config()
 		jsonResponse(w, 200, map[string]any{
-			"provider": cfg.provider(), "listen": s.host,
+			"provider": cfg.provider(), "listen": s.host, "tailnetOnly": cfg.tailnetOnly(),
 			"tag": cfg.tag(), "hostnamePrefix": cfg.prefix(), "owners": nonNil(cfg.owners()),
 			"defaults":        map[string]string{"tag": defaultTailscaleTag, "hostnamePrefix": defaultHostnamePrefix},
 			"suggestedOwners": nonNil(m.suggestedOwners(r)),
@@ -756,6 +792,7 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 			Tag            string   `json:"tag"`
 			HostnamePrefix string   `json:"hostnamePrefix"`
 			Owners         []string `json:"owners"`
+			TailnetOnly    bool     `json:"tailnetOnly"`
 		}
 		if decode(w, r, &body) != nil {
 			fail(w, 400, "invalid request")
@@ -780,7 +817,15 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 		if prefix == "" {
 			prefix = defaultHostnamePrefix
 		}
-		next := &IngressConfig{Tailscale: &TailscaleIngressConfig{Tag: strings.TrimSpace(body.Tag), HostnamePrefix: &prefix, Owners: owners}}
+		// Turning on the tailnet's address only: a page on this PC that
+		// cannot reach it would redirect to nowhere.
+		if body.TailnetOnly && body.Provider == providerTailscale && !m.config().tailnetOnly() {
+			if u := s.publicOrigin(); u == "" || !reachable(r.Context(), u) {
+				failCode(w, 409, "ingress_tailnet_unreachable", nil, "この PC から tailnet のアドレスに届かないため、tailnet のアドレスだけにはできません (この PC にも Tailscale を入れてください)")
+				return
+			}
+		}
+		next := &IngressConfig{Tailscale: &TailscaleIngressConfig{Tag: strings.TrimSpace(body.Tag), HostnamePrefix: &prefix, Owners: owners, TailnetOnly: body.TailnetOnly && body.Provider == providerTailscale}}
 		if next.Tailscale.Tag == defaultTailscaleTag {
 			next.Tailscale.Tag = ""
 		}
@@ -804,6 +849,12 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 		}
 		m.later(func() { m.reconfigure(context.WithoutCancel(s.ctx)) })
 		jsonResponse(w, 200, map[string]bool{"ok": true})
+	case r.Method == http.MethodGet && tail == "reach":
+		if !s.require(w, r, false) {
+			return
+		}
+		u := s.publicOrigin()
+		jsonResponse(w, 200, map[string]any{"url": u, "reachable": u != "" && reachable(r.Context(), u)})
 	case r.Method == http.MethodPost && tail == "secret":
 		if !s.require(w, r, true) {
 			return
@@ -852,6 +903,8 @@ func nonNil(v []string) []string {
 type portView struct {
 	ingress.ListenPort
 	URL string `json:"url,omitempty"`
+	// LocalURL is this PC's address next to Tailscale's (syncLocal).
+	LocalURL string `json:"localUrl,omitempty"`
 	// Disabled: closed by the sandbox's configuration.
 	Disabled bool `json:"disabled,omitempty"`
 	// TCPOnly: mode tcp, which the local provider (Host routing, HTTP
@@ -875,7 +928,7 @@ func (s *Server) handlePorts(w http.ResponseWriter, r *http.Request, parts []str
 	cfg := m.config()
 	resp := map[string]any{"overall": m.overall(), "provider": cfg.provider(), "hostname": cfg.prefix() + sb.Name, "ports": []portView{}}
 	m.mu.Lock()
-	p := m.provider
+	p, local := m.provider, m.local
 	m.mu.Unlock()
 	node := ingress.Status{State: "off"}
 	if sb.Ingress != nil && sb.Ingress.Disabled {
@@ -903,9 +956,31 @@ func (s *Server) handlePorts(w http.ResponseWriter, r *http.Request, parts []str
 			if p != nil && !v.Disabled && !v.TCPOnly {
 				v.URL, _ = p.URL(ingress.Target{Sandbox: sb.Name, Port: lp.Port})
 			}
+			if local != nil && !v.Disabled && opts.Mode != ingress.ModeTCP {
+				v.LocalURL, _ = local.URL(ingress.Target{Sandbox: sb.Name, Port: lp.Port})
+			}
 			views = append(views, v)
 		}
 		resp["ports"] = views
 	}
 	jsonResponse(w, 200, resp)
+}
+
+// reachable: this PC's own network (not Iwato's tsnet nodes) reaches u
+// over https, as a browser on this PC would: only then does the page offer
+// to use the tailnet's address on this PC too.
+func reachable(ctx context.Context, u string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, strings.TrimSuffix(u, "/")+"/favicon.svg", nil)
+	if err != nil {
+		return false
+	}
+	c := &http.Client{Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := c.Do(req)
+	if err != nil {
+		return false
+	}
+	res.Body.Close()
+	return true
 }
