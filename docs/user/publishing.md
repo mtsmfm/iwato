@@ -26,8 +26,8 @@ With Tailscale, each sandbox becomes a node on your tailnet, and each port opens
 
 One-time setup:
 
-1. In Tailscale's admin console, under DNS, turn on MagicDNS and HTTPS Certificates
-2. In the tailnet policy (Access controls), add the tag (the settings have a copy button):
+1. In Tailscale's admin console, under [DNS](https://console.tailscale.com/admin/dns), turn on MagicDNS and HTTPS Certificates
+2. In the tailnet policy ([Access controls](https://console.tailscale.com/admin/acls)), add the tag (the settings have a copy button):
 
    ```json
    "tagOwners": {
@@ -36,7 +36,7 @@ One-time setup:
    ```
 
    Only if you removed the default grant that lets everyone reach everything, also add `{"src": ["autogroup:member"], "dst": ["tag:iwato"], "ip": ["*"]}`
-3. Settings → OAuth clients → Generate OAuth client, with only Keys → Auth Keys (write), and the tag `tag:iwato`
+3. Settings → [Trust credentials](https://console.tailscale.com/admin/settings/trust-credentials) (formerly OAuth clients): Credential → OAuth, with only Keys → Auth Keys set to Write and the tag `tag:iwato`, then Generate credential
 4. In Iwato's settings, choose Tailscale (phones too), paste the client secret (`tskey-client-…`) and save. Enter your Tailscale login under Owner logins (for example `alice@github`; filled in when you use Iwato through `tailscale serve`) and save. The status becomes "publishing"
 
 Behaviour:

@@ -77,6 +77,14 @@
 
   // tools are the page's helpers (app.js).
   function make({ element, button, panelHeader, api, askConfirm }) {
+    // A page of Tailscale's admin console, opened in a new tab.
+    const adminLink = (page) => {
+      const a = element('a', 'port-link ingress-admin-link', 'console.tailscale.com/admin/' + page);
+      a.href = 'https://console.tailscale.com/admin/' + page;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      return a;
+    };
     async function copy(value, label) {
       try {
         if (typeof navigator === 'undefined' || !navigator.clipboard) throw new Error('no clipboard');
@@ -143,20 +151,56 @@
           if (seq !== this.seq) return;
           this.data = data;
           this.render();
+          this.watchJoining();
         } catch (error) {
           if (seq === this.seq) this.status.textContent = t('ingress.loadFailed', { message: error.message });
           if (error.status === 401 || error.status === 403) this.onAuth?.();
         }
       }
 
+      // While a node joins (and for a minute after a save, before the join
+      // starts), the states are read again every 3 s; only they are redrawn,
+      // so what is being typed stays.
+      watchJoining() {
+        clearTimeout(this.joinTimer);
+        const d = this.data;
+        const joining = [d.status, d.admin, ...d.nodes].some((s) => s?.state === 'starting') || Date.now() < (this.watchUntil || 0);
+        if (!joining) return;
+        this.joinTimer = setTimeout(async () => {
+          if (document.hidden || !this.root.isConnected || !this.root.offsetParent) { this.watchJoining(); return; }
+          const seq = this.seq;
+          try {
+            const data = settingsView(await api('/api/ingress'));
+            if (seq !== this.seq || !this.headEl) return;
+            this.data = data;
+            const head = this.stateHead();
+            this.headEl.replaceWith(head);
+            this.headEl = head;
+            const admin = data.admin ? this.adminBlock() : element('div');
+            this.adminEl.replaceWith(admin);
+            this.adminEl = admin;
+            const nodes = data.nodes.length ? this.nodeList() : element('div');
+            this.nodesEl.replaceWith(nodes);
+            this.nodesEl = nodes;
+          } catch (_) { /* the next round tries again */ }
+          this.watchJoining();
+        }, 3000);
+      }
+
+      stateHead() {
+        const d = this.data;
+        const head = element('p', 'ingress-state');
+        head.dataset.state = d.status.state;
+        head.append(dot(d.status.state), element('strong', '', stateLabel(d.status.state)), element('span', '', ' ' + statusMessage(d.status)));
+        return head;
+      }
+
       render() {
         const d = this.data;
         const nodes = [];
         nodes.push(element('h4', 'files-head', t('ingress.title')));
-        const head = element('p', 'ingress-state');
-        head.dataset.state = d.status.state;
-        head.append(dot(d.status.state), element('strong', '', stateLabel(d.status.state)), element('span', '', ' ' + statusMessage(d.status)));
-        nodes.push(head);
+        this.headEl = this.stateHead();
+        nodes.push(this.headEl);
 
         const form = element('form', 'stack-form ingress-form');
         const choices = element('fieldset', 'ingress-providers');
@@ -208,15 +252,19 @@
         this.save.type = 'submit';
         const actions = element('div', 'login-form');
         actions.append(this.save);
-        form.append(choices, this.tsFields, actions);
+        // Results show by the button: the panel's own status is far below.
+        this.formStatus = element('p', 'panel-meta');
+        this.formStatus.setAttribute('role', 'status');
+        form.append(choices, this.tsFields, actions, this.formStatus);
         form.addEventListener('submit', (event) => { event.preventDefault(); this.saveSettings(); });
         nodes.push(form);
 
         // Tailscale's secret, nodes and steps: only while it is chosen.
         this.tsExtra = element('div', 'stack-form ingress-tailscale');
         this.tsExtra.append(this.secretBlock());
-        if (d.admin) this.tsExtra.append(this.adminBlock());
-        if (d.nodes.length) this.tsExtra.append(this.nodeList());
+        this.adminEl = d.admin ? this.adminBlock() : element('div');
+        this.nodesEl = d.nodes.length ? this.nodeList() : element('div');
+        this.tsExtra.append(this.adminEl, this.nodesEl);
         this.tsExtra.append(this.setupSteps());
         this.tsExtra.append(element('p', 'panel-meta', t('ingress.ctNote')));
         nodes.push(this.tsExtra);
@@ -257,7 +305,9 @@
           const actions = element('div', 'login-form');
           actions.append(button('button-primary', d.secret.set ? t('ingress.secret.replace') : t('common.save'), () => this.saveSecret()));
           if (d.secret.set) actions.append(button('button-disconnect', t('common.delete'), () => this.deleteSecret()));
-          box.append(this.secretInput, actions);
+          this.secretStatus = element('p', 'panel-meta');
+          this.secretStatus.setAttribute('role', 'status');
+          box.append(this.secretInput, actions, this.secretStatus);
         }
         return box;
       }
@@ -312,9 +362,9 @@
         steps.append(element('summary', '', t('ingress.steps')));
         const ol = element('ol');
         const li = (...parts) => { const l = element('li'); l.append(...parts.map((x) => typeof x === 'string' ? element('span', '', x) : x)); ol.append(l); return l; };
-        li(t('ingress.step.dns'));
-        li(element('span', '', t('ingress.step.tag')), snippet('tagOwners', tagOwnersSnippet(tag)));
-        li(t('ingress.step.oauth', { tag }));
+        li(t('ingress.step.dns'), adminLink('dns'));
+        li(element('span', '', t('ingress.step.tag')), adminLink('acls'), snippet('tagOwners', tagOwnersSnippet(tag)));
+        li(t('ingress.step.oauth', { tag }), adminLink('settings/trust-credentials'));
         li(t('ingress.step.secret'));
         steps.append(ol);
         steps.append(element('p', 'panel-meta', t('ingress.step.authkey', { tag })));
@@ -328,11 +378,12 @@
         try {
           await api('/api/ingress', { method: 'POST', body: JSON.stringify(body) });
           this.pending = null;
-          this.status.textContent = t('ingress.saved');
+          this.watchUntil = Date.now() + 60000;
           await this.refresh();
+          this.formStatus.textContent = t('ingress.saved');
           this.onChange?.();
         } catch (error) {
-          this.status.textContent = t('ingress.saveFailed', { message: error.message });
+          this.formStatus.textContent = t('ingress.saveFailed', { message: error.message });
         } finally {
           this.save.disabled = false;
         }
@@ -341,14 +392,15 @@
       async saveSecret() {
         const value = this.secretInput.value.trim();
         this.secretInput.value = '';
-        if (!value) { this.status.textContent = t('ingress.secret.empty'); return; }
+        if (!value) { this.secretStatus.textContent = t('ingress.secret.empty'); return; }
         try {
           await api('/api/ingress/secret', { method: 'POST', body: JSON.stringify({ secret: value }) });
-          this.status.textContent = t('ingress.secret.saved');
+          this.watchUntil = Date.now() + 60000;
           await this.refresh();
+          if (this.secretStatus) this.secretStatus.textContent = t('ingress.secret.saved');
           this.onChange?.();
         } catch (error) {
-          this.status.textContent = t('ingress.saveFailed', { message: error.message });
+          this.secretStatus.textContent = t('ingress.saveFailed', { message: error.message });
         }
       }
 
@@ -356,11 +408,11 @@
         if (!await askConfirm(t('ingress.secret.delete.confirm'), { ok: t('common.delete'), danger: true })) return;
         try {
           await api('/api/ingress/secret/delete', { method: 'POST', body: '{}' });
-          this.status.textContent = t('ingress.secret.deleted');
           await this.refresh();
+          if (this.secretStatus) this.secretStatus.textContent = t('ingress.secret.deleted');
           this.onChange?.();
         } catch (error) {
-          this.status.textContent = t('ingress.deleteFailed', { message: error.message });
+          this.secretStatus.textContent = t('ingress.deleteFailed', { message: error.message });
         }
       }
     }

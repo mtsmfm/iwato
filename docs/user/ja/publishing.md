@@ -26,8 +26,8 @@ Tailscale を使うと、サンドボックスごとに tailnet のノードが�
 
 準備 (一度だけ):
 
-1. Tailscale の管理画面の DNS で、MagicDNS と HTTPS Certificates を有効にする
-2. tailnet のポリシー (Access controls) に tag を足す (「設定」にコピーボタンがあります):
+1. Tailscale の管理画面の [DNS](https://console.tailscale.com/admin/dns) で、MagicDNS と HTTPS Certificates を有効にする
+2. tailnet のポリシー ([Access controls](https://console.tailscale.com/admin/acls)) に tag を足す (「設定」にコピーボタンがあります):
 
    ```json
    "tagOwners": {
@@ -36,7 +36,7 @@ Tailscale を使うと、サンドボックスごとに tailnet のノードが�
    ```
 
    既定の「全員 → 全部」の grant を消している場合だけ、`{"src": ["autogroup:member"], "dst": ["tag:iwato"], "ip": ["*"]}` も足す
-3. Settings → OAuth clients → Generate OAuth client: スコープは Keys → Auth Keys の Write だけ、tag は `tag:iwato`
+3. Settings → [Trust credentials](https://console.tailscale.com/admin/settings/trust-credentials) (以前の OAuth clients) で「Credential」→「OAuth」: Keys の Auth Keys だけを Write にし、tag に `tag:iwato` を選んで「Generate credential」
 4. Iwato の「設定」で「Tailscale (スマホからも)」を選び、クライアントのシークレット (`tskey-client-…`) を貼って保存。「通すログイン名」に自分の Tailscale のログイン名 (例: `alice@github`。`tailscale serve` 経由で開いていれば自動で入ります) を入れて保存。状態が「公開中」になります
 
 振る舞い:
