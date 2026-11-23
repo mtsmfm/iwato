@@ -53,7 +53,7 @@
     const list = (v, n) => (Array.isArray(v) ? v : []).filter((x) => typeof x === 'string').slice(0, n).map((x) => x.slice(0, 200));
     const secret = d?.secret || {};
     return {
-      provider: provider(d?.provider), listen: text(d?.listen, 64), tag: text(d?.tag, 64), hostnamePrefix: text(d?.hostnamePrefix, 31), owners: list(d?.owners, 20),
+      provider: provider(d?.provider), listen: text(d?.listen, 64), tailnetOnly: d?.tailnetOnly === true, tag: text(d?.tag, 64), hostnamePrefix: text(d?.hostnamePrefix, 31), owners: list(d?.owners, 20),
       defaults: { tag: text(d?.defaults?.tag, 64) || 'tag:iwato', hostnamePrefix: text(d?.defaults?.hostnamePrefix, 31) },
       suggested: list(d?.suggestedOwners, 5), secretEnv: text(d?.secretEnv, 64) || 'IWATO_TS_AUTHKEY',
       secret: { set: secret.set === true, source: text(secret.source, 16), kind: text(secret.kind, 16), hint: text(secret.hint, 64), storage: text(secret.storage, 16), error: text(secret.error, 300) },
@@ -69,13 +69,19 @@
       overall: statusView(d?.overall), provider: provider(d?.provider), node: statusView(d?.node), hostname: text(d?.hostname, 64), running: d?.running === true,
       error: d?.error && window.IwatoI18n ? window.IwatoI18n.serverError(d.errorCode, d.errorParams, text(d.error, 300)) : text(d?.error, 300),
       ports: (Array.isArray(d?.ports) ? d.ports : []).filter((p) => Number.isInteger(p?.port) && p.port > 0 && p.port < 65536).slice(0, 200).map((p) => ({
-        port: p.port, url: linkURL(p.url), addresses: (Array.isArray(p.addresses) ? p.addresses : []).filter((a) => typeof a === 'string').slice(0, 4).map((a) => a.slice(0, 40)),
+        port: p.port, url: linkURL(p.url), localUrl: linkURL(p.localUrl), addresses: (Array.isArray(p.addresses) ? p.addresses : []).filter((a) => typeof a === 'string').slice(0, 4).map((a) => a.slice(0, 40)),
         ipv6Only: p.ipv6Only === true, disabled: p.disabled === true, tcpOnly: p.tcpOnly === true
       }))
     };
   }
 
   // tools are the page's helpers (app.js).
+  // *.localhost resolves to the browser's own machine: its links work only
+  // on the PC running Iwato, whose page is on a loopback address.
+  function onThisPC() {
+    try { return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(new URL(location.href).hostname); } catch { return false; }
+  }
+
   function make({ element, button, panelHeader, api, askConfirm }) {
     // A page of Tailscale's admin console, opened in a new tab.
     const adminLink = (page) => {
@@ -246,8 +252,15 @@
         this.prefix.value = d.hostnamePrefix;
         const row = element('div', 'ingress-row');
         row.append(field('tag', this.tag, t('ingress.tag.hint')), field(t('ingress.prefix'), this.prefix, t('ingress.prefix.hint')));
+        const only = element('label', 'scope-choice');
+        this.tailnetOnly = element('input');
+        this.tailnetOnly.type = 'checkbox';
+        this.tailnetOnly.checked = d.tailnetOnly;
+        const onlyText = element('span', 'ingress-provider-text');
+        onlyText.append(element('span', '', t('ingress.tailnetOnly')), element('span', 'panel-meta', t('ingress.tailnetOnly.hint', { port: (d.listen.match(/:(\d+)$/) || [])[1] || 'PORT' })));
+        only.append(this.tailnetOnly, onlyText);
         this.tsFields = element('div', 'stack-form ingress-tailscale');
-        this.tsFields.append(ownersField, row);
+        this.tsFields.append(ownersField, row, only);
         this.save = element('button', 'button button-primary', t('common.save'));
         this.save.type = 'submit';
         const actions = element('div', 'login-form');
@@ -373,7 +386,7 @@
       }
 
       async saveSettings() {
-        const body = { provider: this.chosen(), tag: this.tag.value.trim() || this.data.defaults.tag, hostnamePrefix: this.prefix.value.trim(), owners: parseOwners(this.owners.value) };
+        const body = { provider: this.chosen(), tag: this.tag.value.trim() || this.data.defaults.tag, hostnamePrefix: this.prefix.value.trim(), owners: parseOwners(this.owners.value), tailnetOnly: this.tailnetOnly.checked };
         this.save.disabled = true;
         try {
           await api('/api/ingress', { method: 'POST', body: JSON.stringify(body) });
@@ -516,9 +529,17 @@
           a.rel = 'noopener noreferrer';
           info.append(a);
         } else info.append(element('span', 'panel-meta', this.data.provider === 'local' ? t('ports.noURL') : t('ports.noURLYet')));
+        if (p.localUrl && !p.disabled && onThisPC()) {
+          const local = element('span', 'panel-meta port-local');
+          const a = element('a', 'port-link', p.localUrl);
+          a.href = p.localUrl;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          local.append(element('span', '', t('ports.fromThisPC') + ' '), a);
+          info.append(local);
+        }
         if (p.ipv6Only) info.append(element('span', 'panel-meta', t('ports.ipv6Only')));
         row.append(info);
-        if (p.url && !p.disabled) row.append(...copyButton(p.url, t('ports.url', { port: p.port })));
         return row;
       }
 

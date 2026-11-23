@@ -261,6 +261,9 @@ func (s *Server) Handler() http.Handler {
 			reject(w, r, 403, "invalid host", "Host="+r.Host+" expected="+s.host)
 			return
 		}
+		if r.Host == s.host && s.tailnetOnlyRedirect(w, r) {
+			return
+		}
 		if o := r.Header.Get("Origin"); o != "" && !s.allowedOrigin(o) {
 			reject(w, r, 403, "invalid origin", "Origin="+o+" expected="+s.origin)
 			return
@@ -947,6 +950,23 @@ func (s *Server) publicHost() string {
 		return p.host
 	}
 	return ""
+}
+
+// tailnetOnlyRedirect sends a browser opening a page on this PC's address
+// to the page's tailnet node when this PC uses the tailnet's address only
+// (ADR 0028). Only navigations: the API, WebSockets and WebDAV keep
+// answering here, as Iwato itself and Windows' drives use them. While the
+// node is down the page stays here.
+func (s *Server) tailnetOnlyRedirect(w http.ResponseWriter, r *http.Request) bool {
+	if s.ingress == nil || !s.ingress.config().tailnetOnly() || r.Method != http.MethodGet || r.Header.Get("Sec-Fetch-Mode") != "navigate" {
+		return false
+	}
+	u := s.publicOrigin()
+	if u == "" {
+		return false
+	}
+	http.Redirect(w, r, strings.TrimSuffix(u, "/")+r.URL.RequestURI(), http.StatusFound)
+	return true
 }
 
 func (s *Server) publicOrigin() string {

@@ -41,6 +41,7 @@ One-time setup:
 
 Behaviour:
 
+- This PC keeps `http://PORT.SANDBOX.localhost:PORT/` next to the tailnet's addresses, so it can open the ports without the Tailscale app; the Ports tab shows both. **Use only the tailnet's address on this PC too** (in the settings) stops it and sends a browser opening `http://127.0.0.1:PORT/` to Iwato's tailnet page; it can be turned on only when this PC reaches that page (with the Tailscale app on it) ([ADR 0028](../adr/0028-this-pc-next-to-tailscale.md))
 - Only the untagged devices of the people in **Owner logins** can connect. Tagged nodes (other sandboxes, servers) and devices shared from other tailnets are refused
 - Plain `http://` works too (traffic inside the tailnet is already encrypted); the links use `https://`
 - A stopped sandbox's node goes offline (its URLs do not answer) and comes back with the same name when the sandbox starts. Deleting the sandbox logs its node out
@@ -63,7 +64,7 @@ There is no screen for them yet; set them in `iwato.json` per sandbox:
 
 With **Tailscale (phones too)** set up as above, Iwato's own page also gets a node: `https://iwato.<tailnet>.ts.net/` (the **Node name prefix**, `iwato-` by default and required, without its final hyphens), shown in the settings under **Iwato's page (tailnet)**. Only the devices of the **Owner logins** reach it, and they still sign in to Iwato. No Tailscale app or command is needed on the PC. On the phone (on the tailnet), open that address and sign in with the QR code of Sign in on another device. Push notifications and the WebDAV drive with app passwords use this address too.
 
-When the PC itself is on the tailnet, Iwato opens its page there too, so the PC and the phone share one origin (the installed app, notifications and sign-ins); otherwise the PC keeps `127.0.0.1`.
+When the PC itself is on the tailnet, Iwato opens its page there too, so the PC and the phone share one origin (the installed app, notifications and sign-ins); otherwise the PC keeps `127.0.0.1`. With **Use only the tailnet's address on this PC too**, opening `127.0.0.1` also goes there.
 
 `tailscale serve` in front of the page still works: start Iwato with `-public-origin https://HOSTNAME.TAILNET.ts.net` and the page's node is not made. Moving from it to the node changes the address: sign in, install the app and turn on notifications again on the phone, and remove the old one with `tailscale serve reset`.
 

@@ -2359,7 +2359,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const body = se.els['settings-body'];
   const radios = walk(body, (n) => n.type === 'radio');
   assert.deepEqual(radios.map((r) => [r.value, r.checked]), [['local', true], ['tailscale', false], ['off', false]], 'local is chosen');
-  assert(walk(body, (n) => /http:\/\/ポート\.サンドボックス\.localhost:17600\//.test(n.textContent || '')).length === 1, 'the local URL form with the port');
+  assert(walk(body, (n) => /http:\/\/ポート\.サンドボックス\.localhost:17600\//.test(n.textContent || '')).length >= 1, 'the local URL form with the port');
   const tsParts = walk(body, (n) => n.className === 'stack-form ingress-tailscale');
   assert.equal(tsParts.length, 2); assert(tsParts.every((n) => n.hidden), 'the Tailscale settings are hidden while local is chosen');
   assert.equal(walk(body, (n) => n.attributes['aria-label'] === 'ノード名の接頭辞')[0].required, false, 'the hidden prefix does not block saving local');
@@ -2385,7 +2385,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(walk(body, (n) => n.type === 'radio' && n.value === 'tailscale')[0].checked, true, 'the unsaved choice stays');
   walk(body, (n) => n.attributes['aria-label'] === '通すログイン名')[0].value = 'alice@github\nbob@github';
   walk(body, (n) => n.className === 'stack-form ingress-form')[0].listeners.submit({preventDefault() {}}); await flush();
-  assert.deepEqual(posts[1].body, {provider: 'tailscale', tag: 'tag:iwato', hostnamePrefix: 'iwato-', owners: ['alice@github', 'bob@github']});
+  assert.deepEqual(posts[1].body, {provider: 'tailscale', tag: 'tag:iwato', hostnamePrefix: 'iwato-', owners: ['alice@github', 'bob@github'], tailnetOnly: false});
   assert(walk(body, (n) => n.className === 'stack-form ingress-tailscale').every((n) => !n.hidden), 'saved Tailscale shows its settings');
   assert.equal(walk(body, (n) => n.className === 'ingress-state')[0].dataset.state, 'on');
   assert.equal(walk(body, (n) => n.className === 'files-steps ingress-steps')[0].open, false, 'steps fold once a secret is set');
@@ -2414,7 +2414,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
 
   {
-  // ポート tab: the node, the ports as links (copy), refreshed every 5 s while shown; a stopped sandbox keeps the tab.
+  // ポート tab: the node, the ports as links, refreshed every 5 s while shown; a stopped sandbox keeps the tab.
   const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
   let reads = 0, running = true;
   const pe = await environment({fake: false, status: 'running'});
@@ -2422,7 +2422,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     if (path.endsWith('/ports')) {
       reads++;
       return response({overall: {state: 'on'}, provider: 'tailscale', node: {state: 'connected', dnsName: 'iwato-api.tail0000.ts.net'}, hostname: 'iwato-api', running,
-        ports: running ? [{port: 5173, addresses: ['127.0.0.1', '::1'], url: 'https://iwato-api.tail0000.ts.net:5173/'}, {port: 4000, addresses: ['::1'], ipv6Only: true, url: 'https://iwato-api.tail0000.ts.net:4000/'}, {port: 9229, addresses: ['127.0.0.1'], disabled: true}, {port: 5432, addresses: ['<b>x</b>']}] : []});
+        ports: running ? [{port: 5173, addresses: ['127.0.0.1', '::1'], url: 'https://iwato-api.tail0000.ts.net:5173/', localUrl: 'http://5173.api.localhost:17600/'}, {port: 4000, addresses: ['::1'], ipv6Only: true, url: 'https://iwato-api.tail0000.ts.net:4000/'}, {port: 9229, addresses: ['127.0.0.1'], disabled: true}, {port: 5432, addresses: ['<b>x</b>']}] : []});
     }
     return response({enabled: true, owners: [], secret: {set: true}, status: {state: 'on'}, nodes: []});
   });
@@ -2431,16 +2431,19 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const panel = pe.side('ports-panel'); assert.equal(panel.hidden, false); assert.equal(pe.card().dataset.tab, 'ports');
   assert.equal(pe.requests.filter((r) => r.path === '/api/sandboxes/api/ports').length, 1);
   const links = walk(panel, (n) => n.className === 'port-link');
-  assert.deepEqual(links.map((a) => [a.href, a.target, a.rel]), [['https://iwato-api.tail0000.ts.net:5173/', '_blank', 'noopener noreferrer'], ['https://iwato-api.tail0000.ts.net:4000/', '_blank', 'noopener noreferrer']]);
+  assert.deepEqual(links.map((a) => [a.href, a.target, a.rel]), [['https://iwato-api.tail0000.ts.net:5173/', '_blank', 'noopener noreferrer'], ['http://5173.api.localhost:17600/', '_blank', 'noopener noreferrer'], ['https://iwato-api.tail0000.ts.net:4000/', '_blank', 'noopener noreferrer']]);
   assert(walk(panel, (n) => /::1 だけで待っています/.test(n.textContent || '')).length === 1);
   assert(walk(panel, (n) => n.textContent === 'このポートは公開しない設定です').length === 1);
   assert(walk(panel, (n) => n.textContent === '<b>x</b>').length === 1, 'addresses are text');
   assert.match(walk(panel, (n) => n.className === 'ingress-dns')[0].textContent, /iwato-api\.tail0000\.ts\.net/);
-  walk(panel, (n) => n.textContent === 'コピー')[0].click(); await flush();
-  assert.equal(pe.copied.at(-1), 'https://iwato-api.tail0000.ts.net:5173/');
+  assert.equal(walk(panel, (n) => n.textContent === 'コピー').length, 0, 'the ports have no copy button (the links are enough)');
+  const localLinks = () => walk(panel, (n) => n.textContent === 'http://5173.api.localhost:17600/').length;
+  assert.equal(localLinks(), 1, 'this PC\'s address shows on the PC (loopback page)');
   const timer = pe.intervals.filter((t) => t.ms === 5000 && !t.cleared).at(-1);
   assert(timer, 'refreshes every 5 s while shown'); const before = reads; timer.fn(); await flush(); assert.equal(reads, before + 1);
-  pe.document.hidden = true; timer.fn(); await flush(); assert.equal(reads, before + 1, 'not while the page is hidden'); pe.document.hidden = false;
+  pe.location.href = 'https://iwato.tail0000.ts.net/'; timer.fn(); await flush();
+  assert.equal(localLinks(), 0, 'not on another device (the tailnet page)'); pe.location.href = 'http://127.0.0.1:8765/';
+  pe.document.hidden = true; timer.fn(); await flush(); assert.equal(reads, before + 2, 'not while the page is hidden'); pe.document.hidden = false;
   // Stopped: the tab stays and says so.
   running = false; pe.sandbox.status = 'stopped'; await pe.tickPoll();
   assert.equal(pe.card().dataset.tab, 'ports');
@@ -2448,7 +2451,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // Leaving the tab stops the refresh.
   walk(pe.card(), (n) => n.className === 'card-tab' && n.textContent === 'ターミナル')[0].click();
   assert.equal(timer.cleared, true);
-  ok('ポート tab: node state, ports as links with copy, ::1-only and disabled notes, 5 s refresh while visible, stopped state');
+  ok('ポート tab: node state, ports as links, ::1-only and disabled notes, 5 s refresh while visible, stopped state');
   }
 
   {

@@ -197,8 +197,6 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(await panel.locator('.ingress-dns').innerText().then((t) => t.includes('iwato-dev.tail0000.ts.net')), 'the node\'s name shows');
     check(await panel.getByText('::1 だけで待っています').count() === 1, 'a ::1-only server is noted');
     check(await noSideScroll(panel), 'the tab does not scroll sideways');
-    await panel.locator('.port-row').first().getByRole('button', { name: /コピー/ }).click();
-    check((await page.evaluate(() => navigator.clipboard.readText())).startsWith('https://iwato-dev.tail0000.ts.net:'), 'コピー copies the URL');
     await shot('ports.png');
 
     // Stopped: the tab stays; the node is closed until the next start.
