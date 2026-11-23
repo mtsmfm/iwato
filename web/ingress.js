@@ -534,7 +534,6 @@
         }
         if (p.ipv6Only) info.append(element('span', 'panel-meta', t('ports.ipv6Only')));
         row.append(info);
-        if (p.url && !p.disabled) row.append(...copyButton(p.url, t('ports.url', { port: p.port })));
         return row;
       }
 

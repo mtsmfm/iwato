@@ -1085,7 +1085,6 @@
     'ports.noURLYet': 'ノードが接続すると URL が出ます',
     'ports.fromThisPC': 'この PC から:',
     'ports.ipv6Only': '::1 だけで待っています (Iwato は ::1 につなぎます)',
-    'ports.url': ':{port} の URL',
     // Delete everything (reset.js).
     'reset.open': 'すべて消す',
     'reset.title': 'すべて消す',
@@ -2722,7 +2721,6 @@
     'ports.noURLYet': 'The URL shows once the node connects',
     'ports.fromThisPC': 'From this PC:',
     'ports.ipv6Only': 'Listens on ::1 only (Iwato connects to ::1)',
-    'ports.url': 'the URL of :{port}',
     'reset.open': 'Delete everything',
     'reset.title': 'Delete everything',
     'reset.intro': 'Deletes everything Iwato made (sandboxes, volumes, the gateway, images, secrets) and returns to the state of a first run.',

@@ -2405,7 +2405,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
 
   {
-  // ポート tab: the node, the ports as links (copy), refreshed every 5 s while shown; a stopped sandbox keeps the tab.
+  // ポート tab: the node, the ports as links, refreshed every 5 s while shown; a stopped sandbox keeps the tab.
   const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
   let reads = 0, running = true;
   const pe = await environment({fake: false, status: 'running'});
@@ -2427,8 +2427,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert(walk(panel, (n) => n.textContent === 'このポートは公開しない設定です').length === 1);
   assert(walk(panel, (n) => n.textContent === '<b>x</b>').length === 1, 'addresses are text');
   assert.match(walk(panel, (n) => n.className === 'ingress-dns')[0].textContent, /iwato-api\.tail0000\.ts\.net/);
-  walk(panel, (n) => n.textContent === 'コピー')[0].click(); await flush();
-  assert.equal(pe.copied.at(-1), 'https://iwato-api.tail0000.ts.net:5173/');
+  assert.equal(walk(panel, (n) => n.textContent === 'コピー').length, 0, 'the ports have no copy button (the links are enough)');
   const timer = pe.intervals.filter((t) => t.ms === 5000 && !t.cleared).at(-1);
   assert(timer, 'refreshes every 5 s while shown'); const before = reads; timer.fn(); await flush(); assert.equal(reads, before + 1);
   pe.document.hidden = true; timer.fn(); await flush(); assert.equal(reads, before + 1, 'not while the page is hidden'); pe.document.hidden = false;
@@ -2439,7 +2438,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // Leaving the tab stops the refresh.
   walk(pe.card(), (n) => n.className === 'card-tab' && n.textContent === 'ターミナル')[0].click();
   assert.equal(timer.cleared, true);
-  ok('ポート tab: node state, ports as links with copy, ::1-only and disabled notes, 5 s refresh while visible, stopped state');
+  ok('ポート tab: node state, ports as links, ::1-only and disabled notes, 5 s refresh while visible, stopped state');
   }
 
   {
