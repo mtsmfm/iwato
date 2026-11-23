@@ -794,6 +794,7 @@
 
       show() {
         this.root.hidden = false;
+        if (!this.watchTimer) this.watchTimer = setInterval(() => this.watchImage(), 3000);
         this.text.ready();
         this.text.refresh();
         this.render();
@@ -902,6 +903,8 @@
       }
 
       hide() {
+        clearInterval(this.watchTimer);
+        this.watchTimer = null;
         this.stash();
         this.closeQuick(false);
         this.root.hidden = true;
@@ -1235,9 +1238,35 @@
       // loadImage shows the raw route in an img (never a blob: URL of this
       // origin, so that the image opened by itself keeps the route's
       // sandboxing CSP). When it does not load, the route says why.
+      // stamp is a file's size and modification time, read before its
+      // bytes so a change made meanwhile is caught by watchImage.
+      async stamp(path) {
+        const st = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/stat?path=' + encodeURIComponent(path), { timeoutMs: 15000 });
+        return st.size + ':' + st.mtime;
+      }
+
+      // watchImage reloads the image shown when its file changed (an agent
+      // writing a screenshot again), while the tab and the page are shown.
+      async watchImage() {
+        const doc = this.current;
+        if (!doc?.image || doc.media || this.root.hidden || this.disposed || (typeof document !== 'undefined' && document.hidden) || this.watching) return;
+        this.watching = true;
+        try {
+          const stamp = await this.stamp(doc.path);
+          if (doc !== this.current) return;
+          if (doc.stamp == null) doc.stamp = stamp;
+          else if (doc.stamp !== stamp) await this.reload();
+        } catch (_) {
+          // gone or unreadable for now: the next round tries again
+        } finally {
+          this.watching = false;
+        }
+      }
+
       async loadImage(path) {
         const img = element('img', 'editor-image-img');
         img.alt = baseName(path);
+        const stamp = await this.stamp(path).catch(() => null);
         const url = this.rawURL(path);
         const loaded = await new Promise((resolve) => {
           img.addEventListener('load', () => resolve(true));
@@ -1258,7 +1287,7 @@
           const i = path.lastIndexOf('/');
           size = this.treeDirs[i < 0 ? '' : path.slice(0, i)]?.entries?.find((e) => e.name === baseName(path))?.size || 0;
         }
-        return { img, width: img.naturalWidth || 0, height: img.naturalHeight || 0, size };
+        return { img, width: img.naturalWidth || 0, height: img.naturalHeight || 0, size, stamp };
       }
 
       async openImage(path) {
@@ -1528,6 +1557,7 @@
 
       dispose() {
         this.disposed = true;
+        clearInterval(this.watchTimer);
         this.stopPreview();
         this.narrowQuery?.removeEventListener?.('change', this.onNarrow);
         if (typeof document !== 'undefined') document.removeEventListener?.('keydown', this.onKey, true);

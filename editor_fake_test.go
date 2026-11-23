@@ -74,6 +74,13 @@ func TestEditorRaw(t *testing.T) {
 	if res, _ := get("i/a.png", nil); res.StatusCode != 401 {
 		t.Fatalf("without a session: %d", res.StatusCode)
 	}
+	// stat: what the preview polls to follow changes.
+	if res, b := request(t, s, "/api/sandboxes/dev/editor/stat?path=i/a.png", "GET", "", c, ""); res.StatusCode != 200 || !strings.Contains(string(b), `"mtime":`) || !strings.Contains(string(b), `"size":`) {
+		t.Fatal(res.StatusCode, string(b))
+	}
+	if res, _ := request(t, s, "/api/sandboxes/dev/editor/stat?path=i/none.png", "GET", "", c, ""); res.StatusCode != 404 {
+		t.Fatal("a missing file:", res.StatusCode)
+	}
 	for _, p := range []string{"/etc/passwd", "../x", "i/../..", "~/i/a.png", "", "i/dir"} {
 		if res, body := get(p, c); res.StatusCode != 400 {
 			t.Errorf("%q: %d %s", p, res.StatusCode, body)

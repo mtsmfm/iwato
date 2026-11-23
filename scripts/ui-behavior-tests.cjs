@@ -2048,7 +2048,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // revealed (not inside a heavy folder), links, the cap, errors, refresh,
   // and a drawer on a phone.
   const store = {}; let narrowWidth = false;
-  const box = {window: {matchMedia: (q) => ({matches: q.includes('max-width') && narrowWidth})}, navigator: {languages: ['ja']}, localStorage: {getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }}};
+  const box = {setInterval: () => 0, clearInterval: () => {}, window: {matchMedia: (q) => ({matches: q.includes('max-width') && narrowWidth})}, navigator: {languages: ['ja']}, localStorage: {getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }}};
   vm.runInNewContext(i18nSource, box); vm.runInNewContext(editorSource, box); const E = box.window.IwatoEditor;
   assert.deepEqual([...E.ancestors('work', 'work/a/b/c.md')], ['work/a', 'work/a/b']);
   assert.equal(E.ancestors('work', 'other/x'), null); assert.deepEqual([...E.ancestors('', 'x.md')], []);
@@ -2151,15 +2151,17 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // The editor's image preview: an image by its name (no text read), a file
   // the server says is not text tried as an image, read only, fit or 100 %,
   // a non-image binary refused without a tab, an SVG opened as text.
-  const box = {window: {}, navigator: {languages: ['ja']}, performance: {getEntriesByName: () => [{decodedBodySize: 3072}]}};
+  const watchers = [];
+  const box = {setInterval: (fn, ms) => watchers.push({fn, ms}), clearInterval: () => {}, window: {}, navigator: {languages: ['ja']}, performance: {getEntriesByName: () => [{decodedBodySize: 3072}]}};
   vm.runInNewContext(i18nSource, box); vm.runInNewContext(editorSource, box); const E = box.window.IwatoEditor;
   assert.equal(E.imageName('a/B.PNG'), true); assert.equal(E.imageName('a.svg'), true); assert.equal(E.imageName('png'), false);
-  const calls = []; const imgs = [];
+  const calls = []; const imgs = []; let mtime = 1;
   const fail = (status, message) => { const e = new Error(message); e.status = status; return e; };
   const api = async (url, options = {}) => {
     calls.push((options.method || 'GET') + ' ' + url);
-    const m = url.match(/\/editor\/(dir|file|raw)\?path=([^&]*)/); const p = m && decodeURIComponent(m[2]);
+    const m = url.match(/\/editor\/(dir|file|raw|stat)\?path=([^&]*)/); const p = m && decodeURIComponent(m[2]);
     if (m?.[1] === 'dir') return {entries: [], total: 0};
+    if (m?.[1] === 'stat') return {size: 3072, mtime};
     if (m?.[1] === 'raw') throw fail(415, 'テキストでも画像でもない (バイナリの) ファイルは開けません');
     if (p === 'bin/tool' || p === 'shot') throw fail(415, 'テキストではない (バイナリの) ファイルは開けません');
     return {path: p, content: 'text of ' + p, version: 'v'};
@@ -2183,6 +2185,13 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // Reload reads it again (a new URL).
   opening = p.reload(); const again = await settle(); await opening;
   assert.equal(again.src, '/api/sandboxes/dev/editor/raw?path=web%2Ficon.png&n=2'); assert.equal(p.imageBox.children[0], again);
+  // The image shown follows its file: unchanged, nothing is read; changed, it reloads.
+  const watch = watchers.find((w) => w.ms === 3000); assert(watch, 'the shown image is checked every 3 s');
+  const raws = () => imgs.length; const before = raws();
+  await watch.fn(); await flush(); assert.equal(raws(), before, 'an unchanged file is not read again');
+  mtime = 2; const watching = watch.fn(); const changed = await settle(); await watching;
+  assert.equal(raws(), before + 1, 'a changed file reloads'); assert.equal(p.imageBox.children[0], changed);
+  await watch.fn(); await flush(); assert.equal(raws(), before + 1, 'once');
   // A text file, then back to the image.
   await p.open('README.md'); assert.equal(p.text.hidden, false); assert.equal(p.image.hidden, true); assert.equal(p.text.value, 'text of README.md'); assert.equal(p.saveButton.disabled, false);
   p.switchTo(p.docs[0]); assert.equal(p.text.hidden, true); assert.equal(p.image.hidden, false);
@@ -2193,7 +2202,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   const tabs = p.docs.length;
   opening = p.open('bin/tool'); await settle(false); await opening;
   assert.equal(p.docs.length, tabs); assert.match(p.status.textContent, /bin\/tool: テキストでも画像でもない \(バイナリ/);
-  assert(calls.includes('GET /api/sandboxes/dev/editor/raw?path=bin%2Ftool&n=4'), 'the route says why it did not load');
+  assert(calls.includes('GET /api/sandboxes/dev/editor/raw?path=bin%2Ftool&n=5'), 'the route says why it did not load');
   // An SVG can be opened as text instead.
   opening = p.open('logo.svg'); await settle(); await opening;
   assert.equal(p.imageText.hidden, false);
@@ -2210,7 +2219,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // only, and the choice is remembered (no bundle here: the iframe gets a
   // failure page, never the file's HTML).
   const store = {};
-  const box = {window: {}, navigator: {languages: ['ja']}, localStorage: {getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }}};
+  const box = {setInterval: () => 0, clearInterval: () => {}, window: {}, navigator: {languages: ['ja']}, localStorage: {getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }}};
   vm.runInNewContext(i18nSource, box); vm.runInNewContext(editorSource, box); const E = box.window.IwatoEditor;
   assert.equal(E.relativeTo('docs/a.md', '../web/i.png?x#y'), 'web/i.png'); assert.equal(E.relativeTo('a.md', '../x.png'), ''); assert.equal(E.relativeTo('a.md', 'https://x/y.png'), ''); assert.equal(E.relativeTo('a.md', '/etc/x.png'), ''); assert.equal(E.relativeTo('d/a.md', 'my%20pic.png'), 'd/my pic.png');
   const api = async (url) => { const p = decodeURIComponent(url.match(/path=([^&]*)/)?.[1] || ''); return url.includes('/editor/dir') ? {entries: [], total: 0} : {path: p, content: '# t\n<script>x</script>\n', version: 'v'}; };
