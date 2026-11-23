@@ -37,6 +37,7 @@ import (
 //	GET  /api/sandboxes/NAME/editor/dir?path=DIR                 one directory's entries (the tree)
 //	GET  /api/sandboxes/NAME/editor/file?path=PATH              a file's text and version
 //	GET  /api/sandboxes/NAME/editor/raw?path=PATH               an image's bytes (the preview)
+//	GET  /api/sandboxes/NAME/editor/stat?path=PATH              a file's size and modification time (the preview follows changes)
 //	GET  /api/sandboxes/NAME/editor/media?path=PATH             audio or video, streamed (Range)
 //	GET  /api/sandboxes/NAME/editor/resolve?path=P&term=T       a path printed in terminal T, as a file under the root
 //	POST /api/sandboxes/NAME/editor/file                         save {path, content, base, force}
@@ -525,7 +526,7 @@ func editorFail(w http.ResponseWriter, name, what string, err error) {
 
 // handleEditor serves the editor's routes (parts: NAME, "editor", what).
 func (s *Server) handleEditor(w http.ResponseWriter, r *http.Request, parts []string) {
-	if len(parts) != 3 || (parts[2] != "files" && parts[2] != "file" && parts[2] != "dir" && parts[2] != "raw" && parts[2] != "media" && parts[2] != "root" && parts[2] != "resolve") {
+	if len(parts) != 3 || (parts[2] != "files" && parts[2] != "file" && parts[2] != "dir" && parts[2] != "raw" && parts[2] != "stat" && parts[2] != "media" && parts[2] != "root" && parts[2] != "resolve") {
 		fail(w, 404, "unknown sandbox route")
 		return
 	}
@@ -553,6 +554,8 @@ func (s *Server) handleEditor(w http.ResponseWriter, r *http.Request, parts []st
 		s.editorDir(w, r, sb)
 	case parts[2] == "raw":
 		s.editorRaw(w, r, sb)
+	case parts[2] == "stat":
+		s.editorStat(w, r, sb)
 	case parts[2] == "media":
 		s.editorMedia(w, r, sb)
 	case save:
@@ -740,6 +743,27 @@ func (s *Server) editorDir(w http.ResponseWriter, r *http.Request, sb Sandbox) {
 		return
 	}
 	jsonResponse(w, 200, v)
+}
+
+func (s *Server) editorStat(w http.ResponseWriter, r *http.Request, sb Sandbox) {
+	p, err := editorPath(r.URL.Query().Get("path"), false)
+	if err != nil {
+		failErr(w, 400, err)
+		return
+	}
+	ctx, cancel := timeout(r.Context(), time.Minute)
+	defer cancel()
+	var fi os.FileInfo
+	err = s.files.Do(ctx, sb.Name, "editor stat "+p, func(c *sftp.Client) error {
+		var e error
+		fi, e = c.Stat(p)
+		return e
+	})
+	if err != nil {
+		editorFail(w, sb.Name, "stat "+p, err)
+		return
+	}
+	jsonResponse(w, 200, map[string]any{"size": fi.Size(), "mtime": fi.ModTime().UnixMilli()})
 }
 
 func (s *Server) editorRead(w http.ResponseWriter, r *http.Request, sb Sandbox) {
