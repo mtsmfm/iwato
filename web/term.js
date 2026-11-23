@@ -1148,6 +1148,9 @@
       const tracking = () => this.modes.mouse !== 0;
       this.screen.addEventListener('mousedown', (event) => {
         if (!tracking() || event.shiftKey) return;
+        // A click the page opens as a link (Ctrl/Cmd+click, a tap) is not
+        // the app's too, or an app that opens links itself opens it again.
+        if ((touchOnly || event.ctrlKey || event.metaKey) && this.linkAt(event)) return;
         event.preventDefault();
         this.focus();
         down = event.button;

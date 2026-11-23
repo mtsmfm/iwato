@@ -1958,9 +1958,13 @@
   const androidApp = () => /Android/.test(navigator.userAgent || '') && typeof navigator.share === 'function' &&
     typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches;
 
+  // The last link opened, so that a program's open of the same link right
+  // after (OSC 6464 from a click it also saw) opens nothing more.
+  let lastOpened = { url: '', at: 0 };
   function openLink(uri) {
     const url = window.IwatoLinks?.safeURL(uri);
     if (!url) return;
+    lastOpened = { url, at: Date.now() };
     const open = () => window.open(url, '_blank', 'noopener,noreferrer');
     if (!androidApp()) return open();
     // Closing the sheet opens nothing; a sheet that cannot open falls back.
@@ -5814,6 +5818,7 @@
         onOpen: (url) => {
           if (state.selected !== this.sandbox.name || Date.now() - gesture > 5000) return;
           gesture = 0;
+          if (window.IwatoLinks?.safeURL(url) === lastOpened.url && Date.now() - lastOpened.at < 5000) return;
           openLink(url);
         },
         onCursor: () => this.scheduleReveal(),
