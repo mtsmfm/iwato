@@ -464,6 +464,8 @@
     $('provider-panel').hidden = true;
     $('settings-button').hidden = true;
     $('settings-panel').hidden = true;
+    $('tailscale-offer').hidden = true;
+    tailscaleOffered = false;
     $('create-button').hidden = true;
     $('refresh-button').hidden = false;
     closePair();
@@ -1658,6 +1660,7 @@
     $('volume-button').hidden = false;
     $('provider-button').hidden = false;
     $('settings-button').hidden = false;
+    offerTailscale();
     if (!state.pushChecked) {
       state.pushChecked = true;
       setupPush().catch(() => { $('push-button').hidden = true; });
@@ -4211,6 +4214,24 @@
 
   // Port exposure: the settings and the Ports tab (web/ingress.js).
   const ingressUI = window.IwatoIngress.make({ element, button, panelHeader, api, askConfirm });
+
+  // The offer to set up Tailscale with its guide: to the owner, until it is
+  // set up or put off in this browser.
+  let tailscaleOffered = false;
+  async function offerTailscale() {
+    let later = false;
+    try { later = localStorage.getItem('iwato-ts-offer') === 'later'; } catch (_) { /* storage unavailable */ }
+    if (later || tailscaleOffered) return;
+    tailscaleOffered = true;
+    try { $('tailscale-offer').hidden = (await api('/api/ingress'))?.provider === 'tailscale'; } catch (_) { /* no offer */ }
+  }
+  function startTailscaleGuide() {
+    $('tailscale-offer').hidden = true;
+    ingressUI.tailscaleGuide({
+      onAuth: invalidateSession,
+      onChange: () => { settingsPanel?.refresh(); for (const card of cards.values()) if (card.root.dataset.tab === 'ports') card.ports.refresh(); }
+    }).catch((error) => showNotice(t('guide.failed'), error.message));
+  }
   // The sandboxes' resources (web/resources.js): read every 4 seconds while
   // the page shows and something runs; the server reads the shown sandbox
   // more often than the others.
@@ -6265,6 +6286,11 @@
   $('volume-button').addEventListener('click', () => $('volume-panel').hidden ? openVolumes() : ($('volume-panel').hidden = true));
   $('volume-close').addEventListener('click', () => { $('volume-panel').hidden = true; });
   $('provider-button').addEventListener('click', () => $('provider-panel').hidden ? openProviders() : ($('provider-panel').hidden = true));
+  $('tailscale-offer-start').addEventListener('click', startTailscaleGuide);
+  $('tailscale-offer-later').addEventListener('click', () => {
+    $('tailscale-offer').hidden = true;
+    try { localStorage.setItem('iwato-ts-offer', 'later'); } catch (_) { /* storage unavailable */ }
+  });
   $('settings-button').addEventListener('click', () => $('settings-panel').hidden ? openSettings() : ($('settings-panel').hidden = true));
   $('settings-close').addEventListener('click', () => { $('settings-panel').hidden = true; });
   $('provider-close').addEventListener('click', () => { $('provider-panel').hidden = true; closeProfileYAML(); });

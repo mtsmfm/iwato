@@ -207,6 +207,9 @@
         nodes.push(element('h4', 'files-head', t('ingress.title')));
         this.headEl = this.stateHead();
         nodes.push(this.headEl);
+        const guideRow = element('div', 'login-form ingress-guide');
+        guideRow.append(button(d.provider === 'tailscale' ? 'button-subtle' : 'button-primary', t('guide.ts.open'), () => tailscaleGuide({ onAuth: () => this.onAuth?.(), onChange: () => { this.refresh(); this.onChange?.(); } }).catch((error) => { this.formStatus.textContent = error.message; })));
+        nodes.push(guideRow);
 
         const form = element('form', 'stack-form ingress-form');
         const choices = element('fieldset', 'ingress-providers');
@@ -546,7 +549,151 @@
       dispose() { this.hide(); this.root.remove(); }
     }
 
-    return { SettingsPanel, PortsPanel };
+
+    // The Tailscale guide (web/guide.js): install, DNS and HTTPS, the tag,
+    // the key, the owners (then join and show the phone a sign-in QR), and,
+    // when this PC reaches the tailnet's page, whether to use only that
+    // address here too (ADR 0028).
+    async function tailscaleGuide({ onDone, onAuth, onChange } = {}) {
+      const guide = window.IwatoGuide.make({ element, button });
+      const d = settingsView(await api('/api/ingress'));
+      const tag = d.tag || d.defaults.tag;
+      const prefix = d.hostnamePrefix || d.defaults.hostnamePrefix || 'iwato-';
+      const ctx = { owners: (d.owners.length ? d.owners : d.suggested).join('\n'), connected: false, reachable: false, unify: false };
+      const errorLine = () => { const p = element('p', 'guide-error'); p.setAttribute('role', 'alert'); return p; };
+      const fail = (line, error) => { line.textContent = error.message || String(error); if (error.status === 401 || error.status === 403) onAuth?.(); return false; };
+      const steps = [
+        { key: 'guide.ts.install', render(body) {
+          body.append(guide.section([['guide.where', guide.link('https://tailscale.com/download')], ['guide.what', t('guide.ts.install.what')]]));
+        } },
+        { key: 'guide.ts.dns', render(body) {
+          body.append(guide.section([['guide.where', adminLink('dns')], ['guide.what', t('guide.ts.dns.what')]]), guide.why(t('guide.ts.dns.why')));
+        } },
+        { key: 'guide.ts.tag', render(body) {
+          body.append(guide.section([['guide.where', adminLink('acls')], ['guide.what', [t('guide.ts.tag.what'), snippet('tagOwners', tagOwnersSnippet(tag))]]]), guide.why(t('guide.ts.tag.why')));
+        } },
+        { key: 'guide.ts.key', render(body, c, nav) {
+          const input = element('input', 'text-input');
+          input.type = 'password';
+          input.autocomplete = 'off';
+          input.placeholder = 'tskey-client-…';
+          input.value = c.secret || '';
+          const line = errorLine();
+          const label = d.secret.set ? t('guide.ts.key.replace', { hint: d.secret.hint }) : t('guide.ts.key.label');
+          body.append(guide.section([['guide.where', adminLink('settings/trust-credentials')], ['guide.what', t('guide.ts.key.what', { tag })]]), field(label, input), line, guide.why(t('guide.ts.key.why')));
+          const update = () => { c.secret = input.value; line.textContent = ''; nav.setNext(d.secret.set || input.value.trim() !== ''); };
+          input.addEventListener('input', update);
+          update();
+          return async () => {
+            const v = input.value.trim();
+            if (!v && d.secret.set) return true;
+            if (!/^tskey-(client|auth)-\S{10,}$/.test(v)) { line.textContent = t('guide.ts.key.invalid'); return false; }
+            try { await api('/api/ingress/secret', { method: 'POST', body: JSON.stringify({ secret: v }) }); } catch (error) { return fail(line, error); }
+            d.secret.set = true;
+            c.secret = input.value = '';
+            return true;
+          };
+        } },
+        { key: 'guide.ts.owners', render(body, c, nav) {
+          const area = element('textarea', 'text-input guide-owners');
+          area.rows = 2;
+          area.placeholder = 'alice@github';
+          area.value = c.owners;
+          area.spellcheck = false;
+          const line = errorLine();
+          const st = guide.status();
+          body.append(guide.section([['guide.what', t('guide.ts.owners.what')]]), field(t('guide.ts.owners.label'), area), line, st.box);
+          if (c.connected) { showConnected(); return () => true; }
+          nav.setNext(true, 'guide.ts.connect');
+          async function showConnected() {
+            area.disabled = true;
+            const url = c.url;
+            const nodes = [element('span', '', t('guide.ts.owners.connected'))];
+            try {
+              const pair = await api('/api/pair', { method: 'POST', body: '{}' });
+              const qr = typeof pair.qr === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]{1,200000}$/.test(pair.qr) ? pair.qr : '';
+              if (qr) { const img = element('img', 'guide-qr'); img.src = qr; img.alt = t('guide.ts.owners.qr'); nodes.push(img); }
+            } catch (_) { /* the address alone still works */ }
+            if (url) { const a = guide.link(url); nodes.push(a); }
+            st.set('ok', ...nodes);
+            nav.recount();
+            nav.setNext(true, c.reachable ? 'guide.next' : 'guide.done');
+          }
+          return async () => {
+            if (c.connected) return true;
+            const owners = parseOwners(area.value);
+            if (!owners.length) { line.textContent = t('guide.ts.owners.empty'); area.focus?.(); return false; }
+            line.textContent = '';
+            c.owners = area.value;
+            try {
+              await api('/api/ingress', { method: 'POST', body: JSON.stringify({ provider: 'tailscale', tag, hostnamePrefix: prefix, owners, tailnetOnly: d.tailnetOnly }) });
+            } catch (error) { return fail(line, error); }
+            onChange?.();
+            area.disabled = true;
+            st.set('wait', t('guide.ts.owners.joining'));
+            nav.setNext(false, 'guide.ts.joining');
+            const until = Date.now() + 120000;
+            while (Date.now() < until) {
+              await new Promise((r) => setTimeout(r, 2000));
+              let v;
+              try { v = settingsView(await api('/api/ingress')); } catch (_) { continue; }
+              if (v.admin?.state === 'connected' && v.admin.url) { c.url = v.admin.url; break; }
+              if (v.status.state === 'error' || v.admin?.state === 'error') {
+                area.disabled = false;
+                st.set('error', statusMessage(v.admin?.state === 'error' ? v.admin : v.status));
+                nav.setNext(true, 'guide.ts.connect');
+                return false;
+              }
+            }
+            if (!c.url) {
+              area.disabled = false;
+              st.set('error', t('guide.ts.owners.slow'));
+              nav.setNext(true, 'guide.ts.connect');
+              return false;
+            }
+            c.connected = true;
+            try { c.reachable = !d.tailnetOnly && (await api('/api/ingress/reach')).reachable === true; } catch (_) { c.reachable = false; }
+            await showConnected();
+            return false;
+          };
+        } },
+        { key: 'guide.ts.unify', when: (c) => c.reachable, render(body, c) {
+          const choices = element('div', 'stack-form guide-choices');
+          for (const [value, key] of [[true, 'guide.ts.unify.one'], [false, 'guide.ts.unify.both']]) {
+            const label = element('label', 'scope-choice');
+            const radio = element('input');
+            radio.type = 'radio';
+            radio.name = 'guide-unify';
+            radio.checked = c.unify === value;
+            radio.addEventListener('change', () => { if (radio.checked) c.unify = value; });
+            const words = element('span', 'ingress-provider-text');
+            words.append(element('span', '', t(key)), element('span', 'panel-meta', t(key + '.hint', { url: c.url })));
+            label.append(radio, words);
+            choices.append(label);
+          }
+          const line = errorLine();
+          body.append(element('p', 'panel-meta', t('guide.ts.unify.reached', { url: c.url })), choices, line, element('p', 'panel-meta', t('guide.ts.unify.later')));
+          return async () => {
+            if (!c.unify) return true;
+            try {
+              await api('/api/ingress', { method: 'POST', body: JSON.stringify({ provider: 'tailscale', tag, hostnamePrefix: prefix, owners: parseOwners(c.owners), tailnetOnly: true }) });
+            } catch (error) { return fail(line, error); }
+            onChange?.();
+            return true;
+          };
+        } }
+      ];
+      return guide.run({ titleKey: 'guide.ts.title', steps, ctx, onDone: async (c) => {
+        onDone?.(c);
+        // This PC moves to the tailnet's page: signed in there with a
+        // one-time link, as the launch does.
+        if (c.unify) {
+          try { const pair = await api('/api/pair', { method: 'POST', body: '{}' }); if (/^https:\/\//.test(pair.url || '')) location.href = pair.url; } catch (_) { /* the redirect takes over on the next load */ }
+        }
+      } });
+    }
+
+    return { SettingsPanel, PortsPanel, tailscaleGuide };
   }
 
   window.IwatoIngress = { tagOwnersSnippet, grantsSnippet, parseOwners, settingsView, portsView, make };
