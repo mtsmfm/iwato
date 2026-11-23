@@ -651,6 +651,27 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       if (phone) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y);
       await page.waitForTimeout(300);
       check(typed.includes('\x1b[<0;' + at + 'M') && typed.includes('\x1b[<0;' + at + 'm'), 'a ' + (phone ? 'tap' : 'click') + ' is reported at its cell, ' + at + ' (' + JSON.stringify(typed) + ')');
+      // A link the page opens is not the app's click too (an app that opens
+      // links itself would open it a second time).
+      await input.focus();
+      await page.keyboard.type('echo https://example.com/mouse-link');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      const link = await card.locator('.iw-term').evaluateAll((ts) => {
+        const t = ts.find((e) => e.offsetParent);
+        const r = t.querySelector('.iw-screen').getBoundingClientRect();
+        const rows = [...t.querySelectorAll('.iw-screen .iw-row')].map((e) => e.textContent);
+        const y = rows.findLastIndex((l) => l.startsWith('https://example.com/mouse-link'));
+        return { left: r.left, top: r.top, cw: parseFloat(t.style.getPropertyValue('--iw-cw')), ch: parseFloat(t.style.getPropertyValue('--iw-ch')), y };
+      });
+      typed = '';
+      await page.evaluate(() => { window.__opened = []; });
+      const [lx, ly] = [link.left + 5.5 * link.cw, link.top + (link.y + 0.5) * link.ch];
+      if (phone) await page.touchscreen.tap(lx, ly);
+      else { await page.keyboard.down('Control'); await page.mouse.click(lx, ly); await page.keyboard.up('Control'); }
+      await page.waitForTimeout(400);
+      const opened = await page.evaluate(() => window.__opened);
+      check(link.y >= 0 && opened.length === 1 && !typed.includes('\x1b[<'), 'a link in a mouse-reading app opens once and is not reported (' + JSON.stringify({ opened, typed }) + ')');
     }
     await input.focus();
     await page.keyboard.press('Control+d');
