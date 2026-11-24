@@ -2309,74 +2309,79 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
 
   {
-  // Files tab: URLs per OS with copy, credentials made (shown once), revoked; a stopped sandbox keeps the tab.
+  // Files tab: the guide's offer until a key sees this sandbox; the WebDAV
+  // guide makes the key (Windows: a secret URL of every sandbox), shows it
+  // once and waits for its first use; the settings list every key with revoke.
   const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
-  const keys = [{id: 'iwato-k3f9x2', name: '<img src=x onerror=alert(1)>', kind: 'password', sandbox: 'api', readOnly: false, lastUsed: ''}];
+  const keys = [{id: 'iwato-k3f9x2', name: '<img src=x onerror=alert(1)>', kind: 'password', sandbox: 'other', readOnly: false, lastUsed: ''}];
   const posts = [];
+  let publicOrigin = 'https://box.tail0000.ts.net';
   const fe = await environment({fake: false, status: 'running'});
+  fe.document.body = new Element('body');
   fe.setFilesHandler((path, opt) => {
     if (opt?.method === 'POST') {
       posts.push({path, body: opt.body ? JSON.parse(opt.body) : null, csrf: opt.headers['X-CSRF-Token']});
-      if (path === '/api/files/keys') { const b = JSON.parse(opt.body); const key = {id: 'iwato-new123', name: b.name, kind: b.kind, sandbox: b.sandbox, readOnly: b.readOnly}; keys.push(key); return response({key, secret: 's'.repeat(52)}); }
-      keys.splice(0, 1); return response({ok: true});
+      if (path === '/api/files/keys') { const b = JSON.parse(opt.body); const key = {id: 'iwato-new' + posts.length, name: b.name, kind: b.kind, sandbox: b.sandbox, readOnly: b.readOnly, lastUsed: ''}; keys.push(key); return response({key, secret: 's'.repeat(52)}); }
+      const id = decodeURIComponent(path.split('/')[4]); keys.splice(keys.findIndex((k) => k.id === id), 1); return response({ok: true});
     }
-    return response({keys, publicOrigin: 'https://box.tail0000.ts.net', localOrigin: 'http://127.0.0.1:17600', available: true});
+    return response({keys, publicOrigin, localOrigin: 'http://127.0.0.1:17600', available: true});
   });
   const tab = walk(fe.card(), (n) => n.dataset?.view === 'files')[0];
   assert(tab, 'a files tab'); tab.click(); await flush();
   const panel = fe.side('files-panel'); assert.equal(panel.hidden, false); assert.equal(fe.card().dataset.tab, 'files');
-  const values = () => walk(panel, (n) => n.className === 'text-input files-value').map((n) => n.value);
-  assert.deepEqual(values(), ['https://box.tail0000.ts.net/dav/api/', '\\\\box.tail0000.ts.net@SSL\\dav\\api', 'https://box.tail0000.ts.net/dav/api/', 'https://box.tail0000.ts.net/dav/api/']);
   assert.match(walk(panel, (n) => n.className === 'files-state')[0].textContent, /ネットワークドライブ/);
-  walk(panel, (n) => n.textContent === 'コピー')[1].click(); await flush();
-  assert.equal(fe.copied.at(-1), '\\\\box.tail0000.ts.net@SSL\\dav\\api');
-  const keyRow = walk(panel, (n) => n.className === 'volume-row files-key')[0];
-  assert.equal(keyRow.children[0].children[0].textContent, keys[0].name, 'a name is text');
-  assert.match(keyRow.children[0].children[1].textContent, /ID iwato-k3f9x2 · api · 読み書き · 未使用/);
-  // Make an app password for all sandboxes, read-only: the value shows once.
-  const form = walk(panel, (n) => n.className === 'stack-form files-form')[0];
-  const [, nameInput, , scope, perm] = form.children;
-  nameInput.value = ' iPhone ';
-  scope.children[2].children[0].checked = true; scope.children[1].children[0].checked = false;
-  perm.children[2].children[0].checked = true; perm.children[1].children[0].checked = false;
-  form.listeners.submit({preventDefault() {}}); await flush();
-  assert.deepEqual(posts[0], {path: '/api/files/keys', body: {name: 'iPhone', kind: 'password', sandbox: '', readOnly: true}, csrf: 'csrf123'});
-  let made = walk(panel, (n) => n.className === 'files-made')[0];
-  assert.equal(made.hidden, false);
-  assert.deepEqual(walk(made, (n) => n.className === 'text-input files-value').map((n) => n.value), ['iwato-new123', 's'.repeat(52), 'https://box.tail0000.ts.net/dav/api/']);
-  assert.equal(nameInput.value, '', 'the form empties');
-  // A secret URL for this PC: the Windows path with the token.
-  nameInput.value = 'この PC'; form.children[2].children[2].children[0].checked = true; form.children[2].children[1].children[0].checked = false;
-  scope.children[1].children[0].checked = true; scope.children[2].children[0].checked = false;
-  form.listeners.submit({preventDefault() {}}); await flush();
-  assert.deepEqual(posts[1].body, {name: 'この PC', kind: 'url', sandbox: 'api', readOnly: true});
-  made = walk(panel, (n) => n.className === 'files-made')[0];
-  assert.deepEqual(walk(made, (n) => n.className === 'text-input files-value').map((n) => n.value), ['\\\\127.0.0.1@17600\\dav\\' + 's'.repeat(52) + '\\api', 'http://127.0.0.1:17600/dav/' + 's'.repeat(52) + '/api/']);
-  // Closing the tab forgets the value.
-  walk(panel, (n) => n.textContent === '閉じる' && n.className.includes('button-subtle')).at(-1).click();
-  assert.equal(made.hidden, true); assert.equal(made.children.length, 0);
-  // Revoke asks first.
+  assert.equal(walk(panel, (n) => n.className === 'files-offer').length, 1, 'no key sees this sandbox: the offer');
+  const dialog = () => walk(fe.document.body, (n) => n.className.includes('guide-dialog'))[0];
+  const textOf = (n) => walk(n, () => true).map((x) => x.textContent || '').join(' ');
+  const press = async (label) => { walk(dialog(), (n) => n.tagName === 'button' && n.textContent === label)[0].click(); for (let i = 0; i < 4; i++) await flush(); };
+  walk(panel, (n) => n.textContent === 'ガイドを始める')[0].click(); for (let i = 0; i < 3; i++) await flush();
+  assert.match(textOf(dialog()), /1 \/ 4/); assert.match(textOf(dialog()), /Windows のエクスプローラー/);
+  await press('次へ');
+  assert.equal(walk(dialog(), (n) => n.tagName === 'input' && n.type === 'text')[0].value, 'この PC');
+  assert.match(textOf(dialog()), /api だけに限る/, 'from a sandbox: limiting to it is offered');
+  await press('次へ');
+  assert.deepEqual(posts[0], {path: '/api/files/keys', body: {name: 'この PC', kind: 'url', sandbox: '', readOnly: false}, csrf: 'csrf123'});
+  const values = () => walk(dialog(), (n) => n.className === 'text-input files-value').map((n) => n.value);
+  assert.deepEqual(values(), ['\\\\127.0.0.1@17600\\dav\\' + 's'.repeat(52)], 'every sandbox: the root of the secret URL');
+  assert.match(textOf(dialog()), /サンドボックスごとのフォルダーが並びます/); assert.match(textOf(dialog()), /今だけ表示されます/);
+  // Back, read only: the key is replaced, not added.
+  await press('戻る');
+  walk(dialog(), (n) => n.type === 'radio')[1].checked = true; walk(dialog(), (n) => n.type === 'radio')[1].listeners.change();
+  await press('次へ');
+  assert.equal(posts[1].body.readOnly, true); assert.equal(posts[2].path, '/api/files/keys/iwato-new1/revoke', 'the first key is revoked');
+  await press('次へ');
+  const done = () => walk(dialog(), (n) => n.tagName === 'button' && n.textContent === '完了')[0];
+  assert.equal(done().disabled, true, 'waits for the first use'); assert.match(textOf(dialog()), /待っています/);
+  keys.at(-1).lastUsed = new Date().toISOString(); keys.at(-1).lastClient = 'Microsoft-WebDAV-MiniRedir';
+  for (const [id, timer] of [...fe.timeouts]) if (timer.ms === 3000) { fe.timeouts.delete(id); timer.fn(); }
+  for (let i = 0; i < 4; i++) await flush();
+  assert.match(textOf(dialog()), /「この PC」が使われました \(Microsoft-WebDAV-MiniRedir\)/); assert.equal(done().disabled, false);
+  await press('完了'); assert.equal(dialog(), undefined);
+  assert.equal(walk(panel, (n) => n.className === 'files-offer').length, 0, 'a key sees it: the devices instead');
+  const row = walk(panel, (n) => n.className === 'volume-row files-key');
+  assert.equal(row.length, 1); assert.match(textOf(row[0]), /この PC.*すべて · 読み取り専用/);
+  assert.equal(walk(panel, (n) => n.textContent === '取り消す').length, 0, 'revoking is in the settings');
+  // A phone without the tailnet's address: the Tailscale guide instead.
+  publicOrigin = '';
+  walk(panel, (n) => n.textContent === '別の端末も追加')[0].click(); for (let i = 0; i < 3; i++) await flush();
+  assert.match(textOf(dialog()), /先に Tailscale の設定が要ります/);
+  walk(dialog(), (n) => n.type === 'radio')[2].checked = true; walk(dialog(), (n) => n.type === 'radio')[2].listeners.change();
+  await press('次へ'); for (let i = 0; i < 3; i++) await flush();
+  assert.match(textOf(dialog()), /Tailscale でつなぐ/, 'the Tailscale guide opens'); assert.equal(posts.length, 3, 'no key made');
+  walk(dialog(), (n) => n.textContent === 'やめる')[0].click();
+  // The settings: every key, revoke asks first.
+  fe.els['settings-button'].click(); for (let i = 0; i < 3; i++) await flush();
+  const settingsRows = walk(fe.els['settings-body'], (n) => n.className === 'volume-row files-key');
+  assert.equal(settingsRows.length, 2); assert.equal(settingsRows[0].children[0].children[0].textContent, keys[0].name, 'a name is text');
+  assert.match(textOf(settingsRows[0]), /ID iwato-k3f9x2 · other · 読み書き · 未使用/);
   fe.setConfirm(true);
-  walk(panel, (n) => n.textContent === '取り消す')[0].click(); await flush();
-  assert.match(fe.confirmations.at(-1), /を取り消しますか/);
-  assert.equal(posts[2].path, '/api/files/keys/iwato-k3f9x2/revoke');
+  walk(settingsRows[0], (n) => n.textContent === '取り消す')[0].click(); await flush(); await flush();
+  assert.match(fe.confirmations.at(-1), /を取り消しますか/); assert.equal(posts.at(-1).path, '/api/files/keys/iwato-k3f9x2/revoke');
   // Stopped: the tab stays and says so.
   fe.sandbox.status = 'stopped'; await fe.tickPoll();
   assert.equal(fe.card().dataset.tab, 'files', 'the files tab stays for a stopped sandbox');
   assert.match(walk(panel, (n) => n.className === 'files-state')[0].textContent, /停止中/);
-  ok('files tab: per-OS URLs with copy, a credential shown once, revoke with confirmation, stopped state');
-  }
-
-  {
-  // Without the tailnet (no -public-origin): only this PC's secret URL is offered.
-  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
-  const fl = await environment({fake: false, status: 'stopped'});
-  const tab = walk(fl.card(), (n) => n.dataset?.view === 'files')[0];
-  tab.click(); await flush();
-  const panel = fl.side('files-panel');
-  assert.equal(walk(panel, (n) => n.className === 'text-input files-value').length, 0);
-  assert(walk(panel, (n) => /tailnet に公開していない/.test(n.textContent)).length === 1);
-  ok('files tab without the tailnet points to this PC\'s secret URL');
+  ok('files: the guide offer, the WebDAV guide (key made once, shown once, first use awaited), Tailscale first for a phone, keys revoked in the settings');
   }
   {
   // Ingress: the helpers (snippets, owners, sanitized views).

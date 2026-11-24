@@ -1,14 +1,17 @@
-// The files tab (ファイル): a sandbox's workspace (the home with the standard
-// image) as a network drive. Iwato serves WebDAV at /dav/ (files.go); this
-// shows the addresses for each OS, short steps, and the credentials: app
-// passwords (user name = ID) and this PC's secret URLs. A secret shows once,
-// as text, and is never stored here.
+// The files (ファイル): a sandbox's workspace (the home with the standard
+// image) as a network drive. Iwato serves WebDAV at /dav/ (files.go). The
+// files tab offers the WebDAV guide and lists the devices that see this
+// sandbox; the settings list every credential with its revoke (KeysSection).
+// The guide makes the credential: an app password (user name = ID), or for
+// Windows on this PC a secret URL (Windows sends no Basic authentication
+// over http). A secret shows once, as text, and is never stored here.
 (() => {
   'use strict';
   // The UI's strings (web/i18n.js), looked up when used.
   const t = (key, params) => window.IwatoI18n.t(key, params);
 
-  // davURL is a sandbox's WebDAV folder (token: a secret URL's).
+  // davURL is a sandbox's WebDAV folder (token: a secret URL's; no name:
+  // the list of the sandboxes the credential sees).
   function davURL(origin, name, token) {
     return String(origin).replace(/\/+$/, '') + '/dav/' + (token ? token + '/' : '') + (name ? encodeURIComponent(name) + '/' : '');
   }
@@ -46,8 +49,20 @@
     };
   }
 
-  // panel makes the FilesPanel class with the page's helpers.
-  function panel({ element, button, panelHeader, api, askConfirm }) {
+  function filesView(data) {
+    return {
+      info: { publicOrigin: text(data?.publicOrigin, 300), localOrigin: text(data?.localOrigin, 300), available: data?.available !== false },
+      keys: (Array.isArray(data?.keys) ? data.keys : []).slice(0, 100).map(keyView)
+    };
+  }
+
+  // keyMeta is a credential's scope, access and last use, for the lists.
+  const keyMeta = (k) => [k.sandbox || t('files.key.all'), k.readOnly ? t('files.perm.ro') : t('files.perm.rw'), ago(k.lastUsed)].join(' · ');
+
+  // make gives the files tab (FilesPanel), the settings' list (KeysSection)
+  // and the guide, with the page's helpers. startTailscale opens the
+  // Tailscale guide (another device needs the tailnet's address).
+  function make({ element, button, panelHeader, api, askConfirm, startTailscale }) {
     async function copy(value, label) {
       try {
         if (typeof navigator === 'undefined' || !navigator.clipboard) throw new Error('no clipboard');
@@ -74,37 +89,149 @@
       row.append(name, input, b, status);
       return row;
     }
-    function steps(title, items, note) {
-      const d = element('details', 'files-steps');
-      d.append(element('summary', '', title));
-      const ol = element('ol');
-      for (const s of items) ol.append(element('li', '', s));
-      d.append(ol);
-      if (note) d.append(element('p', 'panel-meta', note));
-      return d;
-    }
-    function radios(name, legend, choices) {
-      const box = element('div', 'files-choice');
-      box.setAttribute('role', 'radiogroup');
-      box.setAttribute('aria-label', legend);
-      box.append(element('span', 'files-legend', legend));
-      const inputs = [];
-      for (const [value, label, checked] of choices) {
-        const l = element('label', 'scope-choice');
-        const i = element('input');
-        i.type = 'radio';
-        i.name = name;
-        i.value = value;
-        i.checked = !!checked;
-        inputs.push(i);
-        l.append(i, element('span', '', label));
-        box.append(l);
-      }
-      box.value = () => inputs.find((i) => i.checked)?.value || choices[0][0];
-      return box;
+    // choice is a radio with a title and a line under it.
+    function choice(name, checked, title, hint, onPick) {
+      const label = element('label', 'scope-choice');
+      const radio = element('input');
+      radio.type = 'radio';
+      radio.name = name;
+      radio.checked = checked;
+      radio.addEventListener('change', () => { if (radio.checked) onPick(); });
+      const words = element('span', 'ingress-provider-text');
+      words.append(element('span', '', title));
+      if (hint) words.append(element('span', 'panel-meta', hint));
+      label.append(radio, words);
+      return label;
     }
 
-    return class FilesPanel {
+    // guide runs the WebDAV guide: the device, its name and access (and,
+    // from a sandbox, whether only that one), the values to enter, then
+    // waits for the credential's first use. sandbox: the tab's sandbox, or
+    // '' from the settings.
+    async function guide({ sandbox = '', onChange } = {}) {
+      const g = window.IwatoGuide.make({ element, button });
+      const { info } = filesView(await api('/api/files'));
+      const local = info.localOrigin || location.origin;
+      const ctx = { device: 'win', name: '', readOnly: false, limit: false, made: null, closed: false };
+      const errorLine = () => { const p = element('p', 'guide-error'); p.setAttribute('role', 'alert'); return p; };
+      const wanted = (c) => JSON.stringify({ name: c.name, kind: c.device === 'win' ? 'url' : 'password', sandbox: c.limit ? sandbox : '', readOnly: c.readOnly });
+      const steps = [
+        { key: 'dav.guide.device', render(body, c, nav) {
+          const name = 'dav-device-' + Math.random().toString(36).slice(2);
+          const box = element('div', 'stack-form guide-choices');
+          box.append(
+            choice(name, c.device === 'win', t('dav.guide.device.win'), t('dav.guide.device.win.hint'), () => { c.device = 'win'; }),
+            choice(name, c.device === 'mac', t('dav.guide.device.mac'), t('dav.guide.device.mac.hint'), () => { c.device = 'mac'; }),
+            choice(name, c.device === 'phone', t('dav.guide.device.phone'), info.publicOrigin ? t('dav.guide.device.phone.hint') : t('dav.guide.device.phone.needsTailscale'), () => { c.device = 'phone'; }));
+          body.append(box);
+          return () => {
+            if (c.device !== 'phone' || info.publicOrigin) return true;
+            nav.close();
+            startTailscale?.();
+            return false;
+          };
+        } },
+        { key: 'dav.guide.name', render(body, c) {
+          const input = element('input', 'text-input');
+          input.type = 'text';
+          input.maxLength = 40;
+          input.value = c.name || t(c.device === 'phone' ? 'dav.guide.name.phone' : 'dav.guide.name.pc');
+          const label = element('label', 'ingress-field');
+          label.append(element('span', 'ingress-label', t('dav.guide.name.label')), input);
+          const name = 'dav-perm-' + Math.random().toString(36).slice(2);
+          const perms = element('div', 'stack-form guide-choices');
+          perms.append(
+            choice(name, !c.readOnly, t('files.perm.rw'), t('dav.guide.name.rw.hint'), () => { c.readOnly = false; }),
+            choice(name, c.readOnly, t('files.perm.ro'), t('dav.guide.name.ro.hint'), () => { c.readOnly = true; }));
+          const line = errorLine();
+          body.append(label, perms);
+          if (sandbox) {
+            const more = element('details', 'guide-more');
+            more.append(element('summary', '', t('dav.guide.name.more')));
+            const only = element('label', 'scope-choice');
+            const box = element('input');
+            box.type = 'checkbox';
+            box.checked = c.limit;
+            box.addEventListener('change', () => { c.limit = box.checked; });
+            only.append(box, element('span', '', t('dav.guide.name.only', { name: sandbox })));
+            more.append(only);
+            body.append(more);
+          }
+          body.append(line);
+          // The credential is made here, once; going back and changing the
+          // choices replaces it.
+          return async () => {
+            c.name = input.value.trim();
+            if (!c.name) { line.textContent = t('files.device.missing'); input.focus?.(); return false; }
+            if (c.made && c.made.wanted === wanted(c)) return true;
+            try {
+              const old = c.made;
+              const made = await api('/api/files/keys', { method: 'POST', body: wanted(c) });
+              c.made = { key: keyView(made.key), secret: text(made.secret, 200), wanted: wanted(c) };
+              if (old) await api('/api/files/keys/' + encodeURIComponent(old.key.id) + '/revoke', { method: 'POST' }).catch(() => {});
+              onChange?.();
+              return true;
+            } catch (error) {
+              line.textContent = error.message;
+              return false;
+            }
+          };
+        } },
+        { key: 'dav.guide.connect', render(body, c) {
+          const { key, secret } = c.made;
+          const root = key.sandbox;
+          let rows;
+          if (c.device === 'win') {
+            rows = [['guide.where', t('dav.guide.connect.win.where')], ['guide.what', [t('dav.guide.connect.win.what'), copyRow(t('dav.guide.connect.folder'), uncPath(local, root, secret))]]];
+          } else if (c.device === 'mac') {
+            rows = [['guide.where', t('dav.guide.connect.mac.where')], ['guide.what', [t('dav.guide.connect.mac.what'), copyRow(t('dav.guide.connect.address'), davURL(local, root)), copyRow(t('files.made.user'), key.id), copyRow(t('files.made.password'), secret)]]];
+          } else {
+            rows = [['guide.where', t('dav.guide.connect.phone.where')], ['guide.what', [t('dav.guide.connect.phone.what'), copyRow(t('dav.guide.connect.address'), davURL(info.publicOrigin, root)), copyRow(t('files.made.user'), key.id), copyRow(t('files.made.password'), secret)]]];
+          }
+          body.append(g.section(rows), element('p', 'panel-meta', root ? t('dav.guide.connect.one', { name: root }) : t('dav.guide.connect.all')));
+          if (c.device === 'win') body.append(element('p', 'panel-meta', t('dav.guide.connect.win.limit')));
+          body.append(element('p', 'panel-meta', t('dav.guide.connect.once')));
+        } },
+        { key: 'dav.guide.check', render(body, c, nav) {
+          const st = g.status();
+          st.set('wait', t('dav.guide.check.waiting'));
+          body.append(st.box, element('p', 'panel-meta', t('dav.guide.check.note')));
+          nav.setNext(false);
+          const id = c.made.key.id;
+          const seen = (k) => { st.set('ok', t('dav.guide.check.used', { name: k.name, client: k.lastClient || '—' })); nav.setNext(true); };
+          const poll = c.poll = (c.poll || 0) + 1;
+          (async () => {
+            while (!c.closed && c.poll === poll) {
+              try {
+                const k = filesView(await api('/api/files')).keys.find((x) => x.id === id);
+                if (k?.lastUsed && c.poll === poll) { seen(k); return; }
+              } catch (_) { /* tried again */ }
+              await new Promise((r) => setTimeout(r, 3000));
+            }
+          })();
+        } }
+      ];
+      return g.run({ titleKey: 'dav.guide.title', steps, ctx, onDone: () => onChange?.(), onClose: (c) => { c.closed = true; } });
+    }
+
+    // A credential's row: its name, scope, access, last use; revoke in the settings.
+    function keyRow(k, revoke) {
+      const row = element('div', 'volume-row files-key');
+      const info = element('div', 'volume-info');
+      info.append(element('span', 'volume-path', k.name));
+      const metaNode = element('span', 'panel-meta', (k.kind === 'url' ? t('files.key.url') : 'ID ' + k.id) + ' · ' + keyMeta(k));
+      if (k.lastClient) metaNode.title = t('files.key.lastClient', { client: k.lastClient });
+      info.append(metaNode);
+      row.append(info);
+      if (revoke) {
+        const b = button('button-disconnect', t('files.revoke'), () => revoke(k));
+        b.setAttribute('aria-label', t('files.revoke.label', { name: k.name }));
+        row.append(b);
+      }
+      return row;
+    }
+
+    class FilesPanel {
       constructor(sandbox) {
         this.sandbox = sandbox;
         this.seq = 0;
@@ -120,52 +247,22 @@
         this.rootNote = element('p', 'panel-meta files-root-note');
         this.rootNote.hidden = true;
         this.filesRoot = null;
-        this.where = element('div', 'files-where');
-        this.made = element('div', 'files-made');
-        this.made.hidden = true;
-        this.made.setAttribute('role', 'status');
-        this.list = element('div', 'volume-list files-keys');
+        this.body = element('div', 'files-body');
         this.status = element('p', 'panel-meta');
         this.status.setAttribute('role', 'status');
-        this.form = this.createForm();
-        const keysHead = element('h4', 'files-head', t('files.keys.title'));
-        this.root.append(panelHeader({ key: 'tab.files' }, this.refreshButton, this.closeButton), this.state, this.rootNote, this.where, keysHead,
-          element('p', 'panel-meta', t('files.keys.note')), this.made, this.list, this.form, this.status);
-      }
-
-      createForm() {
-        const form = element('form', 'stack-form files-form');
-        form.append(element('strong', '', t('files.create')));
-        this.nameInput = element('input', 'text-input');
-        this.nameInput.type = 'text';
-        this.nameInput.maxLength = 40;
-        this.nameInput.placeholder = t('files.device.placeholder');
-        this.nameInput.setAttribute('aria-label', t('files.device'));
-        this.kind = radios('files-kind-' + Math.random().toString(36).slice(2), t('files.kind'), [
-          ['password', t('files.kind.password'), true],
-          ['url', t('files.kind.url')]
-        ]);
-        this.scope = radios('files-scope-' + Math.random().toString(36).slice(2), t('files.scope'), [['this', t('files.scope.this'), true], ['all', t('files.scope.all')]]);
-        this.perm = radios('files-perm-' + Math.random().toString(36).slice(2), t('files.perm'), [['rw', t('files.perm.rw'), true], ['ro', t('files.perm.ro')]]);
-        this.submit = element('button', 'button button-primary', t('files.create'));
-        this.submit.type = 'submit';
-        const actions = element('div', 'login-form');
-        actions.append(this.submit);
-        form.append(this.nameInput, this.kind, this.scope, this.perm, actions);
-        form.addEventListener('submit', (event) => { event.preventDefault(); this.create(); });
-        return form;
+        this.root.append(panelHeader({ key: 'tab.files' }, this.refreshButton, this.closeButton), this.state, this.rootNote, this.body, this.status);
       }
 
       show() { this.root.hidden = false; this.refresh(); }
-      hide() { this.root.hidden = true; this.made.hidden = true; this.made.replaceChildren(); }
+      hide() { this.root.hidden = true; }
 
       async refresh() {
         const seq = ++this.seq;
         try {
-          const data = await api('/api/files');
+          const v = filesView(await api('/api/files'));
           if (seq !== this.seq) return;
-          this.info = { publicOrigin: text(data.publicOrigin, 300), localOrigin: text(data.localOrigin, 300), available: data.available !== false };
-          this.keys = (Array.isArray(data.keys) ? data.keys : []).slice(0, 100).map(keyView);
+          this.info = v.info;
+          this.keys = v.keys;
           this.status.textContent = '';
           this.render();
         } catch (error) {
@@ -194,84 +291,59 @@
         this.rootNote.textContent = r && !r.home ? t('files.rootNote', { path: r.path }) : '';
       }
 
+      startGuide() {
+        guide({ sandbox: this.sandbox.name, onChange: () => this.refresh() }).catch((error) => { this.status.textContent = error.message; });
+      }
+
       render() {
-        const name = this.sandbox.name;
         const running = this.sandbox.status === 'running';
         this.state.dataset.state = running ? 'running' : 'stopped';
         this.state.textContent = !this.info.available ? t('files.state.unavailable')
           : running ? t('files.state.running') : t('files.state.stopped');
-        const where = [];
-        const pub = this.info.publicOrigin;
-        if (pub) {
-          where.push(element('h4', 'files-head', t('files.where.title')));
-          where.push(copyRow('Windows', davURL(pub, name)), copyRow(t('files.where.windowsPath'), uncPath(pub, name)), copyRow('Mac', davURL(pub, name)), copyRow(t('files.where.phone'), davURL(pub, name)));
-          where.push(element('p', 'panel-meta', t('files.where.note')));
-          where.push(
-            steps(t('files.steps.windows'), [t('files.steps.windows.1'), t('files.steps.windows.2'), t('files.steps.windows.3')], t('files.steps.windows.note')),
-            steps(t('files.steps.mac'), [t('files.steps.mac.1'), t('files.steps.mac.2'), t('files.steps.mac.3')]),
-            steps(t('files.steps.phone'), [t('files.steps.phone.1'), t('files.steps.phone.2'), t('files.steps.phone.3')], t('files.steps.phone.note')));
+        if (!this.info.available) { this.body.replaceChildren(); return; }
+        const mine = this.keys.filter((k) => !k.sandbox || k.sandbox === this.sandbox.name);
+        const nodes = [];
+        if (!mine.length) {
+          const offer = element('div', 'files-offer');
+          const words = element('div', 'login-body');
+          words.append(element('strong', '', t('files.offer.title')), element('p', 'panel-meta', t('files.offer.text')));
+          offer.append(words, button('button-primary', t('files.offer.start'), () => this.startGuide()));
+          nodes.push(offer);
         } else {
-          where.push(element('p', 'panel-meta files-note', t('files.where.localOnly')));
+          nodes.push(element('h4', 'files-head', t('files.devices.title')));
+          const list = element('div', 'volume-list files-keys');
+          list.append(...mine.map((k) => keyRow(k)));
+          const row = element('div', 'login-form');
+          row.append(button('button-subtle', t('files.devices.add'), () => this.startGuide()));
+          nodes.push(list, row);
         }
-        where.push(steps(t('files.steps.local'), [t('files.steps.local.1'), t('files.steps.local.2'), t('files.steps.local.3')], t('files.steps.local.note')));
-        this.where.replaceChildren(...where);
-        this.renderKeys();
+        nodes.push(element('p', 'panel-meta', t('files.devices.note')));
+        this.body.replaceChildren(...nodes);
       }
 
-      renderKeys() {
-        const rows = this.keys.map((k) => {
-          const row = element('div', 'volume-row files-key');
-          const info = element('div', 'volume-info');
-          info.append(element('span', 'volume-path', k.name));
-          const scope = k.sandbox ? k.sandbox : t('files.key.all');
-          const meta = (k.kind === 'url' ? t('files.key.url') : 'ID ' + k.id) + ' · ' + scope + ' · ' + (k.readOnly ? t('files.perm.ro') : t('files.perm.rw')) + ' · ' + ago(k.lastUsed);
-          const metaNode = element('span', 'panel-meta', meta);
-          if (k.lastClient) metaNode.title = t('files.key.lastClient', { client: k.lastClient });
-          info.append(metaNode);
-          const revoke = button('button-disconnect', t('files.revoke'), () => this.revoke(k));
-          revoke.setAttribute('aria-label', t('files.revoke.label', { name: k.name }));
-          row.append(info, revoke);
-          return row;
-        });
-        if (!rows.length) rows.push(element('p', 'panel-meta', t('files.keys.none')));
-        this.list.replaceChildren(...rows);
+      dispose() { this.root.remove(); }
+    }
+
+    // The settings' list of every credential, with revoke and the guide.
+    class KeysSection {
+      constructor() {
+        this.root = element('div', 'files-settings');
+        this.list = element('div', 'volume-list files-keys');
+        this.status = element('p', 'panel-meta');
+        this.status.setAttribute('role', 'status');
+        const row = element('div', 'login-form');
+        row.append(button('button-subtle', t('files.keys.add'), () => guide({ onChange: () => this.refresh() }).catch((error) => { this.status.textContent = error.message; })));
+        this.root.append(element('h4', 'files-head', t('files.keys.title')), element('p', 'panel-meta', t('files.keys.note')), this.list, row, this.status);
       }
 
-      async create() {
-        const name = this.nameInput.value.trim();
-        if (!name) { this.status.textContent = t('files.device.missing'); this.nameInput.focus(); return; }
-        const kind = this.kind.value();
-        const body = { name, kind, sandbox: this.scope.value() === 'this' ? this.sandbox.name : '', readOnly: this.perm.value() === 'ro' };
-        this.submit.disabled = true;
+      async refresh() {
         try {
-          const made = await api('/api/files/keys', { method: 'POST', body: JSON.stringify(body) });
-          this.showMade(keyView(made.key), text(made.secret, 200));
-          this.nameInput.value = '';
+          const { keys } = filesView(await api('/api/files'));
+          this.list.replaceChildren(...(keys.length ? keys.map((k) => keyRow(k, (x) => this.revoke(x))) : [element('p', 'panel-meta', t('files.keys.none'))]));
           this.status.textContent = '';
-          await this.refresh();
         } catch (error) {
           this.status.textContent = error.message;
-        } finally {
-          this.submit.disabled = false;
         }
-      }
-
-      // The secret, once: the page keeps it only in these inputs.
-      showMade(key, secret) {
-        const name = this.sandbox.name;
-        const parts = [element('strong', '', t('files.made', { name: key.name }))];
-        if (key.kind === 'url') {
-          const local = this.info?.localOrigin || location.origin;
-          parts.push(copyRow(t('files.where.windowsPath'), uncPath(local, name, secret)), copyRow('URL', davURL(local, name, secret)));
-          if (!key.sandbox) parts.push(element('p', 'panel-meta', t('files.made.all', { path: uncPath(local, '', secret) })));
-        } else {
-          parts.push(copyRow(t('files.made.user'), key.id), copyRow(t('files.made.password'), secret));
-          if (this.info?.publicOrigin) parts.push(copyRow('URL', davURL(this.info.publicOrigin, name)));
-        }
-        const close = button('button-subtle', t('common.close'), () => { this.made.hidden = true; this.made.replaceChildren(); });
-        parts.push(close);
-        this.made.replaceChildren(...parts);
-        this.made.hidden = false;
       }
 
       async revoke(k) {
@@ -283,10 +355,10 @@
           this.status.textContent = error.message;
         }
       }
+    }
 
-      dispose() { this.root.remove(); }
-    };
+    return { FilesPanel, KeysSection, guide };
   }
 
-  window.IwatoFiles = { davURL, uncPath, ago, panel };
+  window.IwatoFiles = { davURL, uncPath, ago, make };
 })();

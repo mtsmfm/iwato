@@ -8,13 +8,13 @@ Both show the sandbox's home `/home/dev`. In a sandbox whose image does not foll
 
 Files (in the card's ⋯ menu) opens the home as a network drive (WebDAV) in Windows Explorer, the macOS Finder or a WebDAV app on a phone. Changes reach the sandbox at once. Iwato keeps no files of its own: it translates WebDAV to the sandbox's SFTP.
 
-Create a credential per device under App passwords and URLs (its value is shown once), and revoke it with **Revoke** when no longer needed. Each one covers this sandbox or all sandboxes, read-write or read-only. Two kinds:
+Connect a device with the guide: **Start the guide** in the Files tab (or **Add another device** once one is connected, or **Add with the guide** under File keys in the settings). It asks where you will open the files, the device's name and whether it can write (all sandboxes by default; "Only NAME" under More), makes the key, shows the values to enter (once), and waits until the device first uses it. By device:
 
-- **URL for this PC** (Windows): a secret path `\\127.0.0.1@…` to paste into Explorer's address bar or "Map network drive". No password is asked (the URL is the key), and it works only from this PC (127.0.0.1). Do not share it
-- **App password**: for Windows, a Mac and phones over the tailnet's HTTPS, when Iwato runs with `-public-origin` ([phone access](publishing.md#use-iwato-from-your-phone)). A Mac running Iwato can also use it at `http://127.0.0.1:PORT/dav/NAME/`. The user name is the app password's ID and the password is its value. The tab shows the URLs and the steps for each:
-  - Windows: Explorer → right-click "This PC" → "Map network drive", paste the URL, tick "Connect using different credentials"
-  - Mac: Finder ⌘K (Go → Connect to Server), paste the URL, enter the ID and password
-  - Phone: a WebDAV app (iPhone: Documents, FE File Explorer, …; Android: Material Files, Solid Explorer, …) with the phone on the tailnet. The iPhone Files app's "Connect to Server" does not speak WebDAV
+- **This PC, Windows Explorer**: a secret path `\\127.0.0.1@PORT\dav\…` to paste into "Map network drive". No password is asked (the path is the key), and it works only from this PC (127.0.0.1). Do not share it
+- **This PC, Mac Finder**: Go → Connect to Server (⌘K) at `http://127.0.0.1:PORT/dav/`, with an app password (the user name is its ID)
+- **A phone or another PC**: a WebDAV app (iPhone: Documents, FE File Explorer, …; Android: Material Files, Solid Explorer, …) at Iwato's tailnet address `https://…ts.net/dav/` with an app password, the device on the tailnet. It needs Tailscale ([phone access](publishing.md#use-iwato-from-your-phone)); without it, the guide opens the Tailscale guide first. The iPhone Files app's "Connect to Server" does not speak WebDAV
+
+The Files tab lists the devices that see this sandbox. Every key, with **Revoke** for a lost device, is under **File keys** in the settings.
 
 Notes:
 

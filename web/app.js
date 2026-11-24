@@ -3951,7 +3951,8 @@
   }
 
   // The files tab (web/files.js).
-  const FilesPanel = window.IwatoFiles.panel({ element, button, panelHeader, api, askConfirm });
+  const filesUI = window.IwatoFiles.make({ element, button, panelHeader, api, askConfirm, startTailscale: () => startTailscaleGuide() });
+  const FilesPanel = filesUI.FilesPanel;
   // The editor tab (web/editor.js).
   const EditorPanel = window.IwatoEditor.panel({ element, button, panelHeader, api, askConfirm });
 
@@ -4278,6 +4279,7 @@
   let imageSettings = null;
   let checkSettings = null;
   let sessionSettings = null;
+  let keysSettings = null;
   let updateSettings = null;
   let timezoneSettings = null;
   let autostartSettings = null;
@@ -4293,6 +4295,9 @@
       settingsPanel = new ingressUI.SettingsPanel($('settings-body'));
       settingsPanel.onAuth = invalidateSession;
       settingsPanel.onChange = () => { for (const card of cards.values()) if (card.root.dataset.tab === 'ports') card.ports.refresh(); };
+      // The files' credentials (web/files.js), every one with its revoke.
+      keysSettings = new filesUI.KeysSection();
+      $('settings-body').append(keysSettings.root);
       // The logins (web/sessions.js), then delete everything at the bottom (web/reset.js).
       sessionSettings = new (window.IwatoSessions.make({ element, button, api, askConfirm, onEnded: invalidateSession, onAuth: invalidateSession }).SessionSection)();
       $('settings-body').append(sessionSettings.root);
@@ -4307,6 +4312,7 @@
     checkSettings.refresh();
     imageSettings.refresh();
     settingsPanel.refresh();
+    keysSettings.refresh();
     sessionSettings.refresh();
     closeMenu();
     $('settings-panel').scrollIntoView?.({ block: 'nearest' });
