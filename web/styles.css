@@ -352,3 +352,4 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 @keyframes guide-blink{50%{opacity:.3}}
 @media(max-width:720px){.guide-section{grid-template-columns:1fr;gap:2px}.guide-section dd{margin-bottom:6px}.guide-foot .button{min-height:40px}}
 @media(max-width:720px){.offer-banner{flex-wrap:wrap}.offer-banner>.login-body{flex:1 1 calc(100% - 40px)}.offer-banner>.button{margin-left:auto}.offer-banner>.button+.button{margin-left:0}}
+.files-offer{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;border:1px solid #3d604f;background:#17211e;border-radius:8px;padding:12px 14px;margin:10px 0 6px}.files-offer strong{font-size:13px}.files-offer .panel-meta{margin:2px 0 0}

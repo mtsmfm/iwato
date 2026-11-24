@@ -1,8 +1,8 @@
 'use strict';
 // The files tab (ファイル) in a real browser against `serve -fake` with a
-// tailnet origin: the per-OS URLs, an app password and a secret URL made
-// in the page and then used by a WebDAV client (this script's requests),
-// revoking, and a stopped sandbox's folder. Saves screenshots. Usage
+// tailnet origin: the WebDAV guide making an app password and a secret URL,
+// used by a WebDAV client (this script's requests), revoking in the
+// settings, and a stopped sandbox's folder. Saves screenshots. Usage
 // (AGENTS.md):
 //   cd ~/.cache/iwato-browser && NODE_PATH=$PWD/node_modules mise exec node@22 -- node <repo>/scripts/files-check.cjs [--phone]
 const { spawn, execFileSync } = require('node:child_process');
@@ -67,27 +67,30 @@ function dav(origin, method, p, { user, pass, body, headers = {} } = {}) {
     await card.getByRole('menuitem', { name: 'ファイル' }).click();
     check(await card.getByRole('tab', { name: 'ファイル' }).getAttribute('aria-selected') === 'true', 'the open view shows as the current tab');
     const panel = card.locator('.files-panel');
-    await panel.locator('.files-value').first().waitFor();
-    const values = await panel.locator('.files-where .files-value').evaluateAll((els) => els.map((e) => e.value));
-    check(values[0] === 'https://box.tail0000.ts.net/dav/dev/' && values[1] === '\\\\box.tail0000.ts.net@SSL\\dav\\dev', 'Windows gets the tailnet URL and the Explorer path (' + values.slice(0, 2).join(' , ') + ')');
-    check(values.length === 4, 'Windows, its path, Mac and phone each have a row');
+    await panel.locator('.files-offer').waitFor();
     check(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the panel does not scroll sideways');
-    await panel.locator('.files-where .files-row').nth(1).getByRole('button', { name: /コピー/ }).click();
-    check(await page.evaluate(() => navigator.clipboard.readText()) === values[1], 'コピー copies the value');
     await shot('files.png');
-    await panel.locator('summary', { hasText: 'Windows の手順' }).click();
-    await panel.locator('summary', { hasText: 'Windows の手順' }).scrollIntoViewIfNeeded();
-    await shot('files-steps.png');
 
-    // An app password: shown once, then used by a WebDAV client.
-    await panel.getByPlaceholder('端末の名前').fill('仕事の PC');
-    await panel.getByRole('button', { name: '作る', exact: true }).click();
-    const made = panel.locator('.files-made');
-    await made.waitFor();
-    const [id, secret] = await made.locator('.files-value').evaluateAll((els) => els.map((e) => e.value));
+    // The guide, for a phone: an app password at the tailnet's address,
+    // shown once, then used by a WebDAV client; the guide sees the use.
+    const dlg = page.locator('.guide-dialog');
+    await panel.getByRole('button', { name: 'ガイドを始める' }).click();
+    await dlg.waitFor();
+    await shot('files-guide-device.png');
+    await dlg.getByText('スマホ・別の PC').click();
+    await dlg.getByRole('button', { name: '次へ' }).click();
+    await dlg.getByRole('textbox').fill('仕事の PC');
+    await shot('files-guide-name.png');
+    await dlg.getByRole('button', { name: '次へ' }).click();
+    await dlg.locator('.files-value').first().waitFor();
+    const [address, id, secret] = await dlg.locator('.files-value').evaluateAll((els) => els.map((e) => e.value));
+    check(address === 'https://box.tail0000.ts.net/dav/', 'a phone gets the tailnet address of every sandbox (' + address + ')');
     check(/^iwato-[a-z2-7]{6}$/.test(id) && /^[a-z2-7]{52}$/.test(secret), 'the ID and the password show once');
-    await made.scrollIntoViewIfNeeded();
+    check(await dlg.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the guide does not scroll sideways');
+    await dlg.locator('.files-row').nth(2).getByRole('button', { name: /コピー/ }).click();
+    check(await page.evaluate(() => navigator.clipboard.readText()) === secret, 'コピー copies the value');
     await shot('files-password.png');
+    await dlg.getByRole('button', { name: '次へ' }).click();
     let r = await dav(origin, 'PROPFIND', '/dav/dev/', { user: id, pass: secret });
     check(r.status === 207 && r.body.includes('/dav/dev/README.md'), 'the app password lists the workspace (PROPFIND ' + r.status + ')');
     r = await dav(origin, 'PUT', '/dav/dev/from-explorer.txt', { user: id, pass: secret, body: 'hello' });
@@ -95,38 +98,52 @@ function dav(origin, method, p, { user, pass, body, headers = {} } = {}) {
     check(r.status === 201 && got.body === 'hello', 'a file is written and read back');
     r = await dav(origin, 'PROPFIND', '/dav/dev/', { user: id, pass: secret + 'x' });
     check(r.status === 401, 'a wrong password is refused');
-    await made.getByRole('button', { name: '閉じる' }).click();
-    check(!(await panel.innerText()).includes(secret), 'closing forgets the password');
+    await dlg.locator('.guide-status[data-state=ok]').waitFor({ timeout: 10000 });
+    check((await dlg.innerText()).includes('「仕事の PC」が使われました'), 'the guide sees the first use');
+    await shot('files-guide-used.png');
+    await dlg.getByRole('button', { name: '完了' }).click();
+    await dlg.waitFor({ state: 'detached' });
+    check(!(await page.locator('body').innerText()).includes(secret), 'closing forgets the password');
+    await panel.locator('.files-key').first().waitFor();
+    await shot('files-devices.png');
 
-    // A secret URL for this PC, read-only.
-    await panel.getByPlaceholder('端末の名前').fill('この PC');
-    await panel.getByText('この PC 用の URL (http://127.0.0.1').click();
-    await panel.getByText('読み取り専用').click();
-    await panel.getByRole('button', { name: '作る', exact: true }).click();
-    await made.waitFor();
-    const [unc, local] = await made.locator('.files-value').evaluateAll((els) => els.map((e) => e.value));
-    check(unc.startsWith('\\\\127.0.0.1@') && unc.endsWith('\\dev') && local.startsWith(origin + '/dav/'), 'the secret URL shows as an Explorer path and a URL');
-    r = await dav(origin, 'PROPFIND', new URL(local).pathname);
+    // Windows on this PC, read only, this sandbox only: a secret URL.
+    await panel.getByRole('button', { name: '別の端末も追加' }).click();
+    await dlg.waitFor();
+    await dlg.getByRole('button', { name: '次へ' }).click();
+    await dlg.getByText('読み取り専用').click();
+    await dlg.getByText('詳しい設定').click();
+    await dlg.getByText('dev だけに限る').click();
+    await dlg.getByRole('button', { name: '次へ' }).click();
+    await dlg.locator('.files-value').first().waitFor();
+    const [unc] = await dlg.locator('.files-value').evaluateAll((els) => els.map((e) => e.value));
+    const token = (unc.match(/\\dav\\([a-z2-7]+)\\dev$/) || [])[1];
+    check(unc.startsWith('\\\\127.0.0.1@') && !!token, 'Windows gets an Explorer path with the secret (' + unc + ')');
+    const local = '/dav/' + token + '/dev/';
+    r = await dav(origin, 'PROPFIND', local);
     check(r.status === 207 && r.body.includes('from-explorer.txt'), 'the secret URL lists without a password');
-    r = await dav(origin, 'PUT', new URL(local).pathname + 'x.txt', { body: 'x' });
+    r = await dav(origin, 'PUT', local + 'x.txt', { body: 'x' });
     check(r.status === 403, 'a read-only URL refuses a write');
-    r = await dav(origin, 'PROPFIND', new URL(local).pathname, { headers: { 'X-Forwarded-For': '100.64.0.2' } });
+    r = await dav(origin, 'PROPFIND', local, { headers: { 'X-Forwarded-For': '100.64.0.2' } });
     check(r.status === 403, 'the secret URL is refused when relayed (tailscale serve)');
-    await made.scrollIntoViewIfNeeded();
     await shot('files-url.png');
-    await made.getByRole('button', { name: '閉じる' }).click();
+    await dlg.getByRole('button', { name: 'やめる' }).click();
 
-    // The list, and revoking.
-    const rows = panel.locator('.files-key');
-    check(await rows.count() === 2, 'both credentials are listed');
+    // The settings list every key; revoking stops it at once.
+    if (phone) await page.click('#menu-button');
+    await page.click('#settings-button');
+    const rows = page.locator('#settings-body .files-settings .files-key');
+    await rows.nth(1).waitFor({ timeout: 5000 }).catch(() => {});
+    check(await rows.count() === 2, 'both credentials are listed in the settings (' + await rows.count() + ')');
     await rows.filter({ hasText: '仕事の PC' }).getByRole('button', { name: /取り消す/ }).click();
     await page.locator('#confirm-panel').waitFor();
     await page.click('#confirm-ok');
     await rows.filter({ hasText: '仕事の PC' }).waitFor({ state: 'detached' });
     r = await dav(origin, 'PROPFIND', '/dav/dev/', { user: id, pass: secret });
     check(r.status === 401, 'a revoked password is refused at once');
-    await panel.locator('.files-keys').scrollIntoViewIfNeeded();
+    await page.locator('#settings-body .files-settings').scrollIntoViewIfNeeded();
     await shot('files-list.png');
+    await page.locator('#settings-panel').getByRole('button', { name: '閉じる' }).first().click();
 
     // Stopped: the tab stays; the folder holds the note only.
     if (phone) {
@@ -139,7 +156,7 @@ function dav(origin, method, p, { user, pass, body, headers = {} } = {}) {
     await card.locator('.badge[data-state=stopped]').waitFor();
     await panel.locator('.files-state[data-state=stopped]').waitFor();
     check(await panel.isVisible(), 'the files tab stays for a stopped sandbox');
-    r = await dav(origin, 'PROPFIND', new URL(local).pathname);
+    r = await dav(origin, 'PROPFIND', local);
     check(r.status === 207 && r.body.includes(encodeURIComponent('停止中です.txt')) && !r.body.includes('README'), 'a stopped sandbox shows 停止中です.txt only');
     await panel.locator('.files-state').scrollIntoViewIfNeeded();
     await shot('files-stopped.png');
