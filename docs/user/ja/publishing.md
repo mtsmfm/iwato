@@ -24,6 +24,8 @@
 
 Tailscale を使うと、サンドボックスごとに tailnet のノードができ、各ポートを `https://iwato-<サンドボックス>.<tailnet>.ts.net:<ポート>/` でスマホやほかの端末から開けます。TCP もそのまま通ります (`psql`、`ncat`)。Tailscale のアカウントと OAuth クライアントが要ります。
 
+いちばん簡単なのはガイドです。画面上部の提案の「Tailscale でつなぐ」か、設定の「ガイドで設定」から始めます。下の手順を 1 つずつ、管理画面の各ページへのリンク付きで案内し、最後にスマホでログインする QR コードを出します。手で行うときは同じ手順です:
+
 準備 (一度だけ):
 
 1. Tailscale の管理画面の [DNS](https://console.tailscale.com/admin/dns) で、MagicDNS と HTTPS Certificates を有効にする

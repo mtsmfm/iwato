@@ -24,6 +24,8 @@ Remaining risks, accepted as the same as running the server without Iwato: pages
 
 With Tailscale, each sandbox becomes a node on your tailnet, and each port opens at `https://iwato-<sandbox>.<tailnet>.ts.net:<port>/` from your phone and your other devices. Any TCP passes too (`psql`, `ncat`). It needs a Tailscale account and an OAuth client.
 
+The easiest way is the guide: **Connect with Tailscale** in the offer at the top of the page, or **Set up with the guide** in the settings. It walks through the steps below one at a time, with links to each page of the admin console, then shows a QR code that signs your phone in. The same steps by hand:
+
 One-time setup:
 
 1. In Tailscale's admin console, under [DNS](https://console.tailscale.com/admin/dns), turn on MagicDNS and HTTPS Certificates

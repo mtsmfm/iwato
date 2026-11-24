@@ -12,6 +12,7 @@ const ingressSource = fs.readFileSync(root + 'ingress.js', 'utf8');
 const editorSource = fs.readFileSync(root + 'editor.js', 'utf8');
 const i18nSource = fs.readFileSync(root + 'i18n.js', 'utf8');
 const resetSource = fs.readFileSync(root + 'reset.js', 'utf8');
+const guideSource = fs.readFileSync(root + 'guide.js', 'utf8');
 const sessionsSource = fs.readFileSync(root + 'sessions.js', 'utf8');
 const updateSource = fs.readFileSync(root + 'update.js', 'utf8');
 const refusalsSource = fs.readFileSync(root + 'refusals.js', 'utf8');
@@ -50,13 +51,13 @@ const response = (data, status = 200) => ({ok: status >= 200 && status < 300, st
 async function environment({touch = false, fullscreen = true, noSandboxes = false, token = true, fake = true, status = 'not-created', unauthorized = false, savedTerm = null, search = '', terms = null, push = false, androidApp = false, languages = ['ja-JP'], signedIn = !token} = {}) {
   const ids = ['terminal-grid', 'notice-title', 'notice-text', 'notice', 'server-label', 'server-state', 'connection-count', 'empty-title', 'empty-text', 'empty-state', 'refresh-button', 'fake-banner', 'sandbox-nav', 'menu-button', 'sidebar', 'sidebar-actions', 'app-shell',
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
-    'confirm-details', 'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
+    'confirm-details', 'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'tailscale-offer', 'tailscale-offer-start', 'tailscale-offer-later', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
     'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-gpu-note', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
     'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'policy-host-risk', 'update-button', 'res-totals', 'usage-totals', 'menu-usage', 'shortcut-toast'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
   for (const id of ids) { const m = id.match(/^approve-scope-(\w+)$/); if (m) els[id].value = m[1]; }
   els['terminal-grid'].append(els['empty-state']); els.notice.hidden = true; els['fake-banner'].hidden = true;
-  for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button', 'shortcut-toast']) els[id].hidden = true;
+  for (const id of ['push-button', 'pair-button', 'login-panel', 'pair-panel', 'create-button', 'create-panel', 'images-banner', 'images-retry', 'images-recheck', 'tailscale-offer', 'confirm-panel', 'volume-button', 'volume-panel', 'provider-button', 'provider-panel', 'create-providers', 'provider-oauth', 'provider-yaml', 'settings-button', 'settings-panel', 'create-presets', 'update-button', 'shortcut-toast']) els[id].hidden = true;
   const shared = []; let shareFailure = null;
   const requests = [], sockets = [], terminals = [], timeouts = new Map(), intervals = [], confirmations = [];
   let sequence = 0, confirmResult = false, confirmHandler = null, failStart = false, termHandler = terms ? () => response({terminals: terms, multi: true}) : null, sandboxHandler = null, pasteHandler = null, proposalHandler = null, startHandler = null, stopHandler = null, volumeHandler = null, providerHandler = null, filesHandler = null, ingressHandler = null, imagesHandler = null, resetHandler = null, updateHandler = null, resourcesHandler = null, hostHandler = null; const created = []; const copied = []; const swListeners = {};
@@ -106,7 +107,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
   const document = {getElementById: id => els[id], createElement: tag => new Element(tag), hidden: false, focused: true, hasFocus() { return this.focused; }, fullscreenEnabled: fullscreen, listeners: {}, addEventListener(n, fn) { this.listeners[n] = this.listeners[n] || fn; this.allListeners = this.allListeners || {}; (this.allListeners[n] = this.allListeners[n] || []).push(fn); }, removeEventListener(n, fn) { if (this.allListeners?.[n]) this.allListeners[n] = this.allListeners[n].filter((f) => f !== fn); }};
   // Only the shown terminal may be stored; secrets never are.
   const stored = new Map(savedTerm ? [['iwato-term:api', savedTerm]] : []);
-  const storage = {setItem(key, value) { if (!(/^iwato-term:[a-z0-9-]+$/.test(key) && /^[a-z0-9-]+$/.test(value) || key === 'iwato-lang' && /^(ja|en)$/.test(value) || key === 'iwato-policy-drafts' && /^(open|closed)$/.test(value))) throw Error('Browser storage must hold no secrets: ' + key); stored.set(key, String(value)); }, getItem: key => stored.has(key) ? stored.get(key) : null, removeItem: key => { stored.delete(key); }};
+  const storage = {setItem(key, value) { if (!(/^iwato-term:[a-z0-9-]+$/.test(key) && /^[a-z0-9-]+$/.test(value) || key === 'iwato-lang' && /^(ja|en)$/.test(value) || key === 'iwato-policy-drafts' && /^(open|closed)$/.test(value) || key === 'iwato-ts-offer' && value === 'later')) throw Error('Browser storage must hold no secrets: ' + key); stored.set(key, String(value)); }, getItem: key => stored.has(key) ? stored.get(key) : null, removeItem: key => { stored.delete(key); }};
   const context = vm.createContext({
     // push: a browser with Web Push, already subscribed.
     // androidApp: installed (standalone) on an Android phone; share() fails with shareFailure (an error name) when set.
@@ -160,7 +161,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
       throw Error('unexpected API ' + path);
     }
   });
-  vm.runInContext(bootstrap, context); assert.equal(location.hash, ''); vm.runInContext(linksSource, context); vm.runInContext(approveSource, context); vm.runInContext(refusalsSource, context); vm.runInContext(filesSource, context); vm.runInContext(editorSource, context); vm.runInContext(ingressSource, context); vm.runInContext(resetSource, context); vm.runInContext(sessionsSource, context); vm.runInContext(updateSource, context); vm.runInContext(resourcesSource, context); vm.runInContext(i18nSource, context); vm.runInContext(source, context); await flush();
+  vm.runInContext(bootstrap, context); assert.equal(location.hash, ''); vm.runInContext(linksSource, context); vm.runInContext(approveSource, context); vm.runInContext(refusalsSource, context); vm.runInContext(filesSource, context); vm.runInContext(editorSource, context); vm.runInContext(guideSource, context); vm.runInContext(ingressSource, context); vm.runInContext(resetSource, context); vm.runInContext(sessionsSource, context); vm.runInContext(updateSource, context); vm.runInContext(resourcesSource, context); vm.runInContext(i18nSource, context); vm.runInContext(source, context); await flush();
   const card = () => els['terminal-grid'].children.find(node => node.className.split(' ').includes('terminal-card'));
   return {
     shared, els, requests, sockets, stored, swListeners, terminals, timeouts, intervals, confirmations, sandbox, context, win, location, document, card, copied,
@@ -2145,6 +2146,60 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(r.current?.path, 'notes.md');
   r.dispose(); p.dispose();
   ok('the editor tree reads folders lazily, remembers them, opens and reveals files, and is a drawer on a phone');
+  }
+
+  {
+  // The Tailscale guide (web/guide.js): offered at the top until put off,
+  // where/what/why per step, the key and the owners checked inline, joining
+  // then the phone's sign-in QR, and the last step only when this PC reaches
+  // the tailnet's page.
+  const ge = await environment({fake: false});
+  ge.document.body = new Element('body');
+  const walk = (n, pred, out = []) => { if (pred(n)) out.push(n); n.children.forEach((c) => walk(c, pred, out)); return out; };
+  let settings = {provider: 'local', listen: '127.0.0.1:17600', tag: 'tag:iwato', hostnamePrefix: 'iwato-', owners: [], suggestedOwners: [], defaults: {tag: 'tag:iwato', hostnamePrefix: 'iwato-'}, secret: {set: false}, status: {state: 'on'}, nodes: [], admin: null};
+  const posts = [];
+  ge.setIngressHandler((path, opt) => {
+    if (opt?.method === 'POST') {
+      const body = JSON.parse(opt.body); posts.push({path, body});
+      if (path === '/api/ingress') settings = {...settings, provider: 'tailscale', owners: body.owners, tailnetOnly: body.tailnetOnly};
+      return response({ok: true});
+    }
+    if (path === '/api/ingress/reach') return response({url: 'https://iwato.tail0000.ts.net/', reachable: true});
+    if (settings.provider === 'tailscale') return response({...settings, admin: {hostname: 'iwato', url: 'https://iwato.tail0000.ts.net/', state: 'connected'}});
+    return response(settings);
+  });
+  // The offer shows to the owner; あとで puts it off in this browser.
+  assert.equal(ge.els['tailscale-offer'].hidden, false, 'the offer shows while Tailscale is not set up');
+  ge.els['tailscale-offer-start'].click(); await flush();
+  assert.equal(ge.els['tailscale-offer'].hidden, true);
+  const dialog = () => walk(ge.document.body, (n) => n.className.includes('guide-dialog'))[0];
+  const textOf = (n) => walk(n, () => true).map((x) => x.textContent || '').join(' ');
+  const press = async (label) => { walk(dialog(), (n) => n.tagName === 'button' && n.textContent === label)[0].click(); await flush(); await flush(); };
+  assert(dialog(), 'the guide opens'); assert.match(textOf(dialog()), /1 \/ 5/); assert.match(textOf(dialog()), /tailscale\.com\/download/);
+  assert.doesNotMatch(textOf(dialog()), /なぜ必要か/, 'no why on the obvious step');
+  await press('次へ'); assert.match(textOf(dialog()), /2 \/ 5/); assert.match(textOf(dialog()), /console\.tailscale\.com\/admin\/dns/); assert.match(textOf(dialog()), /なぜ必要か/);
+  await press('次へ'); assert.match(textOf(dialog()), /"tag:iwato": \["autogroup:admin"\]/);
+  await press('次へ'); assert.match(textOf(dialog()), /trust-credentials/);
+  const secret = walk(dialog(), (n) => n.type === 'password')[0];
+  assert.equal(walk(dialog(), (n) => n.textContent === '次へ')[0].disabled, true, 'next waits for a key');
+  secret.value = 'nope'; secret.listeners.input(); await press('次へ');
+  assert.match(textOf(dialog()), /tskey-client-… で始まる値/); assert.equal(posts.length, 0);
+  secret.value = 'tskey' + '-client-k1-0123456789'; secret.listeners.input(); await press('次へ');
+  assert.equal(posts[0].path, '/api/ingress/secret'); assert.match(textOf(dialog()), /5 \/ 5/);
+  // Owners: empty is refused inline; つなぐ saves, joins, then shows the QR.
+  await press('つなぐ'); assert.match(textOf(dialog()), /ログイン名を 1 つ以上/); assert.equal(posts.length, 1);
+  walk(dialog(), (n) => n.tagName === 'textarea')[0].value = 'alice@github';
+  walk(dialog(), (n) => n.tagName === 'button' && n.textContent === 'つなぐ')[0].click(); await flush();
+  assert.deepEqual(posts[1], {path: '/api/ingress', body: {provider: 'tailscale', tag: 'tag:iwato', hostnamePrefix: 'iwato-', owners: ['alice@github'], tailnetOnly: false}});
+  assert.match(textOf(dialog()), /参加しています/);
+  for (const [id, timer] of [...ge.timeouts]) if (timer.ms === 2000) { ge.timeouts.delete(id); timer.fn(); }
+  for (let i = 0; i < 6; i++) await flush();
+  assert(walk(dialog(), (n) => n.className === 'guide-qr')[0]?.src.startsWith('data:image/png'), 'the phone gets a sign-in QR');
+  assert.match(textOf(dialog()), /5 \/ 6/, 'reachable: the last step joins');
+  await press('次へ'); assert.match(textOf(dialog()), /一本化する/); assert.match(textOf(dialog()), /あとで「設定」から戻せます/);
+  await press('完了'); assert.equal(dialog(), undefined, 'done closes'); assert.equal(posts.length, 2, 'keeping both saves nothing more');
+  ge.els['tailscale-offer-later'].click(); assert.equal(ge.stored.get('iwato-ts-offer'), 'later');
+  ok('the Tailscale guide: offer, steps with where/what/why, inline checks, joining with a QR, the reachable-only last step');
   }
 
   {
