@@ -18,9 +18,12 @@
   }
   // Inspected: rest, and not tls: skip (OpenShell then cannot see the requests).
   const inspectedEndpoint = (e) => e.protocol === 'rest' && e.tls !== 'skip';
-  // Inspected by another protocol (websocket, graphql, mcp, …): its rules
-  // are not methods and paths, so it is approved as proposed or left out.
-  const otherProtocol = (e) => !!e.protocol && e.protocol !== 'rest' && e.tls !== 'skip';
+  // Inspected by another protocol (inspectedProtocols in
+  // providers_registry.go): its rules are not methods and paths, so it is
+  // approved as proposed or left out.
+  const otherProtocol = (e) => ['graphql', 'websocket', 'mcp', 'json-rpc', 'jsonrpc'].includes(e.protocol) && e.tls !== 'skip';
+  // Not inspected: L4.
+  const uninspectedEndpoint = (e) => !inspectedEndpoint(e) && !otherProtocol(e);
   // A checked row that keeps its endpoint (ep) as proposed.
   const asIs = (r) => (r.kind === 'l4' || r.kind === 'kept') && r.checked;
 
@@ -67,7 +70,7 @@
       const uninspected = !inspectedEndpoint(e);
       const l4Row = (checked) => rows.push({ kind: 'l4', host, ep: i, label: destParts([e]).map((d) => d.host + d.port)[0], checked, write: true });
       if (otherProtocol(e)) {
-        rows.push({ kind: 'kept', host, ep: i, protocol: e.protocol, label: destParts([e]).map((d) => d.host + d.port)[0] + (e.path || ''), checked: true, write: true });
+        rows.push({ kind: 'kept', host, ep: i, protocol: e.protocol, label: destParts([e]).map((d) => d.host + d.port)[0] + (e.path || '') + (e.access ? ' (' + e.access + ')' : ''), checked: true, write: true });
         continue;
       }
       if (item.rejected) {
@@ -91,8 +94,8 @@
   // endpoint inspected and enforced with its own rules, all kept.
   function asProposed(item, rows) {
     const eps = item.endpoints || [];
-    return eps.length > 0 && !item.placeholder && eps.every((e) => otherProtocol(e) || (inspectedEndpoint(e) && e.enforcement === 'enforce' && !e.access && (e.rules || []).length)) &&
-      rows.every((r) => r.kind === 'l4' || r.checked);
+    return eps.length > 0 && !item.placeholder && eps.every((e) => inspectedEndpoint(e) && e.enforcement === 'enforce' && !e.access && (e.rules || []).length) &&
+      rows.every((r) => r.kind !== 'rule' || r.checked);
   }
 
   // The hosts whose every endpoint is kept as proposed (their L4 or kept
@@ -154,7 +157,7 @@
     const skip = uninspectedHosts(item, rows);
     const kept = rows.filter((r) => r.checked && !(r.kind === 'rule' && skip.has(r.host)));
     const methods = [...new Set(kept.filter((r) => r.kind === 'rule').map((r) => r.method === '*' ? t('review.allMethods') : r.method))];
-    return { rows, ...reviewScope(item, rows), methods, l4: kept.filter((r) => r.kind === 'l4').map((r) => r.label) };
+    return { rows, ...reviewScope(item, rows), methods, l4: kept.filter((r) => r.kind === 'l4').map((r) => r.label), kept: kept.filter((r) => r.kind === 'kept').map((r) => ({ protocol: r.protocol, dest: r.label })) };
   }
 
   const dayMs = 24 * 60 * 60 * 1000;
@@ -237,5 +240,5 @@
     return { lines, error };
   }
 
-  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, defaults, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
+  window.IwatoApprove = { looksHTTP, uninspectedEndpoint, pathLabel, toggleSegment, reviewRows, reviewScope, defaults, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
 })();

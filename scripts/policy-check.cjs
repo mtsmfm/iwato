@@ -914,6 +914,22 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await expItem(/new\.example/).waitFor();
     check(fullReads.length > 0, 'showing the tab reads it, with the new proposal');
 
+    // A websocket endpoint is one row, approved as proposed: not REST rows.
+    await exp.locator('.card-tab', { hasText: 'ターミナル' }).click();
+    await exp.locator('.iw-input').focus();
+    await page.keyboard.type('proposews ws.example');
+    await page.keyboard.press('Enter');
+    await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
+    await expItem(/ws\.example/).click();
+    await expReview.locator('.review-host', { hasText: /^ws\.example/ }).waitFor();
+    check((await expReview.locator('.review-rule').allInnerTexts()).join('|') === 'websocket の宛先を提案のまま通す — ws.example/ws/** (read-only)', 'a websocket proposal is one row: ' + JSON.stringify(await expReview.locator('.review-rule').allInnerTexts()));
+    const wsApprove = expReview.getByRole('button', { name: '承認', exact: true });
+    await wsApprove.scrollIntoViewIfNeeded();
+    await wsApprove.click();
+    await expItem(/ws\.example/).waitFor({ state: 'detached' });
+    const wsYaml = await page.evaluate(async () => (await (await fetch('/api/sandboxes/experiment/policy/yaml')).json()).yaml);
+    check(/host: ws\.example\n\s+port: 443\n\s+path: \/ws\/\*\*\n\s+protocol: websocket\n\s+access: read-only/.test(wsYaml), 'approved, it stays a websocket endpoint with its path');
+
     if (!phone) {
       await page.setViewportSize({ width: 700, height: 860 });
       await page.waitForTimeout(200);

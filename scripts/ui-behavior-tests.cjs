@@ -465,9 +465,14 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   // The placeholder (a GET / nobody saw) lists the methods on every path, reads checked.
   const ws = {endpoints: [{host: 'api.example', ports: [443], protocol: 'websocket', access: 'read-only', enforcement: 'enforce', path: '/ws/**'}]};
   const wsRows = A.reviewRows(ws);
-  assert.deepEqual(plain(wsRows.map((r) => [r.kind, r.protocol, r.label, r.checked])), [['kept', 'websocket', 'api.example/ws/**', true]], 'a websocket endpoint is one row, not REST methods');
+  assert.deepEqual(plain(wsRows.map((r) => [r.kind, r.protocol, r.label, r.checked])), [['kept', 'websocket', 'api.example/ws/** (read-only)', true]], 'a websocket endpoint is one row, not REST methods');
   assert.deepEqual(plain(A.reviewScope(ws, wsRows)), {scope: {}, error: ''}, 'a websocket endpoint is approved as proposed');
   assert.deepEqual(plain(A.rowWarnings(wsRows)), [], 'kept as proposed is not uninspected');
+  assert.deepEqual([A.uninspectedEndpoint(ws.endpoints[0]), A.uninspectedEndpoint({host: 'h', ports: [22]}), A.uninspectedEndpoint({host: 'h', ports: [22], protocol: 'tcp'})], [false, true, true], 'websocket is inspected, no protocol and tcp are not');
+  assert.deepEqual(plain(A.defaults(ws).kept), [{protocol: 'websocket', dest: 'api.example/ws/** (read-only)'}], 'a batch names what it keeps');
+  wsRows[0].checked = false;
+  assert.equal(A.reviewScope(ws, wsRows).scope, null, 'unchecked, nothing is left to approve');
+  wsRows[0].checked = true;
   const wsRest = {endpoints: [{host: 'api.example', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/a'}, {method: 'POST', path: '/a'}]}, ws.endpoints[0]]};
   const wsRestRows = A.reviewRows(wsRest);
   wsRestRows.find((r) => r.method === 'POST').checked = false;

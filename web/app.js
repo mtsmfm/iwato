@@ -2544,7 +2544,7 @@
       const checks = p.endpoints.map((e) => this.hostChecks.get(e.host)).filter(Boolean);
       if (checks.some((c) => c.exfil || c.filter === 'blocked')) out.push(['red', t('review.chip.danger')]);
       if (checks.some((c) => approveLogic.hostWarnings(c).some((w) => w.level === 'amber'))) out.push(['amber', t('review.chip.new')]);
-      if (p.endpoints.some((e) => e.protocol !== 'rest' || e.tls === 'skip')) out.push(['amber', t('review.chip.l4')]);
+      if (p.endpoints.some(approveLogic.uninspectedEndpoint)) out.push(['amber', t('review.chip.l4')]);
       if (p.attach.length || p.offer.length) out.push(['info', t('review.chip.token')]);
       return out;
     }
@@ -2872,7 +2872,7 @@
     // add (a refusal in error) and the warnings.
     async batchEntry(p) {
       const d = approveLogic.defaults(p);
-      const entry = { p, scope: d.scope, methods: d.methods, l4: d.l4, warns: this.reviewWarnings(p, d.rows).warns.filter((w) => w.level !== 'ok'), attach: [], offer: [], error: '' };
+      const entry = { p, scope: d.scope, methods: d.methods, l4: d.l4, kept: d.kept, warns: this.reviewWarnings(p, d.rows).warns.filter((w) => w.level !== 'ok'), attach: [], offer: [], error: '' };
       try {
         const data = await api('/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/proposals/preview', { method: 'POST', body: JSON.stringify({ requestId: p.id, digest: p.digest, scope: d.scope }), timeoutMs: 30000 });
         entry.attach = credentialList(data?.attach);
@@ -2893,7 +2893,7 @@
         row.append(element('p', 'review-many-line', t('review.many.excluded', { reason: e.error })));
         return row;
       }
-      const allowed = [...e.methods, ...e.l4.map((host) => t('review.many.l4', { host }))].join(', ');
+      const allowed = [...e.methods, ...e.l4.map((host) => t('review.many.l4', { host })), ...e.kept.map((k) => t('review.many.kept', k))].join(', ');
       const providers = (list) => [...new Set(list.map((a) => a.provider))].join(', ');
       const token = e.attach.length ? t(e.attach.some((a) => a.required) ? 'review.many.tokenRequired' : 'review.many.token', { provider: providers(e.attach) })
         : e.offer.length ? t('review.many.tokenOffer', { provider: providers(e.offer) }) : t('review.many.noToken');

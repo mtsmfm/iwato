@@ -785,8 +785,8 @@ func binaryPaths(r v1.NetworkPolicyRule) []string {
 // listed methods and paths through.
 //
 // Uninspected are the indexes of the proposed endpoints approved as
-// proposed (uninspected, L4); the others are narrowed, and left out without
-// rules of their own.
+// proposed (uninspected, L4, or inspected as another protocol); the others
+// are narrowed, and left out without rules of their own.
 type ProposalScope struct {
 	Rules       []ProposalRule `json:"rules"`
 	Uninspected []int          `json:"uninspected,omitempty"`
@@ -882,7 +882,9 @@ func (s ProposalScope) apply(rule v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 			endpoints = append(endpoints, e)
 			continue
 		}
-		if len(s.Rules) == 0 {
+		// Another inspected protocol has no methods and paths to narrow to:
+		// as proposed (Uninspected) or left out, never turned into REST.
+		if len(s.Rules) == 0 || e.Protocol != "rest" && slices.Contains(inspectedProtocols, e.Protocol) {
 			continue
 		}
 		e.Protocol, e.Enforcement = "rest", v1.NetworkEnforcementModeEnforce
