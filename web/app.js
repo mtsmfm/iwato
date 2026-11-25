@@ -2613,6 +2613,7 @@
           r.inputs.push({ input, label, row });
         }
         if (row.kind === 'l4') label.append(element('span', 'review-rule-text', t('review.l4', { host: row.label })));
+        else if (row.kind === 'kept') label.append(element('span', 'review-rule-text', t('review.kept', { protocol: row.protocol, dest: row.label })));
         else label.append(element('span', 'review-method', row.method === '*' ? t('review.allMethods') : row.method), element('span', 'review-path', (multi ? row.host : '') + pathLabel(row.path)));
         list.append(label);
       }
