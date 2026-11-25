@@ -206,6 +206,18 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     await page.keyboard.press('Enter');
     await page.waitForSelector(panelSel + ' .editor-tab[data-dirty=true]');
     check(true, 'an edit marks the file unsaved');
+    if (!phone) {
+      const lastLine = () => page.evaluate((sel) => __editorText(sel).split('\n').pop(), textSel);
+      await page.keyboard.type('zz');
+      await page.keyboard.press('Shift+Home');
+      await page.keyboard.press('Tab');
+      check(await lastLine() === '\tzz', 'Tab indents a selection instead of replacing it');
+      await page.keyboard.press('Shift+Tab');
+      check(await lastLine() === 'zz', 'Shift+Tab unindents');
+      await page.keyboard.press('End');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Backspace');
+    }
     await page.keyboard.type(' ' + 'x'.repeat(400));
     check(await page.evaluate((sel) => { const s = document.querySelector(sel + ' .cm-scroller'); return s.scrollWidth <= s.clientWidth + 1; }, textSel), 'a long line wraps instead of scrolling sideways');
     for (let i = 0; i < 401; i++) await page.keyboard.press('Backspace');

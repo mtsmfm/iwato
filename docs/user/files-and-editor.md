@@ -27,6 +27,7 @@ Notes:
 The **Editor** tab opens text files of the home and saves them in place, for when opening the drive in VS Code would be too much.
 
 - Open several files in tabs; unsaved files are marked
+- Tab indents the selected lines (without a selection it inserts the indent), Shift+Tab unindents. Esc then Tab leaves the editor
 - On a wide screen, the Side by side button in the tab row shows the editor on the left and the terminal on the right. Drag the line between them to change the widths; clicking a pane gives it the keyboard. The Policy and Ports tabs and the ⋯ views take their place until you go back to Terminal or Editor. This browser remembers the choice; a narrow window shows the tabs again
 - Ctrl+P (⌘P on a Mac) opens a file by part of its name (fuzzy, like VS Code's quick open; hidden paths come last unless you type the leading `.`); ↑↓ and Enter, Esc to close. Ctrl+S (⌘S) saves. On a phone, use the buttons Open a file and Save
 - Folder narrows the search to a folder under the home (for example `work/iwato`; at first `~/work` when it exists), remembered per sandbox in this browser
