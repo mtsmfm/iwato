@@ -83,6 +83,23 @@ func TestSessionOutlivesItsClients(t *testing.T) {
 	}
 }
 
+func TestSizeSetRightAfterTheStartIsSentAgain(t *testing.T) {
+	f := newFake()
+	s := New(f, 80, 24)
+	defer f.w.Close()
+	attach(t, s, 100, 30)
+	for i := range 2 {
+		select {
+		case size := <-f.sizes:
+			if size != [2]int{100, 30} {
+				t.Fatalf("resize %d to %v", i, size)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("resize %d did not come", i)
+		}
+	}
+}
+
 type bufCloser struct{ strings.Builder }
 
 func (*bufCloser) Close() error { return nil }

@@ -49,6 +49,7 @@ type Session struct {
 	closing sync.Once
 	rec     *Recorder // nil unless the session is recorded
 	started time.Time
+	again   *time.Timer // sends the size again after attachSettle
 }
 
 // New starts a session on backend, whose terminal is cols×rows. Everything
@@ -168,8 +169,21 @@ func (s *Session) resize(cols, rows int) error {
 	}
 	s.cols, s.rows = cols, rows
 	s.rec.Resize(cols, rows)
+	if wait := time.Until(s.started.Add(attachSettle)); wait > 0 && s.again == nil {
+		s.again = time.AfterFunc(wait, func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			_ = s.backend.Resize(s.cols, s.rows)
+		})
+	}
 	return nil
 }
+
+// attachSettle is how long after its start a session's backend may still
+// put back the size it attached at: daemons of older images do, 200 ms
+// after the attach (their repaint), over a resize that came meanwhile. A
+// size set before then is sent again once it has passed.
+var attachSettle = 500 * time.Millisecond
 
 // Client is one attachment: a Terminal for iwato's websocket handler.
 type Client struct {

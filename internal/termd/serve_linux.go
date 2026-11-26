@@ -170,8 +170,9 @@ type term struct {
 	inMu    sync.Mutex
 	mu      sync.Mutex // what follows
 	ring    *Ring
-	cols    int
+	cols    int // the size asked for: the PTY's, but for a repaint's row
 	rows    int
+	shorter int // repaints holding the PTY a row shorter
 	clients map[*client]struct{}
 	ended   bool
 	done    chan struct{}
@@ -333,7 +334,7 @@ func (d *daemon) attach(c *net.UnixConn, r *bufio.Reader, o Open) {
 		// A program that only redraws what changed would leave the new
 		// screen blank: it gets a SIGWINCH (as the main process did, a
 		// row shorter and back when the size is the same).
-		go t.repaint(cols, rows)
+		t.repaint(cols, rows)
 	}
 	for {
 		kind, p, err := ReadMessage(r)
@@ -397,15 +398,31 @@ func (t *term) cwd() string {
 // reads the size when it handles the signal and ignores an unchanged one).
 const repaintDelay = 200 * time.Millisecond
 
+// repaint sizes the terminal for a client that attached. At the size it
+// has, the PTY is a row shorter for repaintDelay; a resize that comes
+// meanwhile decides the size it gets back.
 func (t *term) repaint(cols, rows int) {
 	t.mu.Lock()
-	same := cols == t.cols && rows == t.rows
-	t.mu.Unlock()
-	if same && rows >= 2 {
-		t.resize(cols, rows-1)
-		time.Sleep(repaintDelay)
+	same := cols == t.cols && rows == t.rows && rows >= 2 && !t.ended
+	if same && setSize(t.ptm, cols, rows-1) == nil {
+		t.shorter++
+	} else {
+		same = false
 	}
-	t.resize(cols, rows)
+	t.mu.Unlock()
+	if !same {
+		t.resize(cols, rows)
+		return
+	}
+	go func() {
+		time.Sleep(repaintDelay)
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.shorter--
+		if !t.ended {
+			_ = setSize(t.ptm, t.cols, t.rows)
+		}
+	}()
 }
 
 func (t *term) resize(cols, rows int) {
@@ -414,7 +431,8 @@ func (t *term) resize(cols, rows int) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.ended {
+	// The same size during a repaint: the repaint gives it back, in time.
+	if t.ended || t.shorter > 0 && cols == t.cols && rows == t.rows {
 		return
 	}
 	if setSize(t.ptm, cols, rows) == nil {
