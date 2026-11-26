@@ -88,6 +88,11 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("hello of a reattach: %+v", b.hello)
 	}
 	b.waitFor(t, "MARK-42")
+	// A resize during the reattach's repaint stays.
+	b.send(KindResize, ResizePayload(80, 30))
+	time.Sleep(2 * repaintDelay)
+	b.send(KindInput, []byte("echo SIZE-$(stty size | tr ' ' x)-END\n"))
+	b.waitFor(t, "SIZE-30x80-END")
 	var l List
 	if k, p := request(t, bin, "list", "-key", key); k != KindListed || json.Unmarshal(p, &l) != nil || len(l.Terminals) != 1 || l.Terminals[0].Name != "main" || l.Version != Version {
 		t.Fatalf("list: %c %s", k, p)
