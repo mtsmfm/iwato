@@ -436,10 +436,11 @@
     state(text, path, selection) {
       const CM = this.CM;
       const tab = tabText(path);
-      // Tab: indents a selection of lines, else inserts tabText.
+      // Tab: indents the selected lines, without a selection inserts
+      // tabText. Shift+Tab unindents; Escape then Tab leaves the editor
+      // (CodeMirror's own).
       const indent = (view) => {
-        const sel = view.state.selection;
-        if (sel.ranges.some((r) => view.state.doc.lineAt(r.from).number !== view.state.doc.lineAt(r.to).number)) return CM.indentMore(view);
+        if (view.state.selection.ranges.some((r) => !r.empty)) return CM.indentMore(view);
         view.dispatch(view.state.replaceSelection(tab), { scrollIntoView: true, userEvent: 'input' });
         return true;
       };
@@ -447,7 +448,7 @@
         doc: text,
         selection,
         extensions: [
-          CM.keymap.of([{ key: 'Tab', run: indent }]),
+          CM.keymap.of([{ key: 'Tab', run: indent, shift: CM.indentLess }]),
           CM.indentUnit.of(tab),
           CM.EditorState.tabSize.of(4),
           codeExtensions(CM, { language: languageOf(path), label: t('editor.content'), className: 'editor-text' }),
