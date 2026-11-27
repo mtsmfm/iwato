@@ -443,6 +443,14 @@ func (m *resourceMonitor) observe(list []Status) {
 	}
 }
 
+// hostCPUs is the engine's CPU count as a sandbox last saw it; 0 before any
+// was read.
+func (m *resourceMonitor) hostCPUs() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.host.cpus
+}
+
 func (m *resourceMonitor) settings() *ResourceSettings {
 	m.s.mu.Lock()
 	defer m.s.mu.Unlock()

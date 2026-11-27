@@ -31,11 +31,16 @@ func (d *Fake) ResourceStats(_ context.Context, sb Sandbox) (string, error) {
 	}
 	t := float64(time.Now().UnixMilli()) / 1000
 	seed := float64(len(sb.Name))
-	// CPU around 40% of 8 cores (the usage is the integral of that load).
-	load := 3.2*t + 1.6*math.Sin(t/7+seed)*7
+	// CPU around 40% of the limit, 8 cores without one (the usage is the
+	// integral of that load).
+	cores := 8
+	if sb.CPUs > 0 {
+		cores = sb.CPUs
+	}
+	load := (3.2*t + 1.6*math.Sin(t/7+seed)*7) * float64(cores) / 8
 	used := uint64(2.5*(1<<30) + 1.2*(1<<30)*(1+math.Sin(t/40+seed)))
 	var b strings.Builder
-	fmt.Fprintf(&b, "== cpu.stat\nusage_usec %d\nuser_usec 1\n== cpu.max\n800000 100000\n", uint64(load*1e6))
+	fmt.Fprintf(&b, "== cpu.stat\nusage_usec %d\nuser_usec 1\n== cpu.max\n%d 100000\n", uint64(load*1e6), cores*100000)
 	fmt.Fprintf(&b, "== memory.current\n%d\n== memory.max\n%d\n", used+(900<<20), uint64(8<<30))
 	fmt.Fprintf(&b, "== memory.stat\nanon %d\nfile %d\ninactive_file %d\n", used-(300<<20), uint64(1200<<20), uint64(900<<20))
 	fmt.Fprintf(&b, "== meminfo\nMemTotal:       %d kB\n== cpus\n%d\n", fakeHostMemory>>10, fakeHostCPUs)

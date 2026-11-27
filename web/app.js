@@ -1690,6 +1690,7 @@
   function openCreate() {
     $('create-panel').hidden = false;
     $('create-status').textContent = '';
+    setCpusMax($('create-cpus'));
     $('create-name').focus?.();
     if (state.authorized) {
       loadVolumes().then(createHint, () => {});
@@ -1702,14 +1703,28 @@
   // engine without an NVIDIA CDI device, such as macOS).
   function renderCreateGpu(available) {
     $('create-gpu-label').hidden = !available;
-    $('create-gpu-note').hidden = !available;
     if (!available) $('create-gpu').checked = false;
+  }
+
+  // The CPU limit's field: up to the engine's CPUs once a sandbox's
+  // resources told them, else up to maxSandboxCPUs (sandboxes.go).
+  function cpusMax() { return resStore.host.cpus || 1024; }
+  function setCpusMax(input) { input.max = resStore.host.cpus ? String(resStore.host.cpus) : ''; }
+  // 0 when empty (no limit); null when not a whole number up to cpusMax().
+  function cpusValue(input) {
+    const text = String(input.value || '').trim();
+    if (input.validity?.badInput) return null;
+    if (!text) return 0;
+    const n = Number(text);
+    return Number.isInteger(n) && n >= 1 && n <= cpusMax() ? n : null;
   }
 
   async function createSandbox() {
     const name = String($('create-name').value || '').trim();
     if (!state.authorized) return;
     if (!/^[a-z][a-z0-9-]{0,31}$/.test(name)) { $('create-status').textContent = t('error.name_invalid', { max: 32 }); return; }
+    const cpus = cpusValue($('create-cpus'));
+    if (cpus === null) { $('create-status').textContent = t('error.cpus_invalid', { max: cpusMax() }); return; }
     $('create-submit').disabled = true;
     $('create-status').textContent = t('create.creating');
     try {
@@ -1720,10 +1735,12 @@
         providers: createProviderChoice(),
         gpu: !$('create-gpu-label').hidden && $('create-gpu').checked
       };
+      if (cpus) body.cpus = cpus;
       await api('/api/sandboxes', { method: 'POST', body: JSON.stringify(body) });
       $('create-name').value = '';
       $('create-image').value = '';
       $('create-gpu').checked = false;
+      $('create-cpus').value = '';
       $('create-providers').replaceChildren();
       $('create-providers').hidden = true;
       $('create-presets').replaceChildren();
@@ -1811,6 +1828,7 @@
         restartPending: item.restartPending === true,
         recreateToUpdate: item.recreateToUpdate === true,
         gpu: item.gpu === true,
+        cpus: Number.isInteger(item.cpus) && item.cpus > 0 ? item.cpus : 0,
         // When it stops after its terminals ended (autostop.go).
         autoStopAt: Number.isFinite(item.autoStopAt) ? item.autoStopAt : 0,
         // Terminals that stopped changing (notifier.go): name → when.
@@ -4475,6 +4493,14 @@
       this.gpuBox = element('input');
       this.gpuBox.type = 'checkbox';
       this.gpu.append(this.gpuBox, bind(element('span'), 'create.gpu'));
+      this.cpus = element('label', 'scope-choice recreate-cpus');
+      this.cpusInput = element('input', 'text-input');
+      this.cpusInput.type = 'number';
+      this.cpusInput.min = '1';
+      this.cpusInput.step = '1';
+      this.cpusInput.inputMode = 'numeric';
+      bindAttribute(this.cpusInput, 'placeholder', 'create.cpus.none');
+      this.cpus.append(bind(element('span'), 'create.cpus'), this.cpusInput, bind(element('span'), 'create.cpus.unit'));
       this.form = element('form', 'login-form');
       this.input = element('input', 'text-input');
       this.input.type = 'text';
@@ -4487,7 +4513,7 @@
       this.status = element('p', 'panel-meta', '');
       this.status.setAttribute('role', 'status');
       this.closeButton = bind(button('button-subtle', '', () => { this.close(); this.card.restoreFocus(); }), 'common.close');
-      this.root.append(panelHeader({ key: 'recreate.title' }, this.closeButton), this.note, this.kept, this.lost, this.pull, this.gpu, this.form, this.status);
+      this.root.append(panelHeader({ key: 'recreate.title' }, this.closeButton), this.note, this.kept, this.lost, this.pull, this.gpu, this.cpus, this.form, this.status);
     }
 
     toggle() {
@@ -4496,6 +4522,8 @@
         // Shown without a GPU too while the sandbox has one, to turn it off.
         this.gpuBox.checked = this.card.sandbox.gpu === true;
         this.gpu.hidden = state.gpu === false && !this.gpuBox.checked;
+        this.cpusInput.value = this.card.sandbox.cpus ? String(this.card.sandbox.cpus) : '';
+        setCpusMax(this.cpusInput);
         this.root.hidden = false;
         if (!touchScreen()) this.input.focus();
         api('/api/images').then((d) => { this.pull.hidden = !imageView(d).moves; }, () => {});
@@ -4515,6 +4543,11 @@
       const name = card.sandbox.name;
       if (!state.authorized || this.busy) return;
       if (String(this.input.value || '').trim() !== name) { this.status.textContent = t('delete.mismatch'); return; }
+      const cpus = cpusValue(this.cpusInput);
+      if (cpus === null) { this.status.textContent = t('error.cpus_invalid', { max: cpusMax() }); return; }
+      const body = { confirm: name };
+      if (!this.gpu.hidden) body.gpu = this.gpuBox.checked;
+      if (cpus !== (card.sandbox.cpus || 0)) body.cpus = cpus;
       this.busy = true;
       this.submit.disabled = true;
       // The pull comes first; when it fails, nothing is recreated.
@@ -4539,7 +4572,7 @@
       card.update(card.sandbox);
       let failed = [];
       try {
-        const result = await api('/api/sandboxes/' + encodeURIComponent(name) + '/recreate', { method: 'POST', body: JSON.stringify(this.gpu.hidden ? { confirm: name } : { confirm: name, gpu: this.gpuBox.checked }), timeoutMs: 610000 });
+        const result = await api('/api/sandboxes/' + encodeURIComponent(name) + '/recreate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 610000 });
         if (result.ok !== true) throw new Error(t('recreate.unknownResult'));
         failed = carryFailures(result.failed);
         this.busy = false;

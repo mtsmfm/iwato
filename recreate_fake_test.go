@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -156,4 +157,29 @@ func TestRecreateGPUFake(t *testing.T) {
 	// Turning it off works without a GPU.
 	d.noGPU = true
 	recreate(`{"confirm":"dev","gpu":false}`, 200, false)
+}
+
+// A recreate changes the CPU limit (absent: kept; 0: none), up to the
+// engine's CPUs once a running sandbox told them.
+func TestRecreateCPUsFake(t *testing.T) {
+	s, _ := newTestServer(t)
+	cookie, csrf := login(t, s)
+	if res, b := request(t, s, "/api/sandboxes/dev/start", "POST", `{}`, cookie, csrf); res.StatusCode != 200 {
+		t.Fatalf("start: %d %s", res.StatusCode, b)
+	}
+	recreate := func(body string, want, cpus int) {
+		t.Helper()
+		if res, b := request(t, s, "/api/sandboxes/dev/recreate", "POST", body, cookie, csrf); res.StatusCode != want || want == 400 && !strings.Contains(string(b), "cpus_invalid") {
+			t.Fatalf("%s: %d %s", body, res.StatusCode, b)
+		}
+		if sb, _ := s.lookupSandbox("dev"); sb.CPUs != cpus {
+			t.Fatalf("%s: cpus %d", body, sb.CPUs)
+		}
+	}
+	recreate(`{"confirm":"dev","cpus":4}`, 200, 4)
+	recreate(`{"confirm":"dev"}`, 200, 4)
+	recreate(`{"confirm":"dev","cpus":-1}`, 400, 4)
+	s.resources.host.cpus = fakeHostCPUs
+	recreate(fmt.Sprintf(`{"confirm":"dev","cpus":%d}`, fakeHostCPUs+1), 400, 4)
+	recreate(`{"confirm":"dev","cpus":0}`, 200, 0)
 }

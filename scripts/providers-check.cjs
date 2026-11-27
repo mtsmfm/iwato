@@ -2,7 +2,7 @@
 // The providers in a real browser against `serve -fake`: the panel (list
 // without values, add, change, delete; Atlassian's OAuth connection and
 // 再接続 through the fake's authorization page, pasting the redirect on a
-// phone), the create form's picker, a refused attach that names the
+// phone), the create form's picker and CPU limit, a refused attach that names the
 // uninspected or ambiguous rule and its fix, the rules attaching adds, a
 // sandbox's attach/detach with the restart
 // choice, and 再起動待ち on the card and its terminals, after a reload too.
@@ -300,6 +300,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await rows.evaluateAll((list) => list.every((el) => el.offsetHeight < 40)), 'each preset is one line');
     const details = page.locator('#create-presets .create-preset').first().locator('.create-preset-details');
     check(await details.isHidden(), 'the details start closed');
+    const cpus = page.locator('#create-panel').getByLabel('CPU の上限');
+    check(await cpus.isVisible() && await cpus.getAttribute('placeholder') === 'なし' && await page.locator('#create-recreate-note').isVisible(), 'the create form offers the CPU limit, empty for none');
     await shot('create-form.png');
     await page.locator('#create-presets .create-preset-more').first().click();
     const allowed = await details.innerText();

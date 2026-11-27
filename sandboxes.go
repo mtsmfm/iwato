@@ -126,6 +126,23 @@ func ensureConfig(path string) (bool, error) {
 // errSandboxExists refuses a second sandbox under a name.
 var errSandboxExists = errors.New("同じ名前のサンドボックスがあります")
 
+// maxSandboxCPUs bounds a CPU limit until the engine's CPU count is known
+// (a running sandbox's resources tell it).
+const maxSandboxCPUs = 1024
+
+// checkCPUs refuses a CPU limit above the engine's CPUs, which Docker
+// refuses only when it creates the container.
+func (s *Server) checkCPUs(n int) error {
+	limit := maxSandboxCPUs
+	if host := s.resources.hostCPUs(); host > 0 {
+		limit = host
+	}
+	if n < 0 || n > limit {
+		return errCode("cpus_invalid", map[string]any{"max": limit}, fmt.Sprintf("CPU の上限は 1〜%d の整数にしてください (空欄なら制限なし)", limit))
+	}
+	return nil
+}
+
 // handleCreateSandbox adds a sandbox: its image, presets and providers.
 // Only its home persists (the image convention): a request naming paths to
 // persist is refused unless empty. Nothing is started; 起動 creates it in
@@ -144,6 +161,8 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		Providers []string `json:"providers"`
 		// GPU requests the machine's GPU (resources.gpu).
 		GPU bool `json:"gpu"`
+		// CPUs is the CPU limit; 0 is none.
+		CPUs int `json:"cpus"`
 	}
 	if decode(w, r, &body) != nil {
 		fail(w, 400, "invalid request")
@@ -165,6 +184,10 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.GPU && !s.gpuAvailable(r.Context()) {
 		failCode(w, 400, "gpu_unavailable", nil, "この環境では GPU を使えません")
+		return
+	}
+	if err := s.checkCPUs(body.CPUs); err != nil {
+		failErr(w, 400, err)
 		return
 	}
 	body.Presets = withRequiredPresets(body.Presets)
@@ -243,7 +266,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sb := newSandbox(body.Name)
-		sb.Image, sb.Providers, sb.Presets, sb.GPU = body.Image, body.Providers, body.Presets, body.GPU
+		sb.Image, sb.Providers, sb.Presets, sb.GPU, sb.CPUs = body.Image, body.Providers, body.Presets, body.GPU, body.CPUs
 		return append(list, sb), nil
 	})
 	if errors.Is(err, errSandboxExists) {

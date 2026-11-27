@@ -6,7 +6,7 @@
 // secret saved and shown as a hint), the ポート tab with the node and the
 // ports as links, and a stopped sandbox; also the settings' standard
 // image (「標準イメージを更新」) and the recreate dialog's
-// 「最新のイメージを取得してから作り直す」; the settings' language
+// 「最新のイメージを取得してから作り直す」 and CPU limit; the settings' language
 // (English without a reload, remembered by the browser, back to automatic);
 // the settings' startup checks and time zone; Iwato's update (the settings, the sidebar's
 // 「更新」, the dialog naming the sandboxes that restart, the reload on the
@@ -224,6 +224,9 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     const gpu = recreate.getByLabel('GPU を使う');
     check(await gpu.isVisible() && !(await gpu.isChecked()), 'the recreate dialog offers the GPU, preset to the sandbox\'s');
     await gpu.check();
+    const cpus = recreate.getByLabel('CPU の上限');
+    check(await cpus.isVisible() && await cpus.inputValue() === '' && await cpus.getAttribute('placeholder') === 'なし', 'the recreate dialog offers the CPU limit, empty for none');
+    await cpus.fill('2');
     check(await noSideScroll(recreate), 'the recreate dialog does not scroll sideways');
     await shot('recreate-pull.png');
     await recreate.getByLabel('確認のためサンドボックス名を入力').fill('dev');
@@ -232,6 +235,10 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     await card.locator('.badge[data-state=running]').waitFor({ timeout: 20000 });
     check(await recreate.isHidden(), 'the recreate finished after the pull');
     await card.locator('.res-row .res-gpu').waitFor({ timeout: 15000 });
+    const cpuLimit = () => page.evaluate(async () => (await (await fetch('/api/resources?focus=dev')).json()).sandboxes.dev?.cpuLimit);
+    let limit;
+    for (let i = 0; i < 20 && (limit = await cpuLimit()) !== 2; i++) await page.waitForTimeout(500);
+    check(limit === 2, 'the recreated sandbox runs with the CPU limit (' + limit + ')');
     check(await recreateBadge.isHidden() && await page.locator('#sandbox-nav .recreate-mark:not([hidden])').count() === 0, 'the recreated sandbox is not marked');
 
     // The language (web/i18n.js): English at once, remembered, then automatic (ja-JP here).

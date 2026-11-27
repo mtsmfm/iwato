@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -192,6 +193,23 @@ func TestStartRemakesAFailedSandboxWithItsPersistedPaths(t *testing.T) {
 	rw := strings.Join(spec.Policy.Filesystem.ReadWrite, " ")
 	if !strings.Contains(rw, "/sandbox/data") || !strings.Contains(rw, homeDir) {
 		t.Errorf("writable: %v", spec.Policy.Filesystem.ReadWrite)
+	}
+}
+
+// The CPU limit goes as a string quantity under limits: the gateway passes
+// anything else on as platform_config, which both drivers refuse.
+func TestStartCreatesWithTheCPULimit(t *testing.T) {
+	for _, cpus := range []int{0, 4} {
+		api := &fakeSandboxes{states: []*v1.Sandbox{nil, sandboxIn(v1.SandboxReady)}}
+		w := newSandbox("dev")
+		w.CPUs = cpus
+		if err := testOpenShell(api).Start(context.Background(), w); err != nil {
+			t.Fatal(err)
+		}
+		got := api.specs[0].Template.Resources
+		if want := map[string]any{"limits": map[string]any{"cpu": "4"}}; cpus == 0 && got != nil || cpus > 0 && !reflect.DeepEqual(got, want) {
+			t.Errorf("cpus %d: resources %v", cpus, got)
+		}
 	}
 }
 

@@ -398,7 +398,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 					list[i].State, list[i].Detail = "starting", "作り直しています…"
 				}
 			}
-			list[i].GPU = sb.GPU
+			list[i].GPU, list[i].CPUs = sb.GPU, sb.CPUs
 			list[i].Stopped = s.notifier.stopped(sb.Name)
 			list[i].RestartPending = list[i].State == "running" && s.restartPending(sb)
 			s.autoStopStatus(&list[i], sb)

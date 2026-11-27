@@ -209,11 +209,17 @@ func TestCreateSandboxTakesTheSandboxImageButNoPersist(t *testing.T) {
 	if g, _ := s.lookupSandbox("gpubox"); !g.GPU {
 		t.Fatalf("%+v", g)
 	}
-	if box.GPU {
-		t.Fatalf("a sandbox created without gpu has it: %+v", box)
+	if box.GPU || box.CPUs != 0 {
+		t.Fatalf("a sandbox created without gpu or cpus has them: %+v", box)
+	}
+	if c := post(`{"name":"cpubox","cpus":4}`); c != 200 {
+		t.Fatal(c)
+	}
+	if c, _ := s.lookupSandbox("cpubox"); c.CPUs != 4 {
+		t.Fatalf("%+v", c)
 	}
 	// Only the home persists: paths to persist are refused.
-	for _, body := range []string{`{"name":"b1","persist":["/sandbox/work"]}`, `{"name":"b2","persist":["/work","/work/x"]}`, `{"name":"b3","image":"bad image"}`} {
+	for _, body := range []string{`{"name":"b1","persist":["/sandbox/work"]}`, `{"name":"b2","persist":["/work","/work/x"]}`, `{"name":"b3","image":"bad image"}`, `{"name":"b4","cpus":-1}`, `{"name":"b5","cpus":1.5}`} {
 		if c := post(body); c != 400 {
 			t.Errorf("%s: %d", body, c)
 		}
