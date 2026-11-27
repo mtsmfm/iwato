@@ -96,7 +96,7 @@ Checks that look for strings already moved to the dictionary pin the context's l
 ### Other checks
 
 - The terminal model: `internal/termsync`'s `TestRandomOutput` applies frames the way the browser does and compares with the server's state after random output, resizes and screen switches. Go tests read a screen with `internal/termsync/termsynctest`
-- Terminal recordings: `go run ./cmd/term-replay [-at MS] [-hist] FILE` replays a `termTrace` recording through `internal/screen` ([terminals](../user/terminals.md#terminal-recordings))
+- Terminal recordings: `go run ./cmd/term-replay [-at MS] [-hist] [-mask] [-find TEXT [-before MS]] FILE` replays a `termTrace` recording through `internal/screen` ([terminals](../user/terminals.md#terminal-recordings))
 - Feature notes with real-hardware steps: [files.md](files.md), [gpu.md](gpu.md), [ingress.md](ingress.md), [providers.md](providers.md), [openshell.md](openshell.md)
 
 ## Ideas not started
