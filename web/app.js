@@ -6153,18 +6153,20 @@
         clearTimeout(this.connectTimer);
         this.connectTimer = null;
         this.attempt = 0;
-        this.lastSize = '';
         this.sizeClaimed = true; // the size is sent on connecting
+        // Connected first: the reconnect button leaves the header, so the
+        // terminal is measured at the height it keeps. Measured before it,
+        // every reconnect on a phone gave the program a row less, then the
+        // row back, and Claude Code redrew twice, once at the wrong height.
+        this.setConnection('connected', state.fake ? t('conn.connectedFake') : t('conn.connected'));
         // The hello carries the size; the session is attached at it. A
         // terminal that is not laid out (the card on another tab, as when
         // a notification opens the policies) has no size and leaves the
         // session's: it sends its own once shown (fit).
-        this.size = null;
-        this.fit();
+        this.size = this.host.clientWidth < 20 || this.host.clientHeight < 20 ? null : this.terminal.fit();
         socket.send(this.terminal.hello(this.size));
         this.lastSize = this.size ? this.size.cols + ':' + this.size.rows : '';
         this.listOnData = true;
-        this.setConnection('connected', state.fake ? t('conn.connectedFake') : t('conn.connected'));
         this.fit();
         this.focusUnlessTouch();
       };

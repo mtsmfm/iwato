@@ -229,12 +229,31 @@ func TestResizeBackRestores(t *testing.T) {
 	if _, y := tm.Cursor(); y != 2 {
 		t.Fatalf("cursor row %d", y)
 	}
-	// Output in between: the usual resize.
+	// Output in between stays, and the row the shrink took comes back
+	// above it: the program, still drawing for 4 rows, wrote to its bottom
+	// row (where the shrunk screen's cursor stopped).
 	tm.Resize(10, 3)
-	tm.Write([]byte("x"))
+	tm.Write([]byte("\x1b[H\x1b[3Bx"))
+	tm.Resize(10, 4)
+	if got := fmt.Sprint(rowText(tm, 0), rowText(tm, 1), rowText(tm, 2), rowText(tm, 3)); got != "123x" {
+		t.Fatalf("screen %q", got)
+	}
+	// Output that scrolled in between: the usual resize.
+	tm.Resize(10, 3)
+	tm.Write([]byte("\x1b[3;1H\n"))
 	tm.Resize(10, 4)
 	if rowText(tm, 3) != "" {
 		t.Fatalf("bottom row %q", rowText(tm, 3))
+	}
+	// The alternate screen keeps the part with the cursor: its bottom row
+	// goes, and comes back.
+	tm = New(10, 3)
+	tm.Write([]byte("\x1b[?1049ha\r\nb\r\nc\x1b[1;1H"))
+	tm.Resize(10, 2)
+	tm.Write([]byte("x"))
+	tm.Resize(10, 3)
+	if got := fmt.Sprint(rowText(tm, 0), rowText(tm, 1), rowText(tm, 2)); got != "xbc" {
+		t.Fatalf("alternate screen %q", got)
 	}
 }
 
