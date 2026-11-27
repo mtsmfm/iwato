@@ -463,6 +463,20 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   assert.equal(A.toggleSegment('/a/b/c', '/a/b/c', 0), '/*/b/c'); assert.equal(A.toggleSegment('/*/b/c', '/a/b/c', 0), '/**'); assert.equal(A.toggleSegment('/**', '/a/b/c', 0), '/a/b/c');
   assert.equal(A.toggleSegment('/a/**', '/a/**', 1), '/a/*', 'a ** typed by hand turns into *');
   // The placeholder (a GET / nobody saw) lists the methods on every path, reads checked.
+  const ws = {endpoints: [{host: 'api.example', ports: [443], protocol: 'websocket', access: 'read-only', enforcement: 'enforce', path: '/ws/**'}]};
+  const wsRows = A.reviewRows(ws);
+  assert.deepEqual(plain(wsRows.map((r) => [r.kind, r.protocol, r.label, r.checked])), [['kept', 'websocket', 'api.example/ws/** (read-only)', true]], 'a websocket endpoint is one row, not REST methods');
+  assert.deepEqual(plain(A.reviewScope(ws, wsRows)), {scope: {}, error: ''}, 'a websocket endpoint is approved as proposed');
+  assert.deepEqual(plain(A.rowWarnings(wsRows)), [], 'kept as proposed is not uninspected');
+  assert.deepEqual([A.uninspectedEndpoint(ws.endpoints[0]), A.uninspectedEndpoint({host: 'h', ports: [22]}), A.uninspectedEndpoint({host: 'h', ports: [22], protocol: 'tcp'})], [false, true, true], 'websocket is inspected, no protocol and tcp are not');
+  assert.deepEqual(plain(A.defaults(ws).kept), [{protocol: 'websocket', dest: 'api.example/ws/** (read-only)'}], 'a batch names what it keeps');
+  wsRows[0].checked = false;
+  assert.equal(A.reviewScope(ws, wsRows).scope, null, 'unchecked, nothing is left to approve');
+  wsRows[0].checked = true;
+  const wsRest = {endpoints: [{host: 'api.example', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/a'}, {method: 'POST', path: '/a'}]}, ws.endpoints[0]]};
+  const wsRestRows = A.reviewRows(wsRest);
+  wsRestRows.find((r) => r.method === 'POST').checked = false;
+  assert.deepEqual(plain(A.reviewScope(wsRest, wsRestRows)).scope, {uninspected: [1], rules: [{method: 'GET', path: '/a'}]}, 'narrowing the REST endpoint keeps the websocket one as proposed');
   const ph = plain(A.reviewRows({placeholder: true, endpoints: [{host: 'api.github.com', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/'}]}]}));
   assert.deepEqual(ph.map((r) => r.checked + ' ' + r.method + ' ' + r.path), ['true GET /**', 'true HEAD /**', 'false POST /**', 'false PUT /**', 'false PATCH /**', 'false DELETE /**']);
   assert.deepEqual(plain(A.reviewScope({placeholder: true, endpoints: [{host: 'h', ports: [443], protocol: 'rest', enforcement: 'enforce', rules: [{method: 'GET', path: '/'}]}]}, ph)).scope.rules, [{method: 'GET', path: '/**'}, {method: 'HEAD', path: '/**'}], 'never exactly / unless proposed by the agent');

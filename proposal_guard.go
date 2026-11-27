@@ -63,8 +63,8 @@ func errProposalChanged() error {
 // proposalUnshown are the parts of a rule the approve dialog cannot show
 // (empty: it shows all of it): more than proposalLimits, values longer than
 // it shows, and endpoint settings it does not render (GraphQL, MCP,
-// JSON-RPC, request signing, protocols other than rest and tcp, and rule
-// matchers other than method and path).
+// JSON-RPC, request signing, protocols other than rest, tcp and a websocket
+// without rules, and rule matchers other than method and path).
 func proposalUnshown(rule v1.NetworkPolicyRule) []string {
 	var out []string
 	add := func(s string) {
@@ -108,7 +108,11 @@ func proposalUnshown(rule v1.NetworkPolicyRule) []string {
 				add("allowed_ips length")
 			}
 		}
-		if p := strings.ToLower(e.Protocol); p != "" && p != "rest" && p != "tcp" {
+		// A websocket endpoint is shown whole (protocol, path, access) unless
+		// it has rules.
+		if p := strings.ToLower(e.Protocol); p == "websocket" && len(e.Rules)+len(e.DenyRules) > 0 {
+			add("protocol: websocket rules")
+		} else if p != "" && p != "rest" && p != "tcp" && p != "websocket" {
 			add("protocol: " + e.Protocol)
 		}
 		if e.TLS != v1.NetworkTLSModeUnspecified && e.TLS != v1.NetworkTLSModeSkip {

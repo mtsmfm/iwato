@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -184,6 +185,16 @@ func TestApprovedRuleSplitsPaths(t *testing.T) {
 	e.Rules = append(e.Rules, allow("GET", "**"))
 	if r := approvedRule("x", v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{e}}); len(r.Endpoints) != 1 || r.Endpoints[0].Path != "" {
 		t.Fatalf("%+v", r)
+	}
+	// A websocket is enforced: audit (OpenShell's default) would let every
+	// message through whatever its access says. Not with tls: skip (not
+	// inspected), and a REST endpoint keeps its enforcement.
+	ws := v1.PolicyNetworkEndpoint{Host: "a.example", Port: 443, Protocol: "websocket", Path: "/ws/**", Access: v1.NetworkAccessPresetReadOnly}
+	skip, restAudit := ws, e
+	skip.TLS, restAudit.Enforcement = v1.NetworkTLSModeSkip, v1.NetworkEnforcementModeAudit
+	r = approvedRule("w", v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{ws, skip, restAudit}})
+	if got := []v1.NetworkEnforcementMode{r.Endpoints[0].Enforcement, r.Endpoints[1].Enforcement, r.Endpoints[2].Enforcement}; !slices.Equal(got, []v1.NetworkEnforcementMode{v1.NetworkEnforcementModeEnforce, v1.NetworkEnforcementModeUnspecified, v1.NetworkEnforcementModeAudit}) {
+		t.Fatalf("enforcement %v", got)
 	}
 
 	// Approved paths that overlap a credential-bound endpoint with the same

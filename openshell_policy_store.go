@@ -420,11 +420,17 @@ func (o *OpenShell) reassert(ctx context.Context, w Sandbox, kind string) (uint3
 // approvedRule is the rule an approval writes (ADR 0022): every program
 // (program matching is no boundary), and per inspected endpoint with
 // explicit methods and paths, one endpoint per distinct path with that
-// path set, so that the rule reaches only what was approved. Its endpoints
-// stay the advisor's, as OpenShell marks them.
+// path set, so that the rule reaches only what was approved. An endpoint
+// of another inspected protocol (a websocket, approved as proposed) is
+// enforced: audit, OpenShell's default, would let through every message,
+// beyond the access the approve dialog shows. Its endpoints stay the
+// advisor's, as OpenShell marks them.
 func approvedRule(name string, in v1.NetworkPolicyRule) v1.NetworkPolicyRule {
 	out := v1.NetworkPolicyRule{Name: name, Binaries: []v1.PolicyNetworkBinary{{Path: "/**"}}}
 	for _, e := range cloneRule(in).Endpoints {
+		if p := strings.ToLower(e.Protocol); p != "rest" && slices.Contains(inspectedProtocols, p) && e.TLS != v1.NetworkTLSModeSkip {
+			e.Enforcement = v1.NetworkEnforcementModeEnforce
+		}
 		out.Endpoints = append(out.Endpoints, splitByPath(e)...)
 	}
 	for i := range out.Endpoints {

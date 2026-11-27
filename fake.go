@@ -232,7 +232,7 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			response := ""
 			switch {
 			case line == "help":
-				response = "FAKE only: help, propose HOST, drift, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, cctable [N], logo, lines, colors, diff, mouse, ccscroll, tui MS [LINES], clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
+				response = "FAKE only: help, propose HOST, proposews HOST, drift, echo TEXT, cd DIR, url, framed, osc8, cclink, ccbold, ccwrap, cctable [N], logo, lines, colors, diff, mouse, ccscroll, tui MS [LINES], clear, exit (or Ctrl-D)\r\n本物のプロセスやサンドボックスは作成しません。"
 			case line == "lines":
 				// History to scroll through (and fetch).
 				var b strings.Builder
@@ -386,6 +386,8 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			case line == "drift":
 				// A policy change made outside Iwato (openshell policy set).
 				response = t.d.fakeDrift(t.sandbox)
+			case strings.HasPrefix(line, "proposews "):
+				response = t.d.fakeProposeWS(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "proposews ")))
 			case strings.HasPrefix(line, "propose "):
 				// An agent's proposal through policy.local.
 				response = t.d.fakePropose(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "propose ")))

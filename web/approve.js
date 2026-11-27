@@ -18,6 +18,14 @@
   }
   // Inspected: rest, and not tls: skip (OpenShell then cannot see the requests).
   const inspectedEndpoint = (e) => e.protocol === 'rest' && e.tls !== 'skip';
+  // Inspected by another protocol (inspectedProtocols in
+  // providers_registry.go): its rules are not methods and paths, so it is
+  // approved as proposed or left out.
+  const otherProtocol = (e) => ['graphql', 'websocket', 'mcp', 'json-rpc', 'jsonrpc'].includes(e.protocol) && e.tls !== 'skip';
+  // Not inspected: L4.
+  const uninspectedEndpoint = (e) => !inspectedEndpoint(e) && !otherProtocol(e);
+  // A checked row that keeps its endpoint (ep) as proposed.
+  const asIs = (r) => (r.kind === 'l4' || r.kind === 'kept') && r.checked;
 
   // A rule's path for the owner: "/" alone is the root only, "/**" (and
   // OpenShell's "**") every path; they look alike.
@@ -51,6 +59,7 @@
   // index), checked when the port is not a web one. An access preset lists
   // its methods on every path. A rejected proposal goes as proposed, so it
   // lists what it allows and an uninspected endpoint is its L4 row alone.
+  // An endpoint of another protocol is one row (kept), checked.
   function reviewRows(item) {
     const rows = [];
     const add = (host, method, path, checked) => {
@@ -60,6 +69,10 @@
       const host = e.host || '';
       const uninspected = !inspectedEndpoint(e);
       const l4Row = (checked) => rows.push({ kind: 'l4', host, ep: i, label: destParts([e]).map((d) => d.host + d.port)[0], checked, write: true });
+      if (otherProtocol(e)) {
+        rows.push({ kind: 'kept', host, ep: i, protocol: e.protocol, label: destParts([e]).map((d) => d.host + d.port)[0] + (e.path || '') + (e.access ? ' (' + e.access + ')' : ''), checked: true, write: true });
+        continue;
+      }
       if (item.rejected) {
         if (uninspected) {
           l4Row(true);
@@ -85,11 +98,11 @@
       rows.every((r) => r.kind !== 'rule' || r.checked);
   }
 
-  // The hosts whose every endpoint is allowed uninspected (their L4 rows
-  // checked): their rule rows do not apply.
+  // The hosts whose every endpoint is kept as proposed (their L4 or kept
+  // rows checked): their rule rows do not apply.
   function uninspectedHosts(item, rows) {
     const eps = item.endpoints || [];
-    const on = new Set(rows.filter((r) => r.kind === 'l4' && r.checked).map((r) => r.ep));
+    const on = new Set(rows.filter(asIs).map((r) => r.ep));
     return new Set(eps.map((e) => e.host || '').filter((h) => eps.every((e, i) => (e.host || '') !== h || on.has(i))));
   }
 
@@ -108,7 +121,7 @@
       out.scope = scope;
       return out;
     }
-    const l4 = rows.filter((r) => r.kind === 'l4' && r.checked);
+    const l4 = rows.filter(asIs);
     const all = l4.length > 0 && l4.length === (item.endpoints || []).length;
     if (!all && !(l4.length === 0 && asProposed(item, rows))) {
       const skip = uninspectedHosts(item, rows);
@@ -144,7 +157,7 @@
     const skip = uninspectedHosts(item, rows);
     const kept = rows.filter((r) => r.checked && !(r.kind === 'rule' && skip.has(r.host)));
     const methods = [...new Set(kept.filter((r) => r.kind === 'rule').map((r) => r.method === '*' ? t('review.allMethods') : r.method))];
-    return { rows, ...reviewScope(item, rows), methods, l4: kept.filter((r) => r.kind === 'l4').map((r) => r.label) };
+    return { rows, ...reviewScope(item, rows), methods, l4: kept.filter((r) => r.kind === 'l4').map((r) => r.label), kept: kept.filter((r) => r.kind === 'kept').map((r) => ({ protocol: r.protocol, dest: r.label })) };
   }
 
   const dayMs = 24 * 60 * 60 * 1000;
@@ -227,5 +240,5 @@
     return { lines, error };
   }
 
-  window.IwatoApprove = { looksHTTP, pathLabel, toggleSegment, reviewRows, reviewScope, defaults, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
+  window.IwatoApprove = { looksHTTP, uninspectedEndpoint, pathLabel, toggleSegment, reviewRows, reviewScope, defaults, uninspectedHosts, broadWrites, hostWarnings, rowWarnings, destParts, risks, gatewayHit };
 })();

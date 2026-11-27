@@ -318,6 +318,27 @@ func TestScopeHostsAndUninspected(t *testing.T) {
 	if len(got.Endpoints) != 2 || got.Endpoints[0].Protocol != "rest" || got.Endpoints[1].Protocol != "" {
 		t.Fatalf("%+v", got.Endpoints)
 	}
+	ws := v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{
+		{Host: "a.example", Port: 443, Protocol: "rest", Enforcement: v1.NetworkEnforcementModeEnforce},
+		{Host: "a.example", Port: 443, Protocol: "websocket", Path: "/ws/**", Enforcement: v1.NetworkEnforcementModeEnforce},
+	}}
+	get := []ProposalRule{{Method: "GET", Path: "/a"}}
+	if got := (ProposalScope{Rules: get}).apply(ws); len(got.Endpoints) != 1 || got.Endpoints[0].Protocol != "rest" {
+		t.Fatalf("a websocket endpoint left out of the approval became REST: %+v", got.Endpoints)
+	}
+	if got := (ProposalScope{Rules: get, Uninspected: []int{1}}).apply(ws); len(got.Endpoints) != 2 || got.Endpoints[1].Protocol != "websocket" || got.Endpoints[1].Path != "/ws/**" || len(got.Endpoints[1].Rules) != 0 {
+		t.Fatalf("%+v", got.Endpoints)
+	}
+	if got := proposalUnshown(v1.NetworkPolicyRule{Endpoints: ws.Endpoints[1:]}); len(got) != 0 {
+		t.Fatalf("a websocket endpoint without rules is shown whole: %v", got)
+	}
+	withRules := ws.Endpoints[1]
+	withRules.Rules = []v1.L7Rule{{Allow: &v1.L7Allow{Method: "GET", Path: "/ws/a"}}}
+	graphql := ws.Endpoints[1]
+	graphql.Protocol = "graphql"
+	if got := proposalUnshown(v1.NetworkPolicyRule{Endpoints: []v1.PolicyNetworkEndpoint{withRules, graphql}}); !slices.Equal(got, []string{"protocol: websocket rules", "protocol: graphql"}) {
+		t.Fatalf("%v", got)
+	}
 	if _, err := (&ProposalScope{Uninspected: []int{2}}).against(two); codeOf(err) != "scope_uninspected_invalid" {
 		t.Fatal(err)
 	}
