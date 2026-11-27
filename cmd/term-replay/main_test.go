@@ -38,14 +38,15 @@ func TestReplayReadsARecordingAndATruncatedOne(t *testing.T) {
 
 // -find with -mask shows how a line came to be twice on the screen, and
 // nothing of what the terminal showed but the text looked for: here the
-// screen got a row less and the row back with output in between, so it
-// stayed a row up, and the program then drew where it thought the row was.
+// program scrolled the screen while it had a row less, so the screen stayed
+// up when the row came back, and the program then drew where it thought
+// the line was.
 func TestFindShowsHowALineCameTwiceWithoutTheText(t *testing.T) {
 	enc := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 	rec := `{"t":0,"k":"h","v":1,"at":"2026-11-27T02:48:00Z","sandbox":"dev","term":"main","cols":20,"rows":4}
 {"t":10,"k":"o","d":"` + enc("\x1b]0;secret title\x07\x1b[1;1Hhello 世界\x1b[4;1H\x1b[31mmode on\x1b[m 4") + `"}
 {"t":600,"k":"r","cols":20,"rows":3}
-{"t":601,"k":"o","d":"` + enc("\x1b[1;1H7") + `"}
+{"t":601,"k":"o","d":"` + enc("\x1b[3;1H\n") + `"}
 {"t":602,"k":"r","cols":20,"rows":4}
 {"t":700,"k":"o","d":"` + enc("\x1b[") + `"}
 {"t":1300,"k":"o","d":"` + enc("4;1Hmode on 5") + `"}
@@ -62,18 +63,18 @@ func TestFindShowsHowALineCameTwiceWithoutTheText(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"the screen is not as before these resizes (1 output records between them)",
-		"1300 ms 02:48:01.300Z  for 1700 ms (still at the end), rows [3 4]",
+		"1300 ms 02:48:01.300Z  for 1700 ms (still at the end), rows [2 4]",
 		"[4]  20x4  for 590 ms  after output with the text",
-		"[3]  20x3  for 700 ms  after a resize to 20x3",
-		"=== how it came to rows [3]",
+		"[2]  20x3  for 699 ms  after output without the text",
+		"=== how it came to rows [2]",
 		"--- the screen before the resizes\n20x4, cursor at row 4 column 10, alternate screen false\n  1|xxxxx ＊＊\n  2|\n  3|\n  4|mode on 0\n",
 		// The title by its length, the colours left out, the text masked
 		// to the same width.
 		`\e]0(14 B)\e[1;1Hxxxxx ＊＊\e[4;1Hmode on 0`,
 		// A sequence cut between two records.
 		`\e[4;1Hmode on 0`,
-		"  3|mode on 0\n  4|\n",
-		"  3|mode on 0\n  4|mode on 0\n",
+		"  2|mode on 0\n  3|\n  4|\n",
+		"  2|mode on 0\n  3|\n  4|mode on 0\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("no %q in:\n%s", want, got)
