@@ -37,12 +37,20 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       Object.defineProperty(window, 'visualViewport', { value: vv });
       window.setKeyboard = (px) => { vv.height = innerHeight - px; for (const fn of listeners.resize || []) fn(); };
     });
+    // To drop the connection, as a phone that slept does.
+    await context.addInitScript(() => { const WS = window.WebSocket; window.sockets = []; window.WebSocket = class extends WS { constructor(...a) { super(...a); window.sockets.push(this); } }; });
     const page = await context.newPage();
     page.on('pageerror', (e) => failures.push('page error: ' + e.message));
     const resizes = [];
     // Resize messages (internal/termsync): 'r', then uvarint cols and rows.
     const uvarints = (b) => { const out = []; let v = 0, m = 1; for (const x of b) { v += (x & 0x7f) * m; m *= 128; if (x < 0x80) { out.push(v); v = 0; m = 1; } } return out; };
-    page.on('websocket', (ws) => ws.on('framesent', (f) => { const p = f.payload; if (typeof p !== 'string' && p[0] === 0x72) { const [cols, rows] = uvarints(p.subarray(1)); resizes.push(cols + 'x' + rows); } }));
+    const hellos = [];
+    page.on('websocket', (ws) => ws.on('framesent', (f) => {
+      const p = f.payload;
+      if (typeof p === 'string') return;
+      if (p[0] === 0x72) { const [cols, rows] = uvarints(p.subarray(1)); resizes.push(cols + 'x' + rows); }
+      if (p[0] === 0x76) { const [, cols, rows] = uvarints(p.subarray(1)); hellos.push(cols + 'x' + rows); }
+    }));
     await page.goto(url);
     const card = page.locator('.terminal-card.selected');
     await card.waitFor();
@@ -83,6 +91,17 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       check(await size() === before, label + ': closing the keyboard keeps the rows');
     }
     check(resizes.length === sent || resizes.slice(sent).every((s) => s === before.replace(/\s/g, '').replace('×', 'x')), 'no other size reached the server (sent: ' + (resizes.slice(sent).join(', ') || 'none') + ')');
+    // Reconnecting attaches at the size it keeps, not a row less (the
+    // header's reconnect button) with a resize giving the row back.
+    const shown = (await size()).replace(/\s/g, '').replace('×', 'x');
+    const sentBefore = resizes.length;
+    const hellosBefore = hellos.length;
+    await page.evaluate(() => { for (const w of window.sockets) if (w.readyState === 1) w.close(); });
+    await card.locator('.connection-label:not([data-state=connected])').waitFor({ state: 'attached' });
+    await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached', timeout: 15000 });
+    await page.waitForTimeout(500);
+    check(hellos.length > hellosBefore && hellos[hellos.length - 1] === shown, 'reconnecting attaches at the size shown (' + shown + ', hello ' + hellos.slice(hellosBefore).join(', ') + ')');
+    check(resizes.length === sentBefore, 'no resize follows the reconnect (sent: ' + (resizes.slice(sentBefore).join(', ') || 'none') + ')');
     await page.screenshot({ path: path.join(dir, 'after.png') });
   } finally {
     await browser.close();
