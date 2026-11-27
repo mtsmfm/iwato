@@ -160,9 +160,10 @@ func TestRecreateGPUFake(t *testing.T) {
 }
 
 // A recreate changes the CPU limit (absent: kept; 0: none), up to the
-// engine's CPUs once a running sandbox told them.
+// engine's CPUs.
 func TestRecreateCPUsFake(t *testing.T) {
 	s, _ := newTestServer(t)
+	s.resources.host.cpus = fakeHostCPUs
 	cookie, csrf := login(t, s)
 	if res, b := request(t, s, "/api/sandboxes/dev/start", "POST", `{}`, cookie, csrf); res.StatusCode != 200 {
 		t.Fatalf("start: %d %s", res.StatusCode, b)
@@ -179,7 +180,6 @@ func TestRecreateCPUsFake(t *testing.T) {
 	recreate(`{"confirm":"dev","cpus":4}`, 200, 4)
 	recreate(`{"confirm":"dev"}`, 200, 4)
 	recreate(`{"confirm":"dev","cpus":-1}`, 400, 4)
-	s.resources.host.cpus = fakeHostCPUs
 	recreate(fmt.Sprintf(`{"confirm":"dev","cpus":%d}`, fakeHostCPUs+1), 400, 4)
 	recreate(`{"confirm":"dev","cpus":0}`, 200, 0)
 }

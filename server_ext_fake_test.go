@@ -212,6 +212,7 @@ func TestCreateSandboxTakesTheSandboxImageButNoPersist(t *testing.T) {
 	if box.GPU || box.CPUs != 0 {
 		t.Fatalf("a sandbox created without gpu or cpus has them: %+v", box)
 	}
+	s.resources.host.cpus = fakeHostCPUs
 	if c := post(`{"name":"cpubox","cpus":4}`); c != 200 {
 		t.Fatal(c)
 	}

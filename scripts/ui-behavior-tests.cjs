@@ -52,7 +52,7 @@ async function environment({touch = false, fullscreen = true, noSandboxes = fals
   const ids = ['terminal-grid', 'notice-title', 'notice-text', 'notice', 'server-label', 'server-state', 'connection-count', 'empty-title', 'empty-text', 'empty-state', 'refresh-button', 'fake-banner', 'sandbox-nav', 'menu-button', 'sidebar', 'sidebar-actions', 'app-shell',
     'push-button', 'pair-button', 'login-panel', 'login-form', 'login-input', 'pair-panel', 'pair-url', 'pair-qr', 'pair-copy', 'pair-close',
     'confirm-details', 'create-button', 'create-panel', 'create-form', 'create-name', 'create-submit', 'create-close', 'create-status', 'create-image', 'create-persist-note', 'log-button', 'images-log', 'approve-scope', 'approve-scope-all', 'approve-scope-read', 'approve-scope-rules', 'approve-scope-readwrite', 'approve-scope-full', 'policy-form', 'policy-rule', 'policy-host', 'policy-ports', 'policy-audit', 'approve-rules', 'approve-add-rule', 'log-close', 'log-panel', 'log-text', 'images-banner', 'images-title', 'images-text', 'images-retry', 'images-recheck', 'tailscale-offer', 'tailscale-offer-start', 'tailscale-offer-later', 'server-build', 'menu-build', 'confirm-panel', 'confirm-text', 'confirm-ok', 'confirm-cancel', 'volume-button', 'volume-panel', 'volume-close', 'volume-status', 'volume-list', 'create-volumes',
-    'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-recreate-note', 'create-cpus', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
+    'provider-button', 'provider-panel', 'provider-close', 'provider-status', 'provider-list', 'provider-form', 'provider-profile', 'provider-note', 'provider-hint', 'provider-name', 'provider-values', 'provider-submit', 'provider-form-status', 'create-providers', 'create-presets', 'create-gpu', 'create-gpu-label', 'create-recreate-note', 'create-cpus', 'create-cpus-label', 'create-cpus-value', 'provider-oauth', 'provider-yaml', 'provider-profile-yaml', 'provider-custom-add',
     'settings-button', 'settings-panel', 'settings-body', 'settings-close', 'policy-host-risk', 'update-button', 'res-totals', 'usage-totals', 'menu-usage', 'shortcut-toast'];
   const els = Object.fromEntries(ids.map(id => [id, new Element()]));
   for (const id of ids) { const m = id.match(/^approve-scope-(\w+)$/); if (m) els[id].value = m[1]; }
@@ -1009,18 +1009,18 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
   ok('without a GPU, recreate shows the GPU choice only to turn it off');
   {
-    const rc = await environment({fake: false, status: 'running'}); rc.setSandboxHandler(() => response({fake: false, sandboxes: [{...rc.sandbox, cpus: 4}], gpu: false})); await rc.tickPoll();
-    rc.buttons()[7].click(); await flush(); const [, , , , , , cpusLabel, cpusForm, cpusStatus] = rc.side('recreate-panel').children;
-    const cpus = cpusLabel.children[1]; assert.equal(cpus.value, '4'); assert.equal(cpus.placeholder, 'なし'); assert.equal(cpus.max, '16', 'up to the engine\'s CPUs');
-    cpusForm.children[0].value = 'api';
-    for (const bad of ['1.5', '17', '0']) {
-      cpus.value = bad; cpusForm.listeners.submit({preventDefault() {}}); await flush();
-      assert.equal(rc.requests.filter(r => r.path.endsWith('/recreate')).length, 0, bad); assert.match(cpusStatus.textContent, /CPU の上限は 1〜16 の整数/);
-    }
-    cpus.value = ''; cpusForm.listeners.submit({preventDefault() {}}); await flush();
-    assert.deepEqual(JSON.parse(rc.requests.find(r => r.path.endsWith('/recreate')).body), {confirm: 'api', cpus: 0});
+    const rc = await environment({fake: false, status: 'running'}); rc.setSandboxHandler(() => response({fake: false, sandboxes: [{...rc.sandbox, cpus: 4}], gpu: false, cpus: 16})); await rc.tickPoll();
+    rc.buttons()[7].click(); await flush(); const [, , , , , , cpusRow, cpusForm] = rc.side('recreate-panel').children;
+    const [cpusHead, cpus] = cpusRow.children; const shownCpus = () => cpusHead.children[1].textContent;
+    assert.equal(cpusRow.hidden, false); assert.equal(cpus.type, 'range'); assert.equal(cpus.max, '16', 'up to the engine\'s CPUs'); assert.equal(cpus.value, '4'); assert.equal(shownCpus(), '4 / 16 コア');
+    const recreates = () => rc.requests.filter(r => r.path.endsWith('/recreate')).map(r => JSON.parse(r.body));
+    cpusForm.children[0].value = 'api'; cpusForm.listeners.submit({preventDefault() {}}); await flush();
+    assert.deepEqual(recreates(), [{confirm: 'api'}], 'an untouched limit is not sent');
+    cpus.value = '16'; cpus.listeners.input(); assert.equal(shownCpus(), '制限なし'); assert.equal(cpus.getAttribute('aria-valuetext'), '制限なし');
+    cpusForm.listeners.submit({preventDefault() {}}); await flush();
+    assert.deepEqual(recreates()[1], {confirm: 'api', cpus: 0}, 'all the CPUs is no limit');
   }
-  ok('recreate shows the CPU limit, refuses one that is not a whole number up to the CPUs, and sends it only when changed');
+  ok('recreate shows the CPU limit on a slider up to the engine\'s CPUs, all of them being none, and sends it only when changed');
   {
   // 最新のイメージを取得してから作り直す: the pull goes first; a failed one recreates nothing.
   const rp = await environment({fake: false, status: 'running'}); let phase = 'updated'; const order = [];
@@ -1106,16 +1106,22 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
   }
 
   const sandbox = await environment({noSandboxes: true});
-  sandbox.els['create-name'].value = 'box'; sandbox.els['create-image'].value = ' ubuntu:24.04 '; sandbox.els['create-cpus'].value = '2';
+  sandbox.setSandboxHandler(() => response({fake: true, sandboxes: [], cpus: 8})); await sandbox.tickPoll();
+  const createCpus = sandbox.els['create-cpus'];
+  assert.equal(sandbox.els['create-cpus-label'].hidden, false); assert.equal(createCpus.max, '8'); assert.equal(createCpus.value, '8'); assert.equal(sandbox.els['create-cpus-value'].textContent, '制限なし');
+  createCpus.value = '2'; createCpus.listeners.input(); assert.equal(sandbox.els['create-cpus-value'].textContent, '2 / 8 コア');
+  sandbox.els['create-name'].value = 'box'; sandbox.els['create-image'].value = ' ubuntu:24.04 ';
   sandbox.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
   const sandboxReq = sandbox.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST');
   assert.deepEqual(JSON.parse(sandboxReq.body), {name: 'box', image: 'ubuntu:24.04', presets: ['packages'], providers: [], cpus: 2});
-  assert.equal(sandbox.els['create-image'].value, ''); assert.equal(sandbox.els['create-cpus'].value, '');
+  assert.equal(sandbox.els['create-image'].value, ''); assert.equal(createCpus.value, '8', 'the next one starts without a limit'); assert.equal(sandbox.els['create-cpus-value'].textContent, '制限なし');
   ok('a sandbox is created with its image and CPU limit (no paths to persist: only the home does)');
 
   const noGpu = await environment({noSandboxes: true});
   noGpu.setSandboxHandler(() => response({fake: true, sandboxes: [], gpu: false})); await noGpu.tickPoll();
-  assert.equal(noGpu.els['create-gpu-label'].hidden, true); assert.equal(noGpu.els['create-recreate-note'].hidden, false, 'the CPU limit can still be changed');
+  assert.equal(noGpu.els['create-gpu-label'].hidden, true); assert.equal(noGpu.els['create-cpus-label'].hidden, true, 'no CPU count, no slider'); assert.equal(noGpu.els['create-recreate-note'].hidden, true);
+  noGpu.setSandboxHandler(() => response({fake: true, sandboxes: [], gpu: false, cpus: 8})); await noGpu.tickPoll();
+  assert.equal(noGpu.els['create-cpus-label'].hidden, false); assert.equal(noGpu.els['create-recreate-note'].hidden, false, 'the note is about the CPU limit too');
   noGpu.els['create-gpu'].checked = true; noGpu.els['create-name'].value = 'box'; noGpu.els['create-form'].listeners.submit({preventDefault() {}}); await flush();
   assert.equal(JSON.parse(noGpu.requests.find(r => r.path === '/api/sandboxes' && r.method === 'POST').body).gpu, false);
   ok('the GPU choice is hidden, and not sent, where no GPU is available');

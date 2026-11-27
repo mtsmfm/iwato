@@ -225,8 +225,11 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
     check(await gpu.isVisible() && !(await gpu.isChecked()), 'the recreate dialog offers the GPU, preset to the sandbox\'s');
     await gpu.check();
     const cpus = recreate.getByLabel('CPU の上限');
-    check(await cpus.isVisible() && await cpus.inputValue() === '' && await cpus.getAttribute('placeholder') === 'なし', 'the recreate dialog offers the CPU limit, empty for none');
-    await cpus.fill('2');
+    const cpusShown = () => recreate.locator('.cpus-value').innerText();
+    check(await cpus.isVisible() && await cpus.inputValue() === '16' && await cpusShown() === '制限なし', 'the recreate dialog offers the CPU limit, none for a sandbox without one');
+    await cpus.press('Home');
+    await cpus.press('ArrowRight');
+    check(await cpusShown() === '2 / 16 コア', 'the slider sets 2 cores (' + await cpusShown() + ')');
     check(await noSideScroll(recreate), 'the recreate dialog does not scroll sideways');
     await shot('recreate-pull.png');
     await recreate.getByLabel('確認のためサンドボックス名を入力').fill('dev');

@@ -126,19 +126,25 @@ func ensureConfig(path string) (bool, error) {
 // errSandboxExists refuses a second sandbox under a name.
 var errSandboxExists = errors.New("同じ名前のサンドボックスがあります")
 
-// maxSandboxCPUs bounds a CPU limit until the engine's CPU count is known
-// (a running sandbox's resources tell it).
-const maxSandboxCPUs = 1024
+// engineCPUs is how many CPUs the sandboxes' engine has: as a running
+// sandbox counted them, else as `docker info` said, else this PC's (WSL
+// gives its VM all of them by default).
+func (s *Server) engineCPUs() int {
+	if n := s.resources.hostCPUs(); n > 0 {
+		return n
+	}
+	if n := s.checks.engineCPUs(); n > 0 {
+		return n
+	}
+	return runtime.NumCPU()
+}
 
 // checkCPUs refuses a CPU limit above the engine's CPUs, which Docker
 // refuses only when it creates the container.
 func (s *Server) checkCPUs(n int) error {
-	limit := maxSandboxCPUs
-	if host := s.resources.hostCPUs(); host > 0 {
-		limit = host
-	}
+	limit := s.engineCPUs()
 	if n < 0 || n > limit {
-		return errCode("cpus_invalid", map[string]any{"max": limit}, fmt.Sprintf("CPU の上限は 1〜%d の整数にしてください (空欄なら制限なし)", limit))
+		return errCode("cpus_invalid", map[string]any{"max": limit}, fmt.Sprintf("CPU の上限は 1〜%d コアにしてください", limit))
 	}
 	return nil
 }

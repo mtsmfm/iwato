@@ -420,7 +420,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	if down := s.checks.engine(); down != nil {
 		body["engine"] = down
 	} else {
-		body["gpu"] = s.gpuAvailable(ctx)
+		body["gpu"], body["cpus"] = s.gpuAvailable(ctx), s.engineCPUs()
 	}
 	jsonResponse(w, 200, body)
 }

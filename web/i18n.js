@@ -108,8 +108,8 @@
     'create.persistNote': '削除や作り直しで、ホーム (/home/dev) の外は消えます。',
     'create.gpu': 'GPU を使う',
     'create.cpus': 'CPU の上限',
-    'create.cpus.none': 'なし',
-    'create.cpus.unit': 'コア',
+    'create.cpus.none': '制限なし',
+    'create.cpus.of': '{cpus} / {max} コア',
     'create.recreateNote': '「作り直す」で変えられます。',
     'create.submit': '作成',
     'create.creating': '作成しています…',
@@ -1300,7 +1300,7 @@
     'error.image_invalid': 'イメージの指定が正しくありません',
     'error.persist_unsupported': '永続化するパスは選べません。ホーム (/home/dev) の下だけが残ります',
     'error.gpu_unavailable': 'この環境では GPU を使えません',
-    'error.cpus_invalid': 'CPU の上限は 1〜{max} の整数にしてください (空欄なら制限なし)。',
+    'error.cpus_invalid': 'CPU の上限は 1〜{max} コアにしてください。',
     'error.openshell_unavailable': 'OpenShell を使えません: {detail}',
     'error.delete_unfinished': 'サンドボックスの削除が終わりません',
     'error.terminal_ended': 'このターミナルは終了しています',
@@ -1774,8 +1774,8 @@
     'create.persistNote': 'Deleting or recreating erases everything outside the home (/home/dev).',
     'create.gpu': 'Use the GPU',
     'create.cpus': 'CPU limit',
-    'create.cpus.none': 'None',
-    'create.cpus.unit': 'cores',
+    'create.cpus.none': 'No limit',
+    'create.cpus.of': '{cpus} of {max} cores',
     'create.recreateNote': 'Can be changed by recreating the sandbox.',
     'create.submit': 'Create',
     'create.creating': 'Creating…',
@@ -2993,7 +2993,7 @@
     'error.image_invalid': 'This is not a valid image.',
     'error.persist_unsupported': 'Paths to persist cannot be chosen. Only what is under the home (/home/dev) is kept.',
     'error.gpu_unavailable': 'No GPU is available here.',
-    'error.cpus_invalid': 'The CPU limit must be a whole number from 1 to {max} (empty for no limit).',
+    'error.cpus_invalid': 'The CPU limit must be from 1 to {max} cores.',
     'error.openshell_unavailable': 'OpenShell is not usable: {detail}',
     'error.delete_unfinished': 'The sandbox\'s deletion does not finish.',
     'error.terminal_ended': 'This terminal has ended.',
@@ -3460,8 +3460,9 @@
   }
 
   // Elements marked with data-i18n (textContent) and data-i18n-placeholder,
-  // -aria-label, -title, -alt (attributes); data-i18n-params holds JSON params.
-  const attributes = ['placeholder', 'aria-label', 'title', 'alt'];
+  // -aria-label, -aria-valuetext, -title, -alt (attributes); data-i18n-params
+  // holds JSON params.
+  const attributes = ['placeholder', 'aria-label', 'aria-valuetext', 'title', 'alt'];
   function translate(node) {
     let params;
     try { params = node.dataset?.i18nParams ? JSON.parse(node.dataset.i18nParams) : undefined; } catch (_) { params = undefined; }

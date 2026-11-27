@@ -228,7 +228,7 @@ func (c Config) Validate() error {
 		if e := validPersist(w.LegacyPersist); e != nil {
 			return fmt.Errorf("persist for %s: %w", w.Name, e)
 		}
-		if w.CPUs < 0 || w.CPUs > maxSandboxCPUs {
+		if w.CPUs < 0 {
 			return fmt.Errorf("invalid cpus for %s", w.Name)
 		}
 		for _, a := range w.ProviderApplying {

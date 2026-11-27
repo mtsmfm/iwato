@@ -11,7 +11,7 @@ Create a sandbox with **Create a sandbox** in the sidebar:
 - **Name**: a lowercase letter first, then lowercase letters, digits and hyphens, up to 32 characters. It also names the sandbox's published ports (`5173.NAME.localhost`), so a name that is not a valid DNS label gets no local port links ([publishing](publishing.md))
 - **Image**: empty for Iwato's standard image (below), or any image, as with `openshell sandbox create --from` (for example `ubuntu:24.04`)
 - **Use the GPU**: passes this PC's GPU into the sandbox (WSL's GPU; no choice of model or count). It can be changed later by **Recreate**, and appears only where a GPU is available. See [desktop and GPU](desktop.md)
-- **CPU limit**: the most CPUs the sandbox may use, as `docker run --cpus` (empty for no limit). It limits CPU time, so programs inside may still see all the CPUs (`nproc`). It can be changed later by **Recreate**
+- **CPU limit**: a slider up to the CPUs the sandboxes' engine has: the most the sandbox may use, as `docker run --cpus`. All of them (the default) is no limit. It limits CPU time, so programs inside may still see all the CPUs (`nproc`). It can be changed later by **Recreate**
 - **Network presets**: the first network rules. Packages, Tool installs and Agent CLIs start checked; Reading references does not. Details shows what each allows ([network policy](network-policy.md#presets))
 - **Providers**: credentials to attach ([providers](providers.md))
 
