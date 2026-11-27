@@ -422,13 +422,14 @@ func (d *Fake) fakePropose(sandbox, host string) string {
 }
 
 // fakeProposeWS adds an agent's pending proposal for a websocket endpoint,
-// HOST:443/ws/** (the fake terminal's proposews HOST).
+// HOST:443/ws/** read-only, without enforcement (OpenShell's default,
+// audit) as agents propose it (the fake terminal's proposews HOST).
 func (d *Fake) fakeProposeWS(sandbox, host string) string {
 	if !fakeHost.MatchString(host) {
 		return "proposews: bad host"
 	}
 	return d.fakeSubmit(sandbox, host, v1.PolicyNetworkEndpoint{Host: host, Port: 443, Path: "/ws/**", Protocol: "websocket",
-		Access: v1.NetworkAccessPresetReadOnly, Enforcement: v1.NetworkEnforcementModeEnforce})
+		Access: v1.NetworkAccessPresetReadOnly})
 }
 
 func (d *Fake) fakeSubmit(sandbox, host string, e v1.PolicyNetworkEndpoint) string {

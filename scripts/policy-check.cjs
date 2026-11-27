@@ -922,13 +922,13 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await exp.locator('.card-tab', { hasText: 'ポリシー' }).click();
     await expItem(/ws\.example/).click();
     await expReview.locator('.review-host', { hasText: /^ws\.example/ }).waitFor();
-    check((await expReview.locator('.review-rule').allInnerTexts()).join('|') === 'websocket の宛先を提案のまま通す — ws.example/ws/** (read-only)', 'a websocket proposal is one row: ' + JSON.stringify(await expReview.locator('.review-rule').allInnerTexts()));
+    check((await expReview.locator('.review-rule').allInnerTexts()).join('|') === 'websocket の宛先を提案の範囲で検査して通す — ws.example/ws/** (read-only)', 'a websocket proposal is one row: ' + JSON.stringify(await expReview.locator('.review-rule').allInnerTexts()));
     const wsApprove = expReview.getByRole('button', { name: '承認', exact: true });
     await wsApprove.scrollIntoViewIfNeeded();
     await wsApprove.click();
     await expItem(/ws\.example/).waitFor({ state: 'detached' });
     const wsYaml = await page.evaluate(async () => (await (await fetch('/api/sandboxes/experiment/policy/yaml')).json()).yaml);
-    check(/host: ws\.example\n\s+port: 443\n\s+path: \/ws\/\*\*\n\s+protocol: websocket\n\s+access: read-only/.test(wsYaml), 'approved, it stays a websocket endpoint with its path');
+    check(/host: ws\.example\n\s+port: 443\n\s+path: \/ws\/\*\*\n\s+protocol: websocket\n\s+access: read-only\n\s+enforcement: enforce/.test(wsYaml), 'approved, it stays a websocket endpoint with its path, enforced');
 
     if (!phone) {
       await page.setViewportSize({ width: 700, height: 860 });
