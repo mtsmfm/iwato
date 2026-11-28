@@ -140,6 +140,16 @@
   const pathTarget = (text) => PATH_MARK + text;
   const pathOf = (target) => typeof target === 'string' && target.startsWith(PATH_MARK) ? findPaths(target.slice(PATH_MARK.length))[0] || null : null;
 
+  // An application's hyperlink (OSC 8) to a file:// URL opens as that path
+  // (agy marks the paths it prints so); other targets stay as they are.
+  function hyperlinkTarget(url) {
+    if (typeof url !== 'string' || !/^file:\/\//i.test(url)) return url;
+    let path;
+    try { path = decodeURIComponent(new URL(url).pathname); } catch (_) { return url; }
+    const found = findPaths(path);
+    return found.length === 1 && found[0].index === 0 && found[0].length === path.length ? pathTarget(path) : url;
+  }
+
   const FRAME = '│┃║|';
 
   // A row is {cells: [{c, x}], wrapped}: one entry per code unit with its
@@ -319,5 +329,5 @@
     } catch (_) { return ''; }
   }
 
-  window.IwatoLinks = Object.freeze({findURLs, findPaths, findLinks, pathOf, wrappedLinks, screenLines, safeURL});
+  window.IwatoLinks = Object.freeze({findURLs, findPaths, findLinks, pathOf, hyperlinkTarget, wrappedLinks, screenLines, safeURL});
 })();

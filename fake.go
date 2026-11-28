@@ -10,6 +10,7 @@ import (
 	"iwato/internal/dav"
 	"iwato/internal/termsync"
 	"net"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -397,6 +398,10 @@ func (t *fakeTerm) Write(b []byte) (int, error) {
 			case strings.HasPrefix(line, "deny "):
 				// A blocked request, which OpenShell drafts a proposal from.
 				response = t.d.fakeDeny(t.sandbox, strings.TrimSpace(strings.TrimPrefix(line, "deny ")))
+			case strings.HasPrefix(line, "filelink "):
+				// A path as agy prints it: an OSC 8 hyperlink to its file:// URL.
+				p := strings.TrimSpace(strings.TrimPrefix(line, "filelink "))
+				response = "\x1b]8;;file://" + (&url.URL{Path: p}).EscapedPath() + "\x1b\\" + p + "\x1b]8;;\x1b\\"
 			case strings.HasPrefix(line, "echo "):
 				response = strings.TrimPrefix(line, "echo ")
 			case line == "clear":

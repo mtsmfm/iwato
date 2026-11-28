@@ -1305,6 +1305,11 @@
       return { row, col };
     }
 
+    hyperlink(id) {
+      const url = this.links.get(id);
+      return window.IwatoLinks ? window.IwatoLinks.hyperlinkTarget(url) : url;
+    }
+
     // The link under the pointer: an OSC 8 link, or a URL or path in the text. On
     // the screen, from the cell, whatever element is on top of it.
     linkAt(event) {
@@ -1312,12 +1317,12 @@
       if (row >= 0) {
         if (col < 0) return null;
         const link = this.styles.get(this.grid[row].cells[col].s)?.link;
-        if (link && this.links.has(link)) return this.links.get(link);
+        if (link && this.links.has(link)) return this.hyperlink(link);
         return this.screenLinks?.get(row)?.list.find((p) => col >= p.from && col <= p.to)?.url || this.pathAt(row, col)?.url || null;
       }
       // An application's hyperlink first: its row shows only part of it.
       const linked = event.target.closest?.('[data-link]');
-      if (linked && this.links.has(Number(linked.dataset.link))) return this.links.get(Number(linked.dataset.link));
+      if (linked && this.links.has(Number(linked.dataset.link))) return this.hyperlink(Number(linked.dataset.link));
       const url = event.target.closest?.('.iw-url');
       if (url) return url.dataset.url;
       const pos = document.caretPositionFromPoint?.(event.clientX, event.clientY);
