@@ -77,7 +77,7 @@ function resizeCols(m) {
       check(await card.locator('.editor-panel').isVisible() && !(await card.locator('.terminal-surface').isVisible()), 'on a phone the editor tab replaces the terminal');
       await card.getByRole('tab', { name: /^ターミナル/ }).click();
       await clickPath(page, card, '~/work/iwato/web/editor.js:1', '~/work/iwato/web/editor.js:1', phone);
-      const at = await editorAt(page);
+      const at = await editorAt(page, 'web/editor.js');
       check(at.text.startsWith("'use strict'") && await card.getAttribute('data-tab') === 'editor', 'on a phone a path opens in the editor tab');
       return;
     }
@@ -100,11 +100,11 @@ function resizeCols(m) {
 
     // A path in the terminal opens in the editor beside it.
     await clickPath(page, card, '~/work/iwato/web/editor.js:1', '~/work/iwato/web/editor.js:1', phone);
-    const at = await editorAt(page);
+    const at = await editorAt(page, 'web/editor.js');
     check(at.text.startsWith("'use strict'") && at.line === 1 && await both() && await card.getAttribute('data-split') === 'true', 'a path in the terminal opens in the editor pane, both still shown');
     await clickPath(page, card, '~/work/iwato/nope.js:3', '~/work/iwato/nope.js:3', phone);
     await page.waitForTimeout(600);
-    check((await editorAt(page)).text.startsWith("'use strict'") && !/開け/.test(await card.locator('.card-message-text').allInnerTexts().then((a) => a.join(' '))), 'a missing file\'s path does nothing');
+    check((await editorAt(page, 'web/editor.js')).text.startsWith("'use strict'") && !/開け/.test(await card.locator('.card-message-text').allInnerTexts().then((a) => a.join(' '))), 'a missing file\'s path does nothing');
 
     // The divider: the terminal follows it once it rests.
     await page.waitForTimeout(400);

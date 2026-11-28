@@ -447,12 +447,12 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
       await page.waitForTimeout(600);
       check(await card.getAttribute('data-tab') === 'terminal' && !/開け/.test(await card.locator('.card-message-text').allInnerTexts().then((a) => a.join(' '))), 'a missing file\'s path does nothing');
       await clickPath(page, card, 'ok ./web/styles.css:1:6', './web/styles.css:1:6', phone);
-      let at = await editorAt(page);
+      let at = await editorAt(page, 'web/styles.css');
       check(at.text.startsWith('body {') && at.line === 1 && at.col === 6, 'a path from the terminal opens at its line and column, from where cd went (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
       await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
       await clickPath(page, card, 'main.go: ./main.go:1:9', './main.go:1:9', phone);
       await page.waitForFunction(() => document.querySelector('.terminal-card.selected')?.dataset.tab === 'editor');
-      at = await editorAt(page);
+      at = await editorAt(page, 'main.go');
       check(at.text === 'package main // third\n' && at.line === 1 && at.col === 9, 'a file open already keeps its edits and gets the cursor (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
       // The cursor back at the start, where the next step types.
       await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');

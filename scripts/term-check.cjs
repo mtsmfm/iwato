@@ -318,7 +318,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
         await input.focus();
       }
       await clickPath(page, card, '見て iwato/web/app.js:2:3 を開く', 'iwato/web/app.js:2:3', phone);
-      const at = await editorAt(page);
+      const at = await editorAt(page, 'web/app.js');
       check(await card.getAttribute('data-tab') === 'editor' && at.text.includes("console.log('app')") && at.line === 2 && at.col === 3, 'a relative path (from ~/work) opens in the editor tab at its line and column (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
       await card.getByRole('tab', { name: /^ターミナル/ }).click();
       const message = () => card.locator('.card-message-text').allInnerTexts().then((a) => a.join(' '));
@@ -334,7 +334,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       await listed.first().waitFor({ timeout: 5000 }).catch(() => {});
       check(await listed.count() > 0 && await card.locator('.links-panel .terminal-path', { hasText: 'nope.js' }).count() === 0, 'the links view lists the paths of files, not missing ones');
       await listed.first().click();
-      const fromList = await editorAt(page);
+      const fromList = await editorAt(page, 'web/app.js');
       check(await card.getAttribute('data-tab') === 'editor' && fromList.line === 2, 'a path in the links view opens in the editor');
       await card.getByRole('tab', { name: /^ターミナル/ }).click();
       await input.focus();
