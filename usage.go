@@ -16,17 +16,17 @@ import (
 	"time"
 )
 
-// The subscriptions' usage (docs/adr/0026): Claude's and Codex's windows
-// (5 hours, the week), read inside a running sandbox the provider is
-// attached to, with one exec of curl. The token is the provider's
+// The subscriptions' usage (docs/adr/0026): Claude's, Codex's and Gemini's
+// (agy's) windows (5 hours, the week), read inside a running sandbox the
+// provider is attached to, with one exec of curl. The token is the provider's
 // placeholder in that sandbox; the sandbox's proxy puts the gateway's
 // credential in on the way out, so Iwato never holds it.
 
 // usageWindow is one limit window: how much of it is used and when it
 // resets.
 type usageWindow struct {
-	// Kind is 5h, 7d, 7d-opus, 7d-sonnet or 7d-model (Model names it;
-	// others: the window's hours, 12h).
+	// Kind is 5h, 7d, 7d-opus, 7d-sonnet, 5h-model or 7d-model (Model
+	// names the model or group; others: the window's hours, 12h).
 	Kind     string    `json:"kind"`
 	Model    string    `json:"model,omitempty"`
 	Used     float64   `json:"used"` // percent, 0-100
@@ -63,7 +63,25 @@ var usageServices = []usageService{
 exec curl -sS --max-time 20 -w '\n%{http_code}' -H "Authorization: Bearer $` + claudeOAuthCredentialKey + `" -H 'anthropic-beta: oauth-2025-04-20' https://api.anthropic.com/api/oauth/usage`},
 	{id: "codex", profile: codexSubscriptionProfileID, parse: parseCodexUsage, script: `[ -n "${` + codexOAuthCredentialKey + `-}" ] && [ -n "${` + codexAccountKey + `-}" ] || { echo ` + usageNoToken + `; exit 0; }
 exec curl -sS --max-time 20 -w '\n%{http_code}' -H "Authorization: Bearer $` + codexOAuthCredentialKey + `" -H "chatgpt-account-id: $` + codexAccountKey + `" https://chatgpt.com/backend-api/wham/usage`},
+	{id: "gemini", profile: antigravityProfileID, parse: parseGeminiUsage, script: geminiUsageScript},
 }
+
+// geminiUsageScript asks agy's API (Cloud Code's v1internal) as agy does,
+// whose User-Agent it needs: loadCodeAssist for the project, then
+// retrieveUserQuotaSummary (the 5-hour and weekly windows of each group of
+// models) and retrieveUserQuota (each model's own 5-hour window: Google AI
+// Ultra's summary leaves Gemini out). It prints
+// {"summary":...,"quota":...} and 200, or the answer that failed.
+var geminiUsageScript = `[ -n "${` + antigravityCredentialKey + `-}" ] || { echo ` + usageNoToken + `; exit 0; }
+c() { curl -sS --max-time 12 -w '\n%{http_code}' -X POST -A antigravity -H "Authorization: Bearer $` + antigravityCredentialKey + `" -H 'Content-Type: application/json' -d "$2" "https://daily-cloudcode-pa.googleapis.com/v1internal:$1"; }
+ok() { [ "$(printf '%s' "$1" | tail -n 1)" = 200 ]; }
+body() { printf '%s' "$1" | sed '$d'; }
+a=$(c loadCodeAssist '{}'); ok "$a" || { printf '%s\n' "$a"; exit 0; }
+p=$(body "$a" | tr -d '\n' | sed -n 's/.*"cloudaicompanionProject": *\({ *"id": *\)\{0,1\}"\([A-Za-z0-9._:-]*\)".*/\2/p')
+b='{}'; [ -z "$p" ] || b="{\"project\":\"$p\"}"
+s=$(c retrieveUserQuotaSummary "$b"); ok "$s" || { printf '%s\n' "$s"; exit 0; }
+q=$(c retrieveUserQuota "$b"); ok "$q" && q=$(body "$q") || q=null
+printf '{"summary":%s,"quota":%s}\n200\n' "$(body "$s")" "$q"`
 
 // scriptRunner runs a shell script in a running sandbox as its user and
 // returns what it printed (OpenShell, Fake).
@@ -341,6 +359,94 @@ func parseCodexUsage(body []byte, now time.Time) ([]usageWindow, error) {
 	return out, nil
 }
 
+// parseGeminiUsage reads geminiUsageScript's answer. The summary's Gemini
+// group gives the plan's 5-hour and weekly windows; without them, the most
+// used Gemini model's 5-hour window of retrieveUserQuota stands in. The
+// other groups (Claude and GPT models) show once used: an unused window's
+// reset is only now plus its length, so it is left out.
+func parseGeminiUsage(body []byte, _ time.Time) ([]usageWindow, error) {
+	type bucket struct {
+		Window, BucketID, ModelID string
+		RemainingFraction         *float64
+		ResetTime                 string
+		Disabled                  bool
+	}
+	var v struct {
+		Summary struct {
+			Groups []struct {
+				DisplayName string
+				Buckets     []bucket
+			}
+		}
+		Quota *struct{ Buckets []bucket }
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		return nil, err
+	}
+	used := func(b bucket) (usageWindow, bool) {
+		if b.Disabled || b.RemainingFraction == nil {
+			return usageWindow{}, false
+		}
+		w := usageWindow{Used: clampPercent((1 - *b.RemainingFraction) * 100)}
+		if w.Used > 0 {
+			at, _ := time.Parse(time.RFC3339, b.ResetTime)
+			w.ResetsAt = at.UTC()
+		}
+		return w, true
+	}
+	kind := func(b bucket) string {
+		switch {
+		case strings.EqualFold(b.Window, "5h") || strings.Contains(strings.ToLower(b.BucketID), "5h"):
+			return "5h"
+		case strings.EqualFold(b.Window, "weekly") || strings.Contains(strings.ToLower(b.BucketID), "weekly"):
+			return "7d"
+		}
+		return ""
+	}
+	var plan, others []usageWindow
+	for _, g := range v.Summary.Groups {
+		gemini := strings.Contains(strings.ToLower(g.DisplayName), "gemini")
+		name := "Claude/GPT"
+		if !strings.Contains(strings.ToLower(g.DisplayName), "claude") {
+			name = strings.TrimSpace(strings.TrimSuffix(g.DisplayName, " models"))
+		}
+		for _, b := range g.Buckets {
+			w, ok := used(b)
+			k := kind(b)
+			if !ok || k == "" || name == "" || len(name) > 40 {
+				continue
+			}
+			if gemini {
+				w.Kind = k
+				plan = append(plan, w)
+			} else if w.Used > 0 {
+				w.Kind, w.Model = k+"-model", name
+				others = append(others, w)
+			}
+		}
+	}
+	if len(plan) == 0 && v.Quota != nil {
+		best, found := usageWindow{Kind: "5h"}, false
+		for _, b := range v.Quota.Buckets {
+			w, ok := used(b)
+			if !ok || !strings.HasPrefix(strings.TrimPrefix(strings.ToLower(b.ModelID), "models/"), "gemini") {
+				continue
+			}
+			if !found || w.Used > best.Used || (w.Used == best.Used && !w.ResetsAt.IsZero() && (best.ResetsAt.IsZero() || w.ResetsAt.Before(best.ResetsAt))) {
+				best.Used, best.ResetsAt, found = w.Used, w.ResetsAt, true
+			}
+		}
+		if found {
+			plan = append(plan, best)
+		}
+	}
+	out := append(plan, others...)
+	if len(out) == 0 {
+		return nil, errors.New("no usage windows in the answer")
+	}
+	return out, nil
+}
+
 func windowKind(seconds int64) string {
 	switch seconds {
 	case 5 * 3600:
@@ -385,7 +491,7 @@ func (s *Server) usageSummary() string {
 				parts = append(parts, fmt.Sprintf("%s %.0f%%", w.Kind, w.Used))
 			}
 		}
-		name := map[string]string{"claude": "Claude", "codex": "Codex"}[r.Service]
+		name := map[string]string{"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}[r.Service]
 		lines = append(lines, name+" "+strings.Join(parts, " · "))
 	}
 	return strings.Join(lines, "\n")

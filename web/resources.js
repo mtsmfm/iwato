@@ -117,16 +117,16 @@
   }
 
   // subscriptionView keeps what the sidebar shows of GET /api/usage (usage.go).
-  const usageServices = { claude: 'Claude', codex: 'Codex' };
+  const usageServices = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' };
   const usageCodes = ['usage_no_sandbox', 'usage_no_token', 'usage_http', 'usage_failed'];
   function subscriptionView(d) {
     const time = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : '';
     return (Array.isArray(d?.services) ? d.services : []).filter((r) => usageServices[r?.service]).slice(0, 4).map((r) => ({
       service: r.service, name: usageServices[r.service], at: time(r.at),
       code: usageCodes.includes(r.code) ? r.code : '', status: typeof r.params?.status === 'string' ? r.params.status.slice(0, 3) : '',
-      windows: (Array.isArray(r.windows) ? r.windows : []).filter((w) => /^(\d{1,3}h|7d(-opus|-sonnet)?)$/.test(w?.kind) || (w?.kind === '7d-model' && typeof w.model === 'string' && w.model))
+      windows: (Array.isArray(r.windows) ? r.windows : []).filter((w) => /^(\d{1,3}h|7d(-opus|-sonnet)?)$/.test(w?.kind) || (/^(5h|7d)-model$/.test(w?.kind) && typeof w.model === 'string' && w.model))
         .filter((w) => Number.isFinite(w.used)).slice(0, 8)
-        .map((w) => ({ kind: w.kind, model: w.kind === '7d-model' ? w.model.slice(0, 40) : '', used: Math.max(0, Math.min(100, w.used)), resetsAt: time(w.resetsAt) }))
+        .map((w) => ({ kind: w.kind, model: w.kind.endsWith('-model') ? w.model.slice(0, 40) : '', used: Math.max(0, Math.min(100, w.used)), resetsAt: time(w.resetsAt) }))
     }));
   }
 
@@ -332,7 +332,15 @@
       update(services, settings, now = Date.now()) {
         this.root.hidden = !services.length;
         if (!services.length) return;
-        const label = (w) => w.model || (window.IwatoI18n.has('usage.window.' + w.kind) ? t('usage.window.' + w.kind) : w.kind);
+        // A model's or group's window shows its name as the label (Fable a
+        // week), or, a name too long for the label's column, by the numbers
+        // with the window as the label.
+        const named = (w) => w.model && (w.kind === '5h-model' || w.model.length > 6) ? w.model + ' ' : '';
+        const label = (w) => {
+          if (w.model && !named(w)) return w.model;
+          const kind = w.model ? w.kind.slice(0, 2) : w.kind;
+          return window.IwatoI18n.has('usage.window.' + kind) ? t('usage.window.' + kind) : kind;
+        };
         const reset = (iso) => {
           const left = Date.parse(iso) - now;
           if (left <= 0) return t('usage.reset.done');
@@ -355,7 +363,7 @@
             const row = element('div', 'res-total');
             const passed = w.resetsAt && Date.parse(w.resetsAt) <= now;
             row.append(element('span', '', label(w)), bar(passed ? 0 : w.used / 100, passed ? '' : level(w.used / 100, settings)),
-              element('em', '', (passed ? '—' : Math.round(w.used) + '%') + (w.resetsAt ? ' · ' + reset(w.resetsAt) : '')));
+              element('em', '', named(w) + (passed ? '—' : Math.round(w.used) + '%') + (w.resetsAt ? ' · ' + reset(w.resetsAt) : '')));
             if (w.resetsAt) row.title = t('usage.reset.at', { time: window.IwatoI18n.date(w.resetsAt, { dateStyle: 'medium', timeStyle: 'short' }) });
             rows.push(row);
           }
