@@ -363,7 +363,13 @@
             r.title = title;
             r.setAttribute('aria-pressed', String(this.times));
             r.append(element('strong', '', name), ...(five === undefined ? [element('span'), element('span')] : cell(five)), ...(week === undefined ? [element('span'), element('span')] : cell(week)));
-            r.addEventListener('click', () => { this.times = !this.times; this.update(this.services, this.settings); });
+            r.addEventListener('click', () => {
+              // The rows are made again: the keyboard stays on this one.
+              const at = [...this.root.querySelectorAll('.usage-service')].indexOf(r);
+              this.times = !this.times;
+              this.update(this.services, this.settings);
+              if (document.activeElement === document.body || !document.activeElement) this.root.querySelectorAll('.usage-service')[at]?.focus({ preventScroll: true });
+            });
             return r;
           };
           rows.push(row(s.name, s.windows.find((w) => !w.model && /^\d+h$/.test(w.kind)) || null, s.windows.find((w) => w.kind === '7d') || null, false));
