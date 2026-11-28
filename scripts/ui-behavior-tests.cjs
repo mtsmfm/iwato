@@ -906,7 +906,8 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(Array.from(wrappedLinks([row2('see https://a.example/x and web/app.js:2'), row2('~/work/a.go')], 80, 1, false), (l) => l.url), ['https://a.example/x'], 'URLs only'); }
   ok('file paths: absolute, ~/, relative with a slash, with :LINE[:COL]; not ratios, dates, words or parts of URLs; left out on request');
   { const {hyperlinkTarget, pathOf} = side.win.IwatoLinks;
-    assert.equal(pathOf(hyperlinkTarget('file:///home/dev/a%20b/x.png')), null, 'a path the text scan would cut stays a URL');
+    assert.equal(pathOf(hyperlinkTarget('file:///home/dev/a%20b/%E6%97%A5%E6%9C%AC.png')).path, '/home/dev/a b/日本.png', 'spaces and non-ASCII');
+    assert.equal(hyperlinkTarget('file:///'), 'file:///');
     assert.equal(pathOf(hyperlinkTarget('file:///home/dev/.gemini/brain/1-2/scratch/x.png')).path, '/home/dev/.gemini/brain/1-2/scratch/x.png');
     assert.equal(pathOf(hyperlinkTarget('file://host/home/dev/x.go')).path, '/home/dev/x.go');
     assert.equal(hyperlinkTarget('https://a.example/x.png'), 'https://a.example/x.png'); }

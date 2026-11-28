@@ -732,6 +732,23 @@
       let top = row, bottom = row + 1;
       while (top > 0 && this.grid[top].cont) top--;
       while (this.grid[bottom]?.cont) bottom++;
+      // An application's hyperlink to a file: the cells it covers, wrapped
+      // rows included.
+      const linkOf = (y, x) => this.styles.get(this.grid[y].cells[x]?.s)?.link;
+      const id = linkOf(row, col);
+      const target = id && this.links.has(id) ? this.hyperlink(id) : null;
+      if (window.IwatoLinks.pathOf(target)) {
+        let [sy, sx, ey, ex] = [row, col, row, col];
+        for (;;) {
+          if (sx > 0 && linkOf(sy, sx - 1) === id) sx--;
+          else if (sx === 0 && sy > top && linkOf(sy - 1, this.cols - 1) === id) { sy--; sx = this.cols - 1; } else break;
+        }
+        for (;;) {
+          if (ex < this.cols - 1 && linkOf(ey, ex + 1) === id) ex++;
+          else if (ex === this.cols - 1 && ey + 1 < bottom && linkOf(ey + 1, 0) === id) { ey++; ex = 0; } else break;
+        }
+        return { url: target, start: { x: sx + 1, y: sy }, end: { x: ex + 1, y: ey } };
+      }
       const at = (p) => (row - p.y) || (col + 1 - p.x);
       return window.IwatoLinks.wrappedLinks(this.screenRows(top, bottom), this.cols, top)
         .find((l) => at(l.start) >= 0 && at(l.end) <= 0 && window.IwatoLinks.pathOf(l.url)) || null;

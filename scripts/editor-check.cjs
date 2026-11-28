@@ -436,7 +436,7 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     // A path printed in the terminal, relative to where cd went, opens here
     // at its line and column: a new file, and one open already.
     {
-      const { clickPath, editorAt } = require('./path-links.cjs');
+      const { clickPath, editorAt, pathPoint } = require('./path-links.cjs');
       const card = page.locator('.terminal-card.selected');
       await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
       await card.locator('.connection-label[data-state=connected]').waitFor({ state: 'attached' });
@@ -451,8 +451,22 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
       check(at.text.startsWith('body {') && at.line === 1 && at.col === 6, 'a path from the terminal opens at its line and column, from where cd went (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
       await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
       const linked = '/home/dev/work/iwato/web/styles.css';
+      if (!phone) {
+        // Ctrl+hover underlines it from the hyperlink, also under a label.
+        await card.locator('.iw-input').focus();
+        await page.keyboard.type('filelink ' + linked + ' スタイル');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(300);
+        const { x, y } = await pathPoint(card, 'スタイル');
+        await page.mouse.move(x, y);
+        await page.keyboard.down(mod);
+        await page.mouse.move(x + 1, y);
+        const lit = await card.locator('.iw-term.iw-pointer').waitFor({ timeout: 3000 }).then(() => true, () => false);
+        await page.keyboard.up(mod);
+        check(lit, 'Ctrl+hover underlines a file:// hyperlink that opens, under a label too');
+      }
       await clickPath(page, card, linked, linked, phone, 'filelink');
-      at = await editorAt(page);
+      at = await editorAt(page, 'web/styles.css');
       check(at.text.startsWith('body {'), 'a path an application links to its file:// URL (OSC 8, as agy prints them) opens');
       await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
       await clickPath(page, card, 'main.go: ./main.go:1:9', './main.go:1:9', phone);

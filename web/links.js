@@ -138,16 +138,22 @@
   // taken for a URL (pathOf reads it back).
   const PATH_MARK = 'iwato-path:';
   const pathTarget = (text) => PATH_MARK + text;
-  const pathOf = (target) => typeof target === 'string' && target.startsWith(PATH_MARK) ? findPaths(target.slice(PATH_MARK.length))[0] || null : null;
+  // An application's hyperlink (OSC 8) to a file:// URL (agy marks the
+  // paths it prints so) is the whole path, whatever characters it has.
+  const FILE_MARK = 'iwato-file:';
+  const pathOf = (target) => {
+    if (typeof target !== 'string') return null;
+    if (target.startsWith(FILE_MARK)) { const path = target.slice(FILE_MARK.length); return {path, line: 0, col: 0, index: 0, length: path.length}; }
+    return target.startsWith(PATH_MARK) ? findPaths(target.slice(PATH_MARK.length))[0] || null : null;
+  };
 
-  // An application's hyperlink (OSC 8) to a file:// URL opens as that path
-  // (agy marks the paths it prints so); other targets stay as they are.
+  // hyperlinkTarget is an OSC 8 link's target as a click opens it: a
+  // file:// URL becomes its path, other targets stay as they are.
   function hyperlinkTarget(url) {
     if (typeof url !== 'string' || !/^file:\/\//i.test(url)) return url;
     let path;
     try { path = decodeURIComponent(new URL(url).pathname); } catch (_) { return url; }
-    const found = findPaths(path);
-    return found.length === 1 && found[0].index === 0 && found[0].length === path.length ? pathTarget(path) : url;
+    return path.length > 1 && !/[\u0000-\u001f\u007f]/.test(path) ? FILE_MARK + path : url;
   }
 
   const FRAME = '│┃║|';
