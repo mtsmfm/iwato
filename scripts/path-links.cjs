@@ -23,12 +23,12 @@ async function pathPoint(card, text) {
   }, text);
 }
 
-// clickPath prints text with the fake shell's echo and clicks link (the
+// clickPath prints text with the fake shell's echo (or command) and clicks link (the
 // path as printed, :LINE included; paths are not underlined, so it clicks
 // where the text is).
-async function clickPath(page, card, text, link, phone) {
+async function clickPath(page, card, text, link, phone, command = 'echo') {
   await card.locator('.iw-input').focus();
-  await page.keyboard.type('echo ' + text);
+  await page.keyboard.type(command + ' ' + text);
   await page.keyboard.press('Enter');
   await card.locator('.iw-screen').evaluate((s, text) => new Promise((resolve) => {
     const done = () => [...s.querySelectorAll('.iw-row')].some((r) => r.textContent.trim() === text) ? resolve() : requestAnimationFrame(done);
