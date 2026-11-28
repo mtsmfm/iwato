@@ -902,6 +902,7 @@ const findNode = (node, test) => test(node) ? node : node.children.map((child) =
     assert.deepEqual(paths('src/Makefile:7: x and ./run, ~/.bashrc, ../up/y.'), [['src/Makefile', 7, 0, 'src/Makefile:7'], ['./run', 0, 0, './run'], ['~/.bashrc', 0, 0, '~/.bashrc'], ['../up/y', 0, 0, '../up/y']]);
     assert.deepEqual(paths('「/home/dev/work/a.go:5」を見て、web/editor.jsを開く'), [['/home/dev/work/a.go', 5, 0, '/home/dev/work/a.go:5'], ['web/editor.js', 0, 0, 'web/editor.js']], 'Japanese around a path');
     assert.deepEqual(paths('and/or 1/2 3.4/5.6 2026/10/23 TCP/IP /tmp v1.2/3 @web/a.js host:a/b.js a//b.js dir/ https://x.example/a/b.js?f=c/d.js'), [], 'no false positives');
+    assert.deepEqual(paths('in ~/work/iwato/ and ./web/, not a.b/ or /tmp/'), [['~/work/iwato', 0, 0, '~/work/iwato'], ['./web', 0, 0, './web']], 'folders ending in a slash');
     assert.deepEqual(JSON.parse(JSON.stringify(side.win.IwatoLinks.pathOf(wrappedLinks([row2('see https://a.example/x and web/app.js:2')], 80, 1)[1].url))), {path: 'web/app.js', line: 2, col: 0, index: 0, length: 12});
     assert.deepEqual(Array.from(wrappedLinks([row2('see https://a.example/x and web/app.js:2'), row2('~/work/a.go')], 80, 1, false), (l) => l.url), ['https://a.example/x'], 'URLs only'); }
   ok('file paths: absolute, ~/, relative with a slash, with :LINE[:COL]; not ratios, dates, words or parts of URLs; left out on request');

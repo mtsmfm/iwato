@@ -5923,7 +5923,8 @@
       if (this.resolved.size > 200) this.resolved.clear();
       const entry = { at: now, value: undefined };
       const url = '/api/sandboxes/' + encodeURIComponent(this.sandbox.name) + '/editor/resolve?term=' + encodeURIComponent(this.termName) + '&path=' + encodeURIComponent(path);
-      entry.promise = api(url, { timeoutMs: 70000 }).then((data) => String(data.path), (error) => {
+      // A folder's path ends in a slash.
+      entry.promise = api(url, { timeoutMs: 70000 }).then((data) => String(data.path) + (data.dir === true ? '/' : ''), (error) => {
         // Only "not a file there" is kept: a stopped sandbox or a network error may pass.
         if (!(error.status >= 400 && error.status < 500 && error.status !== 409) && this.resolved.get(key) === entry) this.resolved.delete(key);
         return null;
@@ -5945,7 +5946,8 @@
       if (rel === null) { if (touchScreen()) this.terminal?.focus(); return; }
       try {
         if (this.root.dataset.split !== 'true') this.selectTab('editor');
-        await this.editor.open(rel, found.line ? { line: found.line, col: found.col } : null);
+        if (rel.endsWith('/')) this.editor.showDir(rel.slice(0, -1));
+        else await this.editor.open(rel, found.line ? { line: found.line, col: found.col } : null);
       } catch (error) {
         if (!this.disposed) this.showError(t('term.path.failed', { path: found.path, message: error.message }));
       }

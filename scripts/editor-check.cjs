@@ -473,6 +473,24 @@ const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
       await page.waitForFunction(() => document.querySelector('.terminal-card.selected')?.dataset.tab === 'editor');
       at = await editorAt(page, 'main.go');
       check(at.text === 'package main // third\n' && at.line === 1 && at.col === 9, 'a file open already keeps its edits and gets the cursor (' + JSON.stringify({ line: at.line, col: at.col }) + ')');
+      // A folder's path shows it in the tree: inside the editor's folder
+      // expanded and marked, outside it as the folder.
+      const folderBefore = await page.evaluate(() => localStorage.getItem('iwato-editor-dir:dev') || '');
+      await page.fill(panelSel + ' .editor-dir', 'work/iwato');
+      await page.keyboard.press('Enter');
+      await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
+      await clickPath(page, card, 'dir ./web/', './web/', phone);
+      const found = card.locator('.editor-tree-item[data-path="work/iwato/web"][aria-current=true][aria-expanded=true]');
+      check(await found.waitFor({ timeout: 5000 }).then(() => true, () => false) && await card.getAttribute('data-tab') === 'editor', 'a folder\'s path inside the editor\'s folder opens the tree at it');
+      await shot('editor-dir-inside.png');
+      await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
+      await clickPath(page, card, '~/work/', '~/work/', phone);
+      const moved = await page.waitForFunction(() => localStorage.getItem('iwato-editor-dir:dev') === 'work', null, { timeout: 5000 }).then(() => true, () => false);
+      check(moved && await card.locator('.editor-tree-title').innerText() === 'work', 'a folder\'s path outside it becomes the folder');
+      await shot('editor-dir-outside.png');
+      await page.fill(panelSel + ' .editor-dir', folderBefore);
+      await page.keyboard.press('Enter');
+      if (phone) await click(page, panelSel + ' .editor-tree', '閉じる');
       // The cursor back at the start, where the next step types.
       await click(page, '.terminal-card.selected .card-tabs', 'ターミナル');
       await clickPath(page, card, './main.go:1:1', './main.go:1:1', phone);
