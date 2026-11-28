@@ -277,6 +277,9 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       await popup.close();
       check(code === 'fake-code', 'the fake Google page shows the code alone');
       await box.locator('.provider-paste input').fill(code);
+      // The flow is polled every 1.5 s: the pasted code stays.
+      await page.waitForTimeout(3500);
+      check(await box.locator('.provider-paste input').inputValue() === code, 'the pasted code stays while the flow is polled');
       await box.locator('.provider-paste').getByRole('button', { name: '送る' }).click();
       await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
       check((await box.innerText()).includes('antigravity-oauth-token') && !/fake-(access|refresh)/.test(await page.content()), 'Antigravity: done with the hint, no token on the page');

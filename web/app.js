@@ -998,7 +998,7 @@
   // then the authorization in Atlassian's page, which comes back to
   // Iwato's own 127.0.0.1 listener or, from another device, as a pasted
   // URL. The page never sees a token; it polls the flow's state.
-  const oauthFlow = { id: '', timer: 0, device: '', code: '' };
+  const oauthFlow = { id: '', timer: 0, device: '', code: '', poll: 0 };
   function oauthBox(title) {
     const box = $('provider-oauth');
     box.hidden = false;
@@ -1096,6 +1096,29 @@
     url = text(url, 8192);
     return /^https:\/\/[^\s]+$/.test(url) || (url.startsWith(location.origin + '/fake/atlassian/') && !/\s/.test(url)) ? url : '';
   }
+  // pollFlow asks for the flow again every 1.5 s while it waits or
+  // exchanges, and redraws only when its status changes: a redraw would
+  // clear what the owner is pasting.
+  function pollFlow(base, status, message, render) {
+    if (oauthFlow.timer) clearTimeout(oauthFlow.timer);
+    oauthFlow.timer = 0;
+    // A redraw while an answer is on its way ends that poll.
+    const id = oauthFlow.id, poll = ++oauthFlow.poll;
+    if (status !== 'waiting' && status !== 'exchanging') return;
+    const tick = async () => {
+      if (oauthFlow.id !== id || oauthFlow.poll !== poll) return;
+      oauthFlow.timer = 0;
+      try {
+        const next = await api(base + encodeURIComponent(id));
+        if (oauthFlow.id !== id || oauthFlow.poll !== poll) return;
+        if (text(next.status, 32) === status) oauthFlow.timer = setTimeout(tick, 1500);
+        else render(next);
+      } catch (error) {
+        message.textContent = t('providers.oauth.stateFailed', { message: error.message });
+      }
+    };
+    oauthFlow.timer = setTimeout(tick, 1500);
+  }
   function renderFlow(flow, title) {
     if (!oauthFlow.id || flow.id !== oauthFlow.id) return;
     const status = text(flow.status, 32);
@@ -1155,20 +1178,7 @@
       message.textContent = flowMessage(flow) || t('providers.oauth.ended');
       box.append(message);
     }
-    if (oauthFlow.timer) clearTimeout(oauthFlow.timer);
-    oauthFlow.timer = 0;
-    if (status === 'waiting' || status === 'exchanging') {
-      const id = oauthFlow.id;
-      oauthFlow.timer = setTimeout(async () => {
-        oauthFlow.timer = 0;
-        if (oauthFlow.id !== id) return;
-        try {
-          renderFlow(await api('/api/oauth/atlassian/flows/' + encodeURIComponent(id)), title);
-        } catch (error) {
-          message.textContent = t('providers.oauth.stateFailed', { message: error.message });
-        }
-      }, 1500);
-    }
+    pollFlow('/api/oauth/atlassian/flows/', status, message, (next) => renderFlow(next, title));
   }
   // Signing in by device code (/api/oauth/xai for Grok Build,
   // /api/oauth/codex for Codex): Iwato asks the service for a device code;
@@ -1342,20 +1352,7 @@
       message.textContent = flowMessage(flow) || t('providers.oauth.ended');
       box.append(message);
     }
-    if (oauthFlow.timer) clearTimeout(oauthFlow.timer);
-    oauthFlow.timer = 0;
-    if (status === 'waiting' || status === 'exchanging') {
-      const id = oauthFlow.id;
-      oauthFlow.timer = setTimeout(async () => {
-        oauthFlow.timer = 0;
-        if (oauthFlow.id !== id) return;
-        try {
-          renderCodeFlow(kind, await api('/api/oauth/' + kind + '/flows/' + encodeURIComponent(id)), title);
-        } catch (error) {
-          message.textContent = t('providers.oauth.stateFailed', { message: error.message });
-        }
-      }, 1500);
-    }
+    pollFlow('/api/oauth/' + kind + '/flows/', status, message, (next) => renderCodeFlow(kind, next, title));
   }
   function renderProviders() {
     const nodes = [];
