@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 3208bb3e..f85dcb58 100644
+index f76c9c406..b1efdad11 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -5318,6 +5318,7 @@ dependencies = [
+@@ -5863,6 +5863,7 @@ dependencies = [
   "flate2",
   "futures",
   "glob",
@@ -11,7 +11,7 @@ index 3208bb3e..f85dcb58 100644
   "hickory-proto",
   "http 1.4.0",
 diff --git a/crates/openshell-core/src/grpc_client.rs b/crates/openshell-core/src/grpc_client.rs
-index 64268a78..1bc31272 100644
+index 2429f255c..1aeb46552 100644
 --- a/crates/openshell-core/src/grpc_client.rs
 +++ b/crates/openshell-core/src/grpc_client.rs
 @@ -63,6 +63,11 @@ pub type AuthedChannel = InterceptedService<Channel, AuthInterceptor>;
@@ -26,7 +26,7 @@ index 64268a78..1bc31272 100644
  /// Shared, refreshable Bearer header. All [`AuthInterceptor`] clones read
  /// the same slot, so the renewal task can replace the token in place without
  /// rebuilding the channel. `None` means the owning sandbox instance revoked it.
-@@ -1202,7 +1207,7 @@ mod workspace_tests {
+@@ -1218,7 +1223,7 @@ mod workspace_tests {
  /// Connect to the `OpenShell` server with one sandbox instance's credentials.
  async fn connect(gateway: &GatewayEndpoint) -> Result<OpenShellClient<AuthedChannel>> {
      let channel = connect_channel(gateway).await?;
@@ -35,11 +35,156 @@ index 64268a78..1bc31272 100644
  }
  
  /// Fetch sandbox policy from `OpenShell` server via gRPC.
+diff --git a/crates/openshell-policy-runtime-interface/src/policy_types.rs b/crates/openshell-policy-runtime-interface/src/policy_types.rs
+index b95e2474d..251de641f 100644
+--- a/crates/openshell-policy-runtime-interface/src/policy_types.rs
++++ b/crates/openshell-policy-runtime-interface/src/policy_types.rs
+@@ -354,6 +354,7 @@ pub struct EgressAuthorization {
+ }
+ 
+ /// Input for a network access policy evaluation.
++#[derive(Debug, Clone)]
+ pub struct NetworkInput {
+     pub host: String,
+     pub port: u16,
+@@ -368,11 +369,24 @@ pub struct NetworkInput {
+ }
+ 
+ /// Generation guard captured when an HTTP tunnel or request path starts.
++///
++/// Clones share the captured generation, so a relay readmitted to a newer
++/// generation through one clone is current through all of them.
+ #[derive(Clone, Debug)]
+ pub struct PolicyGenerationGuard {
+-    captured_generation: u64,
++    captured_generation: Arc<AtomicU64>,
+     current_generation: Arc<AtomicU64>,
+     generation_rx: watch::Receiver<u64>,
++    readmission: Option<Arc<dyn RelayReadmission>>,
++}
++
++/// Lets an established relay follow a policy reload that does not change its
++/// admission (see `PolicyBackend::relay_generation_guard`).
++pub trait RelayReadmission: std::fmt::Debug + Send + Sync {
++    /// Moves `captured_generation` to the current generation when the current
++    /// policy admits the relay exactly as before. Returns false otherwise; the
++    /// relay then closes, and it is never readmitted again.
++    fn readmit(&self, captured_generation: &AtomicU64) -> bool;
+ }
+ 
+ /// Builds a [`PolicyGenerationGuard`] for any state holding a plain
+@@ -398,23 +412,41 @@ pub fn generation_guard_for(
+         ));
+     }
+     Ok(PolicyGenerationGuard {
+-        captured_generation: current_generation_value,
++        captured_generation: Arc::new(AtomicU64::new(current_generation_value)),
+         current_generation: Arc::clone(current_generation),
+         generation_rx: generation_tx.subscribe(),
++        readmission: None,
+     })
+ }
+ 
+ impl PolicyGenerationGuard {
++    /// This guard, made to try `readmission` before it reports a newer
++    /// generation as stale.
++    #[must_use]
++    pub fn with_readmission(mut self, readmission: Arc<dyn RelayReadmission>) -> Self {
++        self.readmission = Some(readmission);
++        self
++    }
++
+     pub fn captured_generation(&self) -> u64 {
+-        self.captured_generation
++        self.captured_generation.load(Ordering::Acquire)
+     }
+ 
+     pub fn current_generation(&self) -> u64 {
+         self.current_generation.load(Ordering::Acquire)
+     }
+ 
++    /// Whether the captured generation no longer applies.
++    ///
++    /// A guard with a readmission first tries to move the relay to the
++    /// current generation.
+     pub fn is_stale(&self) -> bool {
+-        self.current_generation() != self.captured_generation
++        if self.current_generation() == self.captured_generation() {
++            return false;
++        }
++        self.readmission
++            .as_ref()
++            .is_none_or(|readmission| !readmission.readmit(&self.captured_generation))
+     }
+ 
+     pub fn ensure_current(&self) -> Result<()> {
+diff --git a/crates/openshell-policy-runtime-interface/src/runtime.rs b/crates/openshell-policy-runtime-interface/src/runtime.rs
+index 5af227cfc..e623ca58b 100644
+--- a/crates/openshell-policy-runtime-interface/src/runtime.rs
++++ b/crates/openshell-policy-runtime-interface/src/runtime.rs
+@@ -125,6 +125,34 @@ pub trait PolicyBackend: Send + Sync {
+     fn replace_middleware_registry(&self, registry: MiddlewareRegistry) -> Result<()>;
+     fn passthrough_snapshot(&self) -> Result<Option<ActiveMiddleware>>;
+     fn tunnel_engine(&self, expected: u64) -> Result<TunnelPolicyEngine>;
++    /// A guard for an established relay that `input` was admitted as in
++    /// generation `expected`.
++    ///
++    /// A backend that can tell whether a later generation admits the relay
++    /// identically returns a guard that moves to that generation instead of
++    /// going stale, so the relay keeps its connection; any change to its
++    /// admission, and fail-closed quarantine, still make the guard stale. By
++    /// default it is [`Self::generation_guard`].
++    fn relay_generation_guard(
++        self: Arc<Self>,
++        expected: u64,
++        input: NetworkInput,
++    ) -> Result<PolicyGenerationGuard> {
++        let _ = input;
++        self.generation_guard(expected)
++    }
++    /// The L7 evaluator of an established relay, following readmission as
++    /// [`Self::relay_generation_guard`]: once readmitted, later requests are
++    /// evaluated against the new generation. By default it is
++    /// [`Self::tunnel_engine`].
++    fn relay_tunnel_engine(
++        self: Arc<Self>,
++        expected: u64,
++        input: NetworkInput,
++    ) -> Result<TunnelPolicyEngine> {
++        let _ = input;
++        self.tunnel_engine(expected)
++    }
+     fn effective_filesystem(
+         &self,
+         policy: &SandboxPolicy,
+@@ -178,6 +206,22 @@ impl PolicyEngine {
+             })?;
+         Ok(result)
+     }
++    /// See [`PolicyBackend::relay_generation_guard`].
++    pub fn relay_generation_guard(
++        &self,
++        expected: u64,
++        input: NetworkInput,
++    ) -> Result<PolicyGenerationGuard> {
++        Arc::clone(&self.0).relay_generation_guard(expected, input)
++    }
++    /// See [`PolicyBackend::relay_tunnel_engine`].
++    pub fn relay_tunnel_engine(
++        &self,
++        expected: u64,
++        input: NetworkInput,
++    ) -> Result<TunnelPolicyEngine> {
++        Arc::clone(&self.0).relay_tunnel_engine(expected, input)
++    }
+     pub fn passthrough_middleware(&self) -> Result<PassthroughMiddleware<'_>> {
+         Ok(self.0.passthrough_snapshot()?.map_or_else(
+             || PassthroughMiddleware::Live(self),
 diff --git a/crates/openshell-supervisor-network/Cargo.toml b/crates/openshell-supervisor-network/Cargo.toml
-index 8f000adb..8df34f8a 100644
+index 625c9b66c..2cd75acad 100644
 --- a/crates/openshell-supervisor-network/Cargo.toml
 +++ b/crates/openshell-supervisor-network/Cargo.toml
-@@ -29,6 +29,7 @@ aws-sigv4 = { version = "1", features = ["sign-http", "http1"] }
+@@ -31,6 +31,7 @@ aws-sigv4 = { version = "1", features = ["sign-http", "http1"] }
  aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
  aws-smithy-runtime-api = { version = "1", features = ["client"] }
  http = { workspace = true }
@@ -49,7 +194,7 @@ index 8f000adb..8df34f8a 100644
  flate2 = "1"
 diff --git a/crates/openshell-supervisor-network/src/l7/http2.rs b/crates/openshell-supervisor-network/src/l7/http2.rs
 new file mode 100644
-index 00000000..81ab237f
+index 000000000..81ab237fd
 --- /dev/null
 +++ b/crates/openshell-supervisor-network/src/l7/http2.rs
 @@ -0,0 +1,1305 @@
@@ -1359,7 +1504,7 @@ index 00000000..81ab237f
 +    }
 +}
 diff --git a/crates/openshell-supervisor-network/src/l7/mod.rs b/crates/openshell-supervisor-network/src/l7/mod.rs
-index 0647b8b2..1b6bb894 100644
+index eb4c0bb34..c5f196e9a 100644
 --- a/crates/openshell-supervisor-network/src/l7/mod.rs
 +++ b/crates/openshell-supervisor-network/src/l7/mod.rs
 @@ -11,6 +11,7 @@
@@ -1371,10 +1516,10 @@ index 0647b8b2..1b6bb894 100644
  pub(crate) mod mcp;
  pub(crate) mod middleware;
 diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
-index 9725ef0e..b85f75a0 100644
+index d3d2446d9..28944a0ed 100644
 --- a/crates/openshell-supervisor-network/src/l7/relay.rs
 +++ b/crates/openshell-supervisor-network/src/l7/relay.rs
-@@ -150,7 +150,7 @@ fn scoped_context_for_request(
+@@ -168,7 +168,7 @@ fn scoped_context_for_request(
      Some(scoped)
  }
  
@@ -1383,7 +1528,7 @@ index 9725ef0e..b85f75a0 100644
      ctx: &L7EvalContext,
  ) -> Option<crate::l7::rest::CredentialGenerationGuard<'_>> {
      Some(
-@@ -252,7 +252,7 @@ pub(crate) async fn prepare_inspected_request(
+@@ -270,7 +270,7 @@ pub(crate) async fn prepare_inspected_request(
      Ok((req, scoped, injected))
  }
  
@@ -1392,17 +1537,8 @@ index 9725ef0e..b85f75a0 100644
      request: &crate::l7::provider::L7Request,
      ctx: &L7EvalContext,
  ) -> bool {
-@@ -2128,7 +2128,7 @@ where
-     }
- }
- 
--fn select_l7_config_for_path<'a>(
-+pub(crate) fn select_l7_config_for_path<'a>(
-     configs: &'a [L7EndpointConfig],
-     path: &str,
- ) -> Option<&'a L7EndpointConfig> {
-@@ -2138,7 +2138,7 @@ fn select_l7_config_for_path<'a>(
-         .max_by_key(|config| config.path_specificity())
+@@ -2258,7 +2258,7 @@ pub(crate) fn select_l7_config_for_path<'a>(
+     openshell_core::endpoint_path::select_most_specific(configs, path, |config| &config.path)
  }
  
 -fn emit_l7_request_log(
@@ -1410,21 +1546,8 @@ index 9725ef0e..b85f75a0 100644
      ctx: &L7EvalContext,
      action: &str,
      redacted_target: &str,
-@@ -4490,7 +4490,11 @@ where
-         let mut live_body = None;
-         let req = if let Some((engine, selection)) = middleware_engine.zip(middleware_selection) {
-             let (chain, generation) = selection.map_err(&capture_error)?;
--            if generation != generation_guard.captured_generation() {
-+            // A reload since the last check may readmit this relay to `generation`.
-+            if generation != generation_guard.captured_generation()
-+                && (generation_guard.is_stale()
-+                    || generation != generation_guard.captured_generation())
-+            {
-                 return Ok(());
-             }
-             let runner = engine.middleware_runner().map_err(&capture_error)?;
 diff --git a/crates/openshell-supervisor-network/src/l7/rest.rs b/crates/openshell-supervisor-network/src/l7/rest.rs
-index caec858e..0d067b9c 100644
+index af73e7bdc..3a6a0dc8d 100644
 --- a/crates/openshell-supervisor-network/src/l7/rest.rs
 +++ b/crates/openshell-supervisor-network/src/l7/rest.rs
 @@ -346,6 +346,16 @@ async fn parse_http_request_with_receipt_protection<C: AsyncRead + Unpin>(
@@ -1445,7 +1568,7 @@ index caec858e..0d067b9c 100644
  ///
  /// The forward proxy needs this after it has consumed the incoming HTTP/1
 diff --git a/crates/openshell-supervisor-network/src/l7/tls.rs b/crates/openshell-supervisor-network/src/l7/tls.rs
-index df2b5c67..a7bdf7f0 100644
+index df2b5c678..a7bdf7f0c 100644
 --- a/crates/openshell-supervisor-network/src/l7/tls.rs
 +++ b/crates/openshell-supervisor-network/src/l7/tls.rs
 @@ -209,19 +209,33 @@ impl CertCache {
@@ -1546,10 +1669,20 @@ index df2b5c67..a7bdf7f0 100644
  
  /// Accept TLS from a sandbox client, presenting a dynamic cert for the hostname.
 diff --git a/crates/openshell-supervisor-network/src/opa.rs b/crates/openshell-supervisor-network/src/opa.rs
-index 5e176e13..b4b4944a 100644
+index ef39ccb78..c0150834a 100644
 --- a/crates/openshell-supervisor-network/src/opa.rs
 +++ b/crates/openshell-supervisor-network/src/opa.rs
-@@ -30,7 +30,7 @@ use std::sync::{
+@@ -16,7 +16,8 @@ use crate::policy_data::{
+     endpoint_policy_value, normalize_endpoint_protocols, normalize_l7_policy_rule_aliases,
+ };
+ use crate::policy_types::{
+-    EndpointConfig, MiddlewareConfig, MiddlewareEndpointSelector, generation_guard_for,
++    EndpointConfig, MiddlewareConfig, MiddlewareEndpointSelector, RelayReadmission,
++    generation_guard_for,
+ };
+ use crate::policy_validation::{
+     redacted_policy_violation_category, render_bounded_validation_diagnostics,
+@@ -41,7 +42,7 @@ use std::sync::{
      atomic::{AtomicU64, Ordering},
  };
  use tokio::sync::watch;
@@ -1558,15 +1691,7 @@ index 5e176e13..b4b4944a 100644
  
  mod raw_schema;
  
-@@ -115,6 +115,7 @@ pub struct EgressAuthorization {
- }
- 
- /// Input for a network access policy evaluation.
-+#[derive(Debug, Clone)]
- pub struct NetworkInput {
-     pub host: String,
-     pub port: u16,
-@@ -180,6 +181,8 @@ pub struct OpaEngine {
+@@ -170,6 +171,8 @@ pub struct OpaEngine {
      binary_identity_required: bool,
      generation: Arc<AtomicU64>,
      middleware_runner: RwLock<ChainRunner>,
@@ -1575,49 +1700,8 @@ index 5e176e13..b4b4944a 100644
      websocket_assembly_budget: crate::l7::websocket::WebSocketAssemblyBudget,
      generation_tx: watch::Sender<u64>,
      fail_closed_reason: RwLock<Option<String>>,
-@@ -204,24 +207,37 @@ pub(crate) fn test_opa_query_count() -> u64 {
- }
- 
- /// Generation guard captured when an HTTP tunnel or request path starts.
-+///
-+/// Clones share the captured generation, so a relay readmitted to a newer
-+/// generation through one clone is current through all of them.
- #[derive(Clone, Debug)]
- pub struct PolicyGenerationGuard {
--    captured_generation: u64,
-+    captured_generation: Arc<AtomicU64>,
-     current_generation: Arc<AtomicU64>,
-     generation_rx: watch::Receiver<u64>,
-+    readmission: Option<Arc<RelayReadmission>>,
- }
- 
- impl PolicyGenerationGuard {
-     pub fn captured_generation(&self) -> u64 {
--        self.captured_generation
-+        self.captured_generation.load(Ordering::Acquire)
-     }
- 
-     pub fn current_generation(&self) -> u64 {
-         self.current_generation.load(Ordering::Acquire)
-     }
- 
-+    /// Whether the captured generation no longer applies.
-+    ///
-+    /// A guard pinned for an established relay first tries to readmit the
-+    /// relay to the current generation; see [`OpaEngine::relay_generation_guard`].
-     pub fn is_stale(&self) -> bool {
--        self.current_generation() != self.captured_generation
-+        if self.current_generation() == self.captured_generation() {
-+            return false;
-+        }
-+        self.readmission
-+            .as_ref()
-+            .is_none_or(|readmission| !readmission.readmit(&self.captured_generation))
-     }
- 
-     pub fn ensure_current(&self) -> Result<()> {
-@@ -249,10 +265,163 @@ impl PolicyGenerationGuard {
-     }
+@@ -193,13 +196,167 @@ pub(crate) fn test_opa_query_count() -> u64 {
+     TEST_OPA_QUERY_COUNT.load(Ordering::SeqCst)
  }
  
 +/// Connection-level policy result for one relay identity.
@@ -1709,7 +1793,7 @@ index 5e176e13..b4b4944a 100644
 +
 +/// State that lets an established relay follow a policy reload that does not
 +/// change its admission.
-+struct RelayReadmission {
++struct OpaRelayReadmission {
 +    policy: Arc<OpaEngine>,
 +    input: NetworkInput,
 +    admission: RelayAdmission,
@@ -1719,16 +1803,16 @@ index 5e176e13..b4b4944a 100644
 +    revoked: Mutex<bool>,
 +}
 +
-+impl std::fmt::Debug for RelayReadmission {
++impl std::fmt::Debug for OpaRelayReadmission {
 +    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-+        f.debug_struct("RelayReadmission")
++        f.debug_struct("OpaRelayReadmission")
 +            .field("host", &self.input.host)
 +            .field("port", &self.input.port)
 +            .finish_non_exhaustive()
 +    }
 +}
 +
-+impl RelayReadmission {
++impl RelayReadmission for OpaRelayReadmission {
 +    fn readmit(&self, captured_generation: &AtomicU64) -> bool {
 +        // Serialize readmission so the evaluator and the captured generation
 +        // always move together.
@@ -1773,15 +1857,20 @@ index 5e176e13..b4b4944a 100644
 +    }
 +}
 +
- /// Per-tunnel L7 policy evaluator bound to the engine generation captured when
- /// the tunnel was established.
- pub struct TunnelPolicyEngine {
+ /// The Rego evaluator of a YAML sandbox's per-tunnel policy engine.
+ ///
+ /// Holds a clone of the engine's compiled policy, so a tunnel evaluates
+ /// without contending for the engine lock. The owning
+-/// [`TunnelPolicyEngine`] checks staleness before calling it.
++/// [`TunnelPolicyEngine`] checks staleness before calling it. A readmitted
++/// relay's evaluator is replaced with the new generation's.
+ pub(crate) struct RegoTunnelEvaluator {
 -    engine: Mutex<regorus::Engine>,
 +    engine: Arc<Mutex<regorus::Engine>>,
-     generation_guard: PolicyGenerationGuard,
-     middleware_runner: ChainRunner,
-     websocket_assembly_budget: crate::l7::websocket::WebSocketAssemblyBudget,
-@@ -314,6 +483,7 @@ impl OpaEngine {
+ }
+ 
+ impl RegoTunnelEvaluator {
+@@ -305,6 +462,7 @@ impl OpaEngine {
              binary_identity_required,
              generation,
              middleware_runner: RwLock::new(ChainRunner::default()),
@@ -1789,7 +1878,7 @@ index 5e176e13..b4b4944a 100644
              websocket_assembly_budget: crate::l7::websocket::WebSocketAssemblyBudget::default(),
              generation_tx,
              fail_closed_reason: RwLock::new(None),
-@@ -810,6 +980,7 @@ impl OpaEngine {
+@@ -807,6 +965,7 @@ impl OpaEngine {
          *engine = new_engine;
          if let Some(new_runner) = new_runner {
              *runner = new_runner;
@@ -1797,7 +1886,7 @@ index 5e176e13..b4b4944a 100644
          }
          *fail_closed_reason = None;
          self.generation_guard(generation)
-@@ -904,6 +1075,7 @@ impl OpaEngine {
+@@ -900,6 +1059,7 @@ impl OpaEngine {
              .write()
              .map_err(|_| miette::miette!("middleware runner lock poisoned"))?;
          *runner = runner.with_replacement_registry(registry);
@@ -1805,28 +1894,10 @@ index 5e176e13..b4b4944a 100644
          self.advance_generation();
          Ok(())
      }
-@@ -934,13 +1106,157 @@ impl OpaEngine {
-                 "policy changed before HTTP relay started [expected_generation:{expected_generation} current_generation:{generation}]"
-             ));
-         }
--        Ok(PolicyGenerationGuard {
--            captured_generation: generation,
-+        Ok(self.guard_for(generation, None))
-+    }
-+
-+    fn guard_for(
-+        &self,
-+        generation: u64,
-+        readmission: Option<RelayReadmission>,
-+    ) -> PolicyGenerationGuard {
-+        PolicyGenerationGuard {
-+            captured_generation: Arc::new(AtomicU64::new(generation)),
-             current_generation: Arc::clone(&self.generation),
-             generation_rx: self.generation_tx.subscribe(),
-+            readmission: readmission.map(Arc::new),
-+        }
-+    }
-+
+@@ -932,6 +1092,152 @@ impl OpaEngine {
+         )
+     }
+ 
 +    /// Return a guard for an established relay admitted by `input` in
 +    /// `expected_generation`.
 +    ///
@@ -1845,13 +1916,16 @@ index 5e176e13..b4b4944a 100644
 +            .lock()
 +            .map_err(|_| miette::miette!("OPA engine lock poisoned"))?;
 +        let generation = self.current_generation();
-+        if generation != expected_generation {
-+            return Err(miette::miette!(
-+                "policy changed before relay started [expected_generation:{expected_generation} current_generation:{generation}]"
-+            ));
-+        }
-+        let readmission = self.relay_readmission_locked(&mut engine, input, None)?;
-+        Ok(self.guard_for(generation, readmission))
++        let guard = generation_guard_for(
++            expected_generation,
++            generation,
++            &self.generation,
++            &self.generation_tx,
++        )?;
++        Ok(with_readmission(
++            guard,
++            self.relay_readmission_locked(&mut engine, input, None)?,
++        ))
 +    }
 +
 +    /// Clone an L7 evaluator for an established relay admitted by `input`.
@@ -1877,23 +1951,31 @@ index 5e176e13..b4b4944a 100644
 +        let tunnel_engine = Arc::new(Mutex::new(engine.clone()));
 +        let readmission =
 +            self.relay_readmission_locked(&mut engine, input, Some(Arc::clone(&tunnel_engine)))?;
-+        Ok(TunnelPolicyEngine {
-+            engine: tunnel_engine,
-+            generation_guard: self.guard_for(generation, readmission),
-+            middleware_runner: self.middleware_runner()?,
-+            websocket_assembly_budget: self.websocket_assembly_budget(),
-         })
-     }
- 
++        let guard = generation_guard_for(
++            expected_generation,
++            generation,
++            &self.generation,
++            &self.generation_tx,
++        )?;
++        Ok(TunnelPolicyEngine::new(
++            with_readmission(guard, readmission),
++            self.middleware_runner()?,
++            self.websocket_assembly_budget(),
++            RegoTunnelEvaluator {
++                engine: tunnel_engine,
++            },
++        ))
++    }
++
 +    fn relay_readmission_locked(
 +        self: &Arc<Self>,
 +        engine: &mut regorus::Engine,
 +        input: NetworkInput,
 +        tunnel_engine: Option<Arc<Mutex<regorus::Engine>>>,
-+    ) -> Result<Option<RelayReadmission>> {
++    ) -> Result<Option<OpaRelayReadmission>> {
 +        Ok(self
 +            .relay_admission_locked(engine, &input)?
-+            .map(|admission| RelayReadmission {
++            .map(|admission| OpaRelayReadmission {
 +                policy: Arc::clone(self),
 +                input,
 +                admission,
@@ -1917,7 +1999,7 @@ index 5e176e13..b4b4944a 100644
 +        {
 +            return Ok(None);
 +        }
-+        set_regorus_input(engine, network_input_json(input))?;
++        engine.set_input(regorus_input(network_input_json(input))?);
 +        let authorization = engine
 +            .eval_rule("data.openshell.sandbox.egress_authorization".into())
 +            .map_err(|e| miette::miette!("{e}"))?;
@@ -1965,32 +2047,75 @@ index 5e176e13..b4b4944a 100644
      /// Query static sandbox configuration from the OPA data module.
      ///
      /// Extracts `filesystem_policy`, `landlock`, and `process` from the Rego
-@@ -1129,12 +1445,8 @@ impl OpaEngine {
-             ));
-         }
-         Ok(TunnelPolicyEngine {
--            engine: Mutex::new(engine.clone()),
--            generation_guard: PolicyGenerationGuard {
--                captured_generation: generation,
--                current_generation: Arc::clone(&self.generation),
--                generation_rx: self.generation_tx.subscribe(),
--            },
-+            engine: Arc::new(Mutex::new(engine.clone())),
-+            generation_guard: self.guard_for(generation, None),
-             middleware_runner: self.middleware_runner()?,
-             websocket_assembly_budget: self.websocket_assembly_budget(),
-         })
+@@ -1159,12 +1465,22 @@ impl OpaEngine {
+             self.middleware_runner()?,
+             self.websocket_assembly_budget(),
+             RegoTunnelEvaluator {
+-                engine: Mutex::new(engine.clone()),
++                engine: Arc::new(Mutex::new(engine.clone())),
+             },
+         ))
+     }
+ }
+ 
++fn with_readmission(
++    guard: PolicyGenerationGuard,
++    readmission: Option<OpaRelayReadmission>,
++) -> PolicyGenerationGuard {
++    match readmission {
++        Some(readmission) => guard.with_readmission(Arc::new(readmission)),
++        None => guard,
++    }
++}
++
+ /// Convert a `regorus::Value` to a string, handling various types.
+ fn value_to_string(val: &regorus::Value) -> String {
+     match val {
+diff --git a/crates/openshell-supervisor-network/src/policy_engine.rs b/crates/openshell-supervisor-network/src/policy_engine.rs
+index e125d757a..19aece8f4 100644
+--- a/crates/openshell-supervisor-network/src/policy_engine.rs
++++ b/crates/openshell-supervisor-network/src/policy_engine.rs
+@@ -3,6 +3,8 @@
+ 
+ //! YAML runtime adapter. Backend selection belongs to supervisor composition.
+ 
++use std::sync::Arc;
++
+ use miette::Result;
+ use openshell_core::proto::SandboxPolicy;
+ use openshell_policy_runtime_interface::{
+@@ -105,6 +107,20 @@ impl PolicyBackend for OpaEngine {
+     fn tunnel_engine(&self, expected: u64) -> Result<TunnelPolicyEngine> {
+         self.clone_engine_for_tunnel(expected)
+     }
++    fn relay_generation_guard(
++        self: Arc<Self>,
++        expected: u64,
++        input: NetworkInput,
++    ) -> Result<PolicyGenerationGuard> {
++        OpaEngine::relay_generation_guard(&self, expected, input)
++    }
++    fn relay_tunnel_engine(
++        self: Arc<Self>,
++        expected: u64,
++        input: NetworkInput,
++    ) -> Result<TunnelPolicyEngine> {
++        self.clone_engine_for_relay(expected, input)
++    }
+     fn effective_filesystem(
+         &self,
+         policy: &SandboxPolicy,
 diff --git a/crates/openshell-supervisor-network/src/proxy.rs b/crates/openshell-supervisor-network/src/proxy.rs
-index be255a42..a16d09fb 100644
+index 6b353dafc..26a2a8846 100644
 --- a/crates/openshell-supervisor-network/src/proxy.rs
 +++ b/crates/openshell-supervisor-network/src/proxy.rs
-@@ -3305,18 +3305,26 @@ async fn handle_mediated_connection(
+@@ -3526,18 +3526,26 @@ async fn handle_mediated_connection(
              // Complete the client handshake before observing the upstream
              // connection. A malformed client handshake provides no evidence
              // of an endpoint network failure.
 -            let mut tls_client =
 -                match crate::l7::tls::tls_terminate_client(client, tls, &host_lc).await {
-+            let offer_h2 = relay::offer_h2(l7_route, &opa_engine, &ctx);
++            let offer_h2 = relay::offer_h2(l7_route, &network_engine, &ctx);
 +            let (mut tls_client, client_h2) =
 +                match crate::l7::tls::tls_terminate_client_alpn(client, tls, &host_lc, offer_h2)
 +                    .await
@@ -2015,7 +2140,7 @@ index be255a42..a16d09fb 100644
              )
              .await
              {
-@@ -3343,6 +3351,14 @@ async fn handle_mediated_connection(
+@@ -3564,6 +3572,14 @@ async fn handle_mediated_connection(
                      return Ok(());
                  };
  
@@ -2031,22 +2156,20 @@ index be255a42..a16d09fb 100644
              };
              if let Err(e) = Box::pin(tls_result).await {
 diff --git a/crates/openshell-supervisor-network/src/proxy/relay.rs b/crates/openshell-supervisor-network/src/proxy/relay.rs
-index e53e546d..08162283 100644
+index a74a5230c..b43b64141 100644
 --- a/crates/openshell-supervisor-network/src/proxy/relay.rs
 +++ b/crates/openshell-supervisor-network/src/proxy/relay.rs
-@@ -5,7 +5,9 @@
- 
+@@ -6,7 +6,7 @@
  use super::{EgressDecision, L7RouteSnapshot, emit_l7_tunnel_close_after_policy_change};
  use crate::l7::relay::L7EvalContext;
--use crate::opa::{NetworkAction, OpaEngine, PolicyGenerationGuard, TunnelPolicyEngine};
-+use crate::opa::{
-+    NetworkAction, NetworkInput, OpaEngine, PolicyGenerationGuard, TunnelPolicyEngine,
-+};
+ use crate::policy_engine::{PassthroughMiddleware, PolicyEngine, TunnelPolicyEngine};
+-use crate::policy_types::{NetworkAction, PolicyGenerationGuard};
++use crate::policy_types::{NetworkAction, NetworkInput, PolicyGenerationGuard};
  use miette::{IntoDiagnostic, Result};
  use openshell_core::activity::ActivitySender;
  use openshell_core::endpoint_status::EndpointObservationSender;
-@@ -120,6 +122,21 @@ pub(super) fn pin_l7_evaluator(
-     opa_engine.clone_engine_for_tunnel(expected_generation)
+@@ -128,6 +128,21 @@ pub(super) fn pin_l7_evaluator(
+     network_engine.tunnel_engine(expected_generation)
  }
  
 +/// Reconstruct the policy input that authorized `decision`.
@@ -2067,7 +2190,7 @@ index e53e546d..08162283 100644
  pub(super) fn validate_route_generation(
      route: Option<&L7RouteSnapshot>,
      expected_generation: u64,
-@@ -142,9 +159,13 @@ pub(super) fn validate_route_generation(
+@@ -150,6 +165,10 @@ pub(super) fn validate_route_generation(
  /// A stale generation preserves the established CONNECT behavior: emit the
  /// policy-change close event and let the adapter close the live tunnel without
  /// attempting to write an HTTP response into it.
@@ -2077,35 +2200,52 @@ index e53e546d..08162283 100644
 +/// are evaluated against the new policy.
  pub(super) fn prepare_http_relay<'a>(
      route: Option<&L7RouteSnapshot>,
--    opa_engine: &'a OpaEngine,
-+    opa_engine: &'a Arc<OpaEngine>,
-     decision: &EgressDecision,
-     request: &'a L7EvalContext,
- ) -> Option<RelayContext<'a>> {
-@@ -158,7 +179,9 @@ pub(super) fn prepare_http_relay<'a>(
+     network_engine: &'a PolicyEngine,
+@@ -166,7 +185,9 @@ pub(super) fn prepare_http_relay<'a>(
      }
  
      let policy = if let Some(route) = route.filter(|route| !route.configs.is_empty()) {
--        let evaluator = match pin_l7_evaluator(opa_engine, decision.policy_generation) {
-+        let evaluator = match opa_engine
-+            .clone_engine_for_relay(decision.policy_generation, relay_policy_input(decision))
+-        let evaluator = match pin_l7_evaluator(network_engine, decision.policy_generation) {
++        let evaluator = match network_engine
++            .relay_tunnel_engine(decision.policy_generation, relay_policy_input(decision))
 +        {
              Ok(evaluator) => evaluator,
              Err(error) => {
                  emit_l7_tunnel_close_after_policy_change(
-@@ -179,7 +202,9 @@ pub(super) fn prepare_http_relay<'a>(
+@@ -187,18 +208,19 @@ pub(super) fn prepare_http_relay<'a>(
              evaluator: Box::new(evaluator),
          }
      } else {
--        let generation_guard = match pin_policy_generation(opa_engine, decision.policy_generation) {
-+        let generation_guard = match opa_engine
+-        let generation_guard =
+-            match pin_policy_generation(network_engine, decision.policy_generation) {
+-                Ok(guard) => guard,
+-                Err(error) => {
+-                    emit_l7_tunnel_close_after_policy_change(
+-                        &decision.intent.destination.host,
+-                        decision.intent.destination.port,
+-                        error,
+-                    );
+-                    return None;
+-                }
+-            };
++        let generation_guard = match network_engine
 +            .relay_generation_guard(decision.policy_generation, relay_policy_input(decision))
 +        {
-             Ok(guard) => guard,
++            Ok(guard) => guard,
++            Err(error) => {
++                emit_l7_tunnel_close_after_policy_change(
++                    &decision.intent.destination.host,
++                    decision.intent.destination.port,
++                    error,
++                );
++                return None;
++            }
++        };
+         let middleware = match network_engine.passthrough_middleware() {
+             Ok(middleware) => middleware,
              Err(error) => {
-                 emit_l7_tunnel_close_after_policy_change(
-@@ -200,12 +225,12 @@ pub(super) fn prepare_http_relay<'a>(
-     })
+@@ -219,9 +241,9 @@ pub(super) fn prepare_http_relay<'a>(
+     Some(RelayContext { request, policy })
  }
  
 -/// Pin the generation used by a raw relay so policy activation or quarantine
@@ -2116,30 +2256,26 @@ index e53e546d..08162283 100644
 +/// otherwise have no request boundary at which to notice a stale decision.
  pub(super) fn prepare_raw_relay(
      route: Option<&L7RouteSnapshot>,
--    opa_engine: &OpaEngine,
-+    opa_engine: &Arc<OpaEngine>,
-     decision: &EgressDecision,
- ) -> Option<PolicyGenerationGuard> {
-     if let Err(error) = validate_route_generation(route, decision.policy_generation) {
-@@ -217,7 +242,9 @@ pub(super) fn prepare_raw_relay(
+     network_engine: &PolicyEngine,
+@@ -236,7 +258,9 @@ pub(super) fn prepare_raw_relay(
          return None;
      }
  
--    match pin_policy_generation(opa_engine, decision.policy_generation) {
-+    match opa_engine
+-    match pin_policy_generation(network_engine, decision.policy_generation) {
++    match network_engine
 +        .relay_generation_guard(decision.policy_generation, relay_policy_input(decision))
 +    {
          Ok(guard) => Some(guard),
          Err(error) => {
              emit_l7_tunnel_close_after_policy_change(
-@@ -308,6 +335,60 @@ async fn close_stale_http_relay(request: &L7EvalContext, guard: &PolicyGeneratio
+@@ -330,6 +354,60 @@ async fn close_stale_http_relay(request: &L7EvalContext, guard: &PolicyGeneratio
      emit_stale_relay_close(request, guard);
  }
  
 +/// Whether to offer `h2` to the sandbox client (`l7::http2::should_offer_h2`).
 +pub(super) fn offer_h2(
 +    route: Option<&L7RouteSnapshot>,
-+    opa_engine: &OpaEngine,
++    network_engine: &PolicyEngine,
 +    request: &L7EvalContext,
 +) -> bool {
 +    let Some(route) = route else {
@@ -2150,7 +2286,7 @@ index e53e546d..08162283 100644
 +        request,
 +        route.configs.iter().map(|snapshot| &snapshot.config),
 +        || {
-+            opa_engine
++            network_engine
 +                .query_middleware_chain_with_generation(
 +                    &crate::l7::middleware::middleware_network_input(request),
 +                )
@@ -2193,61 +2329,7 @@ index e53e546d..08162283 100644
  // Exercise the production single/multiple-route dispatch from L7 fixtures.
  #[cfg(test)]
  pub async fn relay_inspected_http_stream_for_test<C, U>(
-@@ -425,7 +506,7 @@ mod tests {
-         use tokio::io::{AsyncReadExt, AsyncWriteExt};
- 
-         let (mut upstream, mut server) = tokio::io::duplex(1024);
--        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-+        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
-         let decision = decision(engine.current_generation());
-         let request = request_context();
-         let context = prepare_http_relay(None, &engine, &decision, &request).unwrap();
-@@ -514,7 +595,7 @@ mod tests {
- 
-     #[test]
-     fn relay_without_route_pins_l4_decision_generation() {
--        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-+        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
-         let decision = decision(engine.current_generation());
-         let request = request_context();
- 
-@@ -532,7 +613,7 @@ mod tests {
- 
-     #[test]
-     fn empty_hydrated_route_cannot_replace_stale_l4_generation() {
--        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-+        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
-         let decision = decision(u64::MAX);
-         let route = L7RouteSnapshot {
-             configs: vec![],
-@@ -548,7 +629,7 @@ mod tests {
- 
-     #[test]
-     fn inspected_route_cannot_replace_stale_l4_generation() {
--        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-+        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
-         let decision = decision(u64::MAX);
-         let route = L7RouteSnapshot {
-             configs: vec![super::super::L7ConfigSnapshot {
-@@ -586,7 +667,7 @@ mod tests {
- 
-     #[test]
-     fn raw_route_cannot_replace_stale_l4_generation() {
--        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-+        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
-         let decision = decision(u64::MAX);
-         let route = L7RouteSnapshot {
-             configs: vec![],
-@@ -601,7 +682,7 @@ mod tests {
- 
-     #[test]
-     fn stale_generation_fails_before_relay_context_is_created() {
--        let engine = OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-+        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
-         let decision = decision(engine.current_generation());
-         let request = request_context();
-         engine.reload(POLICY_REGO, EMPTY_POLICY_DATA).unwrap();
-@@ -612,6 +693,304 @@ mod tests {
+@@ -647,6 +725,310 @@ mod tests {
          );
      }
  
@@ -2309,10 +2391,12 @@ index e53e546d..08162283 100644
 +            intent: EgressIntent::connect("example.com".to_string(), 80),
 +            action: authorization.action.clone(),
 +            policy_generation: authorization.generation,
++            engine: "opa",
 +            identity: ProcessIdentityEvidence::Available,
 +            endpoint: EndpointDecision::from_authorization(&authorization),
 +            binary: Some(input.binary_path),
 +            binary_pid: None,
++            process: None,
 +            ancestors: vec![],
 +            cmdline_paths: vec![],
 +        };
@@ -2351,6 +2435,7 @@ index e53e546d..08162283 100644
 +        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 +
 +        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, initial).unwrap());
++        let policy = PolicyEngine::from(Arc::clone(&engine));
 +        let decision = authorized_decision(&engine);
 +        let mut request = http_context(
 +            &decision,
@@ -2368,7 +2453,7 @@ index e53e546d..08162283 100644
 +        let (mut upstream, mut server) = tokio::io::duplex(4096);
 +        let context = prepare_http_relay(
 +            decision.endpoint.l7_route.as_ref(),
-+            &engine,
++            &policy,
 +            &decision,
 +            &request,
 +        )
@@ -2514,8 +2599,9 @@ index e53e546d..08162283 100644
 +    #[test]
 +    fn relay_guard_follows_reloads_until_admission_changes() {
 +        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, STREAM_ENDPOINT).unwrap());
++        let policy = PolicyEngine::from(Arc::clone(&engine));
 +        let decision = authorized_decision(&engine);
-+        let guard = prepare_raw_relay(None, &engine, &decision).unwrap();
++        let guard = prepare_raw_relay(None, &policy, &decision).unwrap();
 +        let observer = guard.clone();
 +
 +        let unrelated = format!("{STREAM_ENDPOINT}{UNRELATED_POLICY}");
@@ -2537,14 +2623,16 @@ index e53e546d..08162283 100644
 +    #[test]
 +    fn relay_guard_closes_on_endpoint_change_and_quarantine() {
 +        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, STREAM_ENDPOINT).unwrap());
++        let policy = PolicyEngine::from(Arc::clone(&engine));
 +        let decision = authorized_decision(&engine);
-+        let guard = prepare_raw_relay(None, &engine, &decision).unwrap();
++        let guard = prepare_raw_relay(None, &policy, &decision).unwrap();
 +        engine.reload(POLICY_REGO, STREAM_REST_ENDPOINT).unwrap();
 +        assert!(guard.is_stale(), "a changed endpoint configuration closes");
 +
 +        let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, STREAM_ENDPOINT).unwrap());
++        let policy = PolicyEngine::from(Arc::clone(&engine));
 +        let decision = authorized_decision(&engine);
-+        let guard = prepare_raw_relay(None, &engine, &decision).unwrap();
++        let guard = prepare_raw_relay(None, &policy, &decision).unwrap();
 +        engine.enter_fail_closed("invalid candidate").unwrap();
 +        assert!(guard.is_stale(), "fail-closed quarantine closes");
 +    }
@@ -2553,7 +2641,7 @@ index e53e546d..08162283 100644
      async fn raw_relay_closes_immediately_when_fail_closed_generation_is_published() {
          let engine = Arc::new(OpaEngine::from_strings(POLICY_REGO, EMPTY_POLICY_DATA).unwrap());
 diff --git a/docs/how-it-works/policies/advisor.mdx b/docs/how-it-works/policies/advisor.mdx
-index c77e2a77..5b662586 100644
+index bc931df95..49851670f 100644
 --- a/docs/how-it-works/policies/advisor.mdx
 +++ b/docs/how-it-works/policies/advisor.mdx
 @@ -292,8 +292,8 @@ The agent uses these endpoints at `http://policy.local`:
@@ -2568,10 +2656,10 @@ index c77e2a77..5b662586 100644
  When the policy advisor is disabled, every route returns `404 feature_disabled`,
  new sandboxes do not receive the guide, and denial responses do not mention
 diff --git a/docs/how-it-works/policies/manage-policies.mdx b/docs/how-it-works/policies/manage-policies.mdx
-index e24cf05f..be55d530 100644
+index dc0260be8..bb2f1a260 100644
 --- a/docs/how-it-works/policies/manage-policies.mdx
 +++ b/docs/how-it-works/policies/manage-policies.mdx
-@@ -188,16 +188,20 @@ running sandbox. The startup sections do not:
+@@ -203,16 +203,20 @@ running sandbox. The startup sections do not:
  
  | Change | Effect on a running sandbox | Required action |
  |---|---|---|
@@ -2597,7 +2685,7 @@ index e24cf05f..be55d530 100644
  
  OpenShell validates every change twice before it takes effect:
  
-@@ -207,7 +211,7 @@ flowchart TD
+@@ -222,7 +226,7 @@ flowchart TD
      B -->|Invalid| C["Change rejected<br/>Current policy stays active"]
      B -->|Valid| D["Gateway saves a new revision"]
      D --> E{"Sandbox validates<br/>and loads the revision"}
@@ -2607,10 +2695,10 @@ index e24cf05f..be55d530 100644
  ```
  
 diff --git a/docs/how-it-works/policies/network-rules.mdx b/docs/how-it-works/policies/network-rules.mdx
-index 119818a3..69f348df 100644
+index 95d163d57..0d4754505 100644
 --- a/docs/how-it-works/policies/network-rules.mdx
 +++ b/docs/how-it-works/policies/network-rules.mdx
-@@ -456,8 +456,8 @@ Set `allow_uninspected_credentials: true` to relay binary frames anyway. Set
+@@ -477,8 +477,8 @@ Set `allow_uninspected_credentials: true` to relay binary frames anyway. Set
  placeholders that must be resolved. This explicitly authorizes WebSocket text
  rewriting for ordinary static credentials, including credentials with HTTP placement metadata.
  
@@ -2623,7 +2711,7 @@ index 119818a3..69f348df 100644
  ### Allow GraphQL Operations
 diff --git a/verification/h2/Bug_forward_before_admit.cfg b/verification/h2/Bug_forward_before_admit.cfg
 new file mode 100644
-index 00000000..5ab98e1e
+index 000000000..5ab98e1e4
 --- /dev/null
 +++ b/verification/h2/Bug_forward_before_admit.cfg
 @@ -0,0 +1,12 @@
@@ -2641,7 +2729,7 @@ index 00000000..5ab98e1e
 +  NoCrossStream
 diff --git a/verification/h2/Bug_no_body_scan.cfg b/verification/h2/Bug_no_body_scan.cfg
 new file mode 100644
-index 00000000..a56ab1bd
+index 000000000..a56ab1bdd
 --- /dev/null
 +++ b/verification/h2/Bug_no_body_scan.cfg
 @@ -0,0 +1,12 @@
@@ -2659,7 +2747,7 @@ index 00000000..a56ab1bd
 +  NoCrossStream
 diff --git a/verification/h2/Bug_skip_fail_closed.cfg b/verification/h2/Bug_skip_fail_closed.cfg
 new file mode 100644
-index 00000000..bb8586d1
+index 000000000..bb8586d16
 --- /dev/null
 +++ b/verification/h2/Bug_skip_fail_closed.cfg
 @@ -0,0 +1,12 @@
@@ -2677,7 +2765,7 @@ index 00000000..bb8586d1
 +  NoCrossStream
 diff --git a/verification/h2/Bug_swap_map.cfg b/verification/h2/Bug_swap_map.cfg
 new file mode 100644
-index 00000000..fb014684
+index 000000000..fb0146848
 --- /dev/null
 +++ b/verification/h2/Bug_swap_map.cfg
 @@ -0,0 +1,12 @@
@@ -2695,7 +2783,7 @@ index 00000000..fb014684
 +  NoCrossStream
 diff --git a/verification/h2/H2Relay.tla b/verification/h2/H2Relay.tla
 new file mode 100644
-index 00000000..5d5f2f16
+index 000000000..5d5f2f166
 --- /dev/null
 +++ b/verification/h2/H2Relay.tla
 @@ -0,0 +1,338 @@
@@ -3039,7 +3127,7 @@ index 00000000..5d5f2f16
 +=============================================================================
 diff --git a/verification/h2/Liveness1.cfg b/verification/h2/Liveness1.cfg
 new file mode 100644
-index 00000000..e0c66ab8
+index 000000000..e0c66ab89
 --- /dev/null
 +++ b/verification/h2/Liveness1.cfg
 @@ -0,0 +1,17 @@
@@ -3062,7 +3150,7 @@ index 00000000..e0c66ab8
 +  HandlersFinish
 diff --git a/verification/h2/Liveness2.cfg b/verification/h2/Liveness2.cfg
 new file mode 100644
-index 00000000..3591684a
+index 000000000..3591684a4
 --- /dev/null
 +++ b/verification/h2/Liveness2.cfg
 @@ -0,0 +1,11 @@
@@ -3079,7 +3167,7 @@ index 00000000..3591684a
 +  HandlersFinish
 diff --git a/verification/h2/Safety.cfg b/verification/h2/Safety.cfg
 new file mode 100644
-index 00000000..ddab0e77
+index 000000000..ddab0e77c
 --- /dev/null
 +++ b/verification/h2/Safety.cfg
 @@ -0,0 +1,15 @@
@@ -3100,7 +3188,7 @@ index 00000000..ddab0e77
 +  RefusalIsLocal
 diff --git a/verification/h2/run.sh b/verification/h2/run.sh
 new file mode 100755
-index 00000000..abce2ae0
+index 000000000..abce2ae0b
 --- /dev/null
 +++ b/verification/h2/run.sh
 @@ -0,0 +1,12 @@

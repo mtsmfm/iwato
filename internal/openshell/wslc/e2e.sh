@@ -23,7 +23,7 @@ set -u
 # background closes the lock (9>&-), so a leftover cannot hold it.
 exec 9>/tmp/iwato-e2e.lock
 flock 9
-VERSION=${VERSION:-0.1.9}
+VERSION=${VERSION:-0.1.10}
 TAG=v$VERSION
 [ "$VERSION" = dev ] && TAG=dev
 MODE=${MODE:-plain}
@@ -75,7 +75,7 @@ trap 'exit 130' INT TERM
 mkdir -p "$CACHE"
 for f in openshell-gateway-x86_64-unknown-linux-gnu openshell-x86_64-unknown-linux-musl openshell-sandbox-x86_64-unknown-linux-musl openshell-supervisor-x86_64-unknown-linux-gnu; do
   [ "$VERSION" = dev ] && rm -f "$CACHE/$f.tar.gz"
-  [ -f "$CACHE/$f.tar.gz" ] || curl -fsSL -o "$CACHE/$f.tar.gz" "https://github.com/NVIDIA/OpenShell/releases/download/$TAG/$f.tar.gz" || exit 1
+  [ -f "$CACHE/$f.tar.gz" ] || curl -fsSL -o "$CACHE/$f.tar.gz" "https://github.com/ai-openshell/openshell/releases/download/$TAG/$f.tar.gz" || exit 1
   # A release's tarballs are checked against the gateway Dockerfile's pins.
   if [ "$VERSION" != dev ]; then
     want=$(sed -n "/^      $TAG) printf/,/pinned.sha256 ;;/s/.*'\([0-9a-f]\{64\}\)  $f.tar.gz'.*/\1/p" "$ROOT/internal/openshell/gateway/Dockerfile")

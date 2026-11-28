@@ -521,6 +521,7 @@ var (
 		"oauth2_client_credentials":  pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_OAUTH2_CLIENT_CREDENTIALS,
 		"google_service_account_jwt": pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_GOOGLE_SERVICE_ACCOUNT_JWT,
 		"aws_sts_assume_role":        pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_AWS_STS_ASSUME_ROLE,
+		"github_app_installation":    pb.ProviderCredentialRefreshStrategy_PROVIDER_CREDENTIAL_REFRESH_STRATEGY_GITHUB_APP_INSTALLATION,
 	}
 	// An absent grant type is client_credentials, as in OpenShell.
 	tokenGrantTypes = map[string]pb.ProviderCredentialTokenGrantType{

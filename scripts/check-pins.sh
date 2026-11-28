@@ -3,7 +3,7 @@
 # (docs/dev/development.md#bumping-pinned-versions):
 #  - OpenShell's runtime images (internal/openshell/wslc/driver.go and
 #    internal/openshell/gateway/gateway-docker.toml): the pinned digest is the
-#    one ghcr.io serves for the tag of OpenShellVersion;
+#    one quay.io serves for the tag of OpenShellVersion;
 #  - OpenShell's release tarballs (internal/openshell/gateway/Dockerfile): the
 #    pinned SHA-256 are those of the release's *-checksums-sha256.txt;
 #  - Selkies' .deb (sandboximage/Dockerfile), when gh is there: the pinned
@@ -31,11 +31,11 @@ ver=$(sed -n 's/^\s*OpenShellVersion\s*= "\(.*\)"$/\1/p' internal/openshell/wslc
 [ -n "$ver" ] || { echo "no OpenShellVersion in driver.go" >&2; exit 1; }
 for name in supervisor sandbox; do
   pinned=$(sed -n "s/^\s*${name}ImageDigest\s*= \"\(.*\)\"$/\1/p" internal/openshell/wslc/driver.go)
-  if ! got=$(digest "https://ghcr.io/token?scope=repository:nvidia/openshell/$name:pull" "https://ghcr.io/v2/nvidia/openshell/$name/manifests/$ver"); then
-    unavailable "the digest of ghcr.io/nvidia/openshell/$name:$ver"
-  elif [ "$got" = "$pinned" ]; then echo "ok   ghcr.io/nvidia/openshell/$name:$ver@$got"; else bad "ghcr.io/nvidia/openshell/$name:$ver is $got, driver.go pins $pinned"; fi
-  grep -q "\"ghcr.io/nvidia/openshell/$name:$ver@$pinned\"" internal/openshell/gateway/gateway-docker.toml ||
-    bad "gateway-docker.toml does not pin ghcr.io/nvidia/openshell/$name:$ver@$pinned"
+  if ! got=$(digest "https://quay.io/v2/auth?service=quay.io&scope=repository:ai-openshell/$name:pull" "https://quay.io/v2/ai-openshell/$name/manifests/$ver"); then
+    unavailable "the digest of quay.io/ai-openshell/$name:$ver"
+  elif [ "$got" = "$pinned" ]; then echo "ok   quay.io/ai-openshell/$name:$ver@$got"; else bad "quay.io/ai-openshell/$name:$ver is $got, driver.go pins $pinned"; fi
+  grep -q "\"quay.io/ai-openshell/$name:$ver@$pinned\"" internal/openshell/gateway/gateway-docker.toml ||
+    bad "gateway-docker.toml does not pin quay.io/ai-openshell/$name:$ver@$pinned"
 done
 
 tmp=$(mktemp -d)
@@ -44,7 +44,7 @@ published=1
 : >"$tmp/raw"
 for p in openshell openshell-gateway openshell-sandbox openshell-supervisor; do
   # Into a file of its own: a retry starts it again instead of appending.
-  if fetch -o "$tmp/$p.txt" "https://github.com/NVIDIA/OpenShell/releases/download/v$ver/$p-checksums-sha256.txt"; then
+  if fetch -o "$tmp/$p.txt" "https://github.com/ai-openshell/openshell/releases/download/v$ver/$p-checksums-sha256.txt"; then
     cat "$tmp/$p.txt" >>"$tmp/raw"
   else
     unavailable "$p-checksums-sha256.txt of v$ver"
