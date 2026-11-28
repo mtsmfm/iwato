@@ -23,10 +23,10 @@ import (
 //     sandbox's name and the path (persistVolume), so the new sandbox
 //     mounts the same one;
 //   - the creation settings: the configuration entry (image, presets,
-//     ingress) stays as it is, except the GPU, which the request may turn
-//     on or off; the paths outside the home that a sandbox made before the
-//     image convention kept (LegacyPersist) are dropped:
-//     only the home persists, and their volumes stay unused;
+//     ingress) stays as it is, except the GPU and the CPU limit, which the
+//     request may change; the paths outside the home that a sandbox made
+//     before the image convention kept (LegacyPersist) are dropped: only
+//     the home persists, and their volumes stay unused;
 //   - the providers: OpenShell's list for the sandbox goes into the
 //     configuration, which the new sandbox is created with;
 //   - the network rules: the latest policy revision (the effective policy
@@ -217,9 +217,10 @@ type recreateRuntime interface {
 }
 
 // recreateSandbox recreates the sandbox and starts it: see the top of this
-// file, with the GPU set to gpu. A previous carry-over that did not finish
-// is applied first. The error says what state the sandbox was left in.
-func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox, gpu bool) ([]CarryFailure, error) {
+// file, with the GPU and the CPU limit set to gpu and cpus. A previous
+// carry-over that did not finish is applied first. The error says what
+// state the sandbox was left in.
+func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox, gpu bool, cpus int) ([]CarryFailure, error) {
 	rt, ok := s.rt.(recreateRuntime)
 	if !ok {
 		return nil, errors.New("recreate unavailable")
@@ -265,7 +266,7 @@ func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox, gpu bool) ([]C
 			if len(providers) == 0 {
 				providers = nil
 			}
-			list[i].Providers, list[i].Carry, list[i].GPU = providers, carry, gpu
+			list[i].Providers, list[i].Carry, list[i].GPU, list[i].CPUs = providers, carry, gpu, cpus
 			// Only the home persists: the new sandbox does not mount the
 			// volumes of the paths an older one kept outside it, which
 			// stay in the volumes screen, no longer in use.
@@ -281,10 +282,10 @@ func (s *Server) recreateSandbox(ctx context.Context, sb Sandbox, gpu bool) ([]C
 			return nil, fmt.Errorf("サンドボックスを削除できませんでした: %s。ボリュームと設定は残っています。もう一度「作り直す」を試してください", safeCLIError(err))
 		}
 		s.forgetSandboxSessions(sb.Name)
-	} else if sb.GPU != gpu {
+	} else if sb.GPU != gpu || sb.CPUs != cpus {
 		err := s.updateSandboxes(func(list []Sandbox) ([]Sandbox, error) {
 			if i := slices.IndexFunc(list, func(x Sandbox) bool { return x.Name == sb.Name }); i >= 0 {
-				list[i].GPU = gpu
+				list[i].GPU, list[i].CPUs = gpu, cpus
 			}
 			return list, nil
 		})
@@ -404,8 +405,8 @@ func (s *Server) clearCarry(name string) {
 
 // handleRecreate recreates the sandbox (POST .../recreate); the body
 // repeats its name as confirmation, as a delete's does, and may set the
-// GPU (absent: kept). It answers once the new sandbox runs, with the rules
-// that could not be carried over.
+// GPU and the CPU limit (absent: kept). It answers once the new sandbox
+// runs, with the rules that could not be carried over.
 func (s *Server) handleRecreate(w http.ResponseWriter, r *http.Request, parts []string) {
 	if r.Method != http.MethodPost {
 		fail(w, 405, "method not allowed")
@@ -418,18 +419,26 @@ func (s *Server) handleRecreate(w http.ResponseWriter, r *http.Request, parts []
 	var body struct {
 		Confirm string `json:"confirm"`
 		GPU     *bool  `json:"gpu"`
+		CPUs    *int   `json:"cpus"`
 	}
 	if decode(w, r, &body) != nil || body.Confirm != sb.Name {
 		fail(w, 400, "confirm must equal the sandbox name")
 		return
 	}
-	gpu := sb.GPU
+	gpu, cpus := sb.GPU, sb.CPUs
 	if body.GPU != nil {
 		gpu = *body.GPU
 	}
 	if gpu && !sb.GPU && !s.gpuAvailable(r.Context()) {
 		failCode(w, 400, "gpu_unavailable", nil, "この環境では GPU を使えません")
 		return
+	}
+	if body.CPUs != nil {
+		cpus = *body.CPUs
+		if err := s.checkCPUs(cpus); cpus != sb.CPUs && err != nil {
+			failErr(w, 400, err)
+			return
+		}
 	}
 	if _, ok := s.rt.(recreateRuntime); !ok {
 		fail(w, 501, "recreate unavailable")
@@ -443,7 +452,7 @@ func (s *Server) handleRecreate(w http.ResponseWriter, r *http.Request, parts []
 	}
 	var e error
 	defer func() { s.endOp(sb.Name, op, e) }()
-	failed, e := s.recreateSandbox(op.ctx, sb, gpu)
+	failed, e := s.recreateSandbox(op.ctx, sb, gpu, cpus)
 	if failed == nil {
 		failed = []CarryFailure{}
 	}

@@ -434,6 +434,16 @@ func (o *OpenShell) sandboxMounts(w Sandbox) []any {
 	return mounts
 }
 
+// templateResources is the template's resources in Kubernetes' shape. The
+// gateway takes only string quantities as limits; anything else goes into
+// platform_config, which both drivers refuse.
+func templateResources(w Sandbox) map[string]any {
+	if w.CPUs <= 0 {
+		return nil
+	}
+	return map[string]any{"limits": map[string]any{"cpu": strconv.Itoa(w.CPUs)}}
+}
+
 // driverConfig is the sandbox's driver_config: its volumes, for the WSLc
 // driver or upstream's Docker driver. The Docker driver gets /dev/shm as a
 // tmpfs of shmBytes too (Docker's own is 64 MB; the WSLc driver sets this
@@ -648,6 +658,7 @@ func (o *OpenShell) Start(ctx context.Context, w Sandbox) error {
 			Template: &v1.SandboxTemplate{
 				Image:        image,
 				DriverConfig: o.driverConfig(w),
+				Resources:    templateResources(w),
 			},
 			Environment: sandboxEnv(w),
 			Policy:      policy,

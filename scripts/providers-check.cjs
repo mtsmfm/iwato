@@ -2,7 +2,7 @@
 // The providers in a real browser against `serve -fake`: the panel (list
 // without values, add, change, delete; Atlassian's OAuth connection and
 // 再接続 through the fake's authorization page, pasting the redirect on a
-// phone), the create form's picker, a refused attach that names the
+// phone), the create form's picker and CPU limit, a refused attach that names the
 // uninspected or ambiguous rule and its fix, the rules attaching adds, a
 // sandbox's attach/detach with the restart
 // choice, and 再起動待ち on the card and its terminals, after a reload too.
@@ -300,7 +300,17 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     check(await rows.evaluateAll((list) => list.every((el) => el.offsetHeight < 40)), 'each preset is one line');
     const details = page.locator('#create-presets .create-preset').first().locator('.create-preset-details');
     check(await details.isHidden(), 'the details start closed');
+    // The CPU limit: a slider up to the engine's CPUs (the fake's docker info: 16), all of them being none.
+    const cpus = page.locator('#create-panel').getByLabel('CPU の上限');
+    const cpusShown = () => page.locator('#create-cpus-value').innerText();
+    check(await cpus.isVisible() && await cpus.getAttribute('max') === '16' && await cpus.inputValue() === '16' && await cpusShown() === '制限なし' && await page.locator('#create-recreate-note').isVisible(), 'the create form offers the CPU limit up to the engine\'s CPUs, none at first');
+    await cpus.press('Home');
+    for (let i = 0; i < 3; i++) await cpus.press('ArrowRight');
+    check(await cpusShown() === '4 / 16 コア', 'the slider shows the limit (' + await cpusShown() + ')');
     await shot('create-form.png');
+    await cpus.press('End');
+    check(await cpusShown() === '制限なし', 'all the CPUs is no limit');
+    await shot('create-form-cpus-none.png');
     await page.locator('#create-presets .create-preset-more').first().click();
     const allowed = await details.innerText();
     check(await details.isVisible() && /registry\.npmjs\.org:443/.test(allowed) && /POST \/-\/npm\/v1\/security\/advisories\/bulk/.test(allowed), 'the details list the rules: ' + allowed.slice(0, 80));

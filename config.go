@@ -89,6 +89,10 @@ type Sandbox struct {
 	// driver passes the machine's GPU through (--gpus all). It applies when
 	// OpenShell creates the sandbox.
 	GPU bool `json:"gpu,omitempty"`
+	// CPUs caps the CPU time at this many CPUs (resources.limits.cpu; the
+	// drivers' --cpus); 0 is no limit. Like the GPU, it applies when
+	// OpenShell creates the sandbox.
+	CPUs int `json:"cpus,omitempty"`
 	// ProvidersChangedAt is when a provider was attached or detached
 	// while the sandbox ran: its processes from before (the main
 	// terminal's included) lack the change until it is restarted.
@@ -223,6 +227,9 @@ func (c Config) Validate() error {
 		}
 		if e := validPersist(w.LegacyPersist); e != nil {
 			return fmt.Errorf("persist for %s: %w", w.Name, e)
+		}
+		if w.CPUs < 0 {
+			return fmt.Errorf("invalid cpus for %s", w.Name)
 		}
 		for _, a := range w.ProviderApplying {
 			if !providerNamePattern.MatchString(a.Provider) || len(a.Receipt) > 200 || len(a.State) > 64 || len(a.Reason) > 200 {

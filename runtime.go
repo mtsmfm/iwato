@@ -22,6 +22,8 @@ type Status struct {
 	RecreateToUpdate bool `json:"recreateToUpdate,omitempty"`
 	// GPU: the sandbox is configured with a GPU (the card shows a marker).
 	GPU bool `json:"gpu,omitempty"`
+	// CPUs: its CPU limit (Sandbox.CPUs).
+	CPUs int `json:"cpus,omitempty"`
 	// Stopped: the terminals that stopped changing (notifier.go), by name,
 	// with when (Unix seconds); the page marks them until viewed.
 	Stopped map[string]int64 `json:"stopped,omitempty"`

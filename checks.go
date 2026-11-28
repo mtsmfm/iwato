@@ -109,6 +109,22 @@ func (c *checkState) engine() *check {
 	return engineDown(c.last)
 }
 
+// engineCPUs is the engine's CPU count as `docker info` gave it; 0
+// without one (WSLc tells none).
+func (c *checkState) engineCPUs() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, k := range c.last {
+		if n, ok := k.Params["cpus"].(int); ok && k.Name == "engine" && k.Detail == "engine_vm" {
+			return n
+		}
+	}
+	return 0
+}
+
 // engineErr is the error of operations refused while the engine is
 // unusable.
 func (c *checkState) engineErr() error {
