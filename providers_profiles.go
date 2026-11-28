@@ -237,7 +237,7 @@ var providerProfiles = []providerProfile{
 		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
 		OAuth:       true,
 		OAuthFlow:   "antigravity",
-		Hint:        "Iwato がターミナルで ~/.gemini/antigravity-cli/antigravity-oauth-token をこのプロバイダーのプレースホルダーで書きます (中身を表示しないでください)。前に agy でログインしていたら、そのファイルを消してから新しいターミナルを開きます。付け外しと再接続は再起動で反映されます。「Your current account is not eligible for Antigravity」と出たら、ブラウザで Google アカウントの確認を済ませてください。確かめるには agy -p 'hello'。",
+		Hint:        "前に agy でログインしていたら、~/.gemini/antigravity-cli/antigravity-oauth-token を消して新しいターミナルを開きます。",
 	},
 	{
 		ID: "iwato-openai", Label: "OpenAI API", Group: groupAgent,
