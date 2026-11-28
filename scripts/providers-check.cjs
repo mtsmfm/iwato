@@ -362,7 +362,8 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     await conflict.getByRole('button', { name: 'この宛先を規則から外して付ける' }).click();
     await side.locator('.restart-choice').waitFor({ timeout: 3000 });
     check(Date.now() - attachedAt < 3000, 'attaching answers without waiting for the sandbox (' + (Date.now() - attachedAt) + ' ms)');
-    check((await side.innerText()).includes('claude を付けました'), 'attaching says so');
+    // The message follows the restart choice, after the list is read again.
+    check(await side.getByText('claude を付けました').waitFor({ timeout: 5000 }).then(() => true, () => false), 'attaching says so');
     const applyingTag = side.locator('.provider-row', { hasText: /^claude(?!-)/ }).locator('.tag-applying');
     check(await applyingTag.isVisible() && (await applyingTag.innerText()) === '反映待ち', 'the card shows 反映待ち until the sandbox applies it');
     await shot('attach-restart.png');
