@@ -26,7 +26,7 @@ Iwato then:
 
 1. Creates `iwato.json` if there is none (with no sandboxes)
 2. Runs its startup checks (WSLc and the configuration). When WSLc cannot be used, the page says why and how to fix it, and Iwato goes on by itself once it can (**Check again** checks at once). The settings list all the checks
-3. Pulls the sandbox and gateway images from ghcr.io (nothing is built). This takes a few minutes the first time; the output goes to `image-build.log`
+3. Pulls the sandbox and gateway images from ghcr.io (nothing is built). This takes a few minutes the first time; the output goes to `image-build.log`. The first sandbox also pulls OpenShell's runtime image from quay.io
 4. Starts the OpenShell gateway in WSLc
 
 On Windows Iwato has no console window: it puts its icon in the notification area (the system tray). Click it to open the page; its menu has **Open Iwato**, **Open the log**, **Start with Windows** and **Quit**. Errors that keep it from starting are shown in a message box.

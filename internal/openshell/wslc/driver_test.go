@@ -205,7 +205,7 @@ func TestImageTag(t *testing.T) {
 	}
 	// The default runtime images are pinned (scripts/check-pins.sh checks
 	// the digests against the registry), so they are never refreshed.
-	pinned := regexp.MustCompile(`^ghcr\.io/nvidia/openshell/(supervisor|sandbox):` + regexp.QuoteMeta(OpenShellVersion) + `@sha256:[0-9a-f]{64}$`)
+	pinned := regexp.MustCompile(`^quay\.io/ai-openshell/(supervisor|sandbox):` + regexp.QuoteMeta(OpenShellVersion) + `@sha256:[0-9a-f]{64}$`)
 	for _, ref := range []string{DefaultSupervisorImage, DefaultSandboxImage} {
 		if !pinned.MatchString(ref) || imageTag(ref) != "" {
 			t.Errorf("%s is not pinned by digest", ref)

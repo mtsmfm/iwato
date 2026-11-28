@@ -38,11 +38,11 @@ import (
 // tag alone is found by it too). scripts/check-pins.sh checks the digests
 // against the registry; docs/dev/development.md#bumping-pinned-versions.
 const (
-	OpenShellVersion       = "0.1.9"
-	supervisorImageDigest  = "sha256:f1ec231b5dbe5b6a40c33acb2ac847995aabb959a56134ef6d7d7aa4f43199d3"
-	sandboxImageDigest     = "sha256:e57d07cd6cc1fc314b80368d6b51ec6fbf825fb62cd8f081312941180846866f"
-	DefaultSupervisorImage = "ghcr.io/nvidia/openshell/supervisor:" + OpenShellVersion + "@" + supervisorImageDigest
-	DefaultSandboxImage    = "ghcr.io/nvidia/openshell/sandbox:" + OpenShellVersion + "@" + sandboxImageDigest
+	OpenShellVersion       = "0.1.10"
+	supervisorImageDigest  = "sha256:3bfb2f5a145a9e93495870682bf5fda242df76e0f3017a9279355e7606fbf3f2"
+	sandboxImageDigest     = "sha256:32464032861d3efa30259099a6a9c5541f6b3a5b6bef4eb273d70a7e5d7e994d"
+	DefaultSupervisorImage = "quay.io/ai-openshell/supervisor:" + OpenShellVersion + "@" + supervisorImageDigest
+	DefaultSandboxImage    = "quay.io/ai-openshell/sandbox:" + OpenShellVersion + "@" + sandboxImageDigest
 )
 
 const (
