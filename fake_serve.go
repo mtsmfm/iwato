@@ -93,7 +93,7 @@ func fakeFlags(f *flag.FlagSet) func() (*fakeRun, error) {
 				"codex": {Service: "codex", At: now.Add(-40 * time.Minute), Sandbox: "dev", Code: "usage_no_sandbox", Windows: []usageWindow{
 					{Kind: "5h", Used: 3, ResetsAt: now.Add(252 * time.Minute)}, {Kind: "7d", Used: 88, ResetsAt: now.Add(100 * time.Hour)}}},
 				"gemini": {Service: "gemini", At: now.Add(-time.Minute), Sandbox: "dev", Windows: []usageWindow{
-					{Kind: "5h", Used: 14, ResetsAt: now.Add(170 * time.Minute)}, {Kind: "5h-model", Model: "Claude/GPT", Used: 30, ResetsAt: now.Add(4 * time.Hour)}}},
+					{Kind: "5h", Used: 14, ResetsAt: now.Add(170 * time.Minute)}, {Kind: "5h-model", Model: "Claude", Used: 30, ResetsAt: now.Add(4 * time.Hour)}}},
 			}
 		}}, nil
 	}

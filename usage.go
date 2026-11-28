@@ -406,7 +406,8 @@ func parseGeminiUsage(body []byte, _ time.Time) ([]usageWindow, error) {
 	var plan, others []usageWindow
 	for _, g := range v.Summary.Groups {
 		gemini := strings.Contains(strings.ToLower(g.DisplayName), "gemini")
-		name := "Claude/GPT"
+		// Claude and GPT models: by its first (the sidebar's column is narrow).
+		name := "Claude"
 		if !strings.Contains(strings.ToLower(g.DisplayName), "claude") {
 			name = strings.TrimSpace(strings.TrimSuffix(g.DisplayName, " models"))
 		}

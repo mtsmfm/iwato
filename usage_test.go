@@ -29,7 +29,7 @@ func TestParseUsage(t *testing.T) {
 	// out), so the most used Gemini model's 5-hour window stands in, without
 	// the reset of an unused one.
 	g, err := parseGeminiUsage([]byte(`{"summary":{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-weekly","window":"weekly","remainingFraction":1},{"bucketId":"3p-5h","window":"5h","remainingFraction":0.75,"resetTime":"2026-11-11T14:00:00Z"}]}]},"quota":{"buckets":[{"modelId":"claude-opus","remainingFraction":0.5},{"modelId":"gemini-3-flash","remainingFraction":0.9,"resetTime":"2026-11-11T13:00:00Z"},{"modelId":"gemini-3.1-pro","remainingFraction":0.8,"resetTime":"2026-11-11T15:00:00Z"}]}}`), now)
-	if err != nil || len(g) != 2 || g[0].Kind != "5h" || math.Round(g[0].Used) != 20 || g[0].ResetsAt.Hour() != 15 || g[1].Kind != "5h-model" || g[1].Model != "Claude/GPT" || g[1].Used != 25 {
+	if err != nil || len(g) != 2 || g[0].Kind != "5h" || math.Round(g[0].Used) != 20 || g[0].ResetsAt.Hour() != 15 || g[1].Kind != "5h-model" || g[1].Model != "Claude" || g[1].Used != 25 {
 		t.Fatalf("gemini: %+v %v", g, err)
 	}
 	g, err = parseGeminiUsage([]byte(`{"summary":{"groups":[{"displayName":"Gemini models","buckets":[{"window":"5h","remainingFraction":1,"resetTime":"2026-11-11T17:00:00Z"},{"window":"weekly","remainingFraction":0.4,"resetTime":"2026-11-14T00:00:00Z"}]}]},"quota":null}`), now)

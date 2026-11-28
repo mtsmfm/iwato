@@ -322,8 +322,8 @@
     }
 
     // The subscriptions' usage under the totals: a row per service, its
-    // 5-hour and weekly windows in columns, the models' and groups' windows
-    // as ticks on the window of the same length (named in the row's title).
+    // 5-hour and weekly windows in columns, and below it a row per model's
+    // or group's window (Fable's week), in the column of its length.
     // A click shows the time to each reset instead of the percentages; an
     // older reading is dimmed, with why in the title.
     class Usage {
@@ -350,26 +350,24 @@
         head.append(element('span'), element('span', '', t('usage.window.5h')), element('span', '', t('usage.window.7d')));
         const rows = [element('h3', 'res-totals-head', t('usage.title')), head];
         for (const s of services) {
-          const row = element('button', 'usage-row usage-service');
-          row.type = 'button';
-          row.append(element('strong', '', s.name));
-          for (const long of [false, true]) {
-            const w = s.windows.find((x) => !x.model && (long ? x.kind === '7d' : /^\d+h$/.test(x.kind)));
-            const b = bar(w && !passed(w) ? w.used / 100 : 0, w && !passed(w) ? level(w.used / 100, settings) : '');
-            for (const m of s.windows.filter((x) => x.kind === (long ? '7d-model' : '5h-model') && !passed(x))) {
-              const tick = element('b', 'usage-tick');
-              tick.style.left = Math.min(100, Math.max(0, m.used)).toFixed(0) + '%';
-              b.append(tick);
-            }
-            row.append(b, element('em', w ? '' : 'usage-none', !w ? '—' : this.times ? left(w.resetsAt) : passed(w) ? '—' : Math.round(w.used) + '%'));
-          }
+          const cell = (w) => w
+            ? [bar(passed(w) ? 0 : w.used / 100, passed(w) ? '' : level(w.used / 100, settings)), element('em', '', this.times ? left(w.resetsAt) : passed(w) ? '—' : Math.round(w.used) + '%')]
+            : [element('span'), element('em', 'usage-none', '—')];
           const stale = s.code || (s.at && now - Date.parse(s.at) > 15 * 60e3);
-          row.classList.toggle('usage-stale', !!stale);
           const why = !stale ? '' : (s.at ? t('usage.stale', { ago: window.IwatoFiles.ago(s.at, now) }) : '') + (s.code ? (s.at ? ' · ' : '') + t('usage.code.' + s.code, { status: s.status }) : '');
-          row.title = [s.name, ...s.windows.map(line), why, t(this.times ? 'usage.show.percent' : 'usage.show.times')].filter(Boolean).join('\n');
-          row.setAttribute('aria-pressed', String(this.times));
-          row.addEventListener('click', () => { this.times = !this.times; this.update(this.services, this.settings); });
-          rows.push(row);
+          const title = [s.name, ...s.windows.map(line), why, t(this.times ? 'usage.show.percent' : 'usage.show.times')].filter(Boolean).join('\n');
+          const row = (name, five, week, sub) => {
+            const r = element('button', 'usage-row usage-service' + (sub ? ' usage-sub' : ''));
+            r.type = 'button';
+            r.classList.toggle('usage-stale', !!stale);
+            r.title = title;
+            r.setAttribute('aria-pressed', String(this.times));
+            r.append(element('strong', '', name), ...(five === undefined ? [element('span'), element('span')] : cell(five)), ...(week === undefined ? [element('span'), element('span')] : cell(week)));
+            r.addEventListener('click', () => { this.times = !this.times; this.update(this.services, this.settings); });
+            return r;
+          };
+          rows.push(row(s.name, s.windows.find((w) => !w.model && /^\d+h$/.test(w.kind)) || null, s.windows.find((w) => w.kind === '7d') || null, false));
+          for (const m of s.windows.filter((w) => /^(5h|7d)-/.test(w.kind))) rows.push(row(label(m), m.kind.startsWith('5h') ? m : undefined, m.kind.startsWith('7d') ? m : undefined, true));
         }
         this.root.replaceChildren(...rows);
       }
