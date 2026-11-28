@@ -6378,7 +6378,8 @@
     if (open) $('sidebar').classList.add('menu-open'); else closeMenu();
     $('menu-button').setAttribute('aria-expanded', String(open));
   });
-  $('sidebar-actions').addEventListener('click', (event) => { if (event.target !== $('sidebar-actions')) closeMenu(); });
+  // A tap on the usage switches its numbers (resources.js), and keeps the menu.
+  $('sidebar-actions').addEventListener('click', (event) => { if (event.target !== $('sidebar-actions') && !(event.composedPath?.() || []).includes($('menu-usage'))) closeMenu(); });
   $('notice').addEventListener('click', clearNotice);
   // Esc does what the topmost open overlay's close or cancel button does.
   // Dialogs and menus come first wherever the keyboard is; a panel only
