@@ -1,0 +1,82 @@
+# Iwato's Antigravity CLI sign-in profile: Google's coding agent CLI
+# (`agy`) with the owner's Google account.
+# Iwato.exe signs in with agy's own OAuth client (authorization code with
+# PKCE; Google's page comes back to antigravity.google, which shows the
+# code to paste) and gives the gateway the refresh token; the gateway
+# refreshes the access token (oauth2_refresh_token) and the sandbox gets a
+# placeholder. Iwato imports it into the gateway (platform scope) when it
+# prepares OpenShell. Lint it with:
+#   openshell provider profile lint -f profiles/iwato-antigravity-subscription.yaml
+#
+# Client binaries:   mise installs agy with its aqua backend
+#                    (google-antigravity/antigravity-cli's GitHub releases):
+#                    installs/agy/VERSION/antigravity, linked from agy. One
+#                    Go binary.
+# Credential scope:  ANTIGRAVITY_OAUTH_TOKEN, sent as a bearer authorization
+#                    header. agy takes nothing from the environment: it
+#                    reads ~/.gemini/antigravity-cli/antigravity-oauth-token
+#                    (file storage, without D-Bus), which Iwato's terminal
+#                    environment writes with the placeholder and an expiry
+#                    in 2099 (antigravityTokenLines, term_env.go).
+# Endpoint access:   daily-cloudcode-pa.googleapis.com POST /v1internal:*
+#                    (loadCodeAssist, listExperiments, fetchAvailableModels,
+#                    retrieveUserQuotaSummary, streamGenerateContent),
+#                    www.googleapis.com GET /oauth2/v2/userinfo and
+#                    aicode.googleapis.com GET /v1alpha:fetchConfig. Not
+#                    listed: play.googleapis.com (telemetry) and
+#                    lh3.googleusercontent.com (the avatar).
+# Sign-in:           client_id 1071006060591-tmhssin2h21lcre235vtolojh4g403ep
+#                    (a Google installed app), authorize
+#                    https://accounts.google.com/o/oauth2/auth with
+#                    access_type=offline and prompt=consent, redirect
+#                    https://antigravity.google/oauth-callback, token
+#                    https://oauth2.googleapis.com/token (form, with the
+#                    client secret that is in agy). Scopes: agy's (below).
+#                    Google may answer 403 "not eligible for Antigravity"
+#                    until the owner verifies the account in a browser.
+# Refresh:           at the token endpoint, client_id, client_secret
+#                    (client_secret_post) and refresh_token, no scope.
+#                    Google does not rotate the refresh token; the access
+#                    token lives 3599 s.
+# Verified:          by running agy 1.5.18 in a sandbox (its sign-in URL,
+#                    the token file, the hosts it sent the token to) and the
+#                    client secret against Google's token endpoint. The
+#                    gateway's refresh is not run against Google.
+# Endpoints:         none (ADR 0022): the credential goes only to the sandbox
+#                    policy's endpoints bound to the provider
+#                    (credential_binding). Attaching adds presets/providers/
+#                    iwato-antigravity-subscription.yaml; iwato/credential-hosts
+#                    names the hosts the credential is meant for.
+
+id: iwato-antigravity-subscription
+display_name: Antigravity CLI sign-in (Iwato)
+description: Antigravity CLI with a Google account sign-in the gateway refreshes
+category: agent
+annotations:
+  iwato/credential-hosts: "daily-cloudcode-pa.googleapis.com:443,www.googleapis.com:443,aicode.googleapis.com:443"
+credentials:
+  - name: access_token
+    description: Google OAuth access token (Antigravity CLI sign-in)
+    env_vars: [ANTIGRAVITY_OAUTH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://oauth2.googleapis.com/token
+      refresh_before: "300s"
+      max_lifetime: "3600s"
+      material:
+        - name: client_id
+          description: OAuth client ID (agy's installed-app client)
+          required: true
+        - name: client_secret
+          description: OAuth client secret (agy's, public)
+          required: true
+          secret: true
+        - name: refresh_token
+          description: OAuth refresh token
+          required: true
+          secret: true
+binaries:
+  - /home/dev/.local/share/mise/installs/agy/*/antigravity

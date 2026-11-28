@@ -75,7 +75,7 @@ func (r *staleList) CreateProvider(ctx context.Context, name, profile string, cr
 func TestProviderAPICreatesWithoutAName(t *testing.T) {
 	_, _, do, _ := providerServerCookie(t)
 	l := listProviders(t, do)
-	if l.Profiles[6].DefaultName != "github" || l.Profiles[5].DefaultName != "atlassian" || l.Profiles[9].DefaultName != "comfy-cloud" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" || l.Profiles[2].DefaultName != "codex-subscription" {
+	if l.Profiles[7].DefaultName != "github" || l.Profiles[6].DefaultName != "atlassian" || l.Profiles[10].DefaultName != "comfy-cloud" || l.Profiles[3].DefaultName != "antigravity-subscription" || l.Profiles[0].DefaultName != "claude-subscription" || l.Profiles[1].DefaultName != "grok-subscription" || l.Profiles[2].DefaultName != "codex-subscription" {
 		t.Fatalf("%d profiles", len(l.Profiles))
 	}
 	for _, want := range []string{"github", "github-2"} {

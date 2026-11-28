@@ -1,0 +1,34 @@
+# The initial rule of a provider of profiles/iwato-antigravity-subscription.yaml (ADR 0022): attaching
+# the provider adds it to the sandbox's policy, every endpoint bound to the
+# provider (credential_binding), and detaching removes the endpoints bound
+# to it. The format is a network preset's (presets.go) with the parameter
+# provider, the provider's name.
+id: iwato-antigravity-subscription
+label: Antigravity CLI
+params:
+  - { name: provider, label: provider, pattern: "[a-z][a-z0-9-]*" }
+network_policies:
+  provider_${provider}:
+    binaries: ["/**"]
+    endpoints:
+      - host: daily-cloudcode-pa.googleapis.com
+        port: 443
+        path: "/v1internal:*"
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: "/v1internal:*" }
+      - host: www.googleapis.com
+        port: 443
+        path: /oauth2/v2/userinfo
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: /oauth2/v2/userinfo }
+      - host: aicode.googleapis.com
+        port: 443
+        path: "/v1alpha:fetchConfig"
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/v1alpha:fetchConfig" }

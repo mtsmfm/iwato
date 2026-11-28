@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -171,7 +172,7 @@ func TestAtlassianRegisterAndExchange(t *testing.T) {
 func (r *spyRuntime) ConfigureRefresh(ctx context.Context, provider, key string, material map[string]string, secretKeys []string, expiresAt time.Time) error {
 	r.mu.Lock()
 	r.calls = append(r.calls, "configure "+provider+" "+key)
-	r.material = append(r.material, map[string]string{"client_id": material["client_id"], "refresh_token": material["refresh_token"]})
+	r.material = append(r.material, maps.Clone(material))
 	r.secretKeys = append(r.secretKeys, secretKeys)
 	r.expires = append(r.expires, expiresAt)
 	r.mu.Unlock()

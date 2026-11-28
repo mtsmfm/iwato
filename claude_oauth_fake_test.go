@@ -20,30 +20,32 @@ func newClaudeTest(t *testing.T) *claudeTest {
 	c := newClaudeOAuth()
 	c.TokenURL = srv.URL
 	o.s.claude.backend = c
-	return &claudeTest{oauthTest: o, fake: f}
+	return &claudeTest{oauthTest: o, fake: f, route: "claude"}
 }
 
+// claudeTest drives a pasted-code flow (code_flow.go) at /api/oauth/ROUTE.
 type claudeTest struct {
 	*oauthTest
-	fake *fakeClaude
+	fake  *fakeClaude
+	route string
 }
 
-func (c *claudeTest) start(body string) claudeFlowView {
+func (c *claudeTest) start(body string) codeFlowView {
 	c.t.Helper()
-	code, resp := c.do("POST", "/api/oauth/claude/start", body)
-	var v claudeFlowView
+	code, resp := c.do("POST", "/api/oauth/"+c.route+"/start", body)
+	var v codeFlowView
 	if code != 200 || json.Unmarshal([]byte(resp), &v) != nil {
 		c.t.Fatal(code, resp)
 	}
 	return v
 }
 
-func (c *claudeTest) wait(id string) claudeFlowView {
+func (c *claudeTest) wait(id string) codeFlowView {
 	c.t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		code, resp := c.do("GET", "/api/oauth/claude/flows/"+id, "")
-		var v claudeFlowView
+		code, resp := c.do("GET", "/api/oauth/"+c.route+"/flows/"+id, "")
+		var v codeFlowView
 		if code != 200 || json.Unmarshal([]byte(resp), &v) != nil || strings.Contains(resp, "SECRET") {
 			c.t.Fatal(code, resp)
 		}

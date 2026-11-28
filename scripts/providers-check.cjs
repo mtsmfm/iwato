@@ -258,6 +258,36 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
       check(true, 'the Claude provider is listed');
       await box.getByRole('button', { name: '閉じる' }).click();
     }
+    // The Antigravity CLI's Google sign-in: the fake's page shows the code
+    // alone, which is pasted (on the PC too).
+    await page.selectOption('#provider-profile', 'iwato-antigravity-subscription');
+    check((await page.locator('#provider-submit').innerText()) === 'Google でログイン' && (await page.innerText('#provider-note')).includes('ANTIGRAVITY_OAUTH_TOKEN'), 'the Antigravity sign-in profile takes no value');
+    await page.click('#provider-submit');
+    {
+      const box = panel.locator('#provider-oauth');
+      const link = box.getByRole('link', { name: 'Google でログイン' });
+      await link.waitFor();
+      check(await box.getByRole('link').count() === 1 && await panel.locator('.login-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the Antigravity flow has one link and does not scroll the panel sideways');
+      await shot('antigravity-waiting.png');
+      const popupP = page.waitForEvent('popup');
+      await link.click();
+      const popup = await popupP;
+      await popup.click('#approve');
+      const code = await popup.locator('#code').innerText();
+      await popup.close();
+      check(code === 'fake-code', 'the fake Google page shows the code alone');
+      await box.locator('.provider-paste input').fill(code);
+      // The flow is polled every 1.5 s: the pasted code stays.
+      await page.waitForTimeout(3500);
+      check(await box.locator('.provider-paste input').inputValue() === code, 'the pasted code stays while the flow is polled');
+      await box.locator('.provider-paste').getByRole('button', { name: '送る' }).click();
+      await box.locator('.provider-oauth-status', { hasText: '接続しました' }).waitFor({ timeout: 15000 });
+      check((await box.innerText()).includes('antigravity-oauth-token') && !/fake-(access|refresh)/.test(await page.content()), 'Antigravity: done with the hint, no token on the page');
+      await shot('antigravity-done.png');
+      await byName('Antigravity CLI', 'antigravity-subscription').waitFor();
+      check(true, 'the Antigravity provider is listed');
+      await box.getByRole('button', { name: '閉じる' }).click();
+    }
     // Codex's ChatGPT sign-in: a device code entered at the fake's page.
     await page.selectOption('#provider-profile', 'iwato-codex-subscription');
     check((await page.locator('#provider-submit').innerText()) === 'ChatGPT でログイン' && /\bchatgpt\.com\b/.test(await page.innerText('#provider-note')), 'the Codex sign-in profile takes no value');

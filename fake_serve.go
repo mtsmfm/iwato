@@ -17,11 +17,16 @@ func init() {
 			mux.HandleFunc("/fake/atlassian/authorize", s.handleFakeAuthorize)
 			mux.HandleFunc("/fake/xai/device", s.handleFakeDevice)
 			mux.HandleFunc("/fake/codex/device", s.handleFakeDevice)
-			mux.HandleFunc("/fake/claude/authorize", s.handleFakeClaude)
-			mux.HandleFunc("/fake/claude/code", s.handleFakeClaude)
+			for _, id := range []string{"claude", "antigravity"} {
+				mux.HandleFunc("/fake/"+id+"/authorize", s.handleFakeCode)
+				mux.HandleFunc("/fake/"+id+"/code", s.handleFakeCode)
+			}
 		},
 		oauth:  func(_ *Server, origin string) oauthBackend { return fakeOAuth{origin: origin} },
-		claude: func(_ *Server, origin string) claudeBackend { return fakeClaudeOAuth{origin: origin} },
+		claude: func(_ *Server, origin string) codeBackend { return fakeCodeOAuth{origin: origin, service: "claude"} },
+		antigravity: func(_ *Server, origin string) codeBackend {
+			return fakeCodeOAuth{origin: origin, service: "antigravity"}
+		},
 		xai: func(s *Server, origin string) deviceBackend {
 			return fakeXAIBackend{d: s.fakeDevices(), origin: origin, service: "xai"}
 		},

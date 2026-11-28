@@ -16,15 +16,16 @@ type fakeBackend struct {
 	// flags adds -fake and -fake-engine-down to serve's flags. After
 	// Parse, the returned func gives the fake's run, or nil without -fake.
 	flags func(*flag.FlagSet) func() (*fakeRun, error)
-	// routes adds the fake's stand-ins for Atlassian's, xAI's and Claude's
+	// routes adds the fake's stand-ins for the services' sign-in
 	// pages (/fake/...).
 	routes func(*Server, *http.ServeMux)
 	// The sign-in backends standing in for the real ones; origin is the
 	// page's.
-	oauth  func(s *Server, origin string) oauthBackend
-	claude func(s *Server, origin string) claudeBackend
-	xai    func(s *Server, origin string) deviceBackend
-	codex  func(s *Server, origin string) deviceBackend
+	oauth       func(s *Server, origin string) oauthBackend
+	claude      func(s *Server, origin string) codeBackend
+	antigravity func(s *Server, origin string) codeBackend
+	xai         func(s *Server, origin string) deviceBackend
+	codex       func(s *Server, origin string) deviceBackend
 }
 
 // fakeRun is serve -fake: its configuration and runtime, and setup, which
