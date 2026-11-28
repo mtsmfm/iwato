@@ -17,7 +17,7 @@
 ARG OPENSHELL_TAG=v0.1.10
 ARG OPENSHELL_PATCH=patched
 
-FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS base
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b AS base
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl socat openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
@@ -108,7 +108,7 @@ COPY --from=fetch --chmod=0555 /out/openshell-sandbox /openshell-sandbox
 USER 65532:65532
 ENTRYPOINT ["/openshell-sandbox"]
 
-FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS supervisor
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b AS supervisor
 COPY --from=supervisor-bin --chmod=0555 /out/openshell-supervisor /openshell-supervisor
 ENTRYPOINT ["/openshell-supervisor"]
 
