@@ -44,9 +44,14 @@ async function clickPath(page, card, text, link, phone) {
 }
 
 // editorAt is the editor's text and its cursor (1-based line and column),
-// once its CodeMirror shows text.
-async function editorAt(page) {
-  await page.waitForFunction(() => document.querySelector('.terminal-card.selected .editor-panel .cm-editor')?.offsetParent);
+// once its CodeMirror shows file (the end of its path): the editor shows
+// the file open before while the clicked one loads.
+async function editorAt(page, file) {
+  await page.waitForFunction((file) => {
+    const panel = document.querySelector('.terminal-card.selected .editor-panel');
+    const tab = panel?.querySelector('.editor-tabs [aria-selected=true][title]');
+    return panel?.querySelector('.cm-editor')?.offsetParent && ('/' + (tab?.title || '')).includes('/' + file);
+  }, file);
   return page.evaluate(() => {
     const el = document.querySelector('.terminal-card.selected .editor-panel .cm-editor');
     const v = window.IwatoCodeMirror.EditorView.findFromDOM(el);
