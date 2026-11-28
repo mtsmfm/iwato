@@ -805,7 +805,9 @@
     window.IwatoI18n.bind($('provider-submit'), profile?.oauth ? connectKey(profile) : 'providers.add');
     window.IwatoI18n.bind($('provider-profile-yaml'), profile?.custom ? 'providers.yaml.edit' : 'providers.yaml.view');
   }
-  const connectKey = (profile) => profile?.oauthFlow === 'xai' || profile?.oauthFlow === 'codex' ? 'providers.connect.' + profile.oauthFlow : profile?.oauthFlow === 'claude' ? 'providers.connect.claude' : 'providers.connect.atlassian';
+  const connectKey = (profile) => ['xai', 'codex', 'claude', 'antigravity'].includes(profile?.oauthFlow) ? 'providers.connect.' + profile.oauthFlow : 'providers.connect.atlassian';
+  // The sign-ins with a pasted code (/api/oauth/KIND, code_flow.go).
+  const codeFlows = ['claude', 'antigravity'];
   // The gateway's refresh of an OAuth provider, in words.
   const shortTime = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? window.IwatoI18n.date(t, { dateStyle: 'short', timeStyle: 'short' }) : ''; };
   function needsReauthorization(r) {
@@ -996,7 +998,7 @@
   // then the authorization in Atlassian's page, which comes back to
   // Iwato's own 127.0.0.1 listener or, from another device, as a pasted
   // URL. The page never sees a token; it polls the flow's state.
-  const oauthFlow = { id: '', timer: 0, device: '' };
+  const oauthFlow = { id: '', timer: 0, device: '', code: '' };
   function oauthBox(title) {
     const box = $('provider-oauth');
     box.hidden = false;
@@ -1010,14 +1012,14 @@
   function endOAuth() {
     if (oauthFlow.timer) clearTimeout(oauthFlow.timer);
     const id = oauthFlow.id;
-    const base = oauthFlow.device ? '/api/oauth/' + oauthFlow.device : oauthFlow.claude ? '/api/oauth/claude' : '/api/oauth/atlassian';
+    const base = '/api/oauth/' + (oauthFlow.device || oauthFlow.code || 'atlassian');
     oauthFlow.id = ''; oauthFlow.timer = 0;
     $('provider-oauth').hidden = true;
     $('provider-oauth').replaceChildren();
     if (id && oauthFlow.waiting) api(base + '/flows/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '{}' }).catch(() => {});
     oauthFlow.waiting = false;
     oauthFlow.device = '';
-    oauthFlow.claude = false;
+    oauthFlow.code = '';
   }
   async function beginOAuth(name, reconnect) {
     if (!state.authorized) return;
@@ -1250,38 +1252,38 @@
       }, 2000);
     }
   }
-  // Signing in to Claude Code (/api/oauth/claude) with Claude Code's own
-  // client: on the PC Claude's page comes back to Iwato's loopback
-  // listener; from a phone the second link ends on Claude's page, which
-  // shows a code to paste here. The page polls the flow, never a token.
-  async function beginClaude(name, reconnect) {
+  // Signing in with an agent's own client (/api/oauth/KIND): the service's
+  // page shows a code to paste here; Claude's first link instead comes
+  // back to Iwato's loopback listener (the PC). The page polls the flow,
+  // never a token.
+  async function beginCode(kind, name, reconnect) {
     if (!state.authorized) return;
     endOAuth();
-    const title = reconnect ? t('providers.oauth.reconnectTitle', { name }) : name ? t('providers.connect.claudeNamed', { name }) : t('providers.connect.claude');
+    const title = reconnect ? t('providers.oauth.reconnectTitle', { name }) : name ? t('providers.connect.' + kind + 'Named', { name }) : t('providers.connect.' + kind);
     const box = oauthBox(title);
-    const status = element('p', 'panel-meta', t('providers.oauth.claude.loading'));
+    const status = element('p', 'panel-meta', t('providers.oauth.' + kind + '.loading'));
     status.setAttribute('role', 'status');
     box.append(status);
     try {
-      const flow = await api('/api/oauth/claude/start', { method: 'POST', body: JSON.stringify({ name, reconnect }), timeoutMs: 60000 });
+      const flow = await api('/api/oauth/' + kind + '/start', { method: 'POST', body: JSON.stringify({ name, reconnect }), timeoutMs: 60000 });
       oauthFlow.id = text(flow.id, 64);
-      oauthFlow.claude = true;
-      renderClaudeFlow(flow, title);
+      oauthFlow.code = kind;
+      renderCodeFlow(kind, flow, title);
     } catch (error) {
       status.textContent = t('providers.oauth.startFailed', { message: error.message });
       if (error.status === 401 || error.status === 403) invalidateSession();
     }
   }
-  // Only Claude's https pages (or the fake's own) are offered to open.
-  function claudeLink(url) {
+  // Only the services' https pages (or the fake's own) are offered to open.
+  function codeLink(kind, url) {
     url = text(url, 4096);
-    return /^https:\/\/[^\s]+$/.test(url) || (url.startsWith(location.origin + '/fake/claude/') && !/\s/.test(url)) ? url : '';
+    return /^https:\/\/[^\s]+$/.test(url) || (url.startsWith(location.origin + '/fake/' + kind + '/') && !/\s/.test(url)) ? url : '';
   }
-  function renderClaudeFlow(flow, title) {
+  function renderCodeFlow(kind, flow, title) {
     if (!oauthFlow.id || flow.id !== oauthFlow.id) return;
     const status = text(flow.status, 32);
     const named = typeof flow.name === 'string' && providerNamePattern.test(flow.name) ? flow.name : '';
-    if (named && !flow.reconnect) title = t('providers.connect.claudeNamed', { name: named });
+    if (named && !flow.reconnect) title = t('providers.connect.' + kind + 'Named', { name: named });
     oauthFlow.waiting = status === 'waiting';
     const box = oauthBox(title);
     const message = element('p', 'panel-meta provider-oauth-status', '');
@@ -1294,14 +1296,15 @@
       return a;
     };
     if (status === 'waiting') {
-      message.textContent = t('providers.oauth.claude.waiting');
+      message.textContent = t('providers.oauth.' + kind + '.waiting');
       const links = element('div', 'login-form');
-      links.append(link(claudeLink(flow.loopbackURL), 'providers.oauth.claude.open', 'button-primary'), link(claudeLink(flow.manualURL), 'providers.oauth.claude.openManual', 'button-subtle'));
+      if (kind === 'claude') links.append(link(codeLink(kind, flow.loopbackURL), 'providers.oauth.claude.open', 'button-primary'), link(codeLink(kind, flow.manualURL), 'providers.oauth.claude.openManual', 'button-subtle'));
+      else links.append(link(codeLink(kind, flow.manualURL), 'providers.oauth.' + kind + '.open', 'button-primary'));
       const paste = element('form', 'login-form provider-paste');
       const input = element('input', 'text-input');
       input.type = 'text';
-      input.placeholder = t('providers.oauth.claude.codePlaceholder');
-      input.setAttribute('aria-label', t('providers.oauth.claude.code'));
+      input.placeholder = t('providers.oauth.' + kind + '.codePlaceholder');
+      input.setAttribute('aria-label', t('providers.oauth.' + kind + '.code'));
       input.setAttribute('autocapitalize', 'off');
       input.setAttribute('autocomplete', 'off');
       input.setAttribute('spellcheck', 'false');
@@ -1316,13 +1319,15 @@
         input.value = '';
         if (!value) return;
         try {
-          renderClaudeFlow(await api('/api/oauth/claude/flows/' + encodeURIComponent(oauthFlow.id) + '/code', { method: 'POST', body: JSON.stringify({ code: value }) }), title);
+          renderCodeFlow(kind, await api('/api/oauth/' + kind + '/flows/' + encodeURIComponent(oauthFlow.id) + '/code', { method: 'POST', body: JSON.stringify({ code: value }) }), title);
         } catch (error) {
           pasteStatus.textContent = t('providers.oauth.pasteFailed', { message: error.message });
         }
       });
       const cancel = button('button-subtle', t('providers.oauth.cancel'), () => endOAuth());
-      box.append(message, links, element('p', 'panel-meta', t('providers.oauth.claude.pasteNote')), paste, pasteStatus, cancel);
+      box.append(message, links);
+      if (kind === 'claude') box.append(element('p', 'panel-meta', t('providers.oauth.claude.pasteNote')));
+      box.append(paste, pasteStatus, cancel);
     } else if (status === 'exchanging') {
       message.textContent = t('providers.oauth.exchanging');
       box.append(message);
@@ -1330,7 +1335,7 @@
       message.textContent = flowMessage(flow) + (flow.refresh ? refreshText({ status: text(flow.refresh.status, 64), recovery: text(flow.refresh.recovery, 64), failureCode: text(flow.refresh.failureCode, 64), expiresAt: text(flow.refresh.expiresAt, 64), nextRefreshAt: text(flow.refresh.nextRefreshAt, 64) }) : '');
       box.append(message);
       if (flow.warning) box.append(element('p', 'panel-meta provider-warning', window.IwatoI18n.serverError(flow.warningCode, flow.warningParams, text(flow.warning, 500))));
-      const hint = providerView.profiles.find((p) => p.oauthFlow === 'claude')?.hint;
+      const hint = providerView.profiles.find((p) => p.oauthFlow === kind)?.hint;
       if (hint) box.append(element('p', 'panel-meta', hint));
       refreshProviders();
     } else {
@@ -1345,7 +1350,7 @@
         oauthFlow.timer = 0;
         if (oauthFlow.id !== id) return;
         try {
-          renderClaudeFlow(await api('/api/oauth/claude/flows/' + encodeURIComponent(id)), title);
+          renderCodeFlow(kind, await api('/api/oauth/' + kind + '/flows/' + encodeURIComponent(id)), title);
         } catch (error) {
           message.textContent = t('providers.oauth.stateFailed', { message: error.message });
         }
@@ -1376,7 +1381,7 @@
         const actions = element('div', 'provider-actions');
         if (profile.oauth) {
           if (!needsReauthorization(p.refresh)) actions.append(button('button-subtle', t('providers.rotate'), () => rotateProvider(p)));
-          actions.append(button(needsReauthorization(p.refresh) ? 'button-primary' : 'button-subtle', t('nav.reconnect'), () => profile.oauthFlow === 'xai' || profile.oauthFlow === 'codex' ? beginDevice(profile.oauthFlow, p.name, true) : profile.oauthFlow === 'claude' ? beginClaude(p.name, true) : beginOAuth(p.name, true)));
+          actions.append(button(needsReauthorization(p.refresh) ? 'button-primary' : 'button-subtle', t('nav.reconnect'), () => profile.oauthFlow === 'xai' || profile.oauthFlow === 'codex' ? beginDevice(profile.oauthFlow, p.name, true) : codeFlows.includes(profile.oauthFlow) ? beginCode(profile.oauthFlow, p.name, true) : beginOAuth(p.name, true)));
         }
         const edit = element('form', 'login-form provider-edit');
         edit.hidden = true;
@@ -1413,7 +1418,7 @@
       $('provider-form-status').textContent = '';
       $('provider-name').value = '';
       if (oauthProfile.oauthFlow === 'xai' || oauthProfile.oauthFlow === 'codex') beginDevice(oauthProfile.oauthFlow, name, false);
-      else if (oauthProfile.oauthFlow === 'claude') beginClaude(name, false);
+      else if (codeFlows.includes(oauthProfile.oauthFlow)) beginCode(oauthProfile.oauthFlow, name, false);
       else beginOAuth(name, false);
       return;
     }

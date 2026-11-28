@@ -17,6 +17,7 @@ Iwato のプロバイダーの種類:
 | 「Claude Code」 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude のアカウントでログイン (下記)。api.anthropic.com に送ります |
 | 「Grok Build」 | `XAI_OAUTH_TOKEN` | xAI のアカウントでログイン (下記) |
 | 「Codex」 | `CODEX_CHATGPT_ACCESS_TOKEN`、`CODEX_CHATGPT_ACCOUNT_ID` | ChatGPT のアカウントでログイン (下記)。chatgpt.com/backend-api/codex と /backend-api/wham に送ります |
+| 「Antigravity CLI」 | `ANTIGRAVITY_OAUTH_TOKEN` | Google のアカウントでログイン (下記)。daily-cloudcode-pa.googleapis.com/v1internal、www.googleapis.com/oauth2/v2/userinfo、aicode.googleapis.com に送ります |
 | 「OpenAI API」 | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
 | 「Atlassian」 | `ATLASSIAN_ACCESS_TOKEN` | OAuth (下記)。`claude` が mcp.atlassian.com/v2/mcp に送ります |
@@ -71,6 +72,10 @@ Iwato が `claude auth login` と同じく、Claude Code 自身の公開クラ�
 ### Codex の ChatGPT でのログイン
 
 Iwato が auth.openai.com に Codex のデバイスコードのログインでログインします (PC でもスマホでも同じ手順)。ログインには Codex 自身の公開クライアント ID を使います。先に ChatGPT の設定 (セキュリティ) で Codex のデバイスコードのログインを有効にしてください。サンドボックスでは、ターミナルが `~/.codex/auth.json` をプロバイダーのプレースホルダーで書くので (ないとき、または Iwato が書いたものだけ)、`codex` はログインした状態で起動します。トークンはゲートウェイが更新します。このファイルの中身は表示しないでください (エージェントの会話にプレースホルダーが入るとその会話は止まります)。前に `codex login` していたら `codex logout` してから新しいターミナルを開きます。確かめるには `codex exec 'hello'`。Codex のアプリ (コネクター)・プラグイン・テレメトリーはプロバイダーの規則に含まないので、その提案は承認するか拒否します。
+
+### Antigravity CLI の Google でのログイン
+
+Iwato が `agy` と同じように、Antigravity CLI 自身の Google のクライアントでログインします (Google が Iwato に発行したものではありません)。「Google でログイン」で Google のページを開いて許可すると、antigravity.google のページにコードが出るので、Iwato に貼り付けます (PC でもスマホでも同じ手順)。このクライアントはインストール型のアプリで、そのシークレットはどの agy にも入っています。Iwato はそれを refresh token と一緒にゲートウェイに渡します。サンドボックスでは、ターミナルが `~/.gemini/antigravity-cli/antigravity-oauth-token` をプロバイダーのプレースホルダーで書くので (ないとき、または Iwato が書いたものだけ)、`agy` はログインした状態で起動します。トークンはゲートウェイが更新します。このファイルの中身は表示しないでください。前に `agy` でログインしていたら、そのファイルを消してから新しいターミナルを開きます。「Your current account is not eligible for Antigravity」と出たら、先にブラウザで Google アカウントの確認を済ませてください。確かめるには `agy -p 'hello'`。agy のテレメトリーはプロバイダーの規則に含まないので、その提案は承認するか拒否します。
 
 ### Grok Build の xAI のサブスクリプション
 

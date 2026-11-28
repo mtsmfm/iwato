@@ -37,7 +37,8 @@ const termEnvPath = ".config/iwato/env"
 
 // termEnvContent is the file: grok's GROK_AUTH_PROVIDER_COMMAND when the
 // xAI subscription provider gives XAI_OAUTH_TOKEN, Codex's auth.json with
-// the Codex sign-in provider (codexAuthLines), with a Claude sign-in
+// the Codex sign-in provider (codexAuthLines), agy's token file with the
+// Antigravity provider (antigravityTokenLines), with a Claude sign-in
 // provider (claudeSignIn) its scopes, as both Claude providers give
 // CLAUDE_CODE_OAUTH_TOKEN, and TZ for a zone other than UTC.
 func termEnvContent(claudeSignIn bool, zone string) string {
@@ -45,6 +46,7 @@ func termEnvContent(claudeSignIn bool, zone string) string {
 		"# Set your own values in ~/.bashrc (read later).\n" +
 		termEnvIf(grokOAuthCredentialKey, "GROK_AUTH_PROVIDER_COMMAND", grokAuthCommand) +
 		codexAuthLines +
+		antigravityTokenLines +
 		// Claude Code scrolls 3 lines per wheel report only in the terminals it
 		// knows (VS Code, Windows Terminal); 1 elsewhere.
 		termEnvDefault("CLAUDE_CODE_SCROLL_SPEED", "3")

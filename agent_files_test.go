@@ -55,7 +55,10 @@ func TestAgentFilesPlacedWhenAbsent(t *testing.T) {
 	if fi, err := os.Stat(filepath.Join(home, ".claude")); err != nil || fi.Mode().Perm() != 0o700 {
 		t.Fatalf(".claude: %v %v", fi.Mode(), err)
 	}
-	if out != "placed ~/.claude/CLAUDE.md\nplaced ~/.codex/AGENTS.md\n" {
+	if l, err := os.Readlink(filepath.Join(home, ".gemini", "AGENTS.md")); err != nil || l != a {
+		t.Fatalf("agy link = %q %v", l, err)
+	}
+	if out != "placed ~/.claude/CLAUDE.md\nplaced ~/.codex/AGENTS.md\nplaced ~/.gemini/AGENTS.md\n" {
 		t.Fatalf("output %q", out)
 	}
 	// A second run (the next start) changes nothing and says nothing.
@@ -67,13 +70,14 @@ func TestAgentFilesPlacedWhenAbsent(t *testing.T) {
 func TestAgentFilesKeepTheUsersOwn(t *testing.T) {
 	home, a := t.TempDir(), agentsFile(t)
 	// The user's own files, in directories kept on a volume.
-	for _, d := range []string{".claude", ".codex"} {
+	for _, d := range []string{".claude", ".codex", ".gemini"} {
 		if err := os.Mkdir(filepath.Join(home, d), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	mine := filepath.Join(home, ".claude", "CLAUDE.md")
 	os.WriteFile(mine, []byte("mine\n"), 0o600)
+	os.WriteFile(filepath.Join(home, ".gemini", "AGENTS.md"), []byte("mine\n"), 0o600)
 	// A dangling link counts as a file.
 	if err := os.Symlink(filepath.Join(home, "elsewhere"), filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
 		t.Fatal(err)
@@ -96,6 +100,7 @@ func TestAgentFilesDoNotFollowLinkedDirectories(t *testing.T) {
 	home, a, other := t.TempDir(), agentsFile(t), t.TempDir()
 	os.Symlink(other, filepath.Join(home, ".claude"))
 	os.Symlink(other, filepath.Join(home, ".codex"))
+	os.Symlink(other, filepath.Join(home, ".gemini"))
 	if out := runAgentFiles(t, home, a); out != "" {
 		t.Fatalf("output %q", out)
 	}
@@ -127,7 +132,7 @@ func TestAgentFilesSkipWhatDoesNotFit(t *testing.T) {
 	}
 	// A file in the way of a directory.
 	os.WriteFile(filepath.Join(home, ".claude"), nil, 0o600)
-	if out := runAgentFiles(t, home, a); out != "placed ~/.codex/AGENTS.md\n" {
+	if out := runAgentFiles(t, home, a); out != "placed ~/.codex/AGENTS.md\nplaced ~/.gemini/AGENTS.md\n" {
 		t.Fatalf("output %q", out)
 	}
 }

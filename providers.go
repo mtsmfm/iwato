@@ -434,6 +434,8 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 				connect = "ChatGPT でログイン"
 			} else if prof.OAuthFlow == "claude" {
 				connect = "Claude にログイン"
+			} else if prof.OAuthFlow == "antigravity" {
+				connect = "Google でログイン"
 			}
 			fail(w, 400, prof.Label+" は「"+connect+"」で追加します")
 			return

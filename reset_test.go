@@ -250,7 +250,7 @@ func TestResetRemovesOnlyIwatosOwn(t *testing.T) {
 	deleteSecretKey = func() error { keyDeleted++; return nil }
 	t.Cleanup(func() { deleteSecretKey = protect.DeleteKey })
 	// A sign-in in progress.
-	flow := &claudeFlow{status: "waiting", ctx: s.oauthLife()}
+	flow := &codeFlow{status: "waiting", ctx: s.oauthLife()}
 	s.claude.current = flow
 
 	cookie, csrf := login(t, s)

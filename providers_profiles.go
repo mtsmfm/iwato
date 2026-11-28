@@ -52,12 +52,13 @@ type providerProfile struct {
 	Note        string              `json:"note"`
 	Credentials []profileCredential `json:"credentials"`
 	// OAuth: Iwato gets the credential by an OAuth flow (atlassian.go,
-	// xai.go, claude_oauth.go) and the gateway refreshes it; the owner enters no value.
+	// device_flow.go, code_flow.go) and the gateway refreshes it; the owner enters no value.
 	OAuth bool `json:"oauth,omitempty"`
 	// OAuthFlow names the flow of an OAuth profile: "atlassian" (the
 	// authorization code with a loopback redirect), "xai" and "codex"
-	// (device code: device_flow.go) or
-	// "claude" (Claude Code's client: a loopback redirect or a pasted code).
+	// (device code: device_flow.go), "claude" (Claude Code's client: a
+	// loopback redirect or a pasted code) or "antigravity" (agy's client:
+	// a pasted code; code_flow.go).
 	OAuthFlow string `json:"oauthFlow,omitempty"`
 	// Guide is a command to run in the sandbox to use the provider.
 	Guide string `json:"guide,omitempty"`
@@ -185,6 +186,8 @@ func oauthCredentialKey(profile string) string {
 		return codexOAuthCredentialKey
 	} else if ok && p.OAuthFlow == "claude" {
 		return claudeOAuthCredentialKey
+	} else if ok && p.OAuthFlow == "antigravity" {
+		return antigravityCredentialKey
 	}
 	return atlassianCredentialKey
 }
@@ -227,6 +230,14 @@ var providerProfiles = []providerProfile{
 		OAuth:       true,
 		OAuthFlow:   "codex",
 		Hint:        "Iwato がターミナルで ~/.codex/auth.json をこのプロバイダーのプレースホルダーで書きます (中身を表示しないでください)。前に codex login していたら codex logout してから新しいターミナルを開きます。付け外しと再接続は再起動で反映されます。ログインは ChatGPT の設定 (セキュリティ) で Codex のデバイスコードのログインを有効にしてから。確かめるには codex exec 'hello'。",
+	},
+	{
+		ID: antigravityProfileID, Label: "Antigravity CLI", Group: groupAgent,
+		Note:        "ANTIGRAVITY_OAUTH_TOKEN。Google のアカウントでログインし、サンドボックスの agy が daily-cloudcode-pa.googleapis.com/v1internal、www.googleapis.com/oauth2/v2/userinfo と aicode.googleapis.com に送ります。",
+		Credentials: []profileCredential{{Name: "access_token", Label: "アクセストークン"}},
+		OAuth:       true,
+		OAuthFlow:   "antigravity",
+		Hint:        "Iwato がターミナルで ~/.gemini/antigravity-cli/antigravity-oauth-token をこのプロバイダーのプレースホルダーで書きます (中身を表示しないでください)。前に agy でログインしていたら、そのファイルを消してから新しいターミナルを開きます。付け外しと再接続は再起動で反映されます。「Your current account is not eligible for Antigravity」と出たら、ブラウザで Google アカウントの確認を済ませてください。確かめるには agy -p 'hello'。",
 	},
 	{
 		ID: "iwato-openai", Label: "OpenAI API", Group: groupAgent,

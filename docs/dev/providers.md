@@ -6,7 +6,7 @@ Run `providers-check.sh` inside the sandbox (it never prints tokens). To get it 
 
 ## Setup
 
-1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-codex-subscription`, `iwato-atlassian`, `iwato-openai`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
+1. Start the new exe. The gateway image changes, so the gateway is recreated, and the log shows `imported the provider profile iwato-github` and `iwato-claude-subscription`, `iwato-grok-subscription`, `iwato-codex-subscription`, `iwato-antigravity-subscription`, `iwato-atlassian`, `iwato-openai`, `iwato-openrouter`, `iwato-huggingface`, `iwato-civitai`, `iwato-comfy-cloud`, `iwato-vastai`, `iwato-runpod`, `iwato-modal`, `iwato-cloudflare` (not on later starts)
 2. Check that the key is on the volume (so values stay readable after the gateway is recreated):
 
        wslc container exec iwato-personal-gateway ls -l /var/lib/openshell/credentials
@@ -79,7 +79,7 @@ Iwato.exe gets the OAuth grant from Atlassian (dynamic client registration, PKCE
 - Lifetimes of the access and refresh tokens, and whether the refresh token rotates: Iwato's log (menu **Log**) shows them on connect, never the values
   - `atlassian oauth: NAME: token response fields ..., lifetimes map[expires_in:N ...] s, refresh_token true, scope "..."`: the exchange's response (`refresh_token_expires_in` etc. would show here)
   - `the gateway refreshed it; access token lifetime ...`: the gateway's first refresh right after connecting (capped at the profile's max_lifetime of 1 hour)
-- Whether refresh needs `resource`: OpenShell v0.1.6's refresh sends only `grant_type=refresh_token, client_id, refresh_token` (no client_secret, scope or resource). If the first refresh fails, the UI shows "Connected, but the gateway's first refresh failed (STATE)". `invalid_target` / `invalid_request` suggest resource is required (needs an OpenShell change; the current token works until it expires)
+- Whether refresh needs `resource`: OpenShell v0.1.10's refresh sends a form with `grant_type=refresh_token, client_id, refresh_token`, plus `client_secret` when it is in the material (`client_secret_post`; Basic with `token_endpoint_auth_method` material), the profile's scopes, and `resource` when it is in the material. Iwato gives no `resource`. If the first refresh fails, the UI shows "Connected, but the gateway's first refresh failed (STATE)". `invalid_target` / `invalid_request` suggest resource is required (needs an OpenShell change; the current token works until it expires)
 - Rotation: two successful **Refresh now** in a row mean the gateway stores and uses the new refresh token (`reauthorization_required` / `oauth_invalid_grant` on the second points at storing the rotation or resource)
 
 ### Steps
@@ -251,3 +251,20 @@ Iwato.exe signs in at `auth.openai.com` with Codex's device code login (Codex's 
 4. In a new terminal: `sh providers-check.sh codex` (both variables are placeholders, `auth.json` is Iwato's, `codex exec` replies)
 5. Interactive `codex` starts without a login screen and answers; `/status` shows the ChatGPT account
 6. Denied requests (apps `/backend-api/ps/mcp`, plugins, telemetry on `ab.chatgpt.com`) show in the policy tab; decide whether they are needed
+
+## (o) Antigravity CLI with a Google sign-in (iwato-antigravity-subscription, experimental)
+
+Iwato.exe signs in with agy's own Google OAuth client (an installed app: authorization code with PKCE, `access_type=offline`, `prompt=consent`; the redirect is `https://antigravity.google/oauth-callback`, which shows the code to paste, on the PC too) and hands the refresh token and the client's secret to the gateway. The secret is in every copy of agy (a string `GOCSPX-…` in the binary); if a new agy changes its client, update `antigravity.go` and the profile. agy reads no variable: the terminals' `~/.config/iwato/env` writes `~/.gemini/antigravity-cli/antigravity-oauth-token` with the `ANTIGRAVITY_OAUTH_TOKEN` placeholder and an expiry in 2099 (only when absent or Iwato's, marked by `"iwato":"gateway-refreshes"`). `TestAntigravityFlow` covers the flow with a fake.
+
+### Open points on Google's side
+
+- The gateway's refresh (form with `client_secret`) is not run against Google. Google does not rotate the refresh token; the access token lives 3599 s
+- Google may answer 403 "Your current account is not eligible for Antigravity" until the owner verifies the account in a browser
+- What antigravity.google's page shows is taken as the code alone; the page's address (with `code` and `state`) is accepted too
+
+### Steps
+
+1. Menu **Providers** → type **Antigravity CLI** → **Sign in with Google** → **Sign in with Google**, allow, and paste the code antigravity.google shows
+2. Press **Refresh now** twice; both succeed
+3. Attach it and restart; install agy with mise (`mise use -g agy`)
+4. In a new terminal, `agy -p 'hello'` replies. Denied requests (telemetry on `play.googleapis.com`, the avatar on `lh3.googleusercontent.com`) show in the policy tab

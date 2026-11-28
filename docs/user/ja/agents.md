@@ -34,15 +34,24 @@ mise use -g codex
 
 mise は GitHub の openai/codex のリリースから入れます。codex は新しい版を知らせるだけで、自分では更新しません (`mise use -g codex@latest` で更新します)。プロバイダーは「Codex」(ChatGPT のアカウント) か、API キーなら「OpenAI API」を使います ([プロバイダー](providers.md#codex-の-chatgpt-でのログイン))。
 
+## Antigravity CLI
+
+```sh
+mise use -g agy
+```
+
+mise は GitHub の google-antigravity/antigravity-cli のリリースから `~/.local/share/mise/installs/agy/<版>` に入れます。プロバイダーは「Antigravity CLI」(Google のアカウントでログイン) を使います ([プロバイダー](providers.md#antigravity-cli-の-google-でのログイン))。
+
 ## そのほかのエージェント
 
 提案を承認して使います。
 
 ## エージェント向けのサンドボックスの説明 (`/AGENTS.md`)
 
-標準イメージには `/AGENTS.md` があり、エージェントに環境を説明します: 止められた通信の見え方と規則の提案のしかた、残るもの、認証情報が置き換え用の値であること、パッケージマネージャーの既定 ([サンドボックス](sandboxes.md#パッケージマネージャーの既定))、HTTPS の git、デスクトップ。Claude Code も Codex も `/AGENTS.md` を自分では読まないので、Iwato はサンドボックスを起動するたびに次を **ないときだけ** 置きます:
+標準イメージには `/AGENTS.md` があり、エージェントに環境を説明します: 止められた通信の見え方と規則の提案のしかた、残るもの、認証情報が置き換え用の値であること、パッケージマネージャーの既定 ([サンドボックス](sandboxes.md#パッケージマネージャーの既定))、HTTPS の git、デスクトップ。どのエージェントも `/AGENTS.md` を自分では読まないので、Iwato はサンドボックスを起動するたびに次を **ないときだけ** 置きます:
 
 - Claude Code: `~/.claude/CLAUDE.md` (`@/AGENTS.md` の 1 行で取り込む)
 - Codex: `~/.codex/AGENTS.md` (`/AGENTS.md` へのシンボリックリンク)
+- Antigravity CLI: `~/.gemini/AGENTS.md` (`/AGENTS.md` へのシンボリックリンク)
 
-あるファイル (中身が何でも、壊れたシンボリックリンクでも) は変えません。ホームがない・サンドボックスのユーザーのものでない・シンボリックリンクのとき、`~/.claude` や `~/.codex` がシンボリックリンクやファイルのとき、イメージに `/AGENTS.md` がないときは何もしません。置いてほしくなければ、自分の `~/.claude/CLAUDE.md` や `~/.codex/AGENTS.md` を作ります (空でも構いません。ホームは残ります)。自分のファイルから取り込むには `@/AGENTS.md` の行を足します。その他のエージェントは、そのエージェントの全体の指示ファイルから `/AGENTS.md` を読むように書きます。
+あるファイル (中身が何でも、壊れたシンボリックリンクでも) は変えません。ホームがない・サンドボックスのユーザーのものでない・シンボリックリンクのとき、`~/.claude`・`~/.codex`・`~/.gemini` がシンボリックリンクやファイルのとき、イメージに `/AGENTS.md` がないときは何もしません。置いてほしくなければ、自分の `~/.claude/CLAUDE.md`・`~/.codex/AGENTS.md`・`~/.gemini/AGENTS.md` を作ります (空でも構いません。ホームは残ります)。自分のファイルから取り込むには `@/AGENTS.md` の行を足します。その他のエージェントは、そのエージェントの全体の指示ファイルから `/AGENTS.md` を読むように書きます。

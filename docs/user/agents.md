@@ -34,15 +34,24 @@ mise use -g codex
 
 mise installs it from openai/codex's GitHub releases. codex only tells about new versions and does not update itself (update with `mise use -g codex@latest`). Use the provider Codex for a ChatGPT account, or OpenAI API for an API key. See [providers](providers.md#chatgpt-sign-in-for-codex).
 
+## Antigravity CLI
+
+```sh
+mise use -g agy
+```
+
+mise installs it from google-antigravity/antigravity-cli's GitHub releases into `~/.local/share/mise/installs/agy/<version>`. Use the provider Antigravity CLI (sign in with a Google account). See [providers](providers.md#google-sign-in-for-the-antigravity-cli).
+
 ## Other agents
 
 Approve their proposals.
 
 ## The sandbox's instructions for agents (`/AGENTS.md`)
 
-The standard image has `/AGENTS.md`, which explains the environment to agents: how a blocked connection looks and how to propose a rule, what persists, that credentials are placeholders, the package-manager defaults ([sandboxes](sandboxes.md#package-manager-defaults)), git over HTTPS, the desktop. Neither Claude Code nor Codex reads `/AGENTS.md` by itself, so on every start of a sandbox Iwato places, **only when absent**:
+The standard image has `/AGENTS.md`, which explains the environment to agents: how a blocked connection looks and how to propose a rule, what persists, that credentials are placeholders, the package-manager defaults ([sandboxes](sandboxes.md#package-manager-defaults)), git over HTTPS, the desktop. No agent reads `/AGENTS.md` by itself, so on every start of a sandbox Iwato places, **only when absent**:
 
 - Claude Code: `~/.claude/CLAUDE.md`, one line `@/AGENTS.md` that includes it
 - Codex: `~/.codex/AGENTS.md`, a symbolic link to `/AGENTS.md`
+- Antigravity CLI: `~/.gemini/AGENTS.md`, a symbolic link to `/AGENTS.md`
 
-An existing file (whatever its content, even a broken symbolic link) is left alone. Iwato does nothing when the home is missing, not owned by the sandbox user or a symbolic link, when `~/.claude` or `~/.codex` is a symbolic link or a file, or when the image has no `/AGENTS.md`. To opt out, create your own `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` (an empty one is enough; the home persists). To keep the instructions in your own file, add the line `@/AGENTS.md`. For other agents, point their global instructions file at `/AGENTS.md`.
+An existing file (whatever its content, even a broken symbolic link) is left alone. Iwato does nothing when the home is missing, not owned by the sandbox user or a symbolic link, when `~/.claude`, `~/.codex` or `~/.gemini` is a symbolic link or a file, or when the image has no `/AGENTS.md`. To opt out, create your own `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` or `~/.gemini/AGENTS.md` (an empty one is enough; the home persists). To keep the instructions in your own file, add the line `@/AGENTS.md`. For other agents, point their global instructions file at `/AGENTS.md`.

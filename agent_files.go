@@ -11,10 +11,10 @@ import (
 )
 
 // agentFilesScript places the agents' global instruction files in the
-// sandbox user's home so that they read /AGENTS.md ($1), which neither Claude
-// Code nor Codex reads by itself: ~/.claude/CLAUDE.md importing it, and
-// ~/.codex/AGENTS.md linking to it. It runs as the sandbox user (so the
-// files are the user's), places a file only when there is none (a
+// sandbox user's home so that they read /AGENTS.md ($1), which no agent
+// reads by itself: ~/.claude/CLAUDE.md importing it, and ~/.codex/AGENTS.md
+// and ~/.gemini/AGENTS.md (agy's) linking to it. It runs as the sandbox
+// user (so the files are the user's), places a file only when there is none (a
 // dangling link counts), never goes through a link to a directory, and
 // does nothing when the home or /AGENTS.md does not fit (any image).
 const agentFilesScript = exportHome + `set -u
@@ -37,6 +37,9 @@ if own .claude && absent "$h/.claude/CLAUDE.md"; then
 fi
 if own .codex && absent "$h/.codex/AGENTS.md"; then
   ln -s "$a" "$h/.codex/AGENTS.md" 2>/dev/null && echo "placed ~/.codex/AGENTS.md"
+fi
+if own .gemini && absent "$h/.gemini/AGENTS.md"; then
+  ln -s "$a" "$h/.gemini/AGENTS.md" 2>/dev/null && echo "placed ~/.gemini/AGENTS.md"
 fi
 exit 0
 `

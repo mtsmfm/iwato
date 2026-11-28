@@ -9,7 +9,7 @@ import (
 )
 
 // oauthGrant is what an OAuth flow (atlassian_flow.go, device_flow.go,
-// claude_oauth.go) hands to the gateway once it has the tokens.
+// code_flow.go) hands to the gateway once it has the tokens.
 type oauthGrant struct {
 	// log prefixes the log lines ("atlassian oauth").
 	log string
@@ -18,8 +18,9 @@ type oauthGrant struct {
 	name      string
 	reconnect bool
 	// profile and key: the provider's profile and the credential the
-	// gateway refreshes; clientID the OAuth client the refresh uses.
-	profile, key, clientID string
+	// gateway refreshes; clientID the OAuth client the refresh uses, and
+	// clientSecret its secret (empty for a public client).
+	profile, key, clientID, clientSecret string
 	// extra are the provider's other credentials (not refreshed).
 	extra map[string]string
 	// noRefresh is the failure without a refresh token; refreshCode and
@@ -51,6 +52,11 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 		expiresAt = time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second)
 	}
 	material := map[string]string{"client_id": g.clientID, "refresh_token": tokens.RefreshToken}
+	secretKeys := []string{"refresh_token"}
+	if g.clientSecret != "" {
+		material["client_secret"] = g.clientSecret
+		secretKeys = append(secretKeys, "client_secret")
+	}
 	creds := map[string]string{g.key: tokens.AccessToken}
 	maps.Copy(creds, g.extra)
 	// Iwato keeps neither: the gateway owns the grant (and rotates it).
@@ -73,7 +79,7 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 			err = rt.UpdateProvider(ctx, name, creds)
 		}
 		if err == nil {
-			err = ref.ConfigureRefresh(ctx, name, g.key, material, []string{"refresh_token"}, expiresAt)
+			err = ref.ConfigureRefresh(ctx, name, g.key, material, secretKeys, expiresAt)
 		}
 		if err != nil {
 			log.Printf("%s: %s: reconnect: %v", g.log, name, english(err))
@@ -89,7 +95,7 @@ func (s *Server) handOverGrant(ctx context.Context, g oauthGrant, tokens oauthTo
 		if g.named != nil {
 			g.named(name)
 		}
-		if err := ref.ConfigureRefresh(ctx, name, g.key, material, []string{"refresh_token"}, expiresAt); err != nil {
+		if err := ref.ConfigureRefresh(ctx, name, g.key, material, secretKeys, expiresAt); err != nil {
 			log.Printf("%s: %s: configure refresh: %v", g.log, name, english(err))
 			if derr := rt.DeleteProvider(ctx, name); derr != nil {
 				log.Printf("%s: %s: remove the provider again: %v", g.log, name, english(derr))
@@ -156,15 +162,7 @@ func (s *Server) cancelOAuthFlows(wait bool) {
 		s.oauth.current = nil
 	}
 	s.oauth.mu.Unlock()
-	s.claude.mu.Lock()
-	if f := s.claude.current; f != nil {
-		if f.status == "waiting" || f.status == "exchanging" {
-			f.status, f.message = "canceled", canceled
-		}
-		f.stop()
-		s.claude.current = nil
-	}
-	s.claude.mu.Unlock()
+	s.cancelCodeFlows(canceled)
 	s.cancelDeviceFlows(canceled)
 	if wait {
 		s.providerMu.Lock()

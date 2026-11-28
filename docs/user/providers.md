@@ -17,6 +17,7 @@ Iwato's provider types:
 | Claude Code | `CLAUDE_CODE_OAUTH_TOKEN` | sign in with a Claude account (below), sent to api.anthropic.com |
 | Grok Build | `XAI_OAUTH_TOKEN` | sign in with an xAI account (below) |
 | Codex | `CODEX_CHATGPT_ACCESS_TOKEN`, `CODEX_CHATGPT_ACCOUNT_ID` | sign in with a ChatGPT account (below), sent to chatgpt.com/backend-api/codex and /backend-api/wham |
+| Antigravity CLI | `ANTIGRAVITY_OAUTH_TOKEN` | sign in with a Google account (below), sent to daily-cloudcode-pa.googleapis.com/v1internal, www.googleapis.com/oauth2/v2/userinfo and aicode.googleapis.com |
 | OpenAI API | `OPENAI_API_KEY` | api.openai.com/v1 |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai/api |
 | Atlassian | `ATLASSIAN_ACCESS_TOKEN` | OAuth (below); `claude` sends it to mcp.atlassian.com/v2/mcp |
@@ -71,6 +72,10 @@ Iwato no longer offers the "Claude Code (setup token)" type. A provider made wit
 ### ChatGPT sign-in for Codex
 
 Iwato signs in to auth.openai.com with Codex's device code login (the same steps on a PC and a phone), using Codex's own public client id. Turn on device code authorization for Codex in ChatGPT's settings (Security) first. In the sandbox, the terminals write `~/.codex/auth.json` with the provider's placeholders (only when there is none, or it is Iwato's), so `codex` starts signed in; the gateway refreshes the token. Do not print that file: a placeholder in an agent's conversation stops it. If you ran `codex login` before, run `codex logout` and open a new terminal. Check with `codex exec 'hello'`. Codex's apps (connectors), plugins and telemetry are not in the provider's rule: approve or reject their proposals.
+
+### Google sign-in for the Antigravity CLI
+
+Iwato signs in with the Antigravity CLI's own Google client (not one Google issued to Iwato), as `agy` does: **Sign in with Google** opens Google's page, and after allowing, antigravity.google shows a code to paste into Iwato (on the PC and on a phone alike). The client is an installed app whose secret is in every copy of agy; Iwato gives it to the gateway with the refresh token. In the sandbox, the terminals write `~/.gemini/antigravity-cli/antigravity-oauth-token` with the provider's placeholder (only when there is none, or it is Iwato's), so `agy` starts signed in; the gateway refreshes the token. Do not print that file. If you signed in with `agy` before, delete that file and open a new terminal. If agy says "Your current account is not eligible for Antigravity", verify your Google account in a browser first. Check with `agy -p 'hello'`. agy's telemetry is not in the provider's rule: approve or reject its proposals.
 
 ### xAI subscription for Grok Build
 
