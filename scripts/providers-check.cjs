@@ -261,7 +261,7 @@ const yamlFill = async (box, text) => { await box.locator('.cm-editor').waitFor(
     // The Antigravity CLI's Google sign-in: the fake's page shows the code
     // alone, which is pasted (on the PC too).
     await page.selectOption('#provider-profile', 'iwato-antigravity-subscription');
-    check((await page.locator('#provider-submit').innerText()) === 'Google でログイン' && (await page.innerText('#provider-note')).includes('daily-cloudcode-pa.googleapis.com'), 'the Antigravity sign-in profile takes no value');
+    check((await page.locator('#provider-submit').innerText()) === 'Google でログイン' && (await page.innerText('#provider-note')).includes('ANTIGRAVITY_OAUTH_TOKEN'), 'the Antigravity sign-in profile takes no value');
     await page.click('#provider-submit');
     {
       const box = panel.locator('#provider-oauth');
