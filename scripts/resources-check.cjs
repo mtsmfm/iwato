@@ -85,7 +85,7 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       await page.click('#menu-button');
       const usage = page.locator('#menu-usage');
       await usage.getByText('サブスクの使用量').waitFor({ timeout: 10000 });
-      check(/Claude[\s\S]*62%[\s\S]*Codex\s*40 分前の値/.test(await usage.innerText()), "the menu's usage (" + (await usage.innerText()).replace(/\n/g, ' ') + ')');
+      check(/Claude[\s\S]*62%[\s\S]*Codex[\s\S]*40 分前の値/.test(await usage.innerText()), "the menu's usage (" + (await usage.innerText()).replace(/\n/g, ' ') + ')');
       const box = await page.locator('#sidebar-actions').boundingBox();
       check(box && box.x >= 0 && box.x + box.width <= page.viewportSize().width && box.y + box.height <= page.viewportSize().height, 'the menu fits the screen');
       await shot('usage-menu.png');
@@ -99,9 +99,12 @@ const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (
       const usage = page.locator('#usage-totals');
       await usage.getByText('サブスクの使用量').waitFor({ timeout: 10000 });
       const usageText = await usage.innerText();
-      check(/Claude[\s\S]*5時間[\s\S]*62% · あと 1:4\d[\s\S]*週[\s\S]*24%/.test(usageText) && /Fable[\s\S]*41%/.test(usageText), "Claude's windows with their resets (" + usageText.replace(/\n/g, ' ') + ')');
-      check(/Gemini[\s\S]*5時間[\s\S]*14%[\s\S]*5時間[\s\S]*Claude\/GPT 30%/.test(usageText), "Gemini's window and a used group's (" + usageText.replace(/\n/g, ' ') + ')');
-      check(/Codex\s*40 分前の値/.test(usageText) && await usage.locator('.res-bar i.warn').count() === 1, 'an older reading says so; 88% is amber');
+      check(/Claude\s*62%\s*24%\s*Codex\s*3%\s*88%\s*40 分前の値\s*Gemini\s*14%\s*—/.test(usageText) && await usage.locator('.res-bar i.warn').count() === 1, 'a row per service: 5 hours and the week; an older reading says so; 88% is amber (' + usageText.replace(/\n/g, ' ') + ')');
+      check(!/Fable/.test(usageText) && /Fable 41%/.test(await usage.locator('.usage-service').first().getAttribute('title')), "the other windows are in the row's title");
+      await usage.locator('.usage-service', { hasText: 'Claude' }).click();
+      await usage.locator('.usage-service', { hasText: 'Gemini' }).click();
+      const opened = await usage.innerText();
+      check(/5時間 62% · あと 1:4\d[\s\S]*週 24%[\s\S]*Fable 41%/.test(opened) && /5時間 Claude\/GPT 30%/.test(opened), 'a row opens its windows with their resets (' + opened.replace(/\n/g, ' ') + ')');
       await usage.scrollIntoViewIfNeeded();
       await shot('usage.png');
       // Idle: the page polls; count a minute's requests.

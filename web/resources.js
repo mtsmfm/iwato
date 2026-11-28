@@ -321,52 +321,62 @@
       }
     }
 
-    // The subscriptions' usage under the totals: each service's windows
-    // with when they reset, an older reading said to be one.
+    // The subscriptions' usage under the totals: a row per service with its
+    // 5-hour and weekly windows; the row opens (hover: its title) the
+    // windows with their resets, the models' and groups' too. An older
+    // reading says so.
     class Usage {
       constructor(root) {
         this.root = root;
         this.root.hidden = true;
+        this.open = new Set();
       }
 
       update(services, settings, now = Date.now()) {
         this.root.hidden = !services.length;
         if (!services.length) return;
-        // A model's or group's window shows its name as the label (Fable a
-        // week), or, a name too long for the label's column, by the numbers
-        // with the window as the label.
-        const named = (w) => w.model && (w.kind === '5h-model' || w.model.length > 6) ? w.model + ' ' : '';
-        const label = (w) => {
-          if (w.model && !named(w)) return w.model;
-          const kind = w.model ? w.kind.slice(0, 2) : w.kind;
-          return window.IwatoI18n.has('usage.window.' + kind) ? t('usage.window.' + kind) : kind;
-        };
+        const label = (w) => w.model || (window.IwatoI18n.has('usage.window.' + w.kind) ? t('usage.window.' + w.kind) : w.kind);
         const reset = (iso) => {
           const left = Date.parse(iso) - now;
           if (left <= 0) return t('usage.reset.done');
           if (left < 24 * 3600e3) return t('usage.reset.in', { time: Math.floor(left / 3600e3) + ':' + String(Math.floor(left / 60e3) % 60).padStart(2, '0') });
           return window.IwatoI18n.date(iso, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
         };
-        const rows = [element('h3', 'res-totals-head', t('usage.title'))];
+        const passed = (w) => w.resetsAt && Date.parse(w.resetsAt) <= now;
+        const value = (w) => passed(w) ? '—' : Math.round(w.used) + '%';
+        const detail = (w) => (w.kind === '5h-model' ? t('usage.window.5h') + ' ' : '') + label(w) + ' ' + value(w) + (w.resetsAt ? ' · ' + reset(w.resetsAt) : '');
+        const cell = (w) => {
+          const c = element('span', 'usage-cell');
+          if (!w) c.append(element('em', '', '—'));
+          else c.append(bar(passed(w) ? 0 : w.used / 100, passed(w) ? '' : level(w.used / 100, settings)), element('em', '', value(w)));
+          return c;
+        };
+        const head = element('div', 'usage-row usage-columns');
+        head.append(element('span'), element('span', '', t('usage.window.5h')), element('span', '', t('usage.window.7d')));
+        const rows = [element('h3', 'res-totals-head', t('usage.title')), head];
         for (const s of services) {
-          const head = element('div', 'usage-service');
-          head.append(element('strong', '', s.name));
+          const short = s.windows.find((w) => !w.model && /^\d+h$/.test(w.kind));
+          const week = s.windows.find((w) => w.kind === '7d');
+          const row = element('button', 'usage-row usage-service');
+          row.type = 'button';
+          row.setAttribute('aria-expanded', String(this.open.has(s.service)));
+          row.title = s.name + '\n' + s.windows.map(detail).join('\n');
+          row.append(element('strong', '', s.name), cell(short), cell(week));
           const stale = s.code || (s.at && now - Date.parse(s.at) > 15 * 60e3);
           if (stale) {
             const why = s.code ? t('usage.code.' + s.code, { status: s.status }) : '';
-            const note = element('span', 'panel-meta', s.at ? t('usage.stale', { ago: window.IwatoFiles.ago(s.at, now) }) : why);
-            if (why) note.title = why;
-            head.append(note);
+            row.append(element('span', 'panel-meta usage-note', s.at ? t('usage.stale', { ago: window.IwatoFiles.ago(s.at, now) }) : why));
+            if (why) row.title += '\n' + why;
           }
-          rows.push(head);
-          for (const w of s.windows) {
-            const row = element('div', 'res-total');
-            const passed = w.resetsAt && Date.parse(w.resetsAt) <= now;
-            row.append(element('span', '', label(w)), bar(passed ? 0 : w.used / 100, passed ? '' : level(w.used / 100, settings)),
-              element('em', '', named(w) + (passed ? '—' : Math.round(w.used) + '%') + (w.resetsAt ? ' · ' + reset(w.resetsAt) : '')));
-            if (w.resetsAt) row.title = t('usage.reset.at', { time: window.IwatoI18n.date(w.resetsAt, { dateStyle: 'medium', timeStyle: 'short' }) });
-            rows.push(row);
-          }
+          const more = element('div', 'usage-detail');
+          more.hidden = !this.open.has(s.service);
+          more.append(...s.windows.map((w) => element('p', '', detail(w))));
+          row.addEventListener('click', () => {
+            if (this.open.has(s.service)) this.open.delete(s.service); else this.open.add(s.service);
+            row.setAttribute('aria-expanded', String(this.open.has(s.service)));
+            more.hidden = !this.open.has(s.service);
+          });
+          rows.push(row, more);
         }
         this.root.replaceChildren(...rows);
       }
