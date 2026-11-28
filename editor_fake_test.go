@@ -254,13 +254,20 @@ func TestEditorDir(t *testing.T) {
 }
 
 // A path printed in a terminal: ~/, absolute, or relative to the terminal's
-// working directory (~/work before a cd), and only a file under the root.
+// working directory (~/work before a cd), and only a file or a folder under
+// the root.
 func TestEditorResolve(t *testing.T) {
 	s, c, _ := newFilesServer(t)
 	get := func(p string) (int, string) {
 		res, b := request(t, s, "/api/sandboxes/dev/editor/resolve?term=main&path="+url.QueryEscape(p), "GET", "", c, "")
-		var v struct{ Path, Code string }
+		var v struct {
+			Path, Code string
+			Dir        bool
+		}
 		_ = json.Unmarshal(b, &v)
+		if v.Dir {
+			v.Path += "/"
+		}
 		return res.StatusCode, v.Path + v.Code
 	}
 	for p, want := range map[string]string{
@@ -270,8 +277,8 @@ func TestEditorResolve(t *testing.T) {
 		"/etc/passwd":          "editor_outside",
 		"../../../etc/passwd":  "editor_outside",
 		"iwato/nope.go":        "editor_missing",
-		"iwato":                "editor_not_file",
-		"/home/dev/../dev/src": "editor_not_file",
+		"iwato":                "work/iwato/",
+		"/home/dev/../dev/src": "src/",
 	} {
 		if _, got := get(p); got != want {
 			t.Errorf("%q: %q, want %q", p, got, want)

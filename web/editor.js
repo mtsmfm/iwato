@@ -991,21 +991,39 @@
         this.renderTree();
       }
 
-      // reveal expands the folders down to path (a file), unless one is a
-      // heavy folder (node_modules and the like), and scrolls to it.
+      // reveal expands the folders down to path, unless one is a heavy
+      // folder (node_modules and the like), and scrolls to it. It answers
+      // whether it did.
       reveal(path) {
         const dirs = ancestors(this.dir, path);
-        if (!dirs) return;
+        if (!dirs) return false;
         let changed = false;
         let parent = this.dir;
         for (const p of dirs) {
           const name = p.slice(p.lastIndexOf('/') + 1);
-          if (this.treeDirs[parent]?.entries?.find((e) => e.name === name)?.heavy && !this.expanded.has(p)) return;
+          if (this.treeDirs[parent]?.entries?.find((e) => e.name === name)?.heavy && !this.expanded.has(p)) return false;
           if (!this.expanded.has(p)) { this.expanded.add(p); changed = true; }
           parent = p;
         }
         if (changed) this.saveExpanded();
         this.revealPath = path;
+        return true;
+      }
+
+      // showDir shows a folder (a path printed in the terminal) in the open
+      // tree: inside the chosen folder expanded, scrolled to and marked;
+      // outside it or under a heavy folder, as the chosen folder.
+      showDir(path) {
+        if (path === this.dir || !this.reveal(path)) {
+          this.setDir(path);
+          this.foundDir = null;
+        } else {
+          this.expanded.add(path);
+          this.saveExpanded();
+          this.foundDir = path;
+        }
+        this.treeOpen = true;
+        this.renderTree();
       }
 
       renderTree() {
@@ -1067,6 +1085,7 @@
         let title = p;
         if (e.kind === 'dir') {
           row.setAttribute('aria-expanded', String(open));
+          if (this.foundDir === p) row.setAttribute('aria-current', 'true');
           if (e.heavy) title += t('editor.tree.heavy');
           row.addEventListener('click', () => {
             if (this.expanded.has(p)) this.expanded.delete(p);
@@ -1189,6 +1208,7 @@
       // as an image when the server says it is not text. at ({line, col},
       // 1-based) puts the cursor there in a text.
       async open(path, at) {
+        this.foundDir = null;
         const go = (doc) => { if (at && !doc.image) this.text.goto(at.line, at.col || 1); };
         const known = this.docs.find((d) => d.path === path);
         if (known) { this.switchTo(known); go(known); return; }

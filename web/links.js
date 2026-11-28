@@ -101,7 +101,7 @@
   const PATH = /(?<![\w.+@%~\/:-])[\w.~\/-][\w.+@%~\/-]*(?::(\d+)(?::(\d+))?)?/g;
   const EXT = /\.[\w-]*[A-Za-z][\w-]*$/;
 
-  // findPaths returns the file paths in text, outside its URLs, as
+  // findPaths returns the file (and folder) paths in text, outside its URLs, as
   // [{path, line, col, index, length}] (line and col 0 when not given).
   function findPaths(text, urls = findURLs(text)) {
     if (!text.includes('/')) return [];
@@ -110,6 +110,8 @@
     for (const m of text.matchAll(PATH)) {
       const line = Number(m[1] || 0), col = Number(m[2] || 0);
       let path = m[1] ? m[0].slice(0, m[0].indexOf(':')) : m[0].replace(/\.+$/, '');
+      // A folder ending in a slash, when absolute or anchored.
+      if (path.length > 2 && path.endsWith('/') && /^(\/|~\/|\.{1,2}\/)/.test(path) && !m[1]) path = path.slice(0, -1);
       if (!path.includes('/') || path.includes('//') || path.endsWith('/')) continue;
       if (spans.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
       if (path[0] === '~' && !path.startsWith('~/')) continue;

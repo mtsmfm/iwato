@@ -628,7 +628,7 @@ func terminalPath(p, dir, root string) (string, error) {
 }
 
 // editorResolve answers {path} for a path printed in a terminal when it is
-// a file under the root.
+// a file under the root, and {path, dir: true} for a folder there.
 func (s *Server) editorResolve(w http.ResponseWriter, r *http.Request, sb Sandbox) {
 	q := r.URL.Query()
 	p := q.Get("path")
@@ -663,17 +663,20 @@ func (s *Server) editorResolve(w http.ResponseWriter, r *http.Request, sb Sandbo
 		failCode(w, 400, "editor_outside", map[string]any{"root": root.Path}, root.Path+" の外のファイルはエディタで開けません")
 		return
 	}
+	isDir := false
 	if err == nil {
 		err = s.files.Do(ctx, sb.Name, "editor resolve "+rel, func(c *sftp.Client) error {
 			fi, err := c.Stat(rel)
-			if err == nil && fi.IsDir() {
-				err = errEditorNotFile
-			}
+			isDir = err == nil && fi.IsDir()
 			return err
 		})
 	}
 	if err != nil {
 		editorFail(w, sb.Name, "resolve "+rel, err)
+		return
+	}
+	if isDir {
+		jsonResponse(w, 200, map[string]any{"path": rel, "dir": true})
 		return
 	}
 	jsonResponse(w, 200, map[string]any{"path": rel})
